@@ -33,3 +33,6 @@ log.txt
 
 # Planning docs
 PLAN.md
+
+# Claude Code
+.claude/
