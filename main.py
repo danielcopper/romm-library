@@ -1,11 +1,18 @@
 import os
+import sys
 import json
+import struct
+import binascii
 import asyncio
 import base64
 import ssl
 import urllib.request
 import urllib.error
+from datetime import datetime
 from pathlib import Path
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "py_modules"))
+import vdf
 
 import decky
 
@@ -17,9 +24,27 @@ class Plugin:
     async def _main(self):
         self.loop = asyncio.get_event_loop()
         self._load_settings()
+        self._sync_running = False
+        self._sync_cancel = False
+        self._sync_progress = {
+            "running": False,
+            "phase": "",
+            "current": 0,
+            "total": 0,
+            "message": "",
+        }
+        self._state = {
+            "shortcut_registry": {},
+            "installed_roms": {},
+            "last_sync": None,
+            "sync_stats": {"platforms": 0, "roms": 0},
+        }
+        self._load_state()
         decky.logger.info("RomM Library plugin loaded")
 
     async def _unload(self):
+        if self._sync_running:
+            self._sync_cancel = True
         decky.logger.info("RomM Library plugin unloaded")
 
     def _load_settings(self):
@@ -41,6 +66,97 @@ class Plugin:
         settings_path = os.path.join(settings_dir, "settings.json")
         with open(settings_path, "w") as f:
             json.dump(self.settings, f, indent=2)
+
+    def _load_state(self):
+        state_path = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "state.json")
+        try:
+            with open(state_path, "r") as f:
+                saved = json.load(f)
+            self._state.update(saved)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    def _save_state(self):
+        state_dir = decky.DECKY_PLUGIN_RUNTIME_DIR
+        os.makedirs(state_dir, exist_ok=True)
+        state_path = os.path.join(state_dir, "state.json")
+        tmp_path = state_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(self._state, f, indent=2)
+        os.replace(tmp_path, state_path)
+
+    def _find_steam_user_dir(self):
+        """Find the active Steam user's userdata directory."""
+        steam_paths = [
+            os.path.join(decky.DECKY_USER_HOME, ".local", "share", "Steam", "userdata"),
+            os.path.join(decky.DECKY_USER_HOME, ".steam", "steam", "userdata"),
+        ]
+        for base in steam_paths:
+            if os.path.isdir(base):
+                users = [d for d in os.listdir(base) if d.isdigit()]
+                if len(users) == 1:
+                    return os.path.join(base, users[0])
+                # If multiple users, prefer most recently modified
+                for u in users:
+                    return os.path.join(base, u)
+        return None
+
+    def _shortcuts_vdf_path(self):
+        user_dir = self._find_steam_user_dir()
+        if not user_dir:
+            return None
+        return os.path.join(user_dir, "config", "shortcuts.vdf")
+
+    def _grid_dir(self):
+        user_dir = self._find_steam_user_dir()
+        if not user_dir:
+            return None
+        grid = os.path.join(user_dir, "config", "grid")
+        os.makedirs(grid, exist_ok=True)
+        return grid
+
+    def _generate_app_id(self, exe, appname):
+        """Generate Steam shortcut app ID (signed int32)."""
+        key = exe + appname
+        crc = binascii.crc32(key.encode("utf-8")) & 0xFFFFFFFF
+        return struct.unpack("i", struct.pack("I", crc | 0x80000000))[0]
+
+    def _generate_artwork_id(self, exe, appname):
+        """Generate unsigned artwork ID for grid filenames."""
+        key = exe + appname
+        crc = binascii.crc32(key.encode("utf-8")) & 0xFFFFFFFF
+        return crc | 0x80000000
+
+    def _read_shortcuts(self):
+        path = self._shortcuts_vdf_path()
+        if not path or not os.path.exists(path):
+            return {"shortcuts": {}}
+        with open(path, "rb") as f:
+            return vdf.binary_loads(f.read())
+
+    def _write_shortcuts(self, data):
+        path = self._shortcuts_vdf_path()
+        if not path:
+            raise RuntimeError("Cannot find Steam shortcuts.vdf path")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "wb") as f:
+            f.write(vdf.binary_dumps(data))
+        os.replace(tmp_path, path)
+
+    def _load_platform_map(self):
+        config_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "config.json")
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        return config.get("platform_map", {})
+
+    def _resolve_system(self, platform_slug, platform_fs_slug=None):
+        platform_map = self._load_platform_map()
+        if platform_slug in platform_map:
+            return platform_map[platform_slug]
+        if platform_fs_slug and platform_fs_slug in platform_map:
+            return platform_map[platform_fs_slug]
+        return platform_slug
 
     def _romm_request(self, path):
         url = self.settings["romm_url"].rstrip("/") + path
@@ -112,13 +228,325 @@ class Plugin:
         }
 
     async def start_sync(self):
-        return {"success": False, "message": "Not implemented yet"}
+        if self._sync_running:
+            return {"success": False, "message": "Sync already in progress"}
+        self._sync_running = True
+        self._sync_cancel = False
+        self.loop.create_task(self._do_sync())
+        return {"success": True, "message": "Sync started"}
 
     async def cancel_sync(self):
-        return {"success": False, "message": "Not implemented yet"}
+        self._sync_cancel = True
+        return {"success": True, "message": "Sync cancelling..."}
 
     async def get_sync_progress(self):
-        return {"success": False, "message": "Not implemented yet"}
+        return self._sync_progress
+
+    async def _do_sync(self):
+        try:
+            # Phase 1: Fetch platforms
+            self._sync_progress = {
+                "running": True,
+                "phase": "platforms",
+                "current": 0,
+                "total": 0,
+                "message": "Fetching platforms...",
+            }
+            await asyncio.sleep(0)
+
+            try:
+                platforms = await self.loop.run_in_executor(
+                    None, self._romm_request, "/api/platforms"
+                )
+            except Exception as e:
+                decky.logger.error(f"Failed to fetch platforms: {e}")
+                self._sync_progress = {
+                    "running": False,
+                    "phase": "error",
+                    "current": 0,
+                    "total": 0,
+                    "message": f"Failed to fetch platforms: {e}",
+                }
+                self._sync_running = False
+                return
+
+            if self._sync_cancel:
+                self._finish_sync("Sync cancelled")
+                return
+
+            # Phase 2: Fetch ROMs per platform
+            self._sync_progress = {
+                "running": True,
+                "phase": "roms",
+                "current": 0,
+                "total": 0,
+                "message": "Fetching ROMs...",
+            }
+            await asyncio.sleep(0)
+
+            all_roms = []
+            for platform in platforms:
+                if self._sync_cancel:
+                    self._finish_sync("Sync cancelled")
+                    return
+
+                platform_id = platform["id"]
+                platform_name = platform.get("name", platform.get("display_name", "Unknown"))
+                offset = 0
+                limit = 50
+
+                while True:
+                    if self._sync_cancel:
+                        self._finish_sync("Sync cancelled")
+                        return
+
+                    try:
+                        roms = await self.loop.run_in_executor(
+                            None,
+                            self._romm_request,
+                            f"/api/roms?platform_id={platform_id}&limit={limit}&offset={offset}",
+                        )
+                    except Exception as e:
+                        decky.logger.error(
+                            f"Failed to fetch ROMs for platform {platform_name}: {e}"
+                        )
+                        break
+
+                    for rom in roms:
+                        rom["platform_name"] = platform_name
+
+                    all_roms.extend(roms)
+                    self._sync_progress["current"] = len(all_roms)
+                    self._sync_progress["message"] = (
+                        f"Fetching ROMs... ({len(all_roms)} found)"
+                    )
+                    await asyncio.sleep(0)
+
+                    if len(roms) < limit:
+                        break
+                    offset += limit
+
+            if self._sync_cancel:
+                self._finish_sync("Sync cancelled")
+                return
+
+            decky.logger.info(
+                f"Fetched {len(all_roms)} ROMs from {len(platforms)} platforms"
+            )
+
+            # Phase 3: Create shortcuts
+            self._sync_progress = {
+                "running": True,
+                "phase": "shortcuts",
+                "current": 0,
+                "total": len(all_roms),
+                "message": "Creating Steam shortcuts...",
+            }
+            await asyncio.sleep(0)
+
+            try:
+                platform_apps = await self.loop.run_in_executor(
+                    None, self._create_shortcuts, all_roms
+                )
+            except Exception as e:
+                decky.logger.error(f"Failed to create shortcuts: {e}")
+                self._sync_progress = {
+                    "running": False,
+                    "phase": "error",
+                    "current": 0,
+                    "total": 0,
+                    "message": f"Failed to create shortcuts: {e}",
+                }
+                self._sync_running = False
+                return
+
+            if self._sync_cancel:
+                self._finish_sync("Sync cancelled")
+                return
+
+            # Phase 4: Download artwork
+            self._sync_progress = {
+                "running": True,
+                "phase": "artwork",
+                "current": 0,
+                "total": len(all_roms),
+                "message": "Downloading artwork...",
+            }
+            await asyncio.sleep(0)
+
+            await self._download_artwork(all_roms)
+
+            if self._sync_cancel:
+                self._finish_sync("Sync cancelled")
+                return
+
+            # Save state
+            self._state["last_sync"] = datetime.now().isoformat()
+            self._state["sync_stats"] = {
+                "platforms": len(platforms),
+                "roms": len(all_roms),
+            }
+            self._save_state()
+
+            # Emit completion event
+            summary = {
+                "platforms": len(platforms),
+                "roms": len(all_roms),
+                "platform_breakdown": {
+                    name: len(ids) for name, ids in platform_apps.items()
+                },
+            }
+            await decky.emit("sync_complete", summary)
+            decky.logger.info(f"Sync complete: {summary}")
+
+            self._sync_progress = {
+                "running": False,
+                "phase": "done",
+                "current": len(all_roms),
+                "total": len(all_roms),
+                "message": f"Sync complete — {len(all_roms)} ROMs from {len(platforms)} platforms",
+            }
+        except Exception as e:
+            decky.logger.error(f"Sync failed: {e}")
+            self._sync_progress = {
+                "running": False,
+                "phase": "error",
+                "current": 0,
+                "total": 0,
+                "message": f"Sync failed: {e}",
+            }
+        finally:
+            self._sync_running = False
+
+    def _finish_sync(self, message):
+        self._sync_progress = {
+            "running": False,
+            "phase": "cancelled",
+            "current": self._sync_progress.get("current", 0),
+            "total": self._sync_progress.get("total", 0),
+            "message": message,
+        }
+        self._sync_running = False
+        decky.logger.info(message)
+
+    def _create_shortcuts(self, all_roms):
+        data = self._read_shortcuts()
+        shortcuts = data.get("shortcuts", {})
+
+        # Index existing RomM shortcuts by rom_id
+        existing_romm = {}
+        for key, entry in shortcuts.items():
+            launch_opts = entry.get("LaunchOptions", "")
+            if isinstance(launch_opts, str) and launch_opts.startswith("romm:"):
+                try:
+                    rom_id = int(launch_opts.split(":", 1)[1])
+                    existing_romm[rom_id] = key
+                except (ValueError, IndexError):
+                    pass
+
+        exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
+        start_dir = os.path.dirname(exe)
+        current_rom_ids = set()
+        platform_apps = {}
+
+        # Find the next available numeric key
+        if shortcuts:
+            next_key = max(int(k) for k in shortcuts) + 1
+        else:
+            next_key = 0
+
+        for rom in all_roms:
+            rom_id = rom["id"]
+            current_rom_ids.add(rom_id)
+            app_id = self._generate_app_id(exe, rom["name"])
+            artwork_id = self._generate_artwork_id(exe, rom["name"])
+            platform_name = rom.get(
+                "platform_name",
+                rom.get("platform_display_name", "Unknown"),
+            )
+
+            entry = {
+                "appid": app_id,
+                "AppName": rom["name"],
+                "Exe": f'"{exe}"',
+                "StartDir": f'"{start_dir}"',
+                "LaunchOptions": f"romm:{rom_id}",
+                "icon": "",
+                "ShortcutPath": "",
+                "IsHidden": 0,
+                "AllowDesktopConfig": 1,
+                "AllowOverlay": 1,
+                "OpenVR": 0,
+                "Devkit": 0,
+                "DevkitGameID": "",
+                "DevkitOverrideAppID": 0,
+                "LastPlayTime": 0,
+                "tags": {"0": "RomM", "1": platform_name},
+            }
+
+            if rom_id in existing_romm:
+                shortcuts[existing_romm[rom_id]] = entry
+            else:
+                shortcuts[str(next_key)] = entry
+                next_key += 1
+
+            # Track for platform_apps return and state
+            platform_apps.setdefault(platform_name, []).append(app_id)
+            self._state["shortcut_registry"][str(rom_id)] = {
+                "app_id": app_id,
+                "artwork_id": artwork_id,
+                "name": rom["name"],
+            }
+
+        # Remove stale RomM shortcuts
+        for rom_id, key in existing_romm.items():
+            if rom_id not in current_rom_ids:
+                del shortcuts[key]
+                self._state["shortcut_registry"].pop(str(rom_id), None)
+
+        data["shortcuts"] = shortcuts
+        self._write_shortcuts(data)
+        decky.logger.info(f"Wrote {len(current_rom_ids)} shortcuts")
+        return platform_apps
+
+    async def _download_artwork(self, all_roms):
+        grid = self._grid_dir()
+        if not grid:
+            decky.logger.warning("Cannot find grid directory, skipping artwork")
+            return
+
+        exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
+        total = len(all_roms)
+
+        for i, rom in enumerate(all_roms):
+            if self._sync_cancel:
+                return
+
+            self._sync_progress["current"] = i + 1
+            self._sync_progress["message"] = (
+                f"Downloading artwork... ({i + 1}/{total})"
+            )
+            await asyncio.sleep(0)
+
+            # Determine cover path from ROM data
+            cover_path = rom.get("path_cover_large") or rom.get("path_cover_small")
+            if not cover_path:
+                continue
+
+            artwork_id = self._generate_artwork_id(exe, rom["name"])
+            target = os.path.join(grid, f"{artwork_id}p.png")
+
+            if os.path.exists(target):
+                continue
+
+            try:
+                await self.loop.run_in_executor(
+                    None, self._romm_download, cover_path, target
+                )
+            except Exception as e:
+                decky.logger.warning(
+                    f"Failed to download artwork for {rom['name']}: {e}"
+                )
 
     async def start_download(self):
         return {"success": False, "message": "Not implemented yet"}

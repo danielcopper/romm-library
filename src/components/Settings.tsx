@@ -1,6 +1,7 @@
-import { useState, useEffect, FC, ChangeEvent } from "react";
-import { PanelSection, PanelSectionRow, TextField, ButtonItem, Field } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, startSync } from "../api/backend";
+import { useState, useEffect, useRef, FC, ChangeEvent } from "react";
+import { PanelSection, PanelSectionRow, TextField, ButtonItem, Field, ProgressBarWithInfo } from "@decky/ui";
+import { getSettings, saveSettings, testConnection, startSync, getSyncProgress, cancelSync } from "../api/backend";
+import type { SyncProgress } from "../types";
 
 export const Settings: FC = () => {
   const [url, setUrl] = useState("");
@@ -8,6 +9,9 @@ export const Settings: FC = () => {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -15,7 +19,32 @@ export const Settings: FC = () => {
       setUsername(s.romm_user);
       setPassword(s.romm_pass_masked);
     });
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
+
+  const startPolling = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const progress = await getSyncProgress();
+        setSyncProgress(progress);
+        if (!progress.running) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          setSyncing(false);
+          setLoading(false);
+          setStatus(progress.message || "Sync finished");
+        }
+      } catch {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        setSyncing(false);
+        setLoading(false);
+      }
+    }, 2000);
+  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -23,7 +52,7 @@ export const Settings: FC = () => {
     try {
       const result = await saveSettings(url, username, password);
       setStatus(result.message);
-    } catch (e) {
+    } catch {
       setStatus("Failed to save settings");
     }
     setLoading(false);
@@ -35,7 +64,7 @@ export const Settings: FC = () => {
     try {
       const result = await testConnection();
       setStatus(result.message);
-    } catch (e) {
+    } catch {
       setStatus("Connection test failed");
     }
     setLoading(false);
@@ -43,15 +72,32 @@ export const Settings: FC = () => {
 
   const handleSync = async () => {
     setLoading(true);
+    setSyncing(true);
     setStatus("");
+    setSyncProgress(null);
     try {
       const result = await startSync();
       setStatus(result.message);
-    } catch (e) {
+      startPolling();
+    } catch {
       setStatus("Failed to start sync");
+      setSyncing(false);
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  const handleCancel = async () => {
+    try {
+      const result = await cancelSync();
+      setStatus(result.message);
+    } catch {
+      setStatus("Failed to cancel sync");
+    }
+  };
+
+  const progressFraction = syncProgress?.total
+    ? (syncProgress.current ?? 0) / syncProgress.total
+    : undefined;
 
   return (
     <>
@@ -95,7 +141,35 @@ export const Settings: FC = () => {
             Sync Library
           </ButtonItem>
         </PanelSectionRow>
+        {syncing && (
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={handleCancel}>
+              Cancel Sync
+            </ButtonItem>
+          </PanelSectionRow>
+        )}
       </PanelSection>
+      {syncing && syncProgress && (
+        <PanelSection title="Sync Progress">
+          {syncProgress.phase && (
+            <PanelSectionRow>
+              <Field label="Phase" description={syncProgress.phase} />
+            </PanelSectionRow>
+          )}
+          <PanelSectionRow>
+            <ProgressBarWithInfo
+              indeterminate={progressFraction === undefined}
+              nProgress={progressFraction}
+              sOperationText={syncProgress.message || "Syncing..."}
+              sTimeRemaining={
+                syncProgress.total
+                  ? `${syncProgress.current ?? 0} / ${syncProgress.total}`
+                  : undefined
+              }
+            />
+          </PanelSectionRow>
+        </PanelSection>
+      )}
       {status && (
         <PanelSection title="Status">
           <PanelSectionRow>
