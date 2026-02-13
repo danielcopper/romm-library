@@ -30,3 +30,6 @@ __pycache__/
 # Logs
 *.log
 log.txt
+
+# Planning docs
+PLAN.md
