@@ -509,13 +509,8 @@ class Plugin:
             )
 
             # sync_complete will be emitted by report_sync_results()
-            self._sync_progress = {
-                "running": False,
-                "phase": "applying",
-                "current": len(shortcuts_data),
-                "total": len(shortcuts_data),
-                "message": f"Applying {len(shortcuts_data)} shortcuts...",
-            }
+            # Keep running=True until report_sync_results sets it to False,
+            # or the finally block resets it as a fallback.
         except Exception as e:
             import traceback
             decky.logger.error(f"Sync failed: {e}\n{traceback.format_exc()}")
@@ -528,6 +523,17 @@ class Plugin:
             }
         finally:
             self._sync_running = False
+            # Ensure progress is marked as not running — serves as a fallback
+            # if report_sync_results was never called (e.g. frontend error).
+            if self._sync_progress.get("running"):
+                stats = self._state.get("sync_stats", {})
+                self._sync_progress = {
+                    "running": False,
+                    "phase": "done",
+                    "current": stats.get("roms", 0),
+                    "total": stats.get("roms", 0),
+                    "message": f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
+                }
 
     def _finish_sync(self, message):
         self._sync_progress = {
@@ -597,7 +603,7 @@ class Plugin:
             "phase": "done",
             "current": total,
             "total": total,
-            "message": f"Sync complete — {total} games",
+            "message": f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
         }
         decky.logger.info(f"Sync results reported: {total} games")
         return {"success": True}

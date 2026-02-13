@@ -29,12 +29,14 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     getSyncStats().then(setStats);
     testConnection().then((r) => setConnected(r.success));
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
     };
   }, []);
 
@@ -49,7 +51,9 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
           pollRef.current = null;
           setSyncing(false);
           setLoading(false);
+          if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
           setStatus(progress.message || "Sync finished");
+          statusTimeoutRef.current = setTimeout(() => setStatus(""), 8000);
           getSyncStats().then(setStats);
         }
       } catch {
