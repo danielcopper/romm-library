@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncProgress, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting } from "../types";
+import type { PluginSettings, SyncProgress, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform } from "../types";
 
 export const getSettings = callable<[], PluginSettings>("get_settings");
 export const saveSettings = callable<[string, string, string], { success: boolean; message: string }>("save_settings");
@@ -17,5 +17,8 @@ export const removeRom = callable<[number], { success: boolean; message: string 
 export const getPlatforms = callable<[], { success: boolean; platforms: PlatformSyncSetting[] }>("get_platforms");
 export const savePlatformSync = callable<[number, boolean], { success: boolean; message: string }>("save_platform_sync");
 export const setAllPlatformsSync = callable<[boolean], { success: boolean; message: string }>("set_all_platforms_sync");
-export const removePlatformShortcuts = callable<[string], { success: boolean; message: string; removed_count: number }>("remove_platform_shortcuts");
-export const removeAllShortcuts = callable<[], { success: boolean; message: string; removed_count: number }>("remove_all_shortcuts");
+export const getRegistryPlatforms = callable<[], { platforms: RegistryPlatform[] }>("get_registry_platforms");
+export const removePlatformShortcuts = callable<[string], { success: boolean; app_ids: number[]; rom_ids: (string | number)[]; platform_name: string }>("remove_platform_shortcuts");
+export const removeAllShortcuts = callable<[], { success: boolean; message: string; removed_count: number; app_ids: number[]; rom_ids: (string | number)[] }>("remove_all_shortcuts");
+export const reportSyncResults = callable<[Record<string, number>, number[]], { success: boolean }>("report_sync_results");
+export const reportRemovalResults = callable<[(string | number)[]], { success: boolean; message: string }>("report_removal_results");

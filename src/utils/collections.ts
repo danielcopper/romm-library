@@ -44,3 +44,31 @@ export function createOrUpdateCollections(
     console.error("[RomM] Failed to update collections:", e);
   }
 }
+
+export function clearPlatformCollection(platformName: string): void {
+  try {
+    if (typeof collectionStore === "undefined") return;
+    const collectionName = `RomM: ${platformName}`;
+    const existing = collectionStore.userCollections.find(
+      (c) => c.displayName === collectionName
+    );
+    if (existing) {
+      collectionStore.SetAppsInCollection(existing.id, []);
+    }
+  } catch (e) {
+    console.error("[RomM] Failed to clear platform collection:", e);
+  }
+}
+
+export function clearAllRomMCollections(): void {
+  try {
+    if (typeof collectionStore === "undefined") return;
+    for (const c of collectionStore.userCollections) {
+      if (c.displayName.startsWith("RomM: ")) {
+        collectionStore.SetAppsInCollection(c.id, []);
+      }
+    }
+  } catch (e) {
+    console.error("[RomM] Failed to clear collections:", e);
+  }
+}

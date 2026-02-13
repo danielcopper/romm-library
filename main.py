@@ -40,6 +40,7 @@ class Plugin:
             "last_sync": None,
             "sync_stats": {"platforms": 0, "roms": 0},
         }
+        self._pending_sync = {}
         self._load_state()
         decky.logger.info("RomM Library plugin loaded")
 
@@ -117,8 +118,9 @@ class Plugin:
         os.makedirs(grid, exist_ok=True)
         return grid
 
+    # Deprecated: frontend now gets app_id from SteamClient.Apps.AddShortcut()
     def _generate_app_id(self, exe, appname):
-        """Generate Steam shortcut app ID (signed int32)."""
+        """Generate Steam shortcut app ID (signed int32). Deprecated."""
         key = exe + appname
         crc = binascii.crc32(key.encode("utf-8")) & 0xFFFFFFFF
         return struct.unpack("i", struct.pack("I", crc | 0x80000000))[0]
@@ -129,6 +131,7 @@ class Plugin:
         crc = binascii.crc32(key.encode("utf-8")) & 0xFFFFFFFF
         return crc | 0x80000000
 
+    # Deprecated: VDF read/write replaced by frontend SteamClient API
     def _read_shortcuts(self):
         path = self._shortcuts_vdf_path()
         if not path or not os.path.exists(path):
@@ -136,6 +139,7 @@ class Plugin:
         with open(path, "rb") as f:
             return vdf.binary_loads(f.read())
 
+    # Deprecated: VDF read/write replaced by frontend SteamClient API
     def _write_shortcuts(self, data):
         path = self._shortcuts_vdf_path()
         if not path:
@@ -387,6 +391,7 @@ class Plugin:
 
                     for rom in rom_list:
                         rom["platform_name"] = platform_name
+                        rom["platform_slug"] = platform.get("slug", "")
 
                     all_roms.extend(rom_list)
                     self._sync_progress["current"] = len(all_roms)
@@ -407,31 +412,33 @@ class Plugin:
                 f"Fetched {len(all_roms)} ROMs from {len(platforms)} platforms"
             )
 
-            # Phase 3: Create shortcuts
+            # Phase 3: Prepare shortcut data
             self._sync_progress = {
                 "running": True,
                 "phase": "shortcuts",
                 "current": 0,
                 "total": len(all_roms),
-                "message": "Creating Steam shortcuts...",
+                "message": "Preparing shortcut data...",
             }
             await asyncio.sleep(0)
 
-            try:
-                platform_apps = await self.loop.run_in_executor(
-                    None, self._create_shortcuts, all_roms
-                )
-            except Exception as e:
-                decky.logger.error(f"Failed to create shortcuts: {e}")
-                self._sync_progress = {
-                    "running": False,
-                    "phase": "error",
-                    "current": 0,
-                    "total": 0,
-                    "message": f"Failed to create shortcuts: {e}",
-                }
-                self._sync_running = False
-                return
+            exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
+            start_dir = os.path.join(decky.DECKY_PLUGIN_DIR, "bin")
+
+            shortcuts_data = []
+            for i, rom in enumerate(all_roms):
+                shortcuts_data.append({
+                    "rom_id": rom["id"],
+                    "name": rom["name"],
+                    "exe": exe,
+                    "start_dir": start_dir,
+                    "launch_options": f"romm:{rom['id']}",
+                    "platform_name": rom.get("platform_name", "Unknown"),
+                    "platform_slug": rom.get("platform_slug", ""),
+                    "cover_path": "",  # Filled after artwork download
+                })
+                self._sync_progress["current"] = i + 1
+            await asyncio.sleep(0)
 
             if self._sync_cancel:
                 self._finish_sync("Sync cancelled")
@@ -447,36 +454,60 @@ class Plugin:
             }
             await asyncio.sleep(0)
 
-            await self._download_artwork(all_roms)
+            cover_paths = await self._download_artwork(all_roms)
 
             if self._sync_cancel:
                 self._finish_sync("Sync cancelled")
                 return
 
-            # Save state
-            self._state["last_sync"] = datetime.now().isoformat()
+            # Update shortcuts_data with cover paths
+            for sd in shortcuts_data:
+                sd["cover_path"] = cover_paths.get(sd["rom_id"], "")
+
+            # Determine stale rom_ids by comparing current sync with registry
+            current_rom_ids = {r["id"] for r in all_roms}
+            stale_rom_ids = [
+                int(rid) for rid in self._state["shortcut_registry"]
+                if int(rid) not in current_rom_ids
+            ]
+
+            # Phase 5: Emit sync_apply for frontend to process via SteamClient
+            self._sync_progress = {
+                "running": True,
+                "phase": "applying",
+                "current": 0,
+                "total": len(shortcuts_data),
+                "message": "Applying shortcuts...",
+            }
+            await asyncio.sleep(0)
+
+            # Save sync stats (registry updated by report_sync_results)
             self._state["sync_stats"] = {
                 "platforms": len(platforms),
                 "roms": len(all_roms),
             }
             self._save_state()
 
-            # Emit completion event
-            summary = {
-                "platform_app_ids": {
-                    name: ids for name, ids in platform_apps.items()
-                },
-                "total_games": len(all_roms),
-            }
-            await decky.emit("sync_complete", summary)
-            decky.logger.info(f"Sync complete: {len(all_roms)} games across {len(platforms)} platforms")
+            # Store pending data for report_sync_results to reference
+            self._pending_sync = {sd["rom_id"]: sd for sd in shortcuts_data}
 
+            await decky.emit("sync_apply", {
+                "shortcuts": shortcuts_data,
+                "remove_rom_ids": stale_rom_ids,
+            })
+
+            decky.logger.info(
+                f"Sync data emitted: {len(shortcuts_data)} shortcuts, "
+                f"{len(stale_rom_ids)} stale"
+            )
+
+            # sync_complete will be emitted by report_sync_results()
             self._sync_progress = {
                 "running": False,
-                "phase": "done",
-                "current": len(all_roms),
-                "total": len(all_roms),
-                "message": f"Sync complete — {len(all_roms)} ROMs from {len(platforms)} platforms",
+                "phase": "applying",
+                "current": len(shortcuts_data),
+                "total": len(shortcuts_data),
+                "message": f"Applying {len(shortcuts_data)} shortcuts...",
             }
         except Exception as e:
             import traceback
@@ -502,6 +533,69 @@ class Plugin:
         self._sync_running = False
         decky.logger.info(message)
 
+    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids):
+        """Called by frontend after applying shortcuts via SteamClient."""
+        grid = self._grid_dir()
+
+        # Update registry with new mappings from frontend
+        for rom_id_str, app_id in rom_id_to_app_id.items():
+            pending = self._pending_sync.get(int(rom_id_str), {})
+            cover_path = pending.get("cover_path", "")
+
+            # Rename staged artwork to final Steam app_id filename
+            if grid and cover_path:
+                final_path = os.path.join(grid, f"{app_id}p.png")
+                if cover_path != final_path and os.path.exists(cover_path):
+                    try:
+                        os.replace(cover_path, final_path)
+                        cover_path = final_path
+                    except OSError as e:
+                        decky.logger.warning(
+                            f"Failed to rename artwork for rom {rom_id_str}: {e}"
+                        )
+                elif os.path.exists(final_path):
+                    cover_path = final_path
+
+            self._state["shortcut_registry"][rom_id_str] = {
+                "app_id": app_id,
+                "name": pending.get("name", ""),
+                "platform_name": pending.get("platform_name", ""),
+                "platform_slug": pending.get("platform_slug", ""),
+                "cover_path": cover_path,
+            }
+
+        # Remove stale entries
+        for rom_id in removed_rom_ids:
+            self._state["shortcut_registry"].pop(str(rom_id), None)
+
+        # Update timestamp and save
+        self._state["last_sync"] = datetime.now().isoformat()
+        self._save_state()
+        self._pending_sync = {}
+
+        # Rebuild platform_app_ids from registry
+        platform_app_ids = {}
+        for entry in self._state["shortcut_registry"].values():
+            pname = entry.get("platform_name", "Unknown")
+            platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
+
+        total = len(self._state["shortcut_registry"])
+        await decky.emit("sync_complete", {
+            "platform_app_ids": platform_app_ids,
+            "total_games": total,
+        })
+
+        self._sync_progress = {
+            "running": False,
+            "phase": "done",
+            "current": total,
+            "total": total,
+            "message": f"Sync complete — {total} games",
+        }
+        decky.logger.info(f"Sync results reported: {total} games")
+        return {"success": True}
+
+    # Deprecated: VDF-based shortcut creation (replaced by frontend SteamClient API)
     def _create_shortcuts(self, all_roms):
         data = self._read_shortcuts()
         shortcuts = data.get("shortcuts", {})
@@ -583,17 +677,23 @@ class Plugin:
         return platform_apps
 
     async def _download_artwork(self, all_roms):
+        """Download cover artwork to staging filenames (romm_{rom_id}_cover.png).
+
+        Decouples download from the final Steam app_id, which isn't known until
+        after AddShortcut. report_sync_results() renames to {app_id}p.png.
+        Returns dict of rom_id -> local cover path.
+        """
+        cover_paths = {}
         grid = self._grid_dir()
         if not grid:
             decky.logger.warning("Cannot find grid directory, skipping artwork")
-            return
+            return cover_paths
 
-        exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
         total = len(all_roms)
 
         for i, rom in enumerate(all_roms):
             if self._sync_cancel:
-                return
+                return cover_paths
 
             self._sync_progress["current"] = i + 1
             self._sync_progress["message"] = (
@@ -601,150 +701,155 @@ class Plugin:
             )
             await asyncio.sleep(0)
 
-            # Determine cover path from ROM data
-            cover_path = rom.get("path_cover_large") or rom.get("path_cover_small")
-            if not cover_path:
+            # Determine cover URL from ROM data
+            cover_url = rom.get("path_cover_large") or rom.get("path_cover_small")
+            if not cover_url:
                 continue
 
-            artwork_id = self._generate_artwork_id(exe, rom["name"])
-            target = os.path.join(grid, f"{artwork_id}p.png")
+            rom_id = rom["id"]
+            staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
 
-            if os.path.exists(target):
+            # If already synced and final artwork exists, skip download
+            reg = self._state["shortcut_registry"].get(str(rom_id))
+            if reg and reg.get("app_id"):
+                final = os.path.join(grid, f"{reg['app_id']}p.png")
+                if os.path.exists(final):
+                    cover_paths[rom_id] = final
+                    continue
+
+            # If staging file already exists (e.g. retry), skip download
+            if os.path.exists(staging):
+                cover_paths[rom_id] = staging
                 continue
 
             try:
                 await self.loop.run_in_executor(
-                    None, self._romm_download, cover_path, target
+                    None, self._romm_download, cover_url, staging
                 )
+                cover_paths[rom_id] = staging
             except Exception as e:
                 decky.logger.warning(
                     f"Failed to download artwork for {rom['name']}: {e}"
                 )
 
+        return cover_paths
+
+    async def get_registry_platforms(self):
+        """Return platforms from the shortcut registry (works offline, no RomM API call)."""
+        platforms = {}
+        for rom_id, entry in self._state["shortcut_registry"].items():
+            pname = entry.get("platform_name", "Unknown")
+            slug = entry.get("platform_slug", "")
+            platforms.setdefault(pname, {"count": 0, "slug": slug})
+            platforms[pname]["count"] += 1
+        return {"platforms": [{"name": k, "slug": v["slug"], "count": v["count"]} for k, v in sorted(platforms.items())]}
+
     async def remove_platform_shortcuts(self, platform_slug):
-        """Remove all Steam shortcuts for a specific platform."""
+        """Return app_ids and rom_ids for a platform for the frontend to remove via SteamClient."""
         try:
-            # Resolve slug to platform name via API
-            platforms = await self.loop.run_in_executor(
-                None, self._romm_request, "/api/platforms"
-            )
+            # Try registry first (works offline)
             platform_name = None
-            for p in platforms:
-                if p.get("slug") == platform_slug:
-                    platform_name = p.get("name", "")
+            for entry in self._state["shortcut_registry"].values():
+                if entry.get("platform_slug") == platform_slug:
+                    platform_name = entry.get("platform_name")
                     break
+
+            # Fall back to API if slug not in registry
+            if not platform_name:
+                platforms = await self.loop.run_in_executor(
+                    None, self._romm_request, "/api/platforms"
+                )
+                for p in platforms:
+                    if p.get("slug") == platform_slug:
+                        platform_name = p.get("name", "")
+                        break
+
             if not platform_name:
                 return {
                     "success": False,
                     "message": f"Platform '{platform_slug}' not found",
-                    "removed_count": 0,
+                    "app_ids": [],
+                    "rom_ids": [],
                 }
 
-            data = self._read_shortcuts()
-            shortcuts = data.get("shortcuts", {})
-            grid = self._grid_dir()
+            app_ids = []
+            rom_ids = []
+            for rom_id, entry in self._state["shortcut_registry"].items():
+                if entry.get("platform_name") == platform_name:
+                    if "app_id" in entry:
+                        app_ids.append(entry["app_id"])
+                    rom_ids.append(rom_id)
 
-            keys_to_remove = []
-            rom_ids_to_remove = []
-
-            for key, entry in shortcuts.items():
-                launch_opts = entry.get("LaunchOptions", "")
-                if not (isinstance(launch_opts, str) and launch_opts.startswith("romm:")):
-                    continue
-                tags = entry.get("tags", {})
-                tag_values = tags.values() if isinstance(tags, dict) else []
-                if platform_name in tag_values:
-                    keys_to_remove.append(key)
-                    try:
-                        rom_id = launch_opts.split(":", 1)[1]
-                        rom_ids_to_remove.append(rom_id)
-                    except (IndexError,):
-                        pass
-
-            # Remove shortcuts and clean up artwork
-            for key in keys_to_remove:
-                del shortcuts[key]
-
-            for rom_id in rom_ids_to_remove:
-                reg_entry = self._state["shortcut_registry"].pop(rom_id, None)
-                if reg_entry and grid:
-                    art_path = os.path.join(grid, f"{reg_entry['artwork_id']}p.png")
-                    if os.path.exists(art_path):
-                        os.remove(art_path)
-
-            data["shortcuts"] = shortcuts
-            self._write_shortcuts(data)
-            self._save_state()
-
-            count = len(keys_to_remove)
-            decky.logger.info(
-                f"Removed {count} shortcuts for platform '{platform_name}'"
-            )
             return {
                 "success": True,
-                "message": f"Removed {count} shortcuts for {platform_name}",
-                "removed_count": count,
+                "app_ids": app_ids,
+                "rom_ids": rom_ids,
+                "platform_name": platform_name,
             }
         except Exception as e:
-            decky.logger.error(f"Failed to remove platform shortcuts: {e}")
+            decky.logger.error(f"Failed to get platform shortcuts: {e}")
             return {
                 "success": False,
-                "message": f"Failed to remove shortcuts: {e}",
-                "removed_count": 0,
+                "message": f"Failed: {e}",
+                "app_ids": [],
+                "rom_ids": [],
             }
 
     async def remove_all_shortcuts(self):
-        """Remove ALL RomM shortcuts from Steam."""
-        try:
-            data = self._read_shortcuts()
-            shortcuts = data.get("shortcuts", {})
-            grid = self._grid_dir()
+        """Return app_ids and rom_ids for the frontend to remove via SteamClient."""
+        registry = self._state.get("shortcut_registry", {})
+        app_ids = [entry["app_id"] for entry in registry.values() if "app_id" in entry]
+        rom_ids = list(registry.keys())
+        return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids}
 
-            keys_to_remove = []
-            for key, entry in shortcuts.items():
-                launch_opts = entry.get("LaunchOptions", "")
-                if isinstance(launch_opts, str) and launch_opts.startswith("romm:"):
-                    keys_to_remove.append(key)
+    async def report_removal_results(self, removed_rom_ids):
+        """Called by frontend after removing shortcuts via SteamClient."""
+        grid = self._grid_dir()
+        for rom_id in removed_rom_ids:
+            entry = self._state["shortcut_registry"].pop(str(rom_id), None)
+            if entry and grid:
+                removed = False
+                # Try cover_path first (stores the final renamed path)
+                cover_path = entry.get("cover_path", "")
+                if cover_path and os.path.exists(cover_path):
+                    os.remove(cover_path)
+                    removed = True
+                # Try {app_id}p.png (the standard Steam grid filename)
+                if not removed and entry.get("app_id"):
+                    app_path = os.path.join(grid, f"{entry['app_id']}p.png")
+                    if os.path.exists(app_path):
+                        os.remove(app_path)
+                        removed = True
+                # Fallback: legacy artwork_id format
+                if not removed:
+                    artwork_id = entry.get("artwork_id")
+                    if artwork_id:
+                        art_path = os.path.join(grid, f"{artwork_id}p.png")
+                        if os.path.exists(art_path):
+                            os.remove(art_path)
+                # Clean up any leftover staging file
+                staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
+                if os.path.exists(staging):
+                    os.remove(staging)
 
-            # Delete artwork for all registry entries
-            if grid:
-                for rom_id, reg_entry in self._state["shortcut_registry"].items():
-                    art_path = os.path.join(grid, f"{reg_entry['artwork_id']}p.png")
-                    if os.path.exists(art_path):
-                        os.remove(art_path)
-
-            # Remove shortcuts
-            for key in keys_to_remove:
-                del shortcuts[key]
-
-            data["shortcuts"] = shortcuts
-            self._write_shortcuts(data)
-
-            # Clear registry
-            self._state["shortcut_registry"] = {}
-            self._save_state()
-
-            count = len(keys_to_remove)
-            decky.logger.info(f"Removed all {count} RomM shortcuts")
-            return {
-                "success": True,
-                "message": f"Removed {count} RomM shortcuts from Steam",
-                "removed_count": count,
-            }
-        except Exception as e:
-            decky.logger.error(f"Failed to remove all shortcuts: {e}")
-            return {
-                "success": False,
-                "message": f"Failed to remove shortcuts: {e}",
-                "removed_count": 0,
-            }
+        # Update sync_stats to reflect current registry
+        registry = self._state.get("shortcut_registry", {})
+        platforms = set(e.get("platform_name", "") for e in registry.values())
+        self._state["sync_stats"] = {
+            "platforms": len(platforms),
+            "roms": len(registry),
+        }
+        self._save_state()
+        return {"success": True, "message": f"Removed {len(removed_rom_ids)} shortcuts"}
 
     async def get_sync_stats(self):
+        registry = self._state.get("shortcut_registry", {})
+        platforms = set(e.get("platform_name", "") for e in registry.values())
         return {
             "last_sync": self._state.get("last_sync"),
-            "platforms": self._state.get("sync_stats", {}).get("platforms", 0),
-            "roms": self._state.get("sync_stats", {}).get("roms", 0),
-            "total_shortcuts": len(self._state.get("shortcut_registry", {})),
+            "platforms": len(platforms),
+            "roms": len(registry),
+            "total_shortcuts": len(registry),
         }
 
     async def start_download(self):

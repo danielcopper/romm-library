@@ -72,3 +72,24 @@ export interface SyncStats {
   roms: number;
   total_shortcuts: number;
 }
+
+export interface RegistryPlatform {
+  name: string;
+  slug: string;
+  count: number;
+}
+
+export interface SyncAddItem {
+  rom_id: number;
+  name: string;
+  exe: string;
+  start_dir: string;
+  launch_options: string;
+  platform_name: string;
+  cover_path: string;
+}
+
+export interface SyncApplyData {
+  shortcuts: SyncAddItem[];
+  remove_rom_ids: number[];
+}

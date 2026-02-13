@@ -11,6 +11,7 @@ import { ConnectionSettings } from "./components/ConnectionSettings";
 import { PlatformSync } from "./components/PlatformSync";
 import { DangerZone } from "./components/DangerZone";
 import { createOrUpdateCollections } from "./utils/collections";
+import { initSyncManager } from "./utils/syncManager";
 
 type Page = "main" | "connection" | "platforms" | "danger";
 
@@ -41,16 +42,19 @@ export default definePlugin(() => {
     });
   };
 
-  const listener = addEventListener<
+  const syncCompleteListener = addEventListener<
     [{ platform_app_ids: Record<string, number[]>; total_games: number }]
   >("sync_complete", onSyncComplete);
+
+  const syncApplyListener = initSyncManager();
 
   return {
     name: "RomM Library",
     icon: <FaGamepad />,
     content: <QAMPanel />,
     onDismount() {
-      removeEventListener("sync_complete", listener);
+      removeEventListener("sync_complete", syncCompleteListener);
+      removeEventListener("sync_apply", syncApplyListener);
     },
   };
 });
