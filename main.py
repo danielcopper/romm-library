@@ -242,13 +242,16 @@ class Plugin:
         enabled = self.settings.get("enabled_platforms", {})
         result = []
         for p in platforms:
+            rom_count = p.get("rom_count", 0)
+            if rom_count == 0:
+                continue
             pid = str(p["id"])
             result.append({
                 "id": p["id"],
                 "name": p.get("name", ""),
                 "slug": p.get("slug", ""),
-                "rom_count": p.get("rom_count", 0),
-                "sync_enabled": enabled.get(pid, True),
+                "rom_count": rom_count,
+                "sync_enabled": enabled.get(pid, len(enabled) == 0),
             })
         return {"success": True, "platforms": result}
 
@@ -323,10 +326,12 @@ class Plugin:
                 return
 
             # Filter platforms by enabled_platforms setting
+            # Default: all enabled only if no preferences saved yet
             enabled = self.settings.get("enabled_platforms", {})
+            no_prefs = len(enabled) == 0
             platforms = [
                 p for p in platforms
-                if enabled.get(str(p["id"]), True)
+                if enabled.get(str(p["id"]), no_prefs)
             ]
 
             # Phase 2: Fetch ROMs per platform
