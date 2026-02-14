@@ -1,6 +1,6 @@
 import { addEventListener } from "@decky/api";
 import type { SyncApplyData } from "../types";
-import { reportSyncResults } from "../api/backend";
+import { getArtworkBase64, reportSyncResults } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
 import { createOrUpdateCollections } from "./collections";
 
@@ -21,6 +21,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
     // Process additions/updates with small delays to avoid corrupting Steam state
     for (const item of data.shortcuts) {
       try {
+        let appId: number | undefined;
         const existingAppId = existing.get(item.rom_id);
         if (existingAppId) {
           // Already exists — update properties
@@ -28,20 +29,27 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
           SteamClient.Apps.SetShortcutExe(existingAppId, item.exe);
           SteamClient.Apps.SetShortcutStartDir(existingAppId, item.start_dir);
           SteamClient.Apps.SetAppLaunchOptions(existingAppId, item.launch_options);
-          if (item.cover_base64) {
-            try {
-              await SteamClient.Apps.SetCustomArtworkForApp(existingAppId, item.cover_base64, "png", 0);
-              console.log(`[RomM] Updated cover artwork for ${item.name} (appId=${existingAppId})`);
-            } catch (artErr) {
-              console.error(`[RomM] Failed to set artwork for ${item.name}:`, artErr);
-            }
-          }
+          appId = existingAppId;
           romIdToAppId[String(item.rom_id)] = existingAppId;
         } else {
-          // New — create shortcut (addShortcut already has internal 300ms delay)
-          const appId = await addShortcut(item);
-          if (appId) {
-            romIdToAppId[String(item.rom_id)] = appId;
+          // New — create shortcut (addShortcut already has internal 500ms delay)
+          const newAppId = await addShortcut(item);
+          if (newAppId) {
+            appId = newAppId;
+            romIdToAppId[String(item.rom_id)] = newAppId;
+          }
+        }
+
+        // Fetch and apply artwork per item via callable (avoids bulk base64 in WebSocket)
+        if (appId) {
+          try {
+            const artResult = await getArtworkBase64(item.rom_id);
+            if (artResult.base64) {
+              await SteamClient.Apps.SetCustomArtworkForApp(appId, artResult.base64, "png", 0);
+              console.log(`[RomM] Set cover artwork for ${item.name} (appId=${appId})`);
+            }
+          } catch (artErr) {
+            console.error(`[RomM] Failed to fetch/set artwork for ${item.name}:`, artErr);
           }
         }
       } catch (e) {
@@ -79,7 +87,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
         platformAppIds[item.platform_name].push(appId);
       }
     }
-    createOrUpdateCollections(platformAppIds);
+    await createOrUpdateCollections(platformAppIds);
 
     console.log("[RomM] sync_apply complete:", Object.keys(romIdToAppId).length, "added/updated,", removedRomIds.length, "removed");
   });

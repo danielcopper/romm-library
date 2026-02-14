@@ -20,5 +20,6 @@ export const setAllPlatformsSync = callable<[boolean], { success: boolean; messa
 export const getRegistryPlatforms = callable<[], { platforms: RegistryPlatform[] }>("get_registry_platforms");
 export const removePlatformShortcuts = callable<[string], { success: boolean; app_ids: number[]; rom_ids: (string | number)[]; platform_name: string }>("remove_platform_shortcuts");
 export const removeAllShortcuts = callable<[], { success: boolean; message: string; removed_count: number; app_ids: number[]; rom_ids: (string | number)[] }>("remove_all_shortcuts");
+export const getArtworkBase64 = callable<[number], { base64: string | null }>("get_artwork_base64");
 export const reportSyncResults = callable<[Record<string, number>, number[]], { success: boolean }>("report_sync_results");
 export const reportRemovalResults = callable<[(string | number)[]], { success: boolean; message: string }>("report_removal_results");

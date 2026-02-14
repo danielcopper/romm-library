@@ -25,10 +25,33 @@ declare var SteamClient: {
   };
 };
 
+interface AppStoreOverview {
+  appid: number;
+  display_name: string;
+}
+
+interface SteamCollection {
+  AsDragDropCollection(): {
+    AddApps(overviews: AppStoreOverview[]): void;
+    RemoveApps(overviews: AppStoreOverview[]): void;
+  };
+  Save(): Promise<void>;
+  Delete(): Promise<void>;
+  allApps: AppStoreOverview[];
+  apps: { keys(): IterableIterator<number>; has(appId: number): boolean };
+  displayName: string;
+  id: string;
+}
+
 declare var collectionStore: {
   deckDesktopApps: { apps: Map<number, any> };
-  userCollections: any[];
-  CreateCollection: (name: string, apps?: number[]) => void;
-  SetAppsInCollection: (id: string, apps: number[]) => void;
-  GetCollection: (id: string) => any | undefined;
+  userCollections: SteamCollection[];
+  GetCollection(id: string): SteamCollection | undefined;
+  GetCollectionIDByUserTag(tag: string): string | null;
+  GetUserCollectionsByName(name: string): SteamCollection[];
+  NewUnsavedCollection(tag: string, filter?: unknown, overviews?: AppStoreOverview[]): SteamCollection;
+};
+
+declare var appStore: {
+  getAppOverview(appId: number): AppStoreOverview | null;
 };

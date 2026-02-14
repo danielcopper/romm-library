@@ -460,16 +460,9 @@ class Plugin:
                 self._finish_sync("Sync cancelled")
                 return
 
-            # Update shortcuts_data with cover paths and base64 artwork
+            # Update shortcuts_data with cover paths (artwork fetched on demand via get_artwork_base64)
             for sd in shortcuts_data:
-                path = cover_paths.get(sd["rom_id"], "")
-                sd["cover_path"] = path
-                if path and os.path.exists(path):
-                    try:
-                        with open(path, "rb") as f:
-                            sd["cover_base64"] = base64.b64encode(f.read()).decode("ascii")
-                    except Exception as e:
-                        decky.logger.warning(f"Failed to base64-encode artwork for {sd['name']}: {e}")
+                sd["cover_path"] = cover_paths.get(sd["rom_id"], "")
 
             # Determine stale rom_ids by comparing current sync with registry
             current_rom_ids = {r["id"] for r in all_roms}
@@ -854,6 +847,37 @@ class Plugin:
         }
         self._save_state()
         return {"success": True, "message": f"Removed {len(removed_rom_ids)} shortcuts"}
+
+    async def get_artwork_base64(self, rom_id):
+        """Return base64-encoded cover artwork for a single ROM (callable from frontend)."""
+        rom_id = int(rom_id)
+        grid = self._grid_dir()
+        if not grid:
+            return {"base64": None}
+
+        # Check pending sync data first (staging path)
+        pending = self._pending_sync.get(rom_id, {})
+        cover_path = pending.get("cover_path", "")
+
+        # Fall back to registry
+        if not cover_path:
+            reg = self._state["shortcut_registry"].get(str(rom_id), {})
+            cover_path = reg.get("cover_path", "")
+
+        # Try staging filename as last resort
+        if not cover_path:
+            staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
+            if os.path.exists(staging):
+                cover_path = staging
+
+        if cover_path and os.path.exists(cover_path):
+            try:
+                with open(cover_path, "rb") as f:
+                    return {"base64": base64.b64encode(f.read()).decode("ascii")}
+            except Exception as e:
+                decky.logger.warning(f"Failed to read artwork for rom {rom_id}: {e}")
+
+        return {"base64": None}
 
     async def get_sync_stats(self):
         registry = self._state.get("shortcut_registry", {})

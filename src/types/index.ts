@@ -87,7 +87,6 @@ export interface SyncAddItem {
   launch_options: string;
   platform_name: string;
   cover_path: string;
-  cover_base64?: string;
 }
 
 export interface SyncApplyData {

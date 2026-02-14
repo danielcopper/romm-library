@@ -83,7 +83,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                         if (result.rom_ids?.length) {
                           await reportRemovalResults(result.rom_ids);
                         }
-                        clearPlatformCollection(result.platform_name || p.name);
+                        await clearPlatformCollection(result.platform_name || p.name);
                         // TODO: "Also delete installed ROM files?" option (Phase 3 — download manager needed)
                         setStatus(`Removed ${p.count} ${p.name} game${p.count !== 1 ? "s" : ""}`);
                         refreshPlatforms();
@@ -120,7 +120,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                     if (result.rom_ids?.length) {
                       await reportRemovalResults(result.rom_ids);
                     }
-                    clearAllRomMCollections();
+                    await clearAllRomMCollections();
                     setStatus(result.message);
                     refreshPlatforms();
                   }}
