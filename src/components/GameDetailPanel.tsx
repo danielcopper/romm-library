@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, FC } from "react";
 import { addEventListener, removeEventListener } from "@decky/api";
+import { Focusable, DialogButton } from "@decky/ui";
 import {
   getRomBySteamAppId,
   getInstalledRom,
@@ -62,7 +63,6 @@ const styles = {
     marginBottom: "8px",
   } as const,
   button: (bg: string) => ({
-    display: "inline-block",
     padding: "6px 16px",
     fontSize: "13px",
     fontWeight: "bold" as const,
@@ -70,8 +70,8 @@ const styles = {
     background: bg,
     border: "none",
     borderRadius: "3px",
-    cursor: "pointer",
-    marginRight: "8px",
+    minWidth: "auto",
+    width: "auto",
   }),
   progressContainer: {
     marginBottom: "8px",
@@ -254,7 +254,7 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
         : "Not Installed";
 
   return (
-    <div style={styles.container}>
+    <Focusable style={styles.container}>
       <div style={styles.header}>
         <span style={styles.title}>RomM Library</span>
         <span style={styles.statusBadge(statusColor)}>{statusLabel}</span>
@@ -282,34 +282,34 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
         <div style={styles.subtext}>{installed.file_path}</div>
       )}
 
-      <div>
+      <Focusable style={{ display: "flex", gap: "8px" }}>
         {state === "not_installed" && (
-          <button
+          <DialogButton
             style={styles.button("rgba(33, 150, 243, 0.9)")}
             onClick={handleDownload}
             disabled={actionPending}
           >
             {actionPending ? "Starting..." : "Download"}
-          </button>
+          </DialogButton>
         )}
         {state === "downloading" && (
-          <button
+          <DialogButton
             style={styles.button("rgba(244, 67, 54, 0.8)")}
             onClick={handleCancel}
           >
             Cancel
-          </button>
+          </DialogButton>
         )}
         {state === "installed" && (
-          <button
+          <DialogButton
             style={styles.button("rgba(244, 67, 54, 0.7)")}
             onClick={handleUninstall}
             disabled={actionPending}
           >
             {actionPending ? "Removing..." : "Uninstall"}
-          </button>
+          </DialogButton>
         )}
-      </div>
-    </div>
+      </Focusable>
+    </Focusable>
   );
 };

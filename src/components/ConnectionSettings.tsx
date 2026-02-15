@@ -5,8 +5,9 @@ import {
   TextField,
   ButtonItem,
   Field,
+  ToggleField,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection } from "../api/backend";
+import { getSettings, saveSettings, testConnection, saveSteamInputSetting } from "../api/backend";
 
 interface ConnectionSettingsProps {
   onBack: () => void;
@@ -18,12 +19,14 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [disableSteamInput, setDisableSteamInput] = useState(false);
 
   useEffect(() => {
     getSettings().then((s) => {
       setUrl(s.romm_url);
       setUsername(s.romm_user);
       setPassword(s.romm_pass_masked);
+      setDisableSteamInput(s.disable_steam_input);
     });
   }, []);
 
@@ -104,6 +107,19 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
             <Field label={status} />
           </PanelSectionRow>
         )}
+      </PanelSection>
+      <PanelSection title="Options">
+        <PanelSectionRow>
+          <ToggleField
+            label="Disable Steam Input for ROMs"
+            description="Use the controller directly instead of Steam Input remapping"
+            checked={disableSteamInput}
+            onChange={(val: boolean) => {
+              setDisableSteamInput(val);
+              saveSteamInputSetting(val);
+            }}
+          />
+        </PanelSectionRow>
       </PanelSection>
     </>
   );

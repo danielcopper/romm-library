@@ -15,7 +15,7 @@ import {
 import { getSyncProgress } from "../utils/syncProgress";
 import type { SyncProgress, SyncStats } from "../types";
 
-type Page = "connection" | "platforms" | "danger" | "downloads";
+type Page = "connection" | "platforms" | "danger" | "downloads" | "bios";
 
 interface MainPageProps {
   onNavigate: (page: Page) => void;
@@ -212,6 +212,11 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={() => onNavigate("downloads")}>
             Downloads
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={() => onNavigate("bios")}>
+            BIOS Files
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>

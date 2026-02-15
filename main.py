@@ -18,7 +18,17 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "py_modules"))
 import vdf
 
+import hashlib
+
 import decky
+
+# BIOS destination subfolders within ~/retrodeck/bios/
+# Most platforms: files go flat in bios/
+# Exceptions need platform-specific subfolders
+BIOS_DEST_MAP = {
+    "dc": "dc/",            # Dreamcast
+    "ps2": "pcsx2/bios/",   # PS2
+}
 
 
 class Plugin:
@@ -74,6 +84,7 @@ class Plugin:
         self.settings.setdefault("romm_user", "")
         self.settings.setdefault("romm_pass", "")
         self.settings.setdefault("enabled_platforms", {})
+        self.settings.setdefault("disable_steam_input", False)
 
     def _save_settings_to_disk(self):
         settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
@@ -257,6 +268,68 @@ class Plugin:
         self._save_settings_to_disk()
         return {"success": True, "message": "Settings saved"}
 
+    async def save_steam_input_setting(self, enabled):
+        self.settings["disable_steam_input"] = bool(enabled)
+        self._save_settings_to_disk()
+        return {"success": True}
+
+    def _set_steam_input_config(self, app_ids, disable=True):
+        """Set or remove UseSteamControllerConfig for given app_ids in localconfig.vdf."""
+        user_dir = self._find_steam_user_dir()
+        if not user_dir:
+            decky.logger.warning("Cannot find Steam user dir, skipping Steam Input config")
+            return
+
+        localconfig_path = os.path.join(user_dir, "config", "localconfig.vdf")
+        if not os.path.exists(localconfig_path):
+            decky.logger.warning(f"localconfig.vdf not found at {localconfig_path}")
+            return
+
+        try:
+            with open(localconfig_path, "r", encoding="utf-8") as f:
+                data = vdf.load(f)
+        except Exception as e:
+            decky.logger.error(f"Failed to parse localconfig.vdf: {e}")
+            return
+
+        # Navigate to the Apps section
+        apps = data
+        for key in ("UserLocalConfigStore", "Apps"):
+            if key not in apps:
+                if disable:
+                    apps[key] = {}
+                else:
+                    return  # Nothing to clean up
+            apps = apps[key]
+
+        changed = False
+        for app_id in app_ids:
+            app_key = str(app_id)
+            if disable:
+                if app_key not in apps:
+                    apps[app_key] = {}
+                apps[app_key]["UseSteamControllerConfig"] = "0"
+                changed = True
+            else:
+                # Cleanup: remove the key if it exists
+                if app_key in apps and "UseSteamControllerConfig" in apps[app_key]:
+                    del apps[app_key]["UseSteamControllerConfig"]
+                    # Remove empty app entry
+                    if not apps[app_key]:
+                        del apps[app_key]
+                    changed = True
+
+        if changed:
+            try:
+                tmp_path = localconfig_path + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    vdf.dump(data, f, pretty=True)
+                os.replace(tmp_path, localconfig_path)
+                action = "disabled" if disable else "cleaned up"
+                decky.logger.info(f"Steam Input {action} for {len(app_ids)} app(s)")
+            except Exception as e:
+                decky.logger.error(f"Failed to write localconfig.vdf: {e}")
+
     async def get_settings(self):
         has_credentials = bool(
             self.settings.get("romm_user") and self.settings.get("romm_pass")
@@ -266,6 +339,7 @@ class Plugin:
             "romm_user": self.settings.get("romm_user", ""),
             "romm_pass_masked": "••••" if self.settings.get("romm_pass") else "",
             "has_credentials": has_credentials,
+            "disable_steam_input": self.settings.get("disable_steam_input", False),
         }
 
     async def get_platforms(self):
@@ -578,6 +652,15 @@ class Plugin:
         for rom_id in removed_rom_ids:
             self._state["shortcut_registry"].pop(str(rom_id), None)
 
+        # Disable Steam Input for new shortcuts if setting is enabled
+        if self.settings.get("disable_steam_input") and rom_id_to_app_id:
+            try:
+                self._set_steam_input_config(
+                    [int(aid) for aid in rom_id_to_app_id.values()], disable=True
+                )
+            except Exception as e:
+                decky.logger.error(f"Failed to set Steam Input config: {e}")
+
         # Update timestamp and save
         self._state["last_sync"] = datetime.now().isoformat()
         self._save_state()
@@ -806,6 +889,18 @@ class Plugin:
 
     async def report_removal_results(self, removed_rom_ids):
         """Called by frontend after removing shortcuts via SteamClient."""
+        # Clean up Steam Input config for removed shortcuts (always, regardless of setting)
+        removed_app_ids = []
+        for rom_id in removed_rom_ids:
+            entry = self._state["shortcut_registry"].get(str(rom_id))
+            if entry and entry.get("app_id"):
+                removed_app_ids.append(entry["app_id"])
+        if removed_app_ids:
+            try:
+                self._set_steam_input_config(removed_app_ids, disable=False)
+            except Exception as e:
+                decky.logger.error(f"Failed to clean up Steam Input config: {e}")
+
         grid = self._grid_dir()
         for rom_id in removed_rom_ids:
             entry = self._state["shortcut_registry"].pop(str(rom_id), None)
@@ -884,6 +979,147 @@ class Plugin:
             "roms": len(registry),
             "total_shortcuts": len(registry),
         }
+
+    def _firmware_dest_path(self, firmware):
+        """Determine local destination path for a firmware file."""
+        bios_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "bios")
+        file_name = firmware.get("file_name", "")
+        file_path = firmware.get("file_path", "")
+
+        # Extract platform slug from file_path (e.g. "bios/dc/file.bin" -> "dc")
+        platform_slug = ""
+        if file_path:
+            parts = file_path.strip("/").split("/")
+            # Expected format: bios/{platform_slug}/... or just {platform_slug}/...
+            if len(parts) >= 2 and parts[0] == "bios":
+                platform_slug = parts[1]
+            elif len(parts) >= 2:
+                platform_slug = parts[0]
+
+        subfolder = BIOS_DEST_MAP.get(platform_slug, "")
+        return os.path.join(bios_base, subfolder, file_name)
+
+    async def get_firmware_status(self):
+        """Return BIOS/firmware status for all platforms on the RomM server."""
+        try:
+            firmware_list = await self.loop.run_in_executor(
+                None, self._romm_request, "/api/firmware"
+            )
+        except Exception as e:
+            decky.logger.error(f"Failed to fetch firmware: {e}")
+            return {"success": False, "message": f"Failed to fetch firmware: {e}", "platforms": []}
+
+        # Group firmware by platform
+        platforms_map = {}
+        for fw in firmware_list:
+            file_path = fw.get("file_path", "")
+            parts = file_path.strip("/").split("/")
+            if len(parts) >= 2 and parts[0] == "bios":
+                platform_slug = parts[1]
+            elif len(parts) >= 2:
+                platform_slug = parts[0]
+            else:
+                platform_slug = "unknown"
+
+            if platform_slug not in platforms_map:
+                platforms_map[platform_slug] = {
+                    "platform_slug": platform_slug,
+                    "files": [],
+                }
+
+            dest = self._firmware_dest_path(fw)
+            platforms_map[platform_slug]["files"].append({
+                "id": fw.get("id"),
+                "file_name": fw.get("file_name", ""),
+                "size": fw.get("file_size_bytes", 0),
+                "md5": fw.get("md5_hash", ""),
+                "downloaded": os.path.exists(dest),
+            })
+
+        platforms = sorted(platforms_map.values(), key=lambda p: p["platform_slug"])
+        return {"success": True, "platforms": platforms}
+
+    async def download_firmware(self, firmware_id):
+        """Download a single firmware file from RomM."""
+        firmware_id = int(firmware_id)
+        try:
+            fw = await self.loop.run_in_executor(
+                None, self._romm_request, f"/api/firmware/{firmware_id}"
+            )
+        except Exception as e:
+            decky.logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
+            return {"success": False, "message": f"Failed to fetch firmware details: {e}"}
+
+        file_name = fw.get("file_name", "")
+        dest = self._firmware_dest_path(fw)
+        tmp_path = dest + ".tmp"
+
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            download_path = f"/api/firmware/{firmware_id}/content/{urllib.parse.quote(file_name, safe='')}"
+            await self.loop.run_in_executor(
+                None, self._romm_download, download_path, tmp_path
+            )
+            os.replace(tmp_path, dest)
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            decky.logger.error(f"Failed to download firmware {file_name}: {e}")
+            return {"success": False, "message": f"Download failed: {e}"}
+
+        # Verify MD5 if available
+        md5_match = None
+        expected_md5 = fw.get("md5_hash", "")
+        if expected_md5:
+            h = hashlib.md5()
+            with open(dest, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            md5_match = h.hexdigest() == expected_md5
+
+        decky.logger.info(f"Firmware downloaded: {file_name} -> {dest}")
+        return {"success": True, "file_path": dest, "md5_match": md5_match}
+
+    async def download_all_firmware(self, platform_slug):
+        """Download all firmware for a given platform slug."""
+        try:
+            firmware_list = await self.loop.run_in_executor(
+                None, self._romm_request, "/api/firmware"
+            )
+        except Exception as e:
+            decky.logger.error(f"Failed to fetch firmware: {e}")
+            return {"success": False, "message": f"Failed to fetch firmware: {e}", "downloaded": 0}
+
+        # Filter by platform slug
+        platform_firmware = []
+        for fw in firmware_list:
+            file_path = fw.get("file_path", "")
+            parts = file_path.strip("/").split("/")
+            if len(parts) >= 2 and parts[0] == "bios":
+                slug = parts[1]
+            elif len(parts) >= 2:
+                slug = parts[0]
+            else:
+                slug = "unknown"
+            if slug == platform_slug:
+                platform_firmware.append(fw)
+
+        downloaded = 0
+        errors = []
+        for fw in platform_firmware:
+            dest = self._firmware_dest_path(fw)
+            if os.path.exists(dest):
+                continue
+            result = await self.download_firmware(fw["id"])
+            if result.get("success"):
+                downloaded += 1
+            else:
+                errors.append(fw.get("file_name", str(fw["id"])))
+
+        msg = f"Downloaded {downloaded} firmware files"
+        if errors:
+            msg += f" ({len(errors)} failed: {', '.join(errors)})"
+        return {"success": True, "message": msg, "downloaded": downloaded}
 
     async def _poll_download_requests(self):
         """Poll for download requests from the launcher script."""

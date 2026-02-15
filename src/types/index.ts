@@ -36,6 +36,7 @@ export interface PluginSettings {
   romm_user: string;
   romm_pass_masked: string;
   has_credentials: boolean;
+  disable_steam_input: boolean;
 }
 
 export interface DownloadItem {
@@ -92,6 +93,33 @@ export interface SyncAddItem {
 export interface SyncApplyData {
   shortcuts: SyncAddItem[];
   remove_rom_ids: number[];
+}
+
+export interface FirmwareFile {
+  id: number;
+  file_name: string;
+  size: number;
+  md5: string;
+  downloaded: boolean;
+}
+
+export interface FirmwarePlatform {
+  platform_slug: string;
+  files: FirmwareFile[];
+}
+
+export interface FirmwareStatus {
+  success: boolean;
+  message?: string;
+  platforms: FirmwarePlatform[];
+}
+
+export interface FirmwareDownloadResult {
+  success: boolean;
+  message?: string;
+  file_path?: string;
+  md5_match?: boolean | null;
+  downloaded?: number;
 }
 
 export interface DownloadProgressEvent {

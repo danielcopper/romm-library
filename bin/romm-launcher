@@ -30,24 +30,24 @@ for candidate in \
     fi
 done
 
-# Runtime dir for state files
-RUNTIME_DIR=""
+# Data dir for state.json (Decky stores runtime data in data/, not settings/)
+DATA_DIR=""
 for candidate in \
     "${DECKY_PLUGIN_RUNTIME_DIR:-}" \
-    "$HOME/.local/share/decky/settings/romm-library" \
-    "$HOME/homebrew/settings/romm-library"; do
+    "$HOME/homebrew/data/romm-library" \
+    "$HOME/.local/share/decky/data/romm-library"; do
     if [[ -d "$candidate" ]]; then
-        RUNTIME_DIR="$candidate"
+        DATA_DIR="$candidate"
         break
     fi
 done
 
-if [[ -z "$RUNTIME_DIR" ]]; then
-    RUNTIME_DIR="$HOME/.local/share/decky/settings/romm-library"
-    mkdir -p "$RUNTIME_DIR"
+if [[ -z "$DATA_DIR" ]]; then
+    DATA_DIR="$HOME/homebrew/data/romm-library"
+    mkdir -p "$DATA_DIR"
 fi
 
-STATE_FILE="$RUNTIME_DIR/state.json"
+STATE_FILE="$DATA_DIR/state.json"
 
 # Check if ROM is installed by reading state.json
 if [[ -f "$STATE_FILE" ]]; then
@@ -71,15 +71,15 @@ if [[ -n "${ROM_INFO:-}" ]]; then
     ROM_PATH=$(echo "$ROM_INFO" | tail -1)
 
     if [[ -f "$ROM_PATH" ]]; then
-        # Launch with RetroDECK
-        exec flatpak run net.retrodeck.retrodeck -s "$SYSTEM" "$ROM_PATH"
+        # Launch with RetroDECK (auto-detects system from roms/{system}/ path)
+        exec flatpak run net.retrodeck.retrodeck "$ROM_PATH"
     else
         echo "ROM file missing: $ROM_PATH" >&2
     fi
 fi
 
 # ROM not installed — request download
-REQUESTS_FILE="$RUNTIME_DIR/download_requests.json"
+REQUESTS_FILE="$DATA_DIR/download_requests.json"
 
 python3 -c "
 import json, os, fcntl
