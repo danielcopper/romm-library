@@ -10,7 +10,7 @@ import {
   ConfirmModal,
   showModal,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, saveSteamInputSetting, applySteamInputSetting } from "../api/backend";
+import { getSettings, saveSettings, testConnection, saveSgdbApiKey, saveSteamInputSetting, applySteamInputSetting } from "../api/backend";
 
 // Module-level state survives component remounts (modal close can remount QAM)
 const pendingEdits: { url?: string; username?: string; password?: string } = {};
@@ -52,6 +52,8 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sgdbApiKey, setSgdbApiKey] = useState("");
+  const [sgdbStatus, setSgdbStatus] = useState("");
   const [steamInputMode, setSteamInputMode] = useState("default");
   const [steamInputStatus, setSteamInputStatus] = useState("");
   const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string; config_path?: string } | null>(null);
@@ -62,6 +64,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       setUrl(pendingEdits.url ?? s.romm_url);
       setUsername(pendingEdits.username ?? s.romm_user);
       setPassword(pendingEdits.password ?? s.romm_pass_masked);
+      setSgdbApiKey(s.sgdb_api_key_masked);
       setSteamInputMode(s.steam_input_mode || "default");
       if (s.retroarch_input_check) {
         setRetroarchWarning(s.retroarch_input_check);
@@ -150,6 +153,41 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         {status && (
           <PanelSectionRow>
             <Field label={status} />
+          </PanelSectionRow>
+        )}
+      </PanelSection>
+      <PanelSection title="SteamGridDB">
+        <PanelSectionRow>
+          <TextField
+            label="API Key"
+            bIsPassword
+            value={sgdbApiKey}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setSgdbApiKey(e.target.value)
+            }
+            description="Get a free key at steamgriddb.com/profile/preferences/api"
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={async () => {
+              setSgdbStatus("");
+              try {
+                const result = await saveSgdbApiKey(sgdbApiKey);
+                setSgdbStatus(result.message);
+              } catch {
+                setSgdbStatus("Failed to save API key");
+              }
+            }}
+            disabled={loading}
+          >
+            Save API Key
+          </ButtonItem>
+        </PanelSectionRow>
+        {sgdbStatus && (
+          <PanelSectionRow>
+            <Field label={sgdbStatus} />
           </PanelSectionRow>
         )}
       </PanelSection>

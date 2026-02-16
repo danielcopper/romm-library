@@ -1,6 +1,6 @@
 import { addEventListener } from "@decky/api";
 import type { SyncApplyData } from "../types";
-import { getArtworkBase64, reportSyncResults } from "../api/backend";
+import { getArtworkBase64, getSgdbArtworkBase64, reportSyncResults } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
 import { createOrUpdateCollections, clearPlatformCollection } from "./collections";
 import { updateSyncProgress } from "./syncProgress";
@@ -65,6 +65,32 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
             }
           } catch (artErr) {
             console.error(`[RomM] Failed to fetch/set artwork for ${item.name}:`, artErr);
+          }
+
+          // Fetch and apply SGDB artwork (hero, logo, wide grid)
+          for (const assetType of [1, 2, 3] as const) {
+            try {
+              await delay(50);
+              const sgdbResult = await getSgdbArtworkBase64(item.rom_id, assetType);
+              if (sgdbResult.base64) {
+                await SteamClient.Apps.SetCustomArtworkForApp(appId, sgdbResult.base64, "png", assetType);
+                console.log(`[RomM] Set SGDB artwork type ${assetType} for ${item.name} (appId=${appId})`);
+
+                // Save default logo position after setting logo
+                if (assetType === 2) {
+                  try {
+                    const overview = appStore.GetAppOverviewByAppID(appId);
+                    if (overview && appDetailsStore?.SaveCustomLogoPosition) {
+                      appDetailsStore.SaveCustomLogoPosition(overview, {
+                        pinnedPosition: "BottomLeft", nWidthPct: 50, nHeightPct: 50,
+                      });
+                    }
+                  } catch { /* appStore/appDetailsStore may not be available */ }
+                }
+              }
+            } catch (sgdbErr) {
+              console.error(`[RomM] Failed to fetch/set SGDB artwork type ${assetType} for ${item.name}:`, sgdbErr);
+            }
           }
         }
       } catch (e) {

@@ -85,6 +85,7 @@ class Plugin:
         self.settings.setdefault("romm_pass", "")
         self.settings.setdefault("enabled_platforms", {})
         self.settings.setdefault("steam_input_mode", "default")
+        self.settings.setdefault("steamgriddb_api_key", "")
         # Migrate old boolean setting
         if "disable_steam_input" in self.settings:
             if self.settings.pop("disable_steam_input"):
@@ -253,6 +254,140 @@ class Plugin:
         if total > 0 and downloaded != total:
             raise IOError(f"Download incomplete: got {downloaded} bytes, expected {total}")
 
+    def _sgdb_artwork_dir(self):
+        art_dir = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "artwork")
+        os.makedirs(art_dir, exist_ok=True)
+        return art_dir
+
+    def _sgdb_request(self, path):
+        api_key = self.settings.get("steamgriddb_api_key", "")
+        if not api_key:
+            return None
+        url = "https://www.steamgriddb.com/api/v2" + path
+        req = urllib.request.Request(url, method="GET")
+        req.add_header("Authorization", f"Bearer {api_key}")
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, context=ctx) as resp:
+            return json.loads(resp.read().decode())
+
+    def _get_sgdb_game_id(self, igdb_id):
+        try:
+            result = self._sgdb_request(f"/games/igdb/{igdb_id}")
+            if result and result.get("success") and result.get("data"):
+                return result["data"]["id"]
+        except Exception as e:
+            decky.logger.warning(f"SGDB lookup failed for IGDB {igdb_id}: {e}")
+        return None
+
+    def _download_sgdb_artwork(self, sgdb_game_id, rom_id, asset_type):
+        type_map = {
+            "hero": "heroes",
+            "logo": "logos",
+            "grid": "grids",
+        }
+        endpoint = type_map.get(asset_type)
+        if not endpoint:
+            return None
+
+        art_dir = self._sgdb_artwork_dir()
+        cached = os.path.join(art_dir, f"{rom_id}_{asset_type}.png")
+        if os.path.exists(cached):
+            return cached
+
+        path = f"/{endpoint}/game/{sgdb_game_id}"
+        if asset_type == "grid":
+            path += "?dimensions=460x215,920x430"
+
+        try:
+            result = self._sgdb_request(path)
+            if not result or not result.get("success") or not result.get("data"):
+                return None
+            image_url = result["data"][0]["url"]
+            req = urllib.request.Request(image_url, method="GET")
+            ctx = ssl.create_default_context()
+            tmp_path = cached + ".tmp"
+            with urllib.request.urlopen(req, context=ctx) as resp:
+                with open(tmp_path, "wb") as f:
+                    while True:
+                        chunk = resp.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+            os.replace(tmp_path, cached)
+            return cached
+        except Exception as e:
+            decky.logger.warning(f"SGDB {asset_type} download failed for game {sgdb_game_id}: {e}")
+            if os.path.exists(cached + ".tmp"):
+                try:
+                    os.remove(cached + ".tmp")
+                except OSError:
+                    pass
+            return None
+
+    async def save_steamgriddb_key(self, api_key):
+        self.settings["steamgriddb_api_key"] = api_key
+        self._save_settings_to_disk()
+        return {"success": True}
+
+    async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
+        rom_id = int(rom_id)
+        asset_type_num = int(asset_type_num)
+        type_names = {1: "hero", 2: "logo", 3: "grid"}
+        asset_type = type_names.get(asset_type_num)
+        if not asset_type:
+            return {"base64": None}
+
+        art_dir = self._sgdb_artwork_dir()
+        cached = os.path.join(art_dir, f"{rom_id}_{asset_type}.png")
+
+        # Return from cache if available
+        if os.path.exists(cached):
+            try:
+                with open(cached, "rb") as f:
+                    return {"base64": base64.b64encode(f.read()).decode("ascii")}
+            except Exception as e:
+                decky.logger.warning(f"Failed to read cached SGDB artwork: {e}")
+
+        # Try to fetch from SGDB
+        if not self.settings.get("steamgriddb_api_key"):
+            return {"base64": None}
+
+        # Look up IGDB ID from registry or pending sync
+        igdb_id = None
+        reg = self._state["shortcut_registry"].get(str(rom_id), {})
+        igdb_id = reg.get("igdb_id")
+        if not igdb_id:
+            pending = self._pending_sync.get(rom_id, {})
+            igdb_id = pending.get("igdb_id")
+
+        if not igdb_id:
+            return {"base64": None}
+
+        # Look up SGDB game ID (check cache in registry first)
+        sgdb_id = reg.get("sgdb_id")
+        if not sgdb_id:
+            sgdb_id = await self.loop.run_in_executor(
+                None, self._get_sgdb_game_id, igdb_id
+            )
+            if sgdb_id and str(rom_id) in self._state["shortcut_registry"]:
+                self._state["shortcut_registry"][str(rom_id)]["sgdb_id"] = sgdb_id
+                self._save_state()
+
+        if not sgdb_id:
+            return {"base64": None}
+
+        path = await self.loop.run_in_executor(
+            None, self._download_sgdb_artwork, sgdb_id, rom_id, asset_type
+        )
+        if path and os.path.exists(path):
+            try:
+                with open(path, "rb") as f:
+                    return {"base64": base64.b64encode(f.read()).decode("ascii")}
+            except Exception as e:
+                decky.logger.warning(f"Failed to read SGDB artwork: {e}")
+
+        return {"base64": None}
+
     async def test_connection(self):
         if not self.settings.get("romm_url"):
             return {"success": False, "message": "No server URL configured"}
@@ -282,6 +417,12 @@ class Plugin:
         except Exception as e:
             decky.logger.error(f"Failed to save settings: {e}")
             return {"success": False, "message": f"Save failed: {e}"}
+
+    async def save_sgdb_api_key(self, api_key):
+        if api_key and api_key != "••••":
+            self.settings["steamgriddb_api_key"] = api_key
+            self._save_settings_to_disk()
+        return {"success": True, "message": "SteamGridDB API key saved"}
 
     async def save_steam_input_setting(self, mode):
         if mode not in ("default", "force_on", "force_off"):
@@ -402,6 +543,7 @@ class Plugin:
             "romm_pass_masked": "••••" if self.settings.get("romm_pass") else "",
             "has_credentials": has_credentials,
             "steam_input_mode": self.settings.get("steam_input_mode", "default"),
+            "sgdb_api_key_masked": "••••" if self.settings.get("steamgriddb_api_key") else "",
             "retroarch_input_check": self._check_retroarch_input_driver(),
         }
 
@@ -582,6 +724,7 @@ class Plugin:
                     "launch_options": f"romm:{rom['id']}",
                     "platform_name": rom.get("platform_name", "Unknown"),
                     "platform_slug": rom.get("platform_slug", ""),
+                    "igdb_id": rom.get("igdb_id"),
                     "cover_path": "",  # Filled after artwork download
                 })
                 # No need to emit per-item here, this loop is fast
@@ -703,13 +846,18 @@ class Plugin:
                 elif os.path.exists(final_path):
                     cover_path = final_path
 
-            self._state["shortcut_registry"][rom_id_str] = {
+            registry_entry = {
                 "app_id": app_id,
                 "name": pending.get("name", ""),
                 "platform_name": pending.get("platform_name", ""),
                 "platform_slug": pending.get("platform_slug", ""),
                 "cover_path": cover_path,
             }
+            if pending.get("igdb_id"):
+                registry_entry["igdb_id"] = pending["igdb_id"]
+            if pending.get("sgdb_id"):
+                registry_entry["sgdb_id"] = pending["sgdb_id"]
+            self._state["shortcut_registry"][rom_id_str] = registry_entry
 
         # Remove stale entries
         for rom_id in removed_rom_ids:
@@ -880,6 +1028,20 @@ class Plugin:
                 decky.logger.warning(
                     f"Failed to download artwork for {rom['name']}: {e}"
                 )
+
+            # Look up SGDB game ID for later artwork fetches
+            igdb_id = rom.get("igdb_id")
+            if igdb_id and self.settings.get("steamgriddb_api_key"):
+                existing_sgdb = (reg.get("sgdb_id") if reg else None)
+                if not existing_sgdb:
+                    sgdb_id = await self.loop.run_in_executor(
+                        None, self._get_sgdb_game_id, igdb_id
+                    )
+                    if sgdb_id:
+                        # Store in pending sync so report_sync_results persists it
+                        pending = self._pending_sync.get(rom_id)
+                        if pending:
+                            pending["sgdb_id"] = sgdb_id
 
         return cover_paths
 

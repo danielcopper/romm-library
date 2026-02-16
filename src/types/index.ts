@@ -43,6 +43,7 @@ export interface PluginSettings {
   romm_pass_masked: string;
   has_credentials: boolean;
   steam_input_mode: "default" | "force_on" | "force_off";
+  sgdb_api_key_masked: string;
   retroarch_input_check?: RetroArchInputCheck;
 }
 
