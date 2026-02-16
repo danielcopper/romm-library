@@ -5,9 +5,9 @@ import {
   TextField,
   ButtonItem,
   Field,
-  ToggleField,
+  DropdownItem,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, saveSteamInputSetting } from "../api/backend";
+import { getSettings, saveSettings, testConnection, saveSteamInputSetting, applySteamInputSetting } from "../api/backend";
 
 interface ConnectionSettingsProps {
   onBack: () => void;
@@ -19,14 +19,19 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
-  const [disableSteamInput, setDisableSteamInput] = useState(false);
+  const [steamInputMode, setSteamInputMode] = useState("default");
+  const [steamInputStatus, setSteamInputStatus] = useState("");
+  const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string; config_path?: string } | null>(null);
 
   useEffect(() => {
     getSettings().then((s) => {
       setUrl(s.romm_url);
       setUsername(s.romm_user);
       setPassword(s.romm_pass_masked);
-      setDisableSteamInput(s.disable_steam_input);
+      setSteamInputMode(s.steam_input_mode || "default");
+      if (s.retroarch_input_check) {
+        setRetroarchWarning(s.retroarch_input_check);
+      }
     });
   }, []);
 
@@ -108,18 +113,58 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
           </PanelSectionRow>
         )}
       </PanelSection>
-      <PanelSection title="Options">
+      <PanelSection title="Controller">
         <PanelSectionRow>
-          <ToggleField
-            label="Disable Steam Input for ROMs"
-            description="Use the controller directly instead of Steam Input remapping"
-            checked={disableSteamInput}
-            onChange={(val: boolean) => {
-              setDisableSteamInput(val);
-              saveSteamInputSetting(val);
+          <DropdownItem
+            label="Steam Input Mode"
+            description="Controls how Steam handles controller input for ROM shortcuts"
+            rgOptions={[
+              { data: "default", label: "Default (Recommended)" },
+              { data: "force_on", label: "Force On" },
+              { data: "force_off", label: "Force Off" },
+            ]}
+            selectedOption={steamInputMode}
+            onChange={(option) => {
+              setSteamInputMode(option.data);
+              saveSteamInputSetting(option.data);
+              setSteamInputStatus("");
             }}
           />
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={async () => {
+              setSteamInputStatus("Applying...");
+              try {
+                const result = await applySteamInputSetting();
+                setSteamInputStatus(result.message);
+              } catch {
+                setSteamInputStatus("Failed to apply");
+              }
+            }}
+            disabled={loading}
+          >
+            Apply to All Shortcuts
+          </ButtonItem>
+        </PanelSectionRow>
+        {steamInputStatus && (
+          <PanelSectionRow>
+            <Field label={steamInputStatus} />
+          </PanelSectionRow>
+        )}
+        {retroarchWarning && (
+          <PanelSectionRow>
+            <Field
+              label={retroarchWarning.warning
+                ? `RetroArch input_driver: "${retroarchWarning.current}" (not recommended)`
+                : `RetroArch input_driver: "${retroarchWarning.current}"`}
+              description={retroarchWarning.warning
+                ? `Controller navigation in RetroArch menus may not work. Change input_driver to "sdl2" in: ${retroarchWarning.config_path}`
+                : "Controller navigation in RetroArch menus should work correctly"}
+            />
+          </PanelSectionRow>
+        )}
       </PanelSection>
     </>
   );

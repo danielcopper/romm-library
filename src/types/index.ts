@@ -31,12 +31,19 @@ export interface InstalledRom {
   installed_at: string;
 }
 
+export interface RetroArchInputCheck {
+  warning: boolean;
+  current?: string;
+  config_path?: string;
+}
+
 export interface PluginSettings {
   romm_url: string;
   romm_user: string;
   romm_pass_masked: string;
   has_credentials: boolean;
-  disable_steam_input: boolean;
+  steam_input_mode: "default" | "force_on" | "force_off";
+  retroarch_input_check?: RetroArchInputCheck;
 }
 
 export interface DownloadItem {
@@ -108,10 +115,28 @@ export interface FirmwarePlatform {
   files: FirmwareFile[];
 }
 
+export interface FirmwarePlatformExt extends FirmwarePlatform {
+  has_games?: boolean;
+  all_downloaded?: boolean;
+}
+
 export interface FirmwareStatus {
   success: boolean;
   message?: string;
-  platforms: FirmwarePlatform[];
+  platforms: FirmwarePlatformExt[];
+}
+
+export interface BiosFileStatus {
+  file_name: string;
+  downloaded: boolean;
+}
+
+export interface BiosStatus {
+  needs_bios: boolean;
+  server_count?: number;
+  local_count?: number;
+  all_downloaded?: boolean;
+  files?: BiosFileStatus[];
 }
 
 export interface FirmwareDownloadResult {

@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, FC } from "react";
 import { addEventListener, removeEventListener } from "@decky/api";
-import { Focusable, DialogButton } from "@decky/ui";
+import { Focusable, DialogButton, showModal, ModalRoot } from "@decky/ui";
 import {
   getRomBySteamAppId,
   getInstalledRom,
   startDownload,
   cancelDownload,
   removeRom,
+  checkPlatformBios,
 } from "../api/backend";
-import type { InstalledRom, DownloadProgressEvent, DownloadCompleteEvent } from "../types";
+import type { InstalledRom, DownloadProgressEvent, DownloadCompleteEvent, BiosStatus } from "../types";
 
 interface GameDetailPanelProps {
   appId: number;
@@ -18,7 +19,7 @@ interface RomInfo {
   rom_id: number;
   name: string;
   platform_name: string;
-  file_name: string;
+  platform_slug: string;
 }
 
 type PanelState = "loading" | "not_romm" | "not_installed" | "downloading" | "installed";
@@ -62,17 +63,13 @@ const styles = {
     color: "rgba(255, 255, 255, 0.4)",
     marginBottom: "8px",
   } as const,
-  button: (bg: string) => ({
+  button: {
     padding: "6px 16px",
     fontSize: "13px",
     fontWeight: "bold" as const,
-    color: "#fff",
-    background: bg,
-    border: "none",
-    borderRadius: "3px",
     minWidth: "auto",
     width: "auto",
-  }),
+  } as const,
   progressContainer: {
     marginBottom: "8px",
   } as const,
@@ -113,6 +110,7 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
   const [bytesDownloaded, setBytesDownloaded] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
   const [actionPending, setActionPending] = useState(false);
+  const [biosStatus, setBiosStatus] = useState<BiosStatus | null>(null);
   const romIdRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -132,9 +130,19 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
           rom_id: rom.rom_id,
           name: rom.name,
           platform_name: rom.platform_name,
-          file_name: rom.file_name,
+          platform_slug: rom.platform_slug || "",
         });
         romIdRef.current = rom.rom_id;
+
+        // Check BIOS status for this platform
+        if (rom.platform_slug) {
+          try {
+            const bios = await checkPlatformBios(rom.platform_slug);
+            if (!cancelled) setBiosStatus(bios);
+          } catch {
+            // non-critical, ignore
+          }
+        }
 
         const inst = await getInstalledRom(rom.rom_id);
         if (cancelled) return;
@@ -262,8 +270,81 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
 
       {romInfo && (
         <div style={styles.info}>
-          {romInfo.platform_name} &middot; {romInfo.file_name}
+          {romInfo.platform_name}
         </div>
+      )}
+
+      {biosStatus?.needs_bios && (
+        <Focusable
+          style={{
+            fontSize: "12px",
+            color: biosStatus.all_downloaded ? "#81c784" : "#ffb74d",
+            padding: "4px 8px",
+            marginBottom: "8px",
+            background: biosStatus.all_downloaded
+              ? "rgba(76, 175, 80, 0.15)"
+              : "rgba(255, 152, 0, 0.15)",
+            borderRadius: "3px",
+            border: `1px solid ${biosStatus.all_downloaded
+              ? "rgba(76, 175, 80, 0.3)"
+              : "rgba(255, 152, 0, 0.3)"}`,
+            cursor: "pointer",
+          }}
+          onActivate={() => {
+            const files = biosStatus.files || [];
+            showModal(
+              <ModalRoot>
+                <div style={{ padding: "16px" }}>
+                  <div style={{
+                    fontSize: "16px",
+                    fontWeight: "bold",
+                    marginBottom: "12px",
+                    color: "#fff",
+                  }}>
+                    BIOS Files — {romInfo?.platform_name}
+                  </div>
+                  <div style={{
+                    fontSize: "12px",
+                    color: "rgba(255, 255, 255, 0.5)",
+                    marginBottom: "12px",
+                  }}>
+                    {biosStatus.local_count}/{biosStatus.server_count} downloaded
+                  </div>
+                  {files.map((f) => (
+                    <div
+                      key={f.file_name}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "6px 0",
+                        borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                      }}
+                    >
+                      <span style={{
+                        fontSize: "13px",
+                        color: "rgba(255, 255, 255, 0.9)",
+                      }}>
+                        {f.file_name}
+                      </span>
+                      <span style={{
+                        fontSize: "12px",
+                        color: f.downloaded ? "#81c784" : "#ffb74d",
+                        fontWeight: "bold",
+                      }}>
+                        {f.downloaded ? "\u2713" : "Missing"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </ModalRoot>
+            );
+          }}
+        >
+          {biosStatus.all_downloaded
+            ? `BIOS ready (${biosStatus.server_count} file${biosStatus.server_count !== 1 ? "s" : ""}) \u203a`
+            : `BIOS required — ${biosStatus.local_count}/${biosStatus.server_count} downloaded \u203a`}
+        </Focusable>
       )}
 
       {state === "downloading" && (
@@ -285,7 +366,7 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
       <Focusable style={{ display: "flex", gap: "8px" }}>
         {state === "not_installed" && (
           <DialogButton
-            style={styles.button("rgba(33, 150, 243, 0.9)")}
+            style={styles.button}
             onClick={handleDownload}
             disabled={actionPending}
           >
@@ -294,7 +375,7 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
         )}
         {state === "downloading" && (
           <DialogButton
-            style={styles.button("rgba(244, 67, 54, 0.8)")}
+            style={styles.button}
             onClick={handleCancel}
           >
             Cancel
@@ -302,7 +383,7 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
         )}
         {state === "installed" && (
           <DialogButton
-            style={styles.button("rgba(244, 67, 54, 0.7)")}
+            style={styles.button}
             onClick={handleUninstall}
             disabled={actionPending}
           >
