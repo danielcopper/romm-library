@@ -31,11 +31,19 @@ export interface InstalledRom {
   installed_at: string;
 }
 
+export interface RetroArchInputCheck {
+  warning: boolean;
+  current?: string;
+  config_path?: string;
+}
+
 export interface PluginSettings {
   romm_url: string;
   romm_user: string;
   romm_pass_masked: string;
   has_credentials: boolean;
+  steam_input_mode: "default" | "force_on" | "force_off";
+  retroarch_input_check?: RetroArchInputCheck;
 }
 
 export interface DownloadItem {
@@ -92,6 +100,51 @@ export interface SyncAddItem {
 export interface SyncApplyData {
   shortcuts: SyncAddItem[];
   remove_rom_ids: number[];
+}
+
+export interface FirmwareFile {
+  id: number;
+  file_name: string;
+  size: number;
+  md5: string;
+  downloaded: boolean;
+}
+
+export interface FirmwarePlatform {
+  platform_slug: string;
+  files: FirmwareFile[];
+}
+
+export interface FirmwarePlatformExt extends FirmwarePlatform {
+  has_games?: boolean;
+  all_downloaded?: boolean;
+}
+
+export interface FirmwareStatus {
+  success: boolean;
+  message?: string;
+  platforms: FirmwarePlatformExt[];
+}
+
+export interface BiosFileStatus {
+  file_name: string;
+  downloaded: boolean;
+}
+
+export interface BiosStatus {
+  needs_bios: boolean;
+  server_count?: number;
+  local_count?: number;
+  all_downloaded?: boolean;
+  files?: BiosFileStatus[];
+}
+
+export interface FirmwareDownloadResult {
+  success: boolean;
+  message?: string;
+  file_path?: string;
+  md5_match?: boolean | null;
+  downloaded?: number;
 }
 
 export interface DownloadProgressEvent {

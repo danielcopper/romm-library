@@ -11,13 +11,14 @@ import { ConnectionSettings } from "./components/ConnectionSettings";
 import { PlatformSync } from "./components/PlatformSync";
 import { DangerZone } from "./components/DangerZone";
 import { DownloadQueue } from "./components/DownloadQueue";
+import { BiosManager } from "./components/BiosManager";
 import { initSyncManager } from "./utils/syncManager";
 import { setSyncProgress } from "./utils/syncProgress";
 import { updateDownload } from "./utils/downloadStore";
 import { registerGameDetailPatch, unregisterGameDetailPatch } from "./patches/gameDetailPatch";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
-type Page = "main" | "connection" | "platforms" | "danger" | "downloads";
+type Page = "main" | "connection" | "platforms" | "danger" | "downloads" | "bios";
 
 const QAMPanel: FC = () => {
   const [page, setPage] = useState<Page>("main");
@@ -31,6 +32,8 @@ const QAMPanel: FC = () => {
       return <DangerZone onBack={() => setPage("main")} />;
     case "downloads":
       return <DownloadQueue onBack={() => setPage("main")} />;
+    case "bios":
+      return <BiosManager onBack={() => setPage("main")} />;
     default:
       return <MainPage onNavigate={(p) => setPage(p)} />;
   }

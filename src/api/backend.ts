@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus } from "../types";
 
 export const getSettings = callable<[], PluginSettings>("get_settings");
 export const saveSettings = callable<[string, string, string], { success: boolean; message: string }>("save_settings");
@@ -23,3 +23,9 @@ export const getArtworkBase64 = callable<[number], { base64: string | null }>("g
 export const reportSyncResults = callable<[Record<string, number>, number[]], { success: boolean }>("report_sync_results");
 export const reportRemovalResults = callable<[(string | number)[]], { success: boolean; message: string }>("report_removal_results");
 export const uninstallAllRoms = callable<[], { success: boolean; message: string; removed_count: number }>("uninstall_all_roms");
+export const saveSteamInputSetting = callable<[string], { success: boolean }>("save_steam_input_setting");
+export const applySteamInputSetting = callable<[], { success: boolean; message: string }>("apply_steam_input_setting");
+export const getFirmwareStatus = callable<[], FirmwareStatus>("get_firmware_status");
+export const downloadFirmware = callable<[number], FirmwareDownloadResult>("download_firmware");
+export const downloadAllFirmware = callable<[string], FirmwareDownloadResult>("download_all_firmware");
+export const checkPlatformBios = callable<[string], BiosStatus>("check_platform_bios");
