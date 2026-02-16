@@ -4,11 +4,8 @@ pnpm = "latest"
 python = "3.12"
 
 [tasks.setup]
-description = "Install all dependencies (JS + Python)"
-run = """
-pnpm install
-pip install --target=py_modules vdf
-"""
+description = "Install JS dependencies"
+run = "pnpm install"
 
 [tasks.build]
 description = "Build frontend"
