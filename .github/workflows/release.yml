@@ -59,10 +59,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Decky CLI names the zip after plugin.json "name" field
-          # Rename to a URL-friendly filename
           BUILT_ZIP=$(ls /tmp/output/*.zip | head -1)
-          cp "$BUILT_ZIP" "/tmp/output/decky-romm-sync.zip"
+          DEST="/tmp/output/decky-romm-sync.zip"
+          if [ "$BUILT_ZIP" != "$DEST" ]; then
+            cp "$BUILT_ZIP" "$DEST"
+          fi
           gh release upload "${{ needs.release-please.outputs.tag_name }}" \
-            /tmp/output/decky-romm-sync.zip \
+            "$DEST" \
             --clobber
