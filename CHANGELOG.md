@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.1.5...decky-romm-sync-v0.1.6) (2026-02-16)
+
+
+### Bug Fixes
+
+* bundle py_modules/vdf in repo for Decky CLI builds ([#23](https://github.com/danielcopper/decky-romm-sync/issues/23)) ([6094eae](https://github.com/danielcopper/decky-romm-sync/commit/6094eae94cf5b22d4b01c2b8ae10dcad573fd7b6))
+
 ## [0.1.5](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.1.4...decky-romm-sync-v0.1.5) (2026-02-16)
 
 
