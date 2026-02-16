@@ -21,12 +21,13 @@ const TextInputModal: FC<{
   field: "url" | "username" | "password";
   bIsPassword?: boolean;
   closeModal?: () => void;
-}> = ({ label, value: initial, field, bIsPassword, closeModal }) => {
+  onSubmit: (value: string) => void;
+}> = ({ label, value: initial, field, bIsPassword, closeModal, onSubmit }) => {
   const [value, setValue] = useState(initial);
   return (
     <ConfirmModal
       closeModal={closeModal}
-      onOK={() => { pendingEdits[field] = value; }}
+      onOK={() => { pendingEdits[field] = value; onSubmit(value); }}
       strTitle={label}
       bDisableBackgroundDismiss={true}
     >
@@ -112,7 +113,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         <PanelSectionRow>
           <Field label="RomM URL" description={url || "(not set)"}>
             <DialogButton onClick={() => showModal(
-              <TextInputModal label="RomM URL" value={url} field="url" />
+              <TextInputModal label="RomM URL" value={url} field="url" onSubmit={setUrl} />
             )}>
               Edit
             </DialogButton>
@@ -121,7 +122,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         <PanelSectionRow>
           <Field label="Username" description={username || "(not set)"}>
             <DialogButton onClick={() => showModal(
-              <TextInputModal label="Username" value={username} field="username" />
+              <TextInputModal label="Username" value={username} field="username" onSubmit={setUsername} />
             )}>
               Edit
             </DialogButton>
@@ -130,7 +131,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         <PanelSectionRow>
           <Field label="Password" description={password ? "••••" : "(not set)"}>
             <DialogButton onClick={() => showModal(
-              <TextInputModal label="Password" value="" field="password" bIsPassword />
+              <TextInputModal label="Password" value="" field="password" bIsPassword onSubmit={setPassword} />
             )}>
               Edit
             </DialogButton>
