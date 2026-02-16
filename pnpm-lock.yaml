@@ -21,6 +21,9 @@ importers:
       '@decky/ui':
         specifier: ^4.11.0
         version: 4.11.1
+      '@rollup/rollup-linux-x64-musl':
+        specifier: ^4.53.3
+        version: 4.57.1
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
@@ -232,7 +235,6 @@ packages:
     resolution: {integrity: sha512-HFps0JeGtuOR2convgRRkHCekD7j+gdAuXM+/i6kGzQtFhlCtQkpwtNzkNj6QhCDp7DRJ7+qC/1Vg2jt5iSOFw==}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-openbsd-x64@4.57.1':
     resolution: {integrity: sha512-H+hXEv9gdVQuDTgnqD+SQffoWoc0Of59AStSzTEj/feWTBAnSfSD3+Dql1ZruJQxmykT/JVY0dE8Ka7z0DH1hw==}
@@ -814,8 +816,7 @@ snapshots:
   '@rollup/rollup-linux-x64-gnu@4.57.1':
     optional: true
 
-  '@rollup/rollup-linux-x64-musl@4.57.1':
-    optional: true
+  '@rollup/rollup-linux-x64-musl@4.57.1': {}
 
   '@rollup/rollup-openbsd-x64@4.57.1':
     optional: true
