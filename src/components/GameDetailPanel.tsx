@@ -8,6 +8,7 @@ import {
   cancelDownload,
   removeRom,
   checkPlatformBios,
+  getSgdbArtworkBase64,
 } from "../api/backend";
 import type { InstalledRom, DownloadProgressEvent, DownloadCompleteEvent, BiosStatus } from "../types";
 
@@ -111,7 +112,38 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
   const [totalBytes, setTotalBytes] = useState(0);
   const [actionPending, setActionPending] = useState(false);
   const [biosStatus, setBiosStatus] = useState<BiosStatus | null>(null);
+  const [artworkLoading, setArtworkLoading] = useState(false);
   const romIdRef = useRef<number | null>(null);
+
+  const fetchSgdbArtwork = async (romId: number, steamAppId: number) => {
+    setArtworkLoading(true);
+    const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    for (const assetType of [1, 2, 3] as const) {
+      try {
+        const result = await getSgdbArtworkBase64(romId, assetType);
+        if (result.base64) {
+          await SteamClient.Apps.SetCustomArtworkForApp(steamAppId, result.base64, "png", assetType);
+          console.log(`[RomM] Set SGDB artwork type ${assetType} for appId=${steamAppId}`);
+
+          // Save default logo position after setting logo
+          if (assetType === 2) {
+            try {
+              const overview = appStore.GetAppOverviewByAppID(steamAppId);
+              if (overview && appDetailsStore?.SaveCustomLogoPosition) {
+                appDetailsStore.SaveCustomLogoPosition(overview, {
+                  pinnedPosition: "BottomLeft", nWidthPct: 50, nHeightPct: 50,
+                });
+              }
+            } catch { /* appStore/appDetailsStore may not be available */ }
+          }
+        }
+        await delay(50);
+      } catch (err) {
+        console.error(`[RomM] Failed to fetch/set SGDB artwork type ${assetType}:`, err);
+      }
+    }
+    setArtworkLoading(false);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -153,6 +185,9 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
         } else {
           setState("not_installed");
         }
+
+        // Fetch SGDB artwork on-demand (hero, logo, wide grid)
+        fetchSgdbArtwork(rom.rom_id, appId);
       } catch (e) {
         console.error("[RomM] GameDetailPanel load error:", e);
         if (!cancelled) setState("not_romm");
@@ -388,6 +423,15 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
             disabled={actionPending}
           >
             {actionPending ? "Removing..." : "Uninstall"}
+          </DialogButton>
+        )}
+        {romInfo && (
+          <DialogButton
+            style={styles.button}
+            onClick={() => fetchSgdbArtwork(romInfo.rom_id, appId)}
+            disabled={artworkLoading}
+          >
+            {artworkLoading ? "Loading..." : "Refresh Artwork"}
           </DialogButton>
         )}
       </Focusable>
