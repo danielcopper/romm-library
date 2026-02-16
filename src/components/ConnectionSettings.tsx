@@ -9,8 +9,9 @@ import {
   DialogButton,
   ConfirmModal,
   showModal,
+  ToggleField,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, saveSteamInputSetting, applySteamInputSetting } from "../api/backend";
+import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, saveDebugLogging } from "../api/backend";
 
 // Module-level state survives component remounts (modal close can remount QAM)
 const pendingEdits: { url?: string; username?: string; password?: string } = {};
@@ -18,7 +19,7 @@ const pendingEdits: { url?: string; username?: string; password?: string } = {};
 const TextInputModal: FC<{
   label: string;
   value: string;
-  field: "url" | "username" | "password";
+  field?: "url" | "username" | "password";
   bIsPassword?: boolean;
   closeModal?: () => void;
   onSubmit: (value: string) => void;
@@ -27,7 +28,7 @@ const TextInputModal: FC<{
   return (
     <ConfirmModal
       closeModal={closeModal}
-      onOK={() => { pendingEdits[field] = value; onSubmit(value); }}
+      onOK={() => { if (field) pendingEdits[field] = value; onSubmit(value); }}
       strTitle={label}
       bDisableBackgroundDismiss={true}
     >
@@ -52,9 +53,13 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sgdbApiKey, setSgdbApiKey] = useState("");
+  const [sgdbStatus, setSgdbStatus] = useState("");
+  const [sgdbVerifying, setSgdbVerifying] = useState(false);
   const [steamInputMode, setSteamInputMode] = useState("default");
   const [steamInputStatus, setSteamInputStatus] = useState("");
   const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string; config_path?: string } | null>(null);
+  const [debugLogging, setDebugLogging] = useState(false);
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -62,7 +67,9 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       setUrl(pendingEdits.url ?? s.romm_url);
       setUsername(pendingEdits.username ?? s.romm_user);
       setPassword(pendingEdits.password ?? s.romm_pass_masked);
+      setSgdbApiKey(s.sgdb_api_key_masked);
       setSteamInputMode(s.steam_input_mode || "default");
+      setDebugLogging(s.debug_logging ?? false);
       if (s.retroarch_input_check) {
         setRetroarchWarning(s.retroarch_input_check);
       }
@@ -153,6 +160,55 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
           </PanelSectionRow>
         )}
       </PanelSection>
+      <PanelSection title="SteamGridDB">
+        <PanelSectionRow>
+          <Field label="API Key" description={sgdbApiKey ? "••••" : "Not configured"}>
+            <DialogButton onClick={() => showModal(
+              <TextInputModal
+                label="SteamGridDB API Key"
+                value=""
+                bIsPassword
+                onSubmit={async (value) => {
+                  setSgdbStatus("");
+                  try {
+                    const result = await saveSgdbApiKey(value);
+                    setSgdbApiKey(value ? "set" : "");
+                    setSgdbStatus(result.message);
+                  } catch {
+                    setSgdbStatus("Failed to save API key");
+                  }
+                }}
+              />
+            )}>
+              Edit
+            </DialogButton>
+          </Field>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={async () => {
+              setSgdbVerifying(true);
+              setSgdbStatus("");
+              try {
+                const result = await verifySgdbApiKey("");
+                setSgdbStatus(result.success ? "Valid" : result.message);
+              } catch {
+                setSgdbStatus("Verification failed");
+              }
+              setSgdbVerifying(false);
+            }}
+            disabled={sgdbVerifying || !sgdbApiKey}
+          >
+            {sgdbVerifying ? "Verifying..." : "Verify Key"}
+          </ButtonItem>
+        </PanelSectionRow>
+        {sgdbStatus && (
+          <PanelSectionRow>
+            <Field label={sgdbStatus} />
+          </PanelSectionRow>
+        )}
+      </PanelSection>
       <PanelSection title="Controller">
         <PanelSectionRow>
           <DropdownItem
@@ -205,6 +261,19 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
             />
           </PanelSectionRow>
         )}
+      </PanelSection>
+      <PanelSection title="Troubleshooting">
+        <PanelSectionRow>
+          <ToggleField
+            label="Debug Logging"
+            description="Log detailed SGDB artwork info for troubleshooting"
+            checked={debugLogging}
+            onChange={(value) => {
+              setDebugLogging(value);
+              saveDebugLogging(value);
+            }}
+          />
+        </PanelSectionRow>
       </PanelSection>
     </>
   );

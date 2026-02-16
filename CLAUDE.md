@@ -1,70 +1,96 @@
-# decky-romm-sync
+# decky-romm-sync — Decky Loader Plugin
 
-Decky Loader plugin that syncs a RomM server's game library to Steam as non-steam shortcuts, launched via RetroDECK.
+## What This Is
+
+A Decky Loader plugin that syncs a self-hosted RomM library into Steam as Non-Steam shortcuts. Games launch via RetroDECK. The QAM panel handles settings, sync, downloads, and BIOS management.
 
 ## Architecture
 
-- **Backend** (`main.py`): Python — RomM API calls, ROM/BIOS downloads, VDF manipulation, state persistence
-- **Frontend** (`src/`): TypeScript — SteamClient shortcut CRUD, QAM panel UI, game detail page patch
+```
+RomM Server <-HTTP-> Python Backend (main.py)
+                          | callable() / emit()
+                   Frontend (TypeScript) <-> SteamClient.Apps API
+                          |
+                     Steam Library (shortcuts appear instantly)
+                          |
+                     bin/romm-launcher (bash) -> RetroDECK (flatpak)
+```
+
+- **Backend** (`main.py`): RomM API, SteamGridDB API, ROM/BIOS/artwork downloads, state persistence
+- **Frontend** (`src/`): SteamClient shortcut CRUD, QAM panel UI, game detail page injection
 - **Communication**: `callable()` for request/response, `decky.emit()` for backend-to-frontend events
-- **Launcher** (`bin/romm-launcher`): Bash script called by Steam shortcuts, launches RetroDECK
+
+## Key Technical Constraints
+
+- **Shortcuts**: Use `SteamClient.Apps.AddShortcut()` from frontend JS, NOT VDF writes. VDF edits require Steam restart; SteamClient API is instant.
+- **Frontend API**: `@decky/ui` + `@decky/api` (NOT deprecated `decky-frontend-lib`). Use `callable()` (NOT `ServerAPI.callPluginMethod()`).
+- **RomM API quirks**: Filter param is `platform_ids` (plural). Cover URLs have unencoded spaces (must URL-encode). Paginated: `{"items": [...], "total": N}`.
+- **AddShortcut timing**: Must wait 300-500ms after `AddShortcut()` before setting properties. Use 50ms delay between operations.
+- **Large payloads**: Never send bulk base64 data through `decky.emit()` — WebSocket bridge has size limits. Use per-item callables instead.
+- **SteamGridDB**: Requires `User-Agent` header — Python's default `Python-urllib` gets 403'd. Use `decky-romm-sync/0.1`.
 
 ## File Structure
 
 ```
-main.py                              # All backend logic (single file)
+main.py                              # Python backend (RomM API, SGDB, downloads, state)
 src/index.tsx                        # Plugin entry, event listeners, QAM router
 src/components/MainPage.tsx          # Status, sync button, navigation
-src/components/ConnectionSettings.tsx # Server URL, credentials, Steam Input, RetroArch diagnostic
+src/components/ConnectionSettings.tsx # RomM connection, SGDB API key, controller settings
 src/components/PlatformSync.tsx      # Per-platform enable/disable toggles
-src/components/GameDetailPanel.tsx   # Patched onto each game's Steam detail page
-src/components/BiosManager.tsx       # BIOS/firmware download UI
-src/components/DangerZone.tsx        # Per-platform and bulk shortcut removal
-src/api/backend.ts                   # callable() wrappers
+src/components/DangerZone.tsx        # Per-platform and bulk removal
+src/components/DownloadQueue.tsx     # Active/completed downloads
+src/components/BiosManager.tsx       # Per-platform BIOS file status and downloads
+src/components/GameDetailPanel.tsx   # Injected into game detail page (download, artwork, BIOS)
+src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid
+src/api/backend.ts                   # callable() wrappers (typed)
 src/types/index.ts                   # Shared TypeScript interfaces
-src/utils/steamShortcuts.ts          # addShortcut, removeShortcut helpers
-src/utils/syncManager.ts             # Listens for sync_apply event, orchestrates shortcut creation
-bin/romm-launcher                    # Bash launcher script
-defaults/config.json                 # Platform slug → RetroDECK system mappings
+src/types/steam.d.ts                 # SteamClient/collectionStore/appStore type declarations
+src/utils/steamShortcuts.ts          # addShortcut, removeShortcut, getExistingRomMShortcuts
+src/utils/syncManager.ts             # Listens for sync_apply, orchestrates shortcut creation
+src/utils/syncProgress.ts            # Module-level sync progress store
+src/utils/downloadStore.ts           # Module-level download state store
+src/utils/collections.ts             # Steam collection management
+bin/romm-launcher                    # Bash launcher for RetroDECK
+defaults/config.json                 # 149 platform slug -> RetroDECK system mappings
+tests/test_main.py                   # Backend unit tests (110 tests)
+tests/conftest.py                    # Mock decky module for test isolation
 ```
 
-## Sync Flow
+## Current State
 
-1. Backend `_do_sync()` fetches ROMs per enabled platform, downloads artwork
-2. Backend emits `sync_apply` with shortcut data
-3. Frontend `syncManager.ts` receives event, creates shortcuts via `SteamClient.Apps.AddShortcut()`
-4. Frontend calls `reportSyncResults()` with `{rom_id: steam_app_id}` mapping
-5. Backend renames artwork files to `{steam_app_id}p.png`, updates registry, emits `sync_complete`
+**Latest release**: v0.1.6 on main
+**Active branch**: `feat/phase-4a-artwork` — SteamGridDB artwork integration
 
-## Key Constraints
+Working:
+- Full sync engine (fetch ROMs, create shortcuts, apply cover art)
+- On-demand ROM downloads with progress tracking
+- BIOS file management per platform
+- Game detail page injection (download/uninstall, BIOS status, artwork refresh)
+- SteamGridDB artwork (hero, logo, wide grid) — on-demand from game detail page
+- SGDB API key management with verify button
+- Per-platform sync toggles, per-platform removal
+- Steam collections
+- Toast notifications
 
-- Shortcuts must use `SteamClient.Apps.AddShortcut()` from frontend JS, not VDF writes (VDF needs Steam restart, API is instant)
-- Use `@decky/api` callable() — not the deprecated `ServerAPI.callPluginMethod()`
-- Wait 300-500ms after `AddShortcut()` before setting properties; 50ms between operations
-- Never send bulk base64 through `decky.emit()` — WebSocket has size limits
-- RomM API: filter param is `platform_ids` (plural), cover URLs have unencoded spaces, paginated responses
+See PLAN.md for the full roadmap (Phases 1-3 done, 4A in progress, 4B-8 planned).
 
-## State Files
+## Development
 
-All under Decky's data/settings dirs (`~/homebrew/data/decky-romm-sync/` and `~/homebrew/settings/decky-romm-sync/`):
-- `settings.json`: Server URL, credentials, enabled platforms, steam input mode
-- `state.json`: Shortcut registry (rom_id→app_id), installed ROMs, sync stats
-- `download_requests.json`: Written by launcher when ROM isn't installed, polled by backend
+- **Build**: `pnpm build` (Rollup -> dist/index.js)
+- **Tests**: `python -m pytest tests/ -q` or `mise run test`
+- **Setup**: `mise run setup` (installs JS + Python dependencies)
+- **Dev reload**: `mise run dev` (build + restart plugin_loader)
+- **Tooling**: mise manages node, pnpm, python. Venv auto-activates via `_.python.venv` in mise.toml.
 
-## Build & Test
+## Testing
 
-```bash
-pnpm install && pnpm build    # Frontend (Rollup -> dist/index.js)
-python -m pytest tests/ -q    # Backend (110+ tests)
-```
+Every backend feature or callable where testing makes sense MUST have unit tests. Cover:
+- **Happy path**: Normal successful operation
+- **Bad path**: Invalid input, missing data, API errors, network failures
+- **Edge cases**: Empty strings, None values, masked values ("••••"), boundary conditions
 
-## Git Workflow
+Tests live in `tests/test_main.py` with mocks in `tests/conftest.py`.
 
-- `main` branch is protected — all changes need PRs
-- release-please manages versions and changelogs via conventional commits
-- CI builds plugin zip with Decky CLI and attaches to GitHub releases
+## Working Style
 
-## Environment
-
-- Development runs in a Distrobox container (Fedora). Project root may be owned by `nobody` due to UID mapping — fix with `sudo chown`.
-- SSH agent socket path changes between reboots. If git push fails, find it with `find /tmp /run -name "agent.*" -o -name "ssh-agent*" -type s`.
+Use team-swarm agents for everything beyond trivial single-file edits — including research, exploration, and implementation. Keep main context clean by delegating to agents. Refer to PLAN.md for the full phase roadmap.

@@ -66,6 +66,9 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
           } catch (artErr) {
             console.error(`[RomM] Failed to fetch/set artwork for ${item.name}:`, artErr);
           }
+
+          // SGDB artwork (hero, logo, wide grid) is fetched on-demand
+          // when user visits the game detail page — not during sync
         }
       } catch (e) {
         console.error(`[RomM] Failed to process shortcut for rom ${item.rom_id}:`, e);

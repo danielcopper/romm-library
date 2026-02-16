@@ -418,6 +418,48 @@ RomM provides `url_screenshots` (IGDB screenshots, 1280x720) and `merged_screens
 
 ---
 
+## Phase 4.5: Pre-Phase-5 Bug Fixes
+
+**Goal**: Fix bugs found during alpha testing before moving to save sync.
+
+### Bug 1: ROM download button does nothing on Steam Deck
+**Symptom**: Clicking the Download button on the game detail page does nothing on Steam Deck. No error, no progress, just nothing happens. BIOS downloads work fine on the same device. Works correctly on Bazzite HTPC.
+
+**Investigation needed**:
+- Check if `start_download(rom_id)` callable is being called at all (frontend console logs)
+- Check if the backend receives the call (Python logs)
+- Compare GameDetailPanel download handler with BiosManager download handler — what's different?
+- Check if it's a permissions issue (ROM download writes to `~/retrodeck/roms/`, BIOS writes to `~/retrodeck/bios/`)
+- Check if the download starts but fails silently (no error propagation to frontend)
+- Test whether the issue is specific to the game detail page button or also affects QAM download queue
+
+### Bug 2: Non-Steam shortcuts sync across Steam clients on different machines
+**Symptom**: Non-Steam shortcuts created by the plugin on one machine (e.g. Steam Deck) appear on other machines logged into the same Steam account (e.g. Bazzite HTPC). This is Steam Cloud syncing `shortcuts.vdf` across devices.
+
+**Problems this causes**:
+- Shortcuts point to executables/paths that don't exist on the other machine
+- Artwork may not transfer correctly
+- Launching a synced shortcut on a machine without the plugin/RetroDECK installed will fail
+- If both machines run the plugin, they may create duplicate shortcuts or fight over state
+
+**Investigation needed**:
+- Confirm this is Steam Cloud syncing `shortcuts.vdf` (check Steam Cloud settings, `userdata/` sync behavior)
+- Research how other tools (EmuDeck, BoilR, etc.) handle this — do they have the same problem?
+- Possible solutions:
+  - Disable Steam Cloud sync for `shortcuts.vdf` specifically (may not be possible per-file)
+  - Tag shortcuts with a machine identifier so the plugin only manages its own
+  - Accept it and make the plugin handle multi-machine gracefully (detect missing exe, skip/hide broken shortcuts)
+  - Use `SteamClient.Apps` API properties to mark shortcuts as machine-specific
+
+### Verification:
+- [ ] ROM download works on Steam Deck from game detail page
+- [ ] Download progress visible after clicking download
+- [ ] Error shown if download fails
+- [ ] Non-Steam shortcut cross-device sync behavior understood and documented
+- [ ] Solution implemented or workaround documented
+
+---
+
 ## Phase 5: Save File Sync (RetroDECK)
 
 **Goal**: Bidirectional save file synchronization between RetroDECK and RomM. Hardcoded to RetroDECK paths for now — multi-emulator path abstraction deferred.
@@ -564,6 +606,48 @@ Investigation needed to determine which is more reliable. Polling the process se
 2. **Prune `shortcut_registry`**: Frontend checks which Steam shortcuts still exist via `SteamClient` API, reports stale app IDs back to backend. Backend removes orphaned registry entries.
 3. **Download atomicity**: Single-file ROM downloads should write to `{file_path}.tmp` and `os.replace()` to final path on completion.
 4. **Save state after pruning**: Write the cleaned state back to `state.json` before normal operation begins.
+
+### Bug 5: SSL Certificate Verification for External HTTPS APIs
+
+**Symptom**: SGDB API calls fail with certificate errors on Steam Deck. The `ssl.create_default_context()` can't find CA certs in the embedded Python environment.
+
+**Current workaround**: RomM API calls (local LAN) use `ctx.verify_mode = ssl.CERT_NONE` which is acceptable for a self-hosted server on a trusted network. SGDB calls currently also use `CERT_NONE` as a temporary fix.
+
+**Proper fix needed**: For public internet APIs (SteamGridDB, IGDB), we should use proper certificate verification. Options:
+- Bundle `certifi` package and set `ctx.load_verify_locations(cafile=certifi.where())`
+- Point to the system CA bundle if available (`/etc/ssl/certs/ca-certificates.crt`)
+- Use `requests` library instead of `urllib` (handles certs automatically)
+
+This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. Low risk for this use case (API keys, not credentials) but should be fixed before any production release.
+
+### Bug 6: Secrets Stored in Plain Text
+
+**Symptom**: `settings.json` stores `romm_pass` and `steamgriddb_api_key` in plain text. Any process or user with read access to `~/homebrew/settings/decky-romm-sync/settings.json` can read credentials.
+
+**Current state**: Decky Loader doesn't provide a secrets/keyring API. All Decky plugins store settings as plain JSON.
+
+**Investigation needed**:
+- Check if other Decky plugins (MoonDeck, etc.) encrypt credentials
+- Check if Python's `keyring` module is available in Decky's embedded Python
+- Consider using OS keyring (libsecret/GNOME Keyring) if available on SteamOS/Bazzite
+- Minimum fix: restrict file permissions to owner-only (`chmod 600`)
+- Ensure debug logging never exposes these values (mask in logs)
+
+### Bug 7: BIOS Status Reporting Needs Rethinking
+
+**Current behavior**: We compare how many BIOS files exist on RomM for a platform vs how many are downloaded locally. If the counts don't match, we show "missing". The game detail page shows an orange badge with "BIOS required — X/Y downloaded".
+
+**Problems**:
+- Not all BIOS files listed in RomM may actually be required for a given game/emulator — some are regional variants, optional files, or for specific emulator backends
+- Showing "missing" when optional BIOS files aren't downloaded creates false urgency
+- No distinction between "required and missing" vs "optional and missing"
+- Need to investigate: does RomM provide any metadata about which BIOS files are required vs optional? Does RetroDECK/RetroArch have a way to check which BIOS a specific core needs?
+
+**Investigation needed**:
+- Check what BIOS metadata RomM's firmware API returns (required flag? per-core association?)
+- Check if RetroArch/RetroDECK has a BIOS requirements file per core
+- Consider showing "X required / Y optional" instead of just "X/Y downloaded"
+- Consider only warning when actually required BIOS files are missing
 
 ### Verification:
 - [ ] Progress bar shows real-time progress during sync
