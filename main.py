@@ -271,13 +271,17 @@ class Plugin:
         return {"success": True, "message": "Connected to RomM"}
 
     async def save_settings(self, romm_url, romm_user, romm_pass):
-        self.settings["romm_url"] = romm_url
-        self.settings["romm_user"] = romm_user
-        # Only update password if user entered a new one (not the masked placeholder)
-        if romm_pass and romm_pass != "••••":
-            self.settings["romm_pass"] = romm_pass
-        self._save_settings_to_disk()
-        return {"success": True, "message": "Settings saved"}
+        try:
+            self.settings["romm_url"] = romm_url
+            self.settings["romm_user"] = romm_user
+            # Only update password if user entered a new one (not the masked placeholder)
+            if romm_pass and romm_pass != "••••":
+                self.settings["romm_pass"] = romm_pass
+            self._save_settings_to_disk()
+            return {"success": True, "message": "Settings saved"}
+        except Exception as e:
+            decky.logger.error(f"Failed to save settings: {e}")
+            return {"success": False, "message": f"Save failed: {e}"}
 
     async def save_steam_input_setting(self, mode):
         if mode not in ("default", "force_on", "force_off"):
