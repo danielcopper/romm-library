@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, FC } from "react";
-import { addEventListener, removeEventListener } from "@decky/api";
+import { addEventListener, removeEventListener, toaster } from "@decky/api";
 import { Focusable, DialogButton, showModal, ModalRoot } from "@decky/ui";
 import {
   getRomBySteamAppId,
@@ -115,12 +115,22 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
   const [artworkLoading, setArtworkLoading] = useState(false);
   const romIdRef = useRef<number | null>(null);
 
-  const fetchSgdbArtwork = async (romId: number, steamAppId: number) => {
+  const fetchSgdbArtwork = async (romId: number, steamAppId: number, showToast = false) => {
     setArtworkLoading(true);
     const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
     for (const assetType of [1, 2, 3] as const) {
       try {
         const result = await getSgdbArtworkBase64(romId, assetType);
+        if (result.no_api_key) {
+          if (showToast) {
+            toaster.toast({
+              title: "RomM Sync",
+              body: "Extra artwork requires a SteamGridDB API key. Configure it in plugin settings.",
+            });
+          }
+          setArtworkLoading(false);
+          return;
+        }
         if (result.base64) {
           await SteamClient.Apps.SetCustomArtworkForApp(steamAppId, result.base64, "png", assetType);
           console.log(`[RomM] Set SGDB artwork type ${assetType} for appId=${steamAppId}`);
@@ -428,10 +438,10 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
         {romInfo && (
           <DialogButton
             style={styles.button}
-            onClick={() => fetchSgdbArtwork(romInfo.rom_id, appId)}
+            onClick={() => fetchSgdbArtwork(romInfo.rom_id, appId, true)}
             disabled={artworkLoading}
           >
-            {artworkLoading ? "Loading..." : "Refresh Artwork"}
+            {artworkLoading ? "Loading..." : "Refresh Metadata"}
           </DialogButton>
         )}
       </Focusable>

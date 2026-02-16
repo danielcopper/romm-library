@@ -607,6 +607,48 @@ Investigation needed to determine which is more reliable. Polling the process se
 3. **Download atomicity**: Single-file ROM downloads should write to `{file_path}.tmp` and `os.replace()` to final path on completion.
 4. **Save state after pruning**: Write the cleaned state back to `state.json` before normal operation begins.
 
+### Bug 5: SSL Certificate Verification for External HTTPS APIs
+
+**Symptom**: SGDB API calls fail with certificate errors on Steam Deck. The `ssl.create_default_context()` can't find CA certs in the embedded Python environment.
+
+**Current workaround**: RomM API calls (local LAN) use `ctx.verify_mode = ssl.CERT_NONE` which is acceptable for a self-hosted server on a trusted network. SGDB calls currently also use `CERT_NONE` as a temporary fix.
+
+**Proper fix needed**: For public internet APIs (SteamGridDB, IGDB), we should use proper certificate verification. Options:
+- Bundle `certifi` package and set `ctx.load_verify_locations(cafile=certifi.where())`
+- Point to the system CA bundle if available (`/etc/ssl/certs/ca-certificates.crt`)
+- Use `requests` library instead of `urllib` (handles certs automatically)
+
+This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. Low risk for this use case (API keys, not credentials) but should be fixed before any production release.
+
+### Bug 6: Secrets Stored in Plain Text
+
+**Symptom**: `settings.json` stores `romm_pass` and `steamgriddb_api_key` in plain text. Any process or user with read access to `~/homebrew/settings/decky-romm-sync/settings.json` can read credentials.
+
+**Current state**: Decky Loader doesn't provide a secrets/keyring API. All Decky plugins store settings as plain JSON.
+
+**Investigation needed**:
+- Check if other Decky plugins (MoonDeck, etc.) encrypt credentials
+- Check if Python's `keyring` module is available in Decky's embedded Python
+- Consider using OS keyring (libsecret/GNOME Keyring) if available on SteamOS/Bazzite
+- Minimum fix: restrict file permissions to owner-only (`chmod 600`)
+- Ensure debug logging never exposes these values (mask in logs)
+
+### Bug 7: BIOS Status Reporting Needs Rethinking
+
+**Current behavior**: We compare how many BIOS files exist on RomM for a platform vs how many are downloaded locally. If the counts don't match, we show "missing". The game detail page shows an orange badge with "BIOS required — X/Y downloaded".
+
+**Problems**:
+- Not all BIOS files listed in RomM may actually be required for a given game/emulator — some are regional variants, optional files, or for specific emulator backends
+- Showing "missing" when optional BIOS files aren't downloaded creates false urgency
+- No distinction between "required and missing" vs "optional and missing"
+- Need to investigate: does RomM provide any metadata about which BIOS files are required vs optional? Does RetroDECK/RetroArch have a way to check which BIOS a specific core needs?
+
+**Investigation needed**:
+- Check what BIOS metadata RomM's firmware API returns (required flag? per-core association?)
+- Check if RetroArch/RetroDECK has a BIOS requirements file per core
+- Consider showing "X required / Y optional" instead of just "X/Y downloaded"
+- Consider only warning when actually required BIOS files are missing
+
 ### Verification:
 - [ ] Progress bar shows real-time progress during sync
 - [ ] Cancel button stops the sync mid-progress
