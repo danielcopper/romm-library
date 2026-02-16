@@ -21,12 +21,6 @@ A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://githu
 
 ## Installation
 
-1. Open Decky Loader in Steam Gaming Mode
-2. Go to the Decky Store
-3. Search for "RomM Sync" and install
-
-### Manual installation
-
 1. Download the latest release from the [releases page](https://github.com/danielcopper/decky-romm-sync/releases)
 2. Extract to `~/homebrew/plugins/decky-romm-sync/`
 3. Restart Decky Loader
