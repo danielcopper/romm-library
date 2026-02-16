@@ -6,8 +6,41 @@ import {
   ButtonItem,
   Field,
   DropdownItem,
+  DialogButton,
+  ConfirmModal,
+  showModal,
 } from "@decky/ui";
 import { getSettings, saveSettings, testConnection, saveSteamInputSetting, applySteamInputSetting } from "../api/backend";
+
+// Module-level state survives component remounts (modal close can remount QAM)
+const pendingEdits: { url?: string; username?: string; password?: string } = {};
+
+const TextInputModal: FC<{
+  label: string;
+  value: string;
+  field: "url" | "username" | "password";
+  bIsPassword?: boolean;
+  closeModal?: () => void;
+  onSubmit: (value: string) => void;
+}> = ({ label, value: initial, field, bIsPassword, closeModal, onSubmit }) => {
+  const [value, setValue] = useState(initial);
+  return (
+    <ConfirmModal
+      closeModal={closeModal}
+      onOK={() => { pendingEdits[field] = value; onSubmit(value); }}
+      strTitle={label}
+      bDisableBackgroundDismiss={true}
+    >
+      <TextField
+        focusOnMount={true}
+        label={label}
+        value={value}
+        bIsPassword={bIsPassword}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
+      />
+    </ConfirmModal>
+  );
+};
 
 interface ConnectionSettingsProps {
   onBack: () => void;
@@ -25,13 +58,17 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
 
   useEffect(() => {
     getSettings().then((s) => {
-      setUrl(s.romm_url);
-      setUsername(s.romm_user);
-      setPassword(s.romm_pass_masked);
+      // Apply any pending edits that survived a remount, fall back to backend values
+      setUrl(pendingEdits.url ?? s.romm_url);
+      setUsername(pendingEdits.username ?? s.romm_user);
+      setPassword(pendingEdits.password ?? s.romm_pass_masked);
       setSteamInputMode(s.steam_input_mode || "default");
       if (s.retroarch_input_check) {
         setRetroarchWarning(s.retroarch_input_check);
       }
+    }).catch((e) => {
+      console.error("[RomM] Failed to load settings:", e);
+      setStatus("Failed to load settings");
     });
   }, []);
 
@@ -41,6 +78,10 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
     try {
       const result = await saveSettings(url, username, password);
       setStatus(result.message);
+      // Clear pending edits after successful save
+      delete pendingEdits.url;
+      delete pendingEdits.username;
+      delete pendingEdits.password;
     } catch {
       setStatus("Failed to save settings");
     }
@@ -70,32 +111,31 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       </PanelSection>
       <PanelSection title="Connection">
         <PanelSectionRow>
-          <TextField
-            label="RomM URL"
-            value={url}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setUrl(e.target.value)
-            }
-          />
+          <Field label="RomM URL" description={url || "(not set)"}>
+            <DialogButton onClick={() => showModal(
+              <TextInputModal label="RomM URL" value={url} field="url" onSubmit={setUrl} />
+            )}>
+              Edit
+            </DialogButton>
+          </Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <TextField
-            label="Username"
-            value={username}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setUsername(e.target.value)
-            }
-          />
+          <Field label="Username" description={username || "(not set)"}>
+            <DialogButton onClick={() => showModal(
+              <TextInputModal label="Username" value={username} field="username" onSubmit={setUsername} />
+            )}>
+              Edit
+            </DialogButton>
+          </Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <TextField
-            label="Password"
-            bIsPassword
-            value={password}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setPassword(e.target.value)
-            }
-          />
+          <Field label="Password" description={password ? "••••" : "(not set)"}>
+            <DialogButton onClick={() => showModal(
+              <TextInputModal label="Password" value="" field="password" bIsPassword onSubmit={setPassword} />
+            )}>
+              Edit
+            </DialogButton>
+          </Field>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSave} disabled={loading}>
