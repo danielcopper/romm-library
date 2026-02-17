@@ -9,7 +9,9 @@ import {
   removeRom,
   checkPlatformBios,
   getSgdbArtworkBase64,
+  getRomMetadata,
 } from "../api/backend";
+import { updateMetadataForApp } from "../patches/metadataPatches";
 import type { InstalledRom, DownloadProgressEvent, DownloadCompleteEvent, BiosStatus } from "../types";
 
 interface GameDetailPanelProps {
@@ -198,6 +200,16 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
 
         // Fetch SGDB artwork on-demand (hero, logo, wide grid)
         fetchSgdbArtwork(rom.rom_id, appId);
+
+        // Fetch and apply metadata for native Steam display
+        try {
+          const metadata = await getRomMetadata(rom.rom_id);
+          if (!cancelled && metadata) {
+            updateMetadataForApp(appId, rom.rom_id, metadata);
+          }
+        } catch {
+          // non-critical, metadata patches still work from cache
+        }
       } catch (e) {
         console.error("[RomM] GameDetailPanel load error:", e);
         if (!cancelled) setState("not_romm");
@@ -438,7 +450,15 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
         {romInfo && (
           <DialogButton
             style={styles.button}
-            onClick={() => fetchSgdbArtwork(romInfo.rom_id, appId, true)}
+            onClick={async () => {
+              fetchSgdbArtwork(romInfo.rom_id, appId, true);
+              try {
+                const metadata = await getRomMetadata(romInfo.rom_id);
+                if (metadata) updateMetadataForApp(appId, romInfo.rom_id, metadata);
+              } catch {
+                // non-critical
+              }
+            }}
             disabled={artworkLoading}
           >
             {artworkLoading ? "Loading..." : "Refresh Metadata"}

@@ -460,6 +460,34 @@ RomM provides `url_screenshots` (IGDB screenshots, 1280x720) and `merged_screens
 
 ---
 
+## Phase 4.5: Codebase Restructuring
+
+**Goal**: Split oversized files into focused modules before adding more features. Currently `main.py` is 1800+ lines and `tests/test_main.py` is 2400+ lines — both will keep growing with save sync (Phase 5) and metadata (Phase 4B).
+
+**Backend (`main.py` → `backend/` package)**:
+- `backend/__init__.py` — Plugin class, lifecycle (_main, _unload), settings
+- `backend/romm_api.py` — RomM HTTP client (connection, auth, requests)
+- `backend/sgdb.py` — SteamGridDB integration (artwork fetch, verify key, cache)
+- `backend/sync.py` — Sync engine (_do_sync, report_sync_results, registry)
+- `backend/downloads.py` — ROM download manager (start, cancel, progress, multi-file)
+- `backend/firmware.py` — BIOS/firmware management
+- `backend/state.py` — State persistence (state.json, settings.json, save/load)
+
+**Tests (`tests/test_main.py` → split by module)**:
+- `tests/test_sgdb.py` — SGDB artwork and verify tests
+- `tests/test_sync.py` — Sync engine tests
+- `tests/test_downloads.py` — Download manager tests
+- `tests/test_firmware.py` — BIOS tests
+- `tests/test_settings.py` — Settings/state tests
+- `tests/conftest.py` — Shared fixtures (already exists)
+
+**Considerations**:
+- Decky Loader expects a single `main.py` entry point with a `Plugin` class — the Plugin class stays in `main.py` but delegates to modules
+- Need to verify Decky's Python environment supports relative imports from subdirectories
+- All 140+ tests must pass after restructuring (no behavior changes)
+
+---
+
 ## Phase 5: Save File Sync (RetroDECK)
 
 **Goal**: Bidirectional save file synchronization between RetroDECK and RomM. Hardcoded to RetroDECK paths for now — multi-emulator path abstraction deferred.
@@ -702,3 +730,6 @@ This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. L
 - **Concurrent download queue**: Support multiple queued downloads instead of one at a time.
 - **RomM native device sync**: When RomM v4.7+ ships device sync features, migrate from our own conflict resolution.
 - **Download queue priority/reordering**: Let users reorder queued downloads.
+- **Developer vs Publisher distinction**: RomM's `companies` is a flat list with no role info. Research IGDB's `involved_companies` relationship (has `developer` and `publisher` boolean flags) to properly split companies. May need an extra API call to IGDB or a RomM enhancement.
+- **BIsModOrShortcut bypass counter**: MetaDeck uses a counter system to let `BIsModOrShortcut` return `true` for specific internal Steam calls (GetGameID, GetPrimaryAppID, GetPerClientData, BHasRecentlyLaunched) while returning `false` for UI rendering. Our simple "always false for our apps" approach works for now since ROM shortcuts are cleanly in the non-Steam ID range. Implement if users report: broken play time tracking, missing from Recently Played, or console errors about app ID lookups. ~80 lines, small-medium effort.
+- **RetroAchievements integration**: Show and track RetroAchievements for games. RomM supports adding RA data. Research needed: fetch from RomM's RA data vs. query RetroAchievements API directly vs. leverage an existing Decky plugin (e.g. there may be a dedicated RA Decky plugin). Display options: badge on game detail page, achievement list overlay, progress tracking.

@@ -25,20 +25,30 @@ declare var SteamClient: {
   };
 };
 
-interface AppStoreOverview {
+interface SteamAppOverview {
   appid: number;
   display_name: string;
   strDisplayName: string;
+  app_type?: number;
+  controller_support?: number;
+  metacritic_score?: number;
+  m_setStoreCategories?: Set<number>;
+  GetCanonicalReleaseDate?(): number;
+  BHasStoreCategory?(category: number): boolean;
+  BIsModOrShortcut?(): boolean;
 }
+
+// Keep the old name as an alias for backwards compatibility with existing code
+type AppStoreOverview = SteamAppOverview;
 
 interface SteamCollection {
   AsDragDropCollection(): {
-    AddApps(overviews: AppStoreOverview[]): void;
-    RemoveApps(overviews: AppStoreOverview[]): void;
+    AddApps(overviews: SteamAppOverview[]): void;
+    RemoveApps(overviews: SteamAppOverview[]): void;
   };
   Save(): Promise<void>;
   Delete(): Promise<void>;
-  allApps: AppStoreOverview[];
+  allApps: SteamAppOverview[];
   apps: { keys(): IterableIterator<number>; has(appId: number): boolean };
   displayName: string;
   id: string;
@@ -50,9 +60,21 @@ declare var collectionStore: {
   GetCollection(id: string): SteamCollection | undefined;
   GetCollectionIDByUserTag(tag: string): string | null;
   GetUserCollectionsByName(name: string): SteamCollection[];
-  NewUnsavedCollection(tag: string, filter?: unknown, overviews?: AppStoreOverview[]): SteamCollection;
+  NewUnsavedCollection(tag: string, filter?: unknown, overviews?: SteamAppOverview[]): SteamCollection;
 };
 
 declare var appStore: {
-  GetAppOverviewByAppID(appId: number): AppStoreOverview | null;
+  GetAppOverviewByAppID(appId: number): SteamAppOverview | null;
+  allApps: SteamAppOverview[];
+};
+
+declare var appDetailsStore: {
+  GetDescriptions(appId: number): any;
+  GetAssociations(appId: number): any;
+  GetAppData(appId: number): any;
+  SaveCustomLogoPosition(overview: any, position: any): void;
+};
+
+declare var appDetailsCache: {
+  SetCachedDataForApp(appId: number, key: string, num: number, data: any): void;
 };
