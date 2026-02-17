@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.2.1...decky-romm-sync-v0.2.2) (2026-02-17)
+
+
+### Bug Fixes
+
+* Phase 4.5 bug fixes — DangerZone, Remote Play, scoped collections ([#32](https://github.com/danielcopper/decky-romm-sync/issues/32)) ([8f06776](https://github.com/danielcopper/decky-romm-sync/commit/8f067769219a5cf159c956f52315553b3a87115c))
+
 ## [0.2.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.2.0...decky-romm-sync-v0.2.1) (2026-02-17)
 
 
