@@ -15,7 +15,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python test dependencies
-        run: pip install pytest
+        run: pip install pytest pytest-asyncio
 
       - name: Run tests
         run: python -m pytest tests/ -q
