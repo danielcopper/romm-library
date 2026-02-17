@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.1.6...decky-romm-sync-v0.2.0) (2026-02-17)
+
+
+### Features
+
+* Phase 4A — SteamGridDB artwork + metadata UX ([#25](https://github.com/danielcopper/decky-romm-sync/issues/25)) ([37c54c8](https://github.com/danielcopper/decky-romm-sync/commit/37c54c8d627ff22edd61fd972d2a0de639dbf0ac))
+* Phase 4B — native metadata via store patching ([#27](https://github.com/danielcopper/decky-romm-sync/issues/27)) ([a03e0d2](https://github.com/danielcopper/decky-romm-sync/commit/a03e0d2b0972d65ba3977d33cf1f3f8776b28189))
+
 ## [0.1.6](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.1.5...decky-romm-sync-v0.1.6) (2026-02-16)
 
 
