@@ -149,6 +149,17 @@ export interface FirmwareDownloadResult {
   downloaded?: number;
 }
 
+export interface RomMetadata {
+  summary: string;
+  genres: string[];
+  companies: string[];
+  first_release_date: number | null;
+  average_rating: number | null;
+  game_modes: string[];
+  player_count: string;
+  cached_at: number;
+}
+
 export interface DownloadProgressEvent {
   rom_id: number;
   rom_name: string;

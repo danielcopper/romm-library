@@ -16,6 +16,8 @@ import { initSyncManager } from "./utils/syncManager";
 import { setSyncProgress } from "./utils/syncProgress";
 import { updateDownload } from "./utils/downloadStore";
 import { registerGameDetailPatch, unregisterGameDetailPatch } from "./patches/gameDetailPatch";
+import { registerMetadataPatches, unregisterMetadataPatches } from "./patches/metadataPatches";
+import { getAllMetadataCache, getAppIdRomIdMap } from "./api/backend";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
 type Page = "main" | "connection" | "platforms" | "danger" | "downloads" | "bios";
@@ -45,6 +47,19 @@ const QAMPanel: FC = () => {
 
 export default definePlugin(() => {
   registerGameDetailPatch();
+
+  // Load metadata cache and register store patches asynchronously
+  (async () => {
+    try {
+      const [cache, appIdMap] = await Promise.all([
+        getAllMetadataCache(),
+        getAppIdRomIdMap(),
+      ]);
+      registerMetadataPatches(cache, appIdMap);
+    } catch (e) {
+      console.error("[RomM] Failed to load metadata cache:", e);
+    }
+  })();
 
   const onSyncComplete = (data: {
     platform_app_ids: Record<string, number[]>;
@@ -114,6 +129,7 @@ export default definePlugin(() => {
     alwaysRender: true,
     onDismount() {
       unregisterGameDetailPatch();
+      unregisterMetadataPatches();
       removeEventListener("sync_complete", syncCompleteListener);
       removeEventListener("sync_apply", syncApplyListener);
       removeEventListener("sync_progress", syncProgressListener);

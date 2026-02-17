@@ -266,7 +266,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         <PanelSectionRow>
           <ToggleField
             label="Debug Logging"
-            description="Log detailed SGDB artwork info for troubleshooting"
+            description="Log additional details for troubleshooting"
             checked={debugLogging}
             onChange={(value) => {
               setDebugLogging(value);
