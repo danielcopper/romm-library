@@ -34,6 +34,7 @@ RomM Server <-HTTP-> Python Backend (main.py)
 ```
 main.py                              # Plugin entry point, composes mixin classes from lib/
 lib/                                 # Backend mixin modules (state, sync, downloads, etc.)
+lib/save_sync.py                     # Save sync backend (device registration, upload/download, conflict detection)
 src/index.tsx                        # Plugin entry, event listeners, QAM router
 src/components/MainPage.tsx          # Status, sync button, navigation
 src/components/ConnectionSettings.tsx # RomM connection, SGDB API key, controller settings
@@ -42,6 +43,7 @@ src/components/DangerZone.tsx        # Per-platform and bulk removal
 src/components/DownloadQueue.tsx     # Active/completed downloads
 src/components/BiosManager.tsx       # Per-platform BIOS file status and downloads
 src/components/GameDetailPanel.tsx   # Injected into game detail page (download, artwork, BIOS)
+src/components/SaveSyncSettings.tsx  # Save sync settings QAM page
 src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid
 src/api/backend.ts                   # callable() wrappers (typed)
 src/types/index.ts                   # Shared TypeScript interfaces
@@ -51,15 +53,17 @@ src/utils/syncManager.ts             # Listens for sync_apply, orchestrates shor
 src/utils/syncProgress.ts            # Module-level sync progress store
 src/utils/downloadStore.ts           # Module-level download state store
 src/utils/collections.ts             # Steam collection management
+src/utils/sessionManager.ts          # Game session detection and playtime tracking
 bin/romm-launcher                    # Bash launcher for RetroDECK
 defaults/config.json                 # 149 platform slug -> RetroDECK system mappings
 tests/test_*.py                      # Per-module backend tests (164 tests)
+tests/test_save_sync.py              # Save sync backend tests
 tests/conftest.py                    # Mock decky module for test isolation
 ```
 
 ## Current State
 
-**Latest release**: v0.2.0 on main
+**Latest release**: v0.2.1 on main
 
 Working:
 - Full sync engine (fetch ROMs, create shortcuts, apply cover art)
@@ -72,7 +76,13 @@ Working:
 - Steam collections
 - Toast notifications
 
-See PLAN.md for the full roadmap (Phases 1-4B done, 4.5-8 planned).
+In progress (Phase 5):
+- Bidirectional save file sync (RetroArch .srm saves)
+- Three-way conflict detection with 4 resolution modes
+- Game session detection and playtime tracking
+- Save sync settings QAM page
+
+See PLAN.md for the full roadmap (Phases 1-4.5 done, Phase 5 in progress, 6-8 planned).
 
 ## Development
 

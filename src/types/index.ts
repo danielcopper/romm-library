@@ -160,6 +160,43 @@ export interface RomMetadata {
   cached_at: number;
 }
 
+export type ConflictMode = "newest_wins" | "always_upload" | "always_download" | "ask_me";
+
+export interface SaveSyncSettings {
+  conflict_mode: ConflictMode;
+  sync_before_launch: boolean;
+  sync_after_exit: boolean;
+  clock_skew_tolerance_sec: number;
+}
+
+export interface PendingConflict {
+  rom_id: number;
+  file_path: string;
+  local_hash: string;
+  local_mtime: string;
+  server_hash: string;
+  server_updated_at: string;
+  server_save_id: number;
+  detected_at: string;
+}
+
+export interface SaveFileStatus {
+  filename: string;
+  local_exists: boolean;
+  local_hash: string | null;
+  local_mtime: string | null;
+  server_save_id: number | null;
+  server_updated_at: string | null;
+  sync_status: "synced" | "local_newer" | "server_newer" | "conflict" | "not_synced";
+}
+
+export interface SaveStatus {
+  rom_id: number;
+  files: SaveFileStatus[];
+  last_synced_at: string | null;
+  playtime_seconds: number;
+}
+
 export interface DownloadProgressEvent {
   rom_id: number;
   rom_name: string;

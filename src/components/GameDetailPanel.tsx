@@ -10,9 +10,11 @@ import {
   checkPlatformBios,
   getSgdbArtworkBase64,
   getRomMetadata,
+  getSaveStatus,
+  preLaunchSync,
 } from "../api/backend";
 import { updateMetadataForApp } from "../patches/metadataPatches";
-import type { InstalledRom, DownloadProgressEvent, DownloadCompleteEvent, BiosStatus } from "../types";
+import type { InstalledRom, DownloadProgressEvent, DownloadCompleteEvent, BiosStatus, SaveStatus } from "../types";
 
 interface GameDetailPanelProps {
   appId: number;
@@ -97,6 +99,32 @@ const styles = {
   } as const,
 };
 
+function formatPlaytime(seconds: number): string {
+  if (seconds < 60) return "< 1 min";
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (hours === 0) return `${mins}m`;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+function formatSyncTime(iso: string | null): string {
+  if (!iso) return "Never synced";
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return "Synced just now";
+    if (diffMins < 60) return `Synced ${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `Synced ${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `Synced ${diffDays}d ago`;
+  } catch {
+    return "Synced";
+  }
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -115,6 +143,8 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
   const [actionPending, setActionPending] = useState(false);
   const [biosStatus, setBiosStatus] = useState<BiosStatus | null>(null);
   const [artworkLoading, setArtworkLoading] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
+  const [saveSyncing, setSaveSyncing] = useState(false);
   const romIdRef = useRef<number | null>(null);
 
   const fetchSgdbArtwork = async (romId: number, steamAppId: number, showToast = false) => {
@@ -200,6 +230,14 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
 
         // Fetch SGDB artwork on-demand (hero, logo, wide grid)
         fetchSgdbArtwork(rom.rom_id, appId);
+
+        // Fetch save sync status
+        try {
+          const saves = await getSaveStatus(rom.rom_id);
+          if (!cancelled) setSaveStatus(saves);
+        } catch {
+          // non-critical, save sync may not be configured
+        }
 
         // Fetch and apply metadata for native Steam display
         try {
@@ -402,6 +440,56 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
             ? `BIOS ready (${biosStatus.server_count} file${biosStatus.server_count !== 1 ? "s" : ""}) \u203a`
             : `BIOS required — ${biosStatus.local_count}/${biosStatus.server_count} downloaded \u203a`}
         </Focusable>
+      )}
+
+      {saveStatus && (
+        <div style={{
+          fontSize: "12px",
+          padding: "4px 8px",
+          marginBottom: "8px",
+          background: "rgba(26, 159, 255, 0.1)",
+          borderRadius: "3px",
+          border: "1px solid rgba(26, 159, 255, 0.2)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <div>
+            <span style={{ color: "rgba(255, 255, 255, 0.7)" }}>
+              {formatSyncTime(saveStatus.last_synced_at)}
+            </span>
+            {saveStatus.files.some((f) => f.sync_status === "conflict") && (
+              <span style={{ color: "#ffb74d", marginLeft: "8px" }}>
+                {saveStatus.files.filter((f) => f.sync_status === "conflict").length} conflict{saveStatus.files.filter((f) => f.sync_status === "conflict").length !== 1 ? "s" : ""}
+              </span>
+            )}
+            {saveStatus.playtime_seconds > 0 && (
+              <span style={{ color: "rgba(255, 255, 255, 0.4)", marginLeft: "8px" }}>
+                {formatPlaytime(saveStatus.playtime_seconds)}
+              </span>
+            )}
+          </div>
+          <DialogButton
+            style={{ padding: "2px 8px", fontSize: "11px", minWidth: "auto", width: "auto" }}
+            onClick={async () => {
+              if (!romInfo || saveSyncing) return;
+              setSaveSyncing(true);
+              try {
+                const result = await preLaunchSync(romInfo.rom_id);
+                if (result.success) {
+                  const updated = await getSaveStatus(romInfo.rom_id);
+                  setSaveStatus(updated);
+                }
+              } catch {
+                // ignore
+              }
+              setSaveSyncing(false);
+            }}
+            disabled={saveSyncing}
+          >
+            {saveSyncing ? "..." : "Sync"}
+          </DialogButton>
+        </div>
       )}
 
       {state === "downloading" && (

@@ -495,74 +495,232 @@ This is NOT `shortcuts.vdf` syncing via Steam Cloud. `shortcuts.vdf` is local-on
 
 ---
 
-## Phase 5: Save File Sync (RetroDECK)
+## Phase 5: Save File Sync (RetroArch .srm saves) — IN PROGRESS
 
-**Goal**: Bidirectional save file synchronization between RetroDECK and RomM. Hardcoded to RetroDECK paths for now — multi-emulator path abstraction deferred.
+**Goal**: Bidirectional save file synchronization between RetroDECK and RomM for RetroArch-based systems. Covers per-game `.srm` saves only — standalone emulator saves (PCSX2, DuckStation, Dolphin, etc.) deferred to Phase 7.
 
 **IMPORTANT: RomM account requirement**: Save games in RomM are tied to the authenticated user account. Users MUST use their own RomM account (not a shared/generic one) so saves are correctly attributed. Document this in README and show a warning in settings if the account appears to be shared (e.g. username is "admin" or "romm").
 
-### Play session detection:
-Need to reliably detect when a game session starts and ends. Two main options:
-- **Poll RetroDECK process**: Check if `net.retrodeck.retrodeck` flatpak process is running, detect when it exits
-- **Steam play tracking**: Use `SteamClient` APIs to detect game launch/exit events for our shortcut app IDs
+### Scope — RetroArch per-game .srm saves only:
 
-Investigation needed to determine which is more reliable. Polling the process seems more direct; Steam tracking has better integration but may not fire reliably for non-Steam shortcuts.
+Systems covered (all use RetroArch cores via RetroDECK):
+- NES, SNES, GB, GBC, GBA, Genesis/Mega Drive, Master System
+- N64, PSX (via SwanStation/Beetle PSX cores), Saturn, Dreamcast
+- PC Engine/TurboGrafx-16, Neo Geo Pocket, WonderSwan, Atari Lynx
+- Any other system using a RetroArch core with `.srm` save files
 
-### Save file locations (RetroDECK only):
-- RetroArch saves: `~/retrodeck/saves/{system}/{rom_name}.srm`
-- RetroArch states: `~/retrodeck/states/{system}/`
-- Shared memory cards (PS1/PS2): `~/retrodeck/saves/{system}/` — these systems use shared memory cards rather than per-game saves. Need to determine how to associate uploads with specific ROMs, or handle at a system level.
+Save path pattern: `~/retrodeck/saves/{system}/{rom_name}.srm`
 
-### Upload flow (after play session ends):
-1. Detect game session ended (via chosen detection method)
-2. Scan save directory for files newer than last sync timestamp
-3. For each changed save file:
-   - Compare `updated_at` from RomM save vs local file `mtime`
-   - If local is newer → upload via `POST /api/saves` with `rom_id` and `emulator`
-   - If remote is newer → conflict (see below)
-   - If equal → skip
+**Explicitly deferred** (see Phase 7):
+- PS2 via PCSX2 (shared memory cards)
+- PSX via DuckStation standalone (`.mcd` files)
+- GameCube/Wii via Dolphin (`.gci` files, region subfolders)
+- PSP via PPSSPP (title ID directories)
+- NDS via melonDS (`.sav` files)
+- 3DS via Azahar, Wii U via Cemu (NAND/title ID structures)
 
-### Download flow (before play or on-demand):
-1. Fetch saves: `GET /api/saves?rom_id={id}`
-2. Compare each save's `updated_at` with local file `mtime`
-3. Download newer saves via `GET /api/saves/{id}/content`
-4. Place in correct RetroDECK save directory
+### Device registration:
 
-### Conflict resolution options (user setting):
-- **"Always upload local"**: Local saves win. Upload even if remote is newer.
-- **"Always download remote"**: Remote wins. Overwrite local.
-- **"Ask me"** (default): Show conflict dialog in QAM with timestamps, let user choose.
-- **"Newest wins"**: Compare timestamps, use whichever is more recent.
+The plugin registers with RomM's `/api/saves` as a device so saves are attributed to this machine. A `device_id` (UUID) is generated on first use and persisted in `save_sync_state.json`. This allows multi-device save management — each device's saves are tracked independently.
 
-### Auto-sync behavior options:
-- **Sync saves before launch** (toggle, default: on): Download latest saves before starting game
-- **Sync saves after play** (toggle, default: on): Upload changed saves after game exits
-- **Background periodic sync** (toggle, default: off): Sync all saves every N minutes
+### Session detection:
 
-### Save sync tracking:
-- Track per-rom last sync timestamp in state.json
-- Track which emulator created each save (RomM's `emulator` field)
-- Handle multiple save files per game (e.g. multiple memory card slots)
+Uses `SteamClient.GameSessions.RegisterForAppLifetimeNotifications` to detect game start/stop events. `Router.MainRunningApp` provides reliable app ID resolution after a short delay (500ms). Suspend/resume hooks (`RegisterForOnSuspendRequest` / `RegisterForOnResumeFromSuspend`) pause playtime tracking during device sleep.
 
-### Manual "Sync All Saves to RomM" button:
-- In Danger Zone (or Save Sync settings page): one-click button to upload all local saves to RomM
-- Scans all installed ROMs, finds their save files, uploads any that are newer than RomM's copy
-- Use case: before uninstalling all ROMs, user can ensure saves are backed up to RomM
-- Also useful as a manual "backup my saves" action independent of play sessions
+The frontend `sessionManager.ts` maintains a cached `appId -> romId` map (from backend registry) to quickly determine if a launched app is a RomM shortcut.
 
-### QAM UI additions:
-- **Save Sync settings sub-page**: Conflict resolution mode, auto-sync toggles, sync interval
-- **Per-game save status on game detail page**: Last synced, local/remote timestamps, manual sync button
-- **Conflict dialog**: Show when "Ask me" mode encounters a conflict
-- **"Sync All Saves to RomM" button**: In Danger Zone, uploads all local saves before destructive actions
+### Three-way conflict detection:
+
+Conflict detection uses three data points:
+1. **Local file**: current `.srm` on disk (hash + mtime)
+2. **Last-sync snapshot**: hash of the file at last successful sync (stored in `save_sync_state.json`)
+3. **Server save**: RomM's version (hash + `updated_at` timestamp)
+
+This is more reliable than simple two-way timestamp comparison because it can distinguish:
+- Local-only changes (local differs from snapshot, server matches snapshot)
+- Server-only changes (server differs from snapshot, local matches snapshot)
+- True conflicts (both local and server differ from snapshot)
+- No changes (all three match)
+
+### Conflict resolution modes (user setting):
+- **"Newest wins"** (default): Compare local mtime vs server `updated_at`, use whichever is more recent
+- **"Always upload"**: Local saves always win, upload even if server is newer
+- **"Always download"**: Server saves always win, overwrite local
+- **"Ask me"**: Queue the conflict and show it in the Save Sync settings page for manual resolution (keep local / keep server)
+
+Clock skew tolerance is configurable (`clock_skew_tolerance_sec`, default 5s) to handle minor time differences between devices.
+
+### Sync flows:
+
+**Pre-launch sync** (if `sync_before_launch` enabled, default: on):
+1. Game start detected via lifetime notification
+2. Backend fetches server saves for this ROM via `GET /api/saves?rom_id={id}`
+3. Three-way comparison against local file and last-sync snapshot
+4. If server has newer save and no conflict → download and replace local
+5. If conflict → resolve per conflict mode (or queue for "ask me")
+6. Non-blocking: game launch is not delayed by sync failures
+
+**Post-exit sync** (if `sync_after_exit` enabled, default: on):
+1. Game stop detected via lifetime notification
+2. Backend scans local save file, computes hash
+3. If local hash differs from last-sync snapshot → save has changed
+4. Three-way comparison with server version
+5. If no conflict → upload via `POST /api/saves` with `rom_id` and `emulator`
+6. If conflict → resolve per conflict mode or queue
+7. Toast notification on success or conflict
+
+**Manual sync all**:
+- "Sync All Saves Now" button in Save Sync settings
+- Iterates all installed ROMs, performs three-way check for each
+- Reports total synced count and any conflicts found
+
+**Offline queue drain**:
+- If server is unreachable during post-exit sync, changes are queued locally
+- Queued changes are retried on next successful server contact
+
+### Playtime tracking:
+
+**Local tracking**: Session start/end times recorded via `recordSessionStart` / `recordSessionEnd` backend callables. Suspend/resume pauses are subtracted for accurate delta. Playtime delta stored per-ROM in `save_sync_state.json`.
+
+**Steam display**: Steam tracks playtime natively for non-Steam shortcuts — no additional work needed for the Steam UI.
+
+**RomM `last_played`**: After each session, the backend updates the ROM's `last_played` timestamp on the server. Ready for future RomM playtime API when it becomes available.
+
+### State schema — save_sync_state.json:
+
+Separate file from `state.json` to avoid bloating the main state. Structure:
+
+```json
+{
+  "device_id": "uuid-v4",
+  "saves": {
+    "<rom_id>": {
+      "last_synced_at": "ISO-8601",
+      "last_snapshot_hash": "md5-hex",
+      "server_save_id": 123,
+      "playtime_seconds": 3600
+    }
+  },
+  "pending_conflicts": [
+    {
+      "rom_id": 42,
+      "file_path": "saves/gba/game.srm",
+      "local_hash": "abc...",
+      "local_mtime": "ISO-8601",
+      "server_hash": "def...",
+      "server_updated_at": "ISO-8601",
+      "server_save_id": 456,
+      "detected_at": "ISO-8601"
+    }
+  ],
+  "settings": {
+    "conflict_mode": "newest_wins",
+    "sync_before_launch": true,
+    "sync_after_exit": true,
+    "clock_skew_tolerance_sec": 5
+  }
+}
+```
+
+### QAM UI:
+
+**Save Sync settings sub-page** (`SaveSyncSettings.tsx`):
+- Auto-sync toggles: sync before launch, sync after exit
+- Conflict resolution mode dropdown (newest_wins, always_upload, always_download, ask_me)
+- "Sync All Saves Now" button with status feedback
+- Pending conflicts section: shows unresolved conflicts with "Keep Local" / "Keep Server" buttons
+
+**Game detail page**: Save status (last synced, local/remote status) visible per-game. Manual sync button per-game.
+
+### Remaining work (Phase 5 completion):
+
+#### 1. Backend retry logic with exponential backoff
+`lib/save_sync.py` currently has no retry on failed uploads/downloads — a single failure goes straight to the offline queue. Add retry with exponential backoff (3 attempts: 1s, 3s, 9s) before falling back to the offline queue. This applies to:
+- `_romm_upload_save()` — retry the multipart POST
+- `_romm_download_save()` — retry the GET
+- `_romm_list_saves()` — retry the list call
+- Any RomM API call in `pre_launch_sync` and `post_exit_sync`
+
+The offline queue drain (`sync_all_saves`, next `pre_launch_sync`) should also use retry logic when processing queued entries.
+
+#### 2. Pre-launch sync toast notifications
+`sessionManager.ts` only shows toasts for post-exit sync (success/failure/conflicts). Pre-launch sync (lines 70-80) silently logs to console. Add toasts:
+- Success: "Saves downloaded from RomM" (only if files were actually downloaded, not on no-op)
+- Failure: "Failed to sync saves — playing with local saves"
+- Conflict in "ask me" mode: "Save conflict detected — resolve in Save Sync settings"
+
+**Blocking behavior on conflict**: If a save conflict is detected during pre-launch sync, **block the game launch** and show a popup/modal asking the user to resolve immediately. This mirrors Steam Cloud's native behavior. Options in the popup:
+- "Use Local Save" — upload local, then launch
+- "Use Server Save" — download server save, then launch
+- "Launch Anyway" — skip sync, launch with whatever is on disk
+- "Cancel" — abort launch entirely
+
+This only applies to "ask_me" conflict mode. Other modes (newest_wins, always_upload, always_download) auto-resolve and launch without interruption. If the server is unreachable, show a brief toast ("RomM unreachable — playing with local saves") and launch without blocking. On the next launch where the server IS reachable, if there are unresolved conflicts from previous offline sessions, show the conflict resolution popup before launching.
+
+#### 3. Conflict resolution popup with file details
+The current SaveSyncSettings page shows basic "Keep Local" / "Keep Server" buttons for pending conflicts. Improve this with a detailed popup/modal when the user clicks to resolve a conflict. The popup should show:
+- File name and system (e.g. "Pokemon FireRed.srm — GBA")
+- Local file: size, last modified timestamp, which device
+- Server file: size, `updated_at` timestamp, which device last uploaded
+- Options: "Keep Local" (upload ours), "Keep Server" (download theirs), "Keep Both" (upload ours as new slot, download theirs alongside), "Skip" (defer)
+
+This gives users enough information to make an informed choice, especially in multi-device scenarios where they may have played on different machines.
+
+#### 4. Retry UI for failed sync operations
+When a save sync fails (after all backend retries exhausted), the user should have a way to retry:
+- Show a toast with the failure message. If the Decky toast API supports action buttons, add a "Retry" action.
+- In SaveSyncSettings, show failed/queued operations with a "Retry Now" button per entry.
+- In the game detail panel, if a save sync failed for that ROM, show a "Sync Failed — Retry" indicator.
+
+The offline queue already persists failed operations — this is about surfacing them to the user and letting them trigger manual retries.
+
+#### 5. Playtime storage via RomM user notes
+RomM has no dedicated playtime field (feature request #1225 open). As a workaround, store playtime in the per-ROM user notes field available via the RomM API. Each ROM's `RomUser` model has a `note_raw_markdown` (or similar) field accessible through `PUT /api/roms/{id}`.
+
+**Format**: Append a machine-parseable tag to the notes without disturbing user-written content:
+```
+<!-- romm-sync:playtime {"seconds": 18450, "updated": "2026-02-17T10:30:00Z", "device": "steamdeck"} -->
+```
+
+**Flow**:
+1. After each play session (in `record_session_end`), fetch the ROM's current notes from RomM
+2. Parse our playtime tag if present, or start from 0
+3. Add the session delta to the stored total
+4. Update the tag in the notes and PUT back to RomM
+5. On other devices, read the notes to get cross-device playtime totals
+
+**Edge cases**:
+- **User edits the tag manually with a valid value** (e.g. corrects playtime to a different number): Accept it. On next session end, fetch the server value, treat it as the new baseline, and add the session delta to it. If the user-edited value is higher than our local total, update our local total to match (user may have played on another platform we don't track). If the user-edited value is lower than our local total, ask the user which to keep — "Server says 3h, local says 5h — keep local or server?" — since the user may have intentionally reset their playtime.
+- **User deletes the tag entirely**: Treat as "no server playtime". Upload local playtime total on next session end, re-creating the tag.
+- **User wants to set playtime manually**: The game detail panel or save sync settings should allow the user to manually enter a playtime value (hours/minutes input). This overwrites both the local total and the RomM notes tag. Use case: user played on a different platform before using the plugin and wants to set their accumulated playtime, or wants to correct a wrong value.
+- **Multiple devices update simultaneously**: Last write wins. Acceptable for playtime — small deltas mean the worst case is losing one session's worth of time, which is recovered on the next session from that device.
+- **Notes field empty or missing**: Create with just our tag.
+- **Migration**: When RomM adds a real playtime API, stop writing to notes and read from the new field instead. Optionally offer a one-time migration to copy the notes-based playtime into the new field.
+
+**Research needed**: Confirm the exact API endpoint and field name for per-user ROM notes. Check if it's `PUT /api/roms/{id}` with a `note_raw_markdown` body field, or a separate user endpoint.
+
+#### 6. RomM shared account warning
+PLAN.md specifies: "Users MUST use their own RomM account (not a shared/generic one) so saves are correctly attributed." Add a warning in ConnectionSettings when the username looks like a shared account:
+- Check if username is "admin", "romm", "user", "guest", or similar generic names
+- Show an orange warning below the username field: "Save sync requires a personal account. Shared accounts (like 'admin') will mix save files between users."
+- Non-blocking — the user can still proceed, it's just informational
 
 ### Verification:
-- [ ] Save file uploaded to RomM after play session
-- [ ] Save file downloaded from RomM before launch
-- [ ] Conflict detected and presented to user
-- [ ] "Newest wins" correctly compares timestamps
-- [ ] Multiple save files for same game handled
-- [ ] Save sync status visible on game detail page
+- [ ] Save file uploaded to RomM after play session ends
+- [ ] Save file downloaded from RomM before game launch
+- [ ] Three-way conflict correctly identified (both sides changed)
+- [ ] "Newest wins" resolves based on timestamp comparison
+- [ ] "Ask me" queues conflict and shows in detailed popup UI
+- [ ] Manual "Sync All Saves Now" processes all installed ROMs
+- [ ] Playtime tracked accurately (suspend/resume excluded)
+- [ ] Playtime stored in RomM user notes, readable across devices
+- [ ] Device registration persists across plugin restarts
+- [ ] save_sync_state.json separate from state.json
+- [ ] Pre-launch sync does not block game launch on failure
+- [ ] Pre-launch and post-exit sync show toast notifications
+- [ ] Failed uploads retry 3 times before falling to offline queue
+- [ ] User can manually retry failed sync operations
+- [ ] Shared account warning shown for generic usernames
 
 ---
 
@@ -695,7 +853,7 @@ This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. L
 
 ## Phase 7: Multi-Emulator Support (Deferred)
 
-**Goal**: Support EmuDeck, standalone RetroArch, and manual emulator installs beyond RetroDECK.
+**Goal**: Support EmuDeck, standalone RetroArch, and manual emulator installs beyond RetroDECK. Also extends save sync to standalone emulators.
 
 ### Emulator platform presets:
 - **RetroDECK** (current): `~/retrodeck/roms/`, `~/retrodeck/bios/`, `~/retrodeck/saves/`
@@ -717,6 +875,51 @@ This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. L
 - Per-game override on detail page
 - Resolution order: per-game → per-system → preset default
 
+### Standalone emulator save sync:
+
+Phase 5 covers RetroArch `.srm` saves only. This phase adds support for standalone emulator save formats, which use fundamentally different save file structures.
+
+**PS2 via PCSX2**:
+- Shared memory card files: `Mcd001.ps2`, `Mcd002.ps2`
+- Path: `~/retrodeck/saves/ps2/` or PCSX2 `memcards/` directory
+- Challenge: entire memory card must be synced (contains saves for multiple games)
+- Tracking: system-level rather than per-game; upload/download the whole card
+
+**PSX via DuckStation**:
+- Memory card format: `.mcd` files in `duckstation/memcards/`
+- Per-game or shared cards depending on DuckStation config
+- Same shared-card challenge as PCSX2
+
+**GameCube via Dolphin**:
+- Per-game `.gci` save files in region-specific subfolders
+- Path: `dolphin-emu/GC/{region}/Card A/` (USA, EUR, JAP)
+- Region detection needed to find the right subfolder
+
+**PSP via PPSSPP**:
+- Save directories named by title ID (e.g. `ULUS10041/`)
+- Path: `PPSSPP/PSP/SAVEDATA/{title_id}/`
+- Title ID mapping required: ROM filename -> title ID for save discovery
+
+**NDS via melonDS**:
+- Per-game `.sav` files (same name as ROM)
+- Path: `~/retrodeck/saves/nds/` or melonDS save directory
+- Straightforward per-game sync, similar to RetroArch `.srm`
+
+**3DS via Azahar**:
+- NAND/SDMC structure: saves stored by title ID
+- Complex directory hierarchy under `azahar/sdmc/` and `azahar/nand/`
+- Title ID mapping required
+
+**Wii U via Cemu**:
+- mlc01 directory with title ID structure
+- Path: `cemu/mlc01/usr/save/{title_id_high}/{title_id_low}/`
+- Title ID mapping required
+
+**Shared challenges**:
+- Title ID mapping: need a database or API to map ROM filenames to emulator-specific title IDs
+- Shared memory cards: must sync at system level, not per-game; conflicts affect all games on the card
+- Multiple save slots: some emulators support multiple save slots per game
+
 ---
 
 ## Phase 8: Polish & Advanced Features (Deferred)
@@ -729,6 +932,8 @@ This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. L
 - **Offline mode**: Cache lists locally, queue operations
 - **Stacked sync progress UI**: Replace single progress bar with phased checklist
 - **Error handling**: Retry with backoff, toast notifications, detailed logging
+- **Connection settings: remove save button, save on popup confirm**: Each connection field (URL, username, password) already has an edit button that opens a popup. Change behavior so that confirming the popup immediately persists the new value to settings. Cancelling the popup must discard any changes and restore the original value. Remove the global "Save" button entirely — it is no longer needed since each field saves independently on popup confirmation.
+- **RomM playtime API integration**: When RomM adds a playtime field (feature request #1225), plug in our existing delta-based accumulation to sync playtime bidirectionally. Architecture is already in place — just needs the API endpoint.
 
 ---
 

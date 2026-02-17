@@ -12,15 +12,17 @@ import { PlatformSync } from "./components/PlatformSync";
 import { DangerZone } from "./components/DangerZone";
 import { DownloadQueue } from "./components/DownloadQueue";
 import { BiosManager } from "./components/BiosManager";
+import { SaveSyncSettings } from "./components/SaveSyncSettings";
 import { initSyncManager } from "./utils/syncManager";
 import { setSyncProgress } from "./utils/syncProgress";
 import { updateDownload } from "./utils/downloadStore";
 import { registerGameDetailPatch, unregisterGameDetailPatch } from "./patches/gameDetailPatch";
 import { registerMetadataPatches, unregisterMetadataPatches } from "./patches/metadataPatches";
-import { getAllMetadataCache, getAppIdRomIdMap } from "./api/backend";
+import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered } from "./api/backend";
+import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
-type Page = "main" | "connection" | "platforms" | "danger" | "downloads" | "bios";
+type Page = "main" | "connection" | "platforms" | "danger" | "downloads" | "bios" | "savesync";
 
 // Module-level page state survives QAM remounts (e.g. after modal close)
 let currentPage: Page = "main";
@@ -40,6 +42,8 @@ const QAMPanel: FC = () => {
       return <DownloadQueue onBack={() => setPage("main")} />;
     case "bios":
       return <BiosManager onBack={() => setPage("main")} />;
+    case "savesync":
+      return <SaveSyncSettings onBack={() => setPage("main")} />;
     default:
       return <MainPage onNavigate={(p) => setPage(p)} />;
   }
@@ -58,6 +62,16 @@ export default definePlugin(() => {
       registerMetadataPatches(cache, appIdMap);
     } catch (e) {
       console.error("[RomM] Failed to load metadata cache:", e);
+    }
+  })();
+
+  // Register device and initialize session manager for save sync
+  (async () => {
+    try {
+      await ensureDeviceRegistered();
+      await initSessionManager();
+    } catch (e) {
+      console.error("[RomM] Failed to init save sync:", e);
     }
   })();
 
@@ -128,6 +142,7 @@ export default definePlugin(() => {
     content: <QAMPanel />,
     alwaysRender: true,
     onDismount() {
+      destroySessionManager();
       unregisterGameDetailPatch();
       unregisterMetadataPatches();
       removeEventListener("sync_complete", syncCompleteListener);

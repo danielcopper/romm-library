@@ -23,8 +23,15 @@ declare var SteamClient: {
       callback: (details: any) => void,
     ): { unregister: () => void };
   };
+  GameSessions: {
+    RegisterForAppLifetimeNotifications(
+      callback: (update: { unAppID: number; nInstanceID: number; bRunning: boolean }) => void,
+    ): { unregister: () => void };
+  };
   System: {
     GetSystemInfo(): Promise<{ sHostname: string; [key: string]: any }>;
+    RegisterForOnSuspendRequest(callback: () => void): { unregister: () => void };
+    RegisterForOnResumeFromSuspend(callback: () => void): { unregister: () => void };
   };
 };
 

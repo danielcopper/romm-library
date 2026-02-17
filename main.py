@@ -16,9 +16,10 @@ from lib.metadata import MetadataMixin
 from lib.sgdb import SgdbMixin
 from lib.downloads import DownloadMixin
 from lib.sync import SyncMixin
+from lib.save_sync import SaveSyncMixin
 
 
-class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareMixin, MetadataMixin, DownloadMixin, SyncMixin):
+class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareMixin, MetadataMixin, DownloadMixin, SyncMixin, SaveSyncMixin):
     settings: dict
     loop: asyncio.AbstractEventLoop
 
@@ -47,6 +48,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._metadata_cache = {}
         self._load_state()
         self._load_metadata_cache()
+        self._init_save_sync_state()
+        self._load_save_sync_state()
         self._prune_stale_state()
         self.loop.create_task(self._poll_download_requests())
         decky.logger.info("RomM Sync plugin loaded")
