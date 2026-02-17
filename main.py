@@ -2,7 +2,9 @@ import os
 import sys
 import asyncio
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "py_modules"))
+plugin_dir = os.path.dirname(__file__)
+sys.path.insert(0, os.path.join(plugin_dir, "py_modules"))
+sys.path.insert(0, plugin_dir)
 
 import decky
 

@@ -179,3 +179,22 @@ class SteamConfigMixin:
             except FileNotFoundError:
                 continue
         return None
+
+    async def fix_retroarch_input_driver(self):
+        """Change RetroArch input_driver from 'x' to 'sdl2'."""
+        check = self._check_retroarch_input_driver()
+        if not check or not check.get("warning"):
+            return {"success": False, "message": "No fix needed"}
+        cfg_path = check["config_path"]
+        try:
+            with open(cfg_path, "r") as f:
+                lines = f.readlines()
+            with open(cfg_path, "w") as f:
+                for line in lines:
+                    if line.strip().startswith("input_driver"):
+                        f.write('input_driver = "sdl2"\n')
+                    else:
+                        f.write(line)
+            return {"success": True, "message": "Changed input_driver to sdl2"}
+        except Exception as e:
+            return {"success": False, "message": f"Failed: {e}"}

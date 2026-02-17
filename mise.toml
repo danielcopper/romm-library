@@ -26,8 +26,12 @@ run = "lint-imports"
 [tasks.deploy]
 description = "Deploy plugin files to Decky plugin directory"
 depends = ["build"]
+raw = true
 run = """
 DEST="$HOME/homebrew/plugins/decky-romm-sync"
+if [ -d "$DEST" ] && [ "$(stat -c '%U' "$DEST")" != "$USER" ]; then
+  sudo chown -R "$USER:$USER" "$DEST"
+fi
 mkdir -p "$DEST/dist" "$DEST/bin" "$DEST/defaults" "$DEST/py_modules" "$DEST/backend"
 rsync -a --delete dist/ "$DEST/dist/"
 rsync -a --delete bin/ "$DEST/bin/"
@@ -39,5 +43,9 @@ cp -f main.py plugin.json package.json "$DEST/"
 
 [tasks.dev]
 description = "Build, deploy, and restart plugin loader"
-run = "sudo systemctl restart plugin_loader"
-depends = ["deploy"]
+raw = true
+run = """
+sudo -v
+mise run deploy
+sudo systemctl restart plugin_loader
+"""
