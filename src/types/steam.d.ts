@@ -55,6 +55,9 @@ interface SteamAppOverview {
   GetCanonicalReleaseDate?(): number;
   BHasStoreCategory?(category: number): boolean;
   BIsModOrShortcut?(): boolean;
+  BHasRecentlyLaunched?(): boolean;
+  GetGameID?(): string;
+  GetPrimaryAppID?(): number;
 }
 
 // Keep the old name as an alias for backwards compatibility with existing code

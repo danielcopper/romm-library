@@ -41,13 +41,13 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
         if (existingAppId) {
           // Already exists — update properties
           SteamClient.Apps.SetShortcutName(existingAppId, item.name);
-          SteamClient.Apps.SetShortcutExe(existingAppId, `"${item.exe}"`);
-          SteamClient.Apps.SetShortcutStartDir(existingAppId, `"${item.start_dir}"`);
+          SteamClient.Apps.SetShortcutExe(existingAppId, item.exe);
+          SteamClient.Apps.SetShortcutStartDir(existingAppId, item.start_dir);
           SteamClient.Apps.SetAppLaunchOptions(existingAppId, item.launch_options);
           appId = existingAppId;
           romIdToAppId[String(item.rom_id)] = existingAppId;
         } else {
-          // New — create shortcut (addShortcut already has internal 500ms delay)
+          // New — create shortcut with all launch params upfront
           const newAppId = await addShortcut(item);
           if (newAppId) {
             appId = newAppId;

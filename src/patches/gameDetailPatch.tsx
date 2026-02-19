@@ -7,6 +7,7 @@ import {
   createReactTreePatcher,
 } from "@decky/ui";
 import { GameDetailPanel } from "../components/GameDetailPanel";
+import { setBypassBypass } from "./metadataPatches";
 import type { RoutePatch } from "@decky/api";
 
 let gamePatch: RoutePatch | null = null;
@@ -50,6 +51,10 @@ export function registerGameDetailPatch() {
             if (!appId) {
               return ret;
             }
+
+            // Set bypass counter so BIsModOrShortcut returns false during
+            // this render pass, enabling metadata sections for our shortcuts.
+            setBypassBypass(11);
 
             // Avoid duplicate injection on re-render
             const alreadyInjected = container.props.children.some(
