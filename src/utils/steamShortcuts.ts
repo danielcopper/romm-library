@@ -56,9 +56,13 @@ function getLaunchOptions(appId: number): Promise<string | null> {
  */
 export async function addShortcut(data: SyncAddItem): Promise<number | null> {
   try {
+    // Steam requires exe and start_dir paths wrapped in quotes
+    const quotedExe = `"${data.exe}"`;
+    const quotedStartDir = `"${data.start_dir}"`;
+
     const appId = await SteamClient.Apps.AddShortcut(
       data.name,
-      data.exe,
+      quotedExe,
       "",
       "",
     );
@@ -69,8 +73,8 @@ export async function addShortcut(data: SyncAddItem): Promise<number | null> {
     await delay(500);
 
     SteamClient.Apps.SetShortcutName(appId, data.name);
-    SteamClient.Apps.SetShortcutExe(appId, data.exe);
-    SteamClient.Apps.SetShortcutStartDir(appId, data.start_dir);
+    SteamClient.Apps.SetShortcutExe(appId, quotedExe);
+    SteamClient.Apps.SetShortcutStartDir(appId, quotedStartDir);
     SteamClient.Apps.SetAppLaunchOptions(appId, data.launch_options);
 
     return appId;

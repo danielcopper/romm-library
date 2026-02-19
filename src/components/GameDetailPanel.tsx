@@ -150,7 +150,7 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
   const fetchSgdbArtwork = async (romId: number, steamAppId: number, showToast = false) => {
     setArtworkLoading(true);
     const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-    for (const assetType of [1, 2, 3] as const) {
+    for (const assetType of [1, 2, 3, 4] as const) {
       try {
         const result = await getSgdbArtworkBase64(romId, assetType);
         if (result.no_api_key) {

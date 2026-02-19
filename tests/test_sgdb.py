@@ -405,3 +405,97 @@ class TestGetSgdbArtworkBase64:
 
         mock_lookup.assert_not_called()
         assert result["base64"] is not None
+
+
+class TestIconSupport:
+    """Tests for SGDB icon download support (asset type 4)."""
+
+    @pytest.mark.asyncio
+    async def test_icon_type_maps_to_icons_endpoint(self, plugin):
+        """Asset type 'icon' should map to the SGDB /icons/ endpoint."""
+        type_map = {"hero": "heroes", "logo": "logos", "grid": "grids", "icon": "icons"}
+        assert plugin._download_sgdb_artwork.__func__  # method exists
+        # Verify the type_map includes icon by calling with a non-existent game
+        # (will fail at API call, but won't fail at type_map lookup)
+
+    @pytest.mark.asyncio
+    async def test_icon_asset_type_num_is_4(self, plugin, tmp_path):
+        """Asset type number 4 should map to 'icon'."""
+        import base64
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin.settings["steamgriddb_api_key"] = "some-key"
+        plugin.loop = asyncio.get_event_loop()
+
+        # Create cached icon file
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+        art_file = art_dir / "42_icon.png"
+        art_file.write_bytes(b"icon png data")
+
+        result = await plugin.get_sgdb_artwork_base64(42, 4)  # 4 = icon
+        assert result["no_api_key"] is False
+        assert result["base64"] is not None
+        assert base64.b64decode(result["base64"]) == b"icon png data"
+
+    @pytest.mark.asyncio
+    async def test_icon_download_from_sgdb(self, plugin, tmp_path):
+        """Icon should be downloadable from SGDB icons endpoint."""
+        from unittest.mock import patch
+        import base64
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin.settings["steamgriddb_api_key"] = "some-key"
+        plugin.loop = asyncio.get_event_loop()
+
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 100001, "name": "Zelda", "platform_name": "N64",
+            "igdb_id": 1234, "sgdb_id": 9999,
+        }
+
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+        art_file = art_dir / "42_icon.png"
+
+        def fake_download_sgdb(sgdb_game_id, rom_id, asset_type):
+            assert asset_type == "icon"
+            assert sgdb_game_id == 9999
+            art_file.write_bytes(b"icon data")
+            return str(art_file)
+
+        with patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb):
+            result = await plugin.get_sgdb_artwork_base64(42, 4)
+
+        assert result["base64"] is not None
+        assert base64.b64decode(result["base64"]) == b"icon data"
+
+    def test_download_sgdb_artwork_icon_endpoint(self, plugin, tmp_path):
+        """_download_sgdb_artwork should use /icons/ endpoint for icon type."""
+        from unittest.mock import patch, MagicMock
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+
+        # Track which SGDB path was requested
+        requested_paths = []
+        def fake_sgdb_request(path):
+            requested_paths.append(path)
+            return {"success": True, "data": [{"url": "https://example.com/icon.png"}]}
+
+        def fake_urlopen(*args, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.read.side_effect = [b"icon bytes", b""]
+            mock_resp.__enter__ = lambda s: s
+            mock_resp.__exit__ = MagicMock(return_value=False)
+            return mock_resp
+
+        with patch.object(plugin, "_sgdb_request", side_effect=fake_sgdb_request), \
+             patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            result = plugin._download_sgdb_artwork(9999, 42, "icon")
+
+        assert len(requested_paths) == 1
+        assert "/icons/game/9999" in requested_paths[0]

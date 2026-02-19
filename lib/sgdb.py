@@ -58,6 +58,7 @@ class SgdbMixin:
             "hero": "heroes",
             "logo": "logos",
             "grid": "grids",
+            "icon": "icons",
         }
         endpoint = type_map.get(asset_type)
         if not endpoint:
@@ -109,7 +110,7 @@ class SgdbMixin:
     async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
         rom_id = int(rom_id)
         asset_type_num = int(asset_type_num)
-        type_names = {1: "hero", 2: "logo", 3: "grid"}
+        type_names = {1: "hero", 2: "logo", 3: "grid", 4: "icon"}
         asset_type = type_names.get(asset_type_num)
         self._log_debug(f"SGDB artwork request: rom_id={rom_id}, asset_type={asset_type_num}")
         if not asset_type:
