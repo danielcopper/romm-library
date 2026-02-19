@@ -605,8 +605,17 @@ class SaveSyncMixin:
 
             # Resolve conflicts
             if action == "conflict":
-                local_mtime = os.path.getmtime(local["path"]) if local else 0
-                resolution = self._resolve_conflict_by_mode(local_mtime, server)
+                # Force ask on first sync (no baseline hash) — user must choose
+                save_state = self._save_sync_state["saves"].get(rom_id_str, {})
+                file_state = save_state.get("files", {}).get(filename, {})
+                has_sync_history = bool(file_state.get("last_sync_hash"))
+
+                if not has_sync_history:
+                    resolution = "ask"
+                else:
+                    local_mtime = os.path.getmtime(local["path"]) if local else 0
+                    resolution = self._resolve_conflict_by_mode(local_mtime, server)
+
                 if resolution == "ask":
                     if local:
                         self._add_pending_conflict(rom_id, filename, local["path"], server)
