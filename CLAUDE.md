@@ -28,6 +28,9 @@ RomM Server <-HTTP-> Python Backend (main.py)
 - **AddShortcut timing**: Must wait 300-500ms after `AddShortcut()` before setting properties. Use 50ms delay between operations.
 - **Large payloads**: Never send bulk base64 data through `decky.emit()` — WebSocket bridge has size limits. Use per-item callables instead.
 - **SteamGridDB**: Requires `User-Agent` header — Python's default `Python-urllib` gets 403'd. Use `decky-romm-sync/0.1`.
+- **AddShortcut ignores most params**: `SteamClient.Apps.AddShortcut(name, exe, startDir, launchOptions)` ignores startDir and launchOptions (confirmed by MoonDeck plugin). Must use `Set*` calls (`SetShortcutName`, `SetShortcutExe`, `SetShortcutStartDir`, `SetAppLaunchOptions`) after a 500ms delay. Do NOT pass quoted exe paths — the API handles quoting internally.
+- **BIsModOrShortcut bypass counter**: Patching `BIsModOrShortcut()` to return false makes metadata display but BREAKS game launches (Steam skips the shortcut launch path). Must use the MetaDeck bypass counter pattern: default state returns false (metadata shows), temporarily returns true during launch via counter hooks on `GetGameID`, `GetPrimaryAppID`, `BHasRecentlyLaunched`, `GetPerClientData`. See `src/patches/metadataPatches.ts`.
+- **Shortcut property re-sync**: Changing exe, startDir, or launchOptions on existing shortcuts may not take effect reliably. Full delete + recreate (re-sync) is required for changes to launch config.
 
 ## File Structure
 
@@ -45,6 +48,7 @@ src/components/BiosManager.tsx       # Per-platform BIOS file status and downloa
 src/components/GameDetailPanel.tsx   # Injected into game detail page (download, artwork, BIOS)
 src/components/SaveSyncSettings.tsx  # Save sync settings QAM page
 src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid
+src/patches/metadataPatches.ts       # BIsModOrShortcut bypass counter for metadata display + launch
 src/api/backend.ts                   # callable() wrappers (typed)
 src/types/index.ts                   # Shared TypeScript interfaces
 src/types/steam.d.ts                 # SteamClient/collectionStore/appStore type declarations
