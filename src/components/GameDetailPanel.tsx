@@ -457,10 +457,32 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
           background: "rgba(26, 159, 255, 0.1)",
           borderRadius: "3px",
           border: "1px solid rgba(26, 159, 255, 0.2)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
         }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2px" }}>
+            <span style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Saves &amp; Playtime
+            </span>
+            <DialogButton
+              style={{ padding: "2px 8px", fontSize: "11px", minWidth: "auto", width: "auto" }}
+              onClick={async () => {
+                if (!romInfo || saveSyncing) return;
+                setSaveSyncing(true);
+                try {
+                  const result = await preLaunchSync(romInfo.rom_id);
+                  if (result.success) {
+                    const updated = await getSaveStatus(romInfo.rom_id);
+                    setSaveStatus(updated);
+                  }
+                } catch {
+                  // ignore
+                }
+                setSaveSyncing(false);
+              }}
+              disabled={saveSyncing}
+            >
+              {saveSyncing ? "..." : "Sync"}
+            </DialogButton>
+          </div>
           <div>
             <span style={{ color: "rgba(255, 255, 255, 0.7)" }}>
               {formatSyncTime(saveStatus.last_synced_at)}
@@ -476,26 +498,6 @@ export const GameDetailPanel: FC<GameDetailPanelProps> = ({ appId }) => {
               </span>
             )}
           </div>
-          <DialogButton
-            style={{ padding: "2px 8px", fontSize: "11px", minWidth: "auto", width: "auto" }}
-            onClick={async () => {
-              if (!romInfo || saveSyncing) return;
-              setSaveSyncing(true);
-              try {
-                const result = await preLaunchSync(romInfo.rom_id);
-                if (result.success) {
-                  const updated = await getSaveStatus(romInfo.rom_id);
-                  setSaveStatus(updated);
-                }
-              } catch {
-                // ignore
-              }
-              setSaveSyncing(false);
-            }}
-            disabled={saveSyncing}
-          >
-            {saveSyncing ? "..." : "Sync"}
-          </DialogButton>
         </div>
       )}
 
