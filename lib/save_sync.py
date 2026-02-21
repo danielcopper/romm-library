@@ -47,6 +47,7 @@ class SaveSyncMixin:
             "pending_conflicts": [],
             "offline_queue": [],
             "settings": {
+                "save_sync_enabled": False,
                 "conflict_mode": "newest_wins",
                 "sync_before_launch": True,
                 "sync_after_exit": True,
@@ -410,7 +411,7 @@ class SaveSyncMixin:
         try:
             fd, tmp_path = tempfile.mkstemp(suffix=".tmp")
             os.close(fd)
-            self._romm_download_save(save_id, tmp_path)
+            self._with_retry(self._romm_download_save, save_id, tmp_path)
             return self._file_md5(tmp_path)
         except Exception as e:
             self._log_debug(f"Failed to hash server save {save_id}: {e}")
@@ -732,12 +733,19 @@ class SaveSyncMixin:
 
     # ── Callables ─────────────────────────────────────────────────
 
+    def _is_save_sync_enabled(self):
+        """Check if save sync feature is enabled."""
+        return self._save_sync_state.get("settings", {}).get("save_sync_enabled", False)
+
     async def ensure_device_registered(self):
         """Ensure this device has a unique ID for save sync tracking.
 
         Generates a local UUID on first use — no server registration needed.
         The device_id is only used locally to identify which machine uploaded a save.
         """
+        if not self._is_save_sync_enabled():
+            return {"success": False, "device_id": "", "device_name": "", "disabled": True}
+
         if self._save_sync_state.get("device_id"):
             return {
                 "success": True,
@@ -762,7 +770,7 @@ class SaveSyncMixin:
 
         server_saves = []
         try:
-            server_saves = self._romm_list_saves(rom_id)
+            server_saves = self._with_retry(self._romm_list_saves, rom_id)
         except Exception as e:
             self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
 
@@ -828,6 +836,9 @@ class SaveSyncMixin:
 
     async def pre_launch_sync(self, rom_id):
         """Download newer saves from server before game launch."""
+        if not self._is_save_sync_enabled():
+            return {"success": True, "message": "Save sync disabled", "synced": 0}
+
         settings = self._save_sync_state.get("settings", {})
         if not settings.get("sync_before_launch", True):
             return {"success": True, "message": "Pre-launch sync disabled", "synced": 0}
@@ -852,6 +863,9 @@ class SaveSyncMixin:
 
     async def post_exit_sync(self, rom_id):
         """Upload changed saves after game exit."""
+        if not self._is_save_sync_enabled():
+            return {"success": True, "message": "Save sync disabled", "synced": 0}
+
         settings = self._save_sync_state.get("settings", {})
         if not settings.get("sync_after_exit", True):
             return {"success": True, "message": "Post-exit sync disabled", "synced": 0}
@@ -876,6 +890,9 @@ class SaveSyncMixin:
 
     async def sync_rom_saves(self, rom_id):
         """Bidirectional sync for a single ROM (manual trigger from game detail)."""
+        if not self._is_save_sync_enabled():
+            return {"success": False, "message": "Save sync is disabled", "synced": 0}
+
         if not self._save_sync_state.get("device_id"):
             reg = await self.ensure_device_registered()
             if not reg.get("success"):
@@ -896,6 +913,9 @@ class SaveSyncMixin:
 
     async def sync_all_saves(self):
         """Manual full sync of all ROMs with shortcuts (both directions)."""
+        if not self._is_save_sync_enabled():
+            return {"success": False, "message": "Save sync is disabled", "synced": 0, "conflicts": 0}
+
         if not self._save_sync_state.get("device_id"):
             reg = await self.ensure_device_registered()
             if not reg.get("success"):
@@ -963,7 +983,9 @@ class SaveSyncMixin:
                 server_save_id = conflict.get("server_save_id")
                 if not server_save_id:
                     return {"success": False, "message": "No server save ID"}
-                server_save = self._romm_request(f"/api/saves/{server_save_id}")
+                server_save = self._with_retry(
+                    self._romm_request, f"/api/saves/{server_save_id}"
+                )
                 self._do_download_save(
                     server_save, saves_dir, filename, rom_id_str, system
                 )
@@ -974,7 +996,8 @@ class SaveSyncMixin:
                 server_save = None
                 if conflict.get("server_save_id"):
                     try:
-                        server_save = self._romm_request(
+                        server_save = self._with_retry(
+                            self._romm_request,
                             f"/api/saves/{conflict['server_save_id']}"
                         )
                     except Exception:
@@ -988,7 +1011,7 @@ class SaveSyncMixin:
             return {"success": True, "message": f"Conflict resolved: {resolution}"}
         except Exception as e:
             decky.logger.error(f"Conflict resolution failed: {e}")
-            return {"success": False, "message": f"Failed: {e}"}
+            return {"success": False, "message": "Conflict resolution failed"}
 
     async def get_pending_conflicts(self):
         """Return list of unresolved save conflicts."""
@@ -1046,11 +1069,12 @@ class SaveSyncMixin:
                 "session_count": entry["session_count"],
             }
         except (ValueError, TypeError) as e:
-            return {"success": False, "message": f"Failed to calculate duration: {e}"}
+            return {"success": False, "message": "Failed to calculate session duration"}
 
     async def get_save_sync_settings(self):
         """Return current save sync settings."""
         return self._save_sync_state.get("settings", {
+            "save_sync_enabled": False,
             "conflict_mode": "newest_wins",
             "sync_before_launch": True,
             "sync_after_exit": True,
@@ -1060,8 +1084,8 @@ class SaveSyncMixin:
     async def update_save_sync_settings(self, settings):
         """Update save sync settings (conflict_mode, sync toggles, etc.)."""
         allowed_keys = {
-            "conflict_mode", "sync_before_launch", "sync_after_exit",
-            "clock_skew_tolerance_sec",
+            "save_sync_enabled", "conflict_mode", "sync_before_launch",
+            "sync_after_exit", "clock_skew_tolerance_sec",
         }
         valid_modes = {"newest_wins", "always_upload", "always_download", "ask_me"}
 
@@ -1074,7 +1098,7 @@ class SaveSyncMixin:
                 continue
             if key == "clock_skew_tolerance_sec":
                 value = max(0, int(value))
-            if key in ("sync_before_launch", "sync_after_exit"):
+            if key in ("save_sync_enabled", "sync_before_launch", "sync_after_exit"):
                 value = bool(value)
             current[key] = value
 
@@ -1111,6 +1135,13 @@ class SaveSyncMixin:
             "total_seconds": max(local_seconds, server_seconds),
             "session_count": local_entry.get("session_count", 0),
         }
+
+    async def get_all_playtime(self):
+        """Return all local playtime entries keyed by rom_id string.
+
+        Used by the frontend at plugin load to write playtime into Steam's UI.
+        """
+        return {"playtime": self._save_sync_state.get("playtime", {})}
 
     async def get_offline_queue(self):
         """Return failed sync operations awaiting manual retry."""

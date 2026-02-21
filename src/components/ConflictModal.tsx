@@ -4,7 +4,7 @@ import { showModal } from "@decky/ui";
 import { resolveConflict } from "../api/backend";
 import type { PendingConflict } from "../types";
 
-export type ConflictResolution = "use_local" | "use_server" | "launch_anyway" | "cancel";
+export type ConflictResolution = "use_local" | "use_server" | "skip" | "launch_anyway" | "cancel";
 
 interface ConflictModalProps {
   conflicts: PendingConflict[];
@@ -35,9 +35,21 @@ function formatTimestamp(iso: string | null): string {
   }
 }
 
+function getSystemFromPath(path: string | null): string {
+  if (!path) return "";
+  // Extract system from saves path: .../saves/{system}/{filename}
+  const parts = path.replace(/\\/g, "/").split("/");
+  const savesIdx = parts.lastIndexOf("saves");
+  if (savesIdx >= 0 && savesIdx + 1 < parts.length - 1) {
+    return parts[savesIdx + 1].toUpperCase();
+  }
+  return "";
+}
+
 const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, onDone }) => {
   const conflict = conflicts[0];
   const remaining = conflicts.length - 1;
+  const system = getSystemFromPath(conflict.local_path);
 
   const handleChoice = async (resolution: ConflictResolution) => {
     if (resolution === "use_local") {
@@ -53,6 +65,7 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
         console.error("[RomM] Failed to resolve conflict (download):", e);
       }
     }
+    // "skip" and "launch_anyway" leave the conflict unresolved
     closeModal?.();
     onDone(resolution);
   };
@@ -74,6 +87,7 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
           marginBottom: "16px",
         }}>
           {conflict.filename}
+          {system && ` \u2014 ${system}`}
           {remaining > 0 && ` (+${remaining} more)`}
         </div>
 
@@ -121,10 +135,21 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
 
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <DialogButton onClick={() => handleChoice("use_local")}>
-            Use Local Save
+            Keep Local
           </DialogButton>
           <DialogButton onClick={() => handleChoice("use_server")}>
-            Use Server Save
+            Keep Server
+          </DialogButton>
+          {/* TODO: Enable when RomM 4.7+ save slots are available
+          <DialogButton onClick={() => handleChoice("keep_both")}>
+            Keep Both
+          </DialogButton>
+          */}
+          <DialogButton
+            onClick={() => handleChoice("skip")}
+            style={{ opacity: 0.7 }}
+          >
+            Skip
           </DialogButton>
           <DialogButton
             onClick={() => handleChoice("launch_anyway")}
@@ -146,7 +171,8 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
 
 /**
  * Show the conflict resolution modal and return a Promise that resolves
- * when the user picks an option. Used by sessionManager during pre-launch sync.
+ * when the user picks an option. Used by sessionManager during pre-launch sync
+ * and by the CustomPlayButton on the game detail page.
  */
 export function showConflictResolutionModal(
   conflicts: PendingConflict[],

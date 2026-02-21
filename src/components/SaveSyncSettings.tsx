@@ -6,17 +6,19 @@ import {
   Field,
   DropdownItem,
   ToggleField,
+  ConfirmModal,
+  showModal,
 } from "@decky/ui";
 import {
   getSaveSyncSettings,
   updateSaveSyncSettings,
   syncAllSaves,
   getPendingConflicts,
-  resolveConflict,
   getOfflineQueue,
   retryFailedSync,
   clearOfflineQueue,
 } from "../api/backend";
+import { showConflictResolutionModal } from "./ConflictModal";
 import type { SaveSyncSettings as SaveSyncSettingsType, PendingConflict, ConflictMode, OfflineQueueItem } from "../types";
 
 interface SaveSyncSettingsProps {
@@ -92,17 +94,19 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
     setSyncing(false);
   };
 
-  const handleResolve = async (conflict: PendingConflict, resolution: "upload" | "download") => {
+  const handleResolveConflict = async (conflict: PendingConflict) => {
     const key = `${conflict.rom_id}:${conflict.filename}`;
     setResolving(key);
-    try {
-      await resolveConflict(conflict.rom_id, conflict.filename, resolution);
+
+    const resolution = await showConflictResolutionModal([conflict]);
+    if (resolution === "use_local" || resolution === "use_server") {
+      // Conflict was resolved by the modal — remove from local list
       setConflicts((prev) =>
         prev.filter((c) => !(c.rom_id === conflict.rom_id && c.filename === conflict.filename)),
       );
-    } catch (e) {
-      console.error("[RomM] Failed to resolve conflict:", e);
     }
+    // "skip", "launch_anyway", "cancel" leave the conflict in the list
+
     setResolving(null);
   };
 
@@ -144,6 +148,25 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
     );
   }
 
+  const enabled = settings.save_sync_enabled;
+
+  const handleToggleEnable = (value: boolean) => {
+    if (value) {
+      // Two-step confirmation before enabling
+      showModal(
+        <ConfirmModal
+          strTitle="Enable Save Sync?"
+          strDescription="This will sync RetroArch save files between this device and your RomM server. Make sure you are NOT using a shared RomM account (e.g. admin, romm, guest) — save sync is per-user."
+          strOKButtonText="Enable"
+          strCancelButtonText="Cancel"
+          onOK={() => handleSettingChange({ save_sync_enabled: true })}
+        />,
+      );
+    } else {
+      handleSettingChange({ save_sync_enabled: false });
+    }
+  };
+
   return (
     <>
       <PanelSection>
@@ -154,112 +177,123 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
         </PanelSectionRow>
       </PanelSection>
 
-      <PanelSection title="Auto Sync">
+      <PanelSection title="Save Sync">
         <PanelSectionRow>
           <ToggleField
-            label="Sync before launch"
-            description="Download newer saves from server before starting a game"
-            checked={settings.sync_before_launch}
-            onChange={(value) => handleSettingChange({ sync_before_launch: value })}
+            label="Enable Save Sync"
+            description="Sync RetroArch saves between this device and RomM server"
+            checked={enabled}
+            onChange={handleToggleEnable}
           />
         </PanelSectionRow>
-        <PanelSectionRow>
-          <ToggleField
-            label="Sync after exit"
-            description="Upload changed saves to server after closing a game"
-            checked={settings.sync_after_exit}
-            onChange={(value) => handleSettingChange({ sync_after_exit: value })}
-          />
-        </PanelSectionRow>
-      </PanelSection>
-
-      <PanelSection title="Conflict Resolution">
-        <PanelSectionRow>
-          <DropdownItem
-            label="When saves conflict"
-            description="How to handle conflicting save files between devices"
-            rgOptions={conflictModeOptions}
-            selectedOption={settings.conflict_mode}
-            onChange={(option) => handleSettingChange({ conflict_mode: option.data as ConflictMode })}
-          />
-        </PanelSectionRow>
-      </PanelSection>
-
-      <PanelSection title="Manual Sync">
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleSyncAll} disabled={syncing}>
-            {syncing ? "Syncing..." : "Sync All Saves Now"}
-          </ButtonItem>
-        </PanelSectionRow>
-        {syncStatus && (
+        {!enabled && (
           <PanelSectionRow>
-            <Field label={syncStatus} />
+            <Field label="Save sync is disabled" description="Enable above to configure sync settings" />
           </PanelSectionRow>
         )}
       </PanelSection>
 
-      {failedOps.length > 0 && (
-        <PanelSection title={`Failed Syncs (${failedOps.length})`}>
-          {failedOps.map((item) => {
-            const key = `${item.rom_id}:${item.filename}`;
-            const isRetrying = retrying === key;
-            return (
-              <PanelSectionRow key={key}>
-                <Field
-                  label={item.filename}
-                  description={`ROM #${item.rom_id} — ${item.error} — ${formatTimeAgo(item.failed_at)}`}
-                >
-                  <ButtonItem
-                    layout="below"
-                    onClick={() => handleRetry(item)}
-                    disabled={isRetrying}
-                  >
-                    {isRetrying ? "Retrying..." : "Retry Now"}
-                  </ButtonItem>
-                </Field>
-              </PanelSectionRow>
-            );
-          })}
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={handleClearQueue}>
-              Clear All Failed
-            </ButtonItem>
-          </PanelSectionRow>
-        </PanelSection>
-      )}
+      {enabled && (
+        <>
+          <PanelSection title="Auto Sync">
+            <PanelSectionRow>
+              <ToggleField
+                label="Sync before launch"
+                description="Download newer saves from server before starting a game"
+                checked={settings.sync_before_launch}
+                onChange={(value) => handleSettingChange({ sync_before_launch: value })}
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ToggleField
+                label="Sync after exit"
+                description="Upload changed saves to server after closing a game"
+                checked={settings.sync_after_exit}
+                onChange={(value) => handleSettingChange({ sync_after_exit: value })}
+              />
+            </PanelSectionRow>
+          </PanelSection>
 
-      {conflicts.length > 0 && (
-        <PanelSection title={`Conflicts (${conflicts.length})`}>
-          {conflicts.map((c) => {
-            const key = `${c.rom_id}:${c.filename}`;
-            const isResolving = resolving === key;
-            return (
-              <PanelSectionRow key={key}>
-                <Field
-                  label={c.filename}
-                  description={`ROM #${c.rom_id} — detected ${formatTimeAgo(c.created_at)}`}
-                >
-                  <div style={{ display: "flex", gap: "4px" }}>
-                    <ButtonItem
-                      layout="below"
-                      onClick={() => handleResolve(c, "upload")}
-                      disabled={isResolving}
-                    >
-                      Keep Local
-                    </ButtonItem>
-                    <ButtonItem
-                      layout="below"
-                      onClick={() => handleResolve(c, "download")}
-                      disabled={isResolving}
-                    >
-                      Keep Server
-                    </ButtonItem>
-                  </div>
-                </Field>
+          <PanelSection title="Conflict Resolution">
+            <PanelSectionRow>
+              <DropdownItem
+                label="When saves conflict"
+                description="How to handle conflicting save files between devices"
+                rgOptions={conflictModeOptions}
+                selectedOption={settings.conflict_mode}
+                onChange={(option) => handleSettingChange({ conflict_mode: option.data as ConflictMode })}
+              />
+            </PanelSectionRow>
+          </PanelSection>
+
+          <PanelSection title="Manual Sync">
+            <PanelSectionRow>
+              <ButtonItem layout="below" onClick={handleSyncAll} disabled={syncing}>
+                {syncing ? "Syncing..." : "Sync All Saves Now"}
+              </ButtonItem>
+            </PanelSectionRow>
+            {syncStatus && (
+              <PanelSectionRow>
+                <Field label={syncStatus} />
               </PanelSectionRow>
-            );
-          })}
-        </PanelSection>
+            )}
+          </PanelSection>
+
+          {failedOps.length > 0 && (
+            <PanelSection title={`Failed Syncs (${failedOps.length})`}>
+              {failedOps.map((item) => {
+                const key = `${item.rom_id}:${item.filename}`;
+                const isRetrying = retrying === key;
+                return (
+                  <PanelSectionRow key={key}>
+                    <Field
+                      label={item.filename}
+                      description={`ROM #${item.rom_id} \u2014 ${item.error} \u2014 ${formatTimeAgo(item.failed_at)}`}
+                    >
+                      <ButtonItem
+                        layout="below"
+                        onClick={() => handleRetry(item)}
+                        disabled={isRetrying}
+                      >
+                        {isRetrying ? "Retrying..." : "Retry Now"}
+                      </ButtonItem>
+                    </Field>
+                  </PanelSectionRow>
+                );
+              })}
+              <PanelSectionRow>
+                <ButtonItem layout="below" onClick={handleClearQueue}>
+                  Clear All Failed
+                </ButtonItem>
+              </PanelSectionRow>
+            </PanelSection>
+          )}
+
+          {conflicts.length > 0 && (
+            <PanelSection title={`Conflicts (${conflicts.length})`}>
+              {conflicts.map((c) => {
+                const key = `${c.rom_id}:${c.filename}`;
+                const isResolving = resolving === key;
+                return (
+                  <PanelSectionRow key={key}>
+                    <Field
+                      label={c.filename}
+                      description={`ROM #${c.rom_id} \u2014 detected ${formatTimeAgo(c.created_at)}`}
+                    >
+                      <ButtonItem
+                        layout="below"
+                        onClick={() => handleResolveConflict(c)}
+                        disabled={isResolving}
+                      >
+                        {isResolving ? "Resolving..." : "Resolve"}
+                      </ButtonItem>
+                    </Field>
+                  </PanelSectionRow>
+                );
+              })}
+            </PanelSection>
+          )}
+        </>
       )}
     </>
   );

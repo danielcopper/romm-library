@@ -16,9 +16,10 @@ import { SaveSyncSettings } from "./components/SaveSyncSettings";
 import { initSyncManager } from "./utils/syncManager";
 import { setSyncProgress } from "./utils/syncProgress";
 import { updateDownload } from "./utils/downloadStore";
-import { registerGameDetailPatch, unregisterGameDetailPatch } from "./patches/gameDetailPatch";
-import { registerMetadataPatches, unregisterMetadataPatches } from "./patches/metadataPatches";
-import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered } from "./api/backend";
+import { registerGameDetailPatch, unregisterGameDetailPatch, registerRomMAppId } from "./patches/gameDetailPatch";
+import { registerMetadataPatches, unregisterMetadataPatches, applyAllPlaytime } from "./patches/metadataPatches";
+import { registerLaunchInterceptor, unregisterLaunchInterceptor } from "./utils/launchInterceptor";
+import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveSyncSettings, getAllPlaytime } from "./api/backend";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
@@ -51,8 +52,9 @@ const QAMPanel: FC = () => {
 
 export default definePlugin(() => {
   registerGameDetailPatch();
+  registerLaunchInterceptor();
 
-  // Load metadata cache and register store patches asynchronously
+  // Load metadata cache, register store patches, and populate RomM app ID set
   (async () => {
     try {
       const [cache, appIdMap] = await Promise.all([
@@ -60,15 +62,35 @@ export default definePlugin(() => {
         getAppIdRomIdMap(),
       ]);
       registerMetadataPatches(cache, appIdMap);
+
+      // Populate the RomM app ID set for PlaySection hiding and launch interception
+      for (const appIdStr of Object.keys(appIdMap)) {
+        const appId = parseInt(appIdStr, 10);
+        if (!isNaN(appId)) {
+          registerRomMAppId(appId);
+        }
+      }
+
+      // Apply tracked playtime to Steam UI for all known apps
+      try {
+        const { playtime } = await getAllPlaytime();
+        applyAllPlaytime(playtime, appIdMap);
+      } catch (e) {
+        console.error("[RomM] Failed to apply playtime:", e);
+      }
     } catch (e) {
       console.error("[RomM] Failed to load metadata cache:", e);
     }
   })();
 
-  // Register device and initialize session manager for save sync
+  // Register device and initialize session manager for save sync (if enabled)
   (async () => {
     try {
-      await ensureDeviceRegistered();
+      const syncSettings = await getSaveSyncSettings();
+      if (syncSettings.save_sync_enabled) {
+        await ensureDeviceRegistered();
+      }
+      // Always init session manager — it handles playtime tracking too
       await initSessionManager();
     } catch (e) {
       console.error("[RomM] Failed to init save sync:", e);
@@ -84,6 +106,26 @@ export default definePlugin(() => {
       title: "RomM Sync",
       body: `Sync complete! ${data.total_games} games added.`,
     });
+
+    // Update RomM app ID set with newly synced shortcuts
+    for (const appIds of Object.values(data.platform_app_ids)) {
+      for (const appId of appIds) {
+        registerRomMAppId(appId);
+      }
+    }
+
+    // Re-apply playtime to Steam UI (app IDs may have changed after re-sync)
+    (async () => {
+      try {
+        const [{ playtime }, appIdMap] = await Promise.all([
+          getAllPlaytime(),
+          getAppIdRomIdMap(),
+        ]);
+        applyAllPlaytime(playtime, appIdMap);
+      } catch (e) {
+        console.error("[RomM] Failed to re-apply playtime after sync:", e);
+      }
+    })();
   };
 
   const syncCompleteListener = addEventListener<
@@ -143,6 +185,7 @@ export default definePlugin(() => {
     alwaysRender: true,
     onDismount() {
       destroySessionManager();
+      unregisterLaunchInterceptor();
       unregisterGameDetailPatch();
       unregisterMetadataPatches();
       removeEventListener("sync_complete", syncCompleteListener);

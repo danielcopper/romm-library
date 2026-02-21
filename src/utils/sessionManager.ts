@@ -16,6 +16,7 @@ import {
   getSaveSyncSettings,
   getPendingConflicts,
 } from "../api/backend";
+import { updatePlaytimeDisplay } from "../patches/metadataPatches";
 import { showConflictResolutionModal } from "../components/ConflictModal";
 
 declare var Router: {
@@ -41,6 +42,13 @@ let appIdToRomId: Record<string, number> = {};
 function getRomIdForApp(appId: number): number | null {
   const romId = appIdToRomId[String(appId)];
   return romId ?? null;
+}
+
+function getAppIdForRom(romId: number): number | null {
+  for (const [appIdStr, rid] of Object.entries(appIdToRomId)) {
+    if (rid === romId) return Number(appIdStr);
+  }
+  return null;
 }
 
 async function refreshAppIdMap(): Promise<void> {
@@ -70,7 +78,7 @@ async function handleGameStart(appId: number): Promise<void> {
   // Pre-launch save sync (if enabled)
   try {
     const settings = await getSaveSyncSettings();
-    if (settings.sync_before_launch) {
+    if (settings.save_sync_enabled && settings.sync_before_launch) {
       const result = await preLaunchSync(romId);
       if (result.success) {
         if (result.synced && result.synced > 0) {
@@ -117,7 +125,14 @@ async function handleGameStop(): Promise<void> {
 
   // Record session end for playtime tracking
   try {
-    await recordSessionEnd(romId);
+    const result = await recordSessionEnd(romId);
+    if (result.success && result.total_seconds) {
+      // Find the Steam app ID for this rom and update the display
+      const appId = getAppIdForRom(romId);
+      if (appId) {
+        updatePlaytimeDisplay(appId, result.total_seconds);
+      }
+    }
   } catch (e) {
     console.error("[RomM] Failed to record session end:", e);
   }
@@ -125,7 +140,7 @@ async function handleGameStop(): Promise<void> {
   // Post-exit save sync (if enabled)
   try {
     const settings = await getSaveSyncSettings();
-    if (settings.sync_after_exit) {
+    if (settings.save_sync_enabled && settings.sync_after_exit) {
       const result = await postExitSync(romId);
       if (result.success) {
         if (result.synced && result.synced > 0) {

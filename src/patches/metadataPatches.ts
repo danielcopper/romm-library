@@ -366,8 +366,52 @@ export function unregisterMetadataPatches() {
 }
 
 /**
+ * Write tracked playtime to Steam's native UI fields.
+ * Sets minutes_playtime_forever and rt_last_time_played so Steam shows
+ * actual play time instead of "Never Played" for RomM shortcuts.
+ */
+export function updatePlaytimeDisplay(appId: number, totalSeconds: number) {
+  const overview = appStore.GetAppOverviewByAppID(appId);
+  if (!overview) return;
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes <= 0) return;
+
+  stateTransaction(() => {
+    overview.minutes_playtime_forever = totalMinutes;
+    // Set rt_last_time_played to now (Unix epoch seconds) so Steam
+    // shows "Last played: today" instead of "Never Played"
+    if (!overview.rt_last_time_played) {
+      overview.rt_last_time_played = Math.floor(Date.now() / 1000);
+    }
+  });
+}
+
+/**
+ * Apply playtime data for all known apps from the bulk playtime map.
+ * Called at plugin load and after sync_complete.
+ */
+export function applyAllPlaytime(
+  playtimeMap: Record<string, { total_seconds: number }>,
+  appIdMap: Record<string, number>,
+) {
+  // Build rom_id -> app_id reverse lookup
+  const romIdToAppId: Record<string, number> = {};
+  for (const [appIdStr, romId] of Object.entries(appIdMap)) {
+    romIdToAppId[String(romId)] = Number(appIdStr);
+  }
+
+  for (const [romIdStr, entry] of Object.entries(playtimeMap)) {
+    const appId = romIdToAppId[romIdStr];
+    if (appId && entry.total_seconds > 0) {
+      updatePlaytimeDisplay(appId, entry.total_seconds);
+    }
+  }
+}
+
+/**
  * Update metadata cache for a single app and apply direct property mutations.
- * Called from GameDetailPanel after fetching fresh metadata.
+ * Called after fetching fresh metadata for a ROM.
  */
 export function updateMetadataForApp(appId: number, romId: number, metadata: RomMetadata) {
   metadataCache[String(romId)] = metadata;
@@ -390,4 +434,14 @@ export function setRegisteredAppIds(appIds: number[]) {
  */
 export function setBypassBypass(count: number) {
   bypassBypass = count;
+}
+
+/**
+ * Prepare the bypass counter for a shortcut launch.
+ * Sets bypassCounter to -1 so BIsModOrShortcut returns true on every call
+ * until GetGameID/GetPrimaryAppID naturally resets it to 0.
+ * Call this immediately before SteamClient.Apps.RunGame().
+ */
+export function prepareForLaunch() {
+  bypassCounter = -1;
 }

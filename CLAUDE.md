@@ -46,7 +46,7 @@ src/components/PlatformSync.tsx      # Per-platform enable/disable toggles
 src/components/DangerZone.tsx        # Per-platform and bulk removal
 src/components/DownloadQueue.tsx     # Active/completed downloads
 src/components/BiosManager.tsx       # Per-platform BIOS file status and downloads
-src/components/GameDetailPanel.tsx   # Injected into game detail page (download, artwork, BIOS)
+src/components/CustomPlayButton.tsx  # Custom Play/Download button with dropdown menu (replaces native PlaySection for RomM games)
 src/components/SaveSyncSettings.tsx  # Save sync settings QAM page
 src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid
 src/patches/metadataPatches.ts       # BIsModOrShortcut bypass counter for metadata display + launch

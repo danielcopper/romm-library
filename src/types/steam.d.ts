@@ -22,6 +22,12 @@ declare var SteamClient: {
       appId: number,
       callback: (details: any) => void,
     ): { unregister: () => void };
+    RunGame(gameId: string | number, launchId: string, param2: number, param3: number): void;
+    TerminateApp(appId: number, force: boolean): void;
+    RegisterForGameActionStart(
+      callback: (gameActionId: number, appIdStr: string, action: string, launchSource: number) => void,
+    ): { unregister: () => void };
+    CancelGameAction(gameActionId: number): void;
   };
   GameSessions: {
     RegisterForAppLifetimeNotifications(
@@ -49,6 +55,10 @@ interface SteamAppOverview {
   app_type?: number;
   controller_support?: number;
   metacritic_score?: number;
+  minutes_playtime_forever?: number;
+  minutes_playtime_last_two_weeks?: number;
+  rt_last_time_played?: number;
+  rt_last_time_played_or_installed?: number;
   m_setStoreCategories?: Set<number>;
   local_per_client_data?: SteamPerClientData;
   per_client_data?: SteamPerClientData[];

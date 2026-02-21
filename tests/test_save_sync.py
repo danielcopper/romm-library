@@ -41,6 +41,8 @@ def plugin(tmp_path):
     decky.DECKY_USER_HOME = str(tmp_path)
 
     p._init_save_sync_state()
+    # Enable save sync for tests — matches pre-feature-flag behavior
+    p._save_sync_state["settings"]["save_sync_enabled"] = True
     return p
 
 
@@ -1084,6 +1086,28 @@ class TestGetServerPlaytime:
         assert result["server_seconds"] == 0
 
 
+class TestGetAllPlaytime:
+    """Tests for get_all_playtime callable."""
+
+    @pytest.mark.asyncio
+    async def test_returns_all_playtime_entries(self, plugin):
+        """Returns all playtime entries from state."""
+        plugin._save_sync_state["playtime"] = {
+            "42": {"total_seconds": 3000, "session_count": 5},
+            "99": {"total_seconds": 600, "session_count": 1},
+        }
+        result = await plugin.get_all_playtime()
+        assert result["playtime"]["42"]["total_seconds"] == 3000
+        assert result["playtime"]["99"]["total_seconds"] == 600
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_playtime(self, plugin):
+        """Returns empty dict when no playtime data exists."""
+        plugin._save_sync_state["playtime"] = {}
+        result = await plugin.get_all_playtime()
+        assert result["playtime"] == {}
+
+
 class TestRecordSessionEndWithServerSync:
     """Tests that record_session_end triggers playtime server sync."""
 
@@ -1783,6 +1807,120 @@ class TestRetryLogic:
 
         assert call_count[0] == 2  # retried once
         assert synced >= 1
+
+    def test_retry_in_get_save_status(self, plugin, tmp_path):
+        """get_save_status retries transient list_saves failures."""
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path)
+        plugin._save_sync_state["device_id"] = "dev-1"
+
+        call_count = [0]
+        def flaky_list(rom_id):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ConnectionError("transient")
+            return [_server_save()]
+
+        with patch.object(plugin, "_romm_list_saves", side_effect=flaky_list), \
+             patch("time.sleep"):
+            result = asyncio.get_event_loop().run_until_complete(
+                plugin.get_save_status(42)
+            )
+
+        assert call_count[0] == 2  # retried once
+        assert len(result["files"]) >= 1
+
+    def test_retry_in_get_server_save_hash(self, plugin, tmp_path):
+        """_get_server_save_hash retries transient download failures."""
+        call_count = [0]
+        def flaky_download(save_id, dest):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ConnectionError("transient")
+            with open(dest, "wb") as f:
+                f.write(b"\x00" * 64)
+
+        server = _server_save()
+        with patch.object(plugin, "_romm_download_save", side_effect=flaky_download), \
+             patch("time.sleep"):
+            result = plugin._get_server_save_hash(server)
+
+        assert call_count[0] == 2  # retried once
+        assert result is not None  # should return a valid hash
+
+    def test_retry_in_resolve_conflict_download(self, plugin, tmp_path):
+        """resolve_conflict download path retries transient API failures."""
+        _install_rom(plugin, tmp_path)
+        saves_dir = tmp_path / "retrodeck" / "saves" / "gba"
+        saves_dir.mkdir(parents=True, exist_ok=True)
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["pending_conflicts"] = [{
+            "rom_id": 42,
+            "filename": "pokemon.srm",
+            "local_path": str(saves_dir / "pokemon.srm"),
+            "local_hash": "abc",
+            "server_save_id": 100,
+            "server_updated_at": "2026-02-17T06:00:00Z",
+            "created_at": "2026-02-17T12:00:00Z",
+        }]
+
+        call_count = [0]
+        server = _server_save()
+        def flaky_request(path):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ConnectionError("transient")
+            return server
+
+        def fake_download(save_id, dest):
+            with open(dest, "wb") as f:
+                f.write(b"\xff" * 1024)
+
+        with patch.object(plugin, "_romm_request", side_effect=flaky_request), \
+             patch.object(plugin, "_romm_download_save", side_effect=fake_download), \
+             patch("time.sleep"):
+            result = asyncio.get_event_loop().run_until_complete(
+                plugin.resolve_conflict(42, "pokemon.srm", "download")
+            )
+
+        assert result["success"] is True
+        assert call_count[0] == 2  # retried the metadata fetch
+
+    def test_retry_in_resolve_conflict_upload(self, plugin, tmp_path):
+        """resolve_conflict upload path retries transient API failures on metadata fetch."""
+        _install_rom(plugin, tmp_path)
+        save_file = _create_save(tmp_path)
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["pending_conflicts"] = [{
+            "rom_id": 42,
+            "filename": "pokemon.srm",
+            "local_path": str(save_file),
+            "local_hash": "abc",
+            "server_save_id": 100,
+            "server_updated_at": "2026-02-17T06:00:00Z",
+            "created_at": "2026-02-17T12:00:00Z",
+        }]
+
+        call_count = [0]
+        def flaky_request(path):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ConnectionError("transient")
+            return {"id": 100}
+
+        upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
+
+        with patch.object(plugin, "_romm_request", side_effect=flaky_request), \
+             patch.object(plugin, "_romm_upload_save", return_value=upload_response), \
+             patch("time.sleep"):
+            result = asyncio.get_event_loop().run_until_complete(
+                plugin.resolve_conflict(42, "pokemon.srm", "upload")
+            )
+
+        assert result["success"] is True
+        assert call_count[0] == 2  # retried the metadata fetch
 
 
 # ============================================================================
@@ -3196,7 +3334,7 @@ class TestGetServerSaveHash:
         assert not os.path.exists(created_paths[0])
 
     def test_cleans_up_temp_file_on_failure(self, plugin, tmp_path):
-        """Temp file is removed even after download failure."""
+        """Temp file is removed even after download failure (retries exhausted)."""
         created_paths = []
 
         def fake_download(save_id, dest):
@@ -3206,10 +3344,12 @@ class TestGetServerSaveHash:
                 f.write(b"partial")
             raise ConnectionError("mid-download failure")
 
-        with patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with patch.object(plugin, "_romm_download_save", side_effect=fake_download), \
+             patch("time.sleep"):
             plugin._get_server_save_hash({"id": 100})
 
-        assert len(created_paths) == 1
+        # _with_retry retries 3 times for transient errors (ConnectionError)
+        assert len(created_paths) == 3
         assert not os.path.exists(created_paths[0])
 
 
@@ -3436,3 +3576,91 @@ class TestAddPendingConflictMetadata:
         assert conflict["local_hash"] is None
         assert conflict["local_mtime"] is None
         assert conflict["local_size"] is None
+
+
+# ============================================================================
+# Feature Flag: save_sync_enabled
+# ============================================================================
+
+
+class TestSaveSyncFeatureFlag:
+    """Tests for the save_sync_enabled feature flag (off by default)."""
+
+    @pytest.mark.asyncio
+    async def test_default_disabled(self, plugin):
+        """save_sync_enabled defaults to False in fresh state."""
+        plugin._init_save_sync_state()  # Reset to defaults (no test fixture override)
+        settings = plugin._save_sync_state["settings"]
+        assert settings["save_sync_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_ensure_device_disabled(self, plugin):
+        """ensure_device_registered returns disabled marker when save sync off."""
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = False
+        result = await plugin.ensure_device_registered()
+        assert result["success"] is False
+        assert result.get("disabled") is True
+        assert plugin._save_sync_state["device_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_pre_launch_sync_disabled(self, plugin):
+        """pre_launch_sync skips when save sync disabled."""
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = False
+        result = await plugin.pre_launch_sync(42)
+        assert result["success"] is True
+        assert result["synced"] == 0
+        assert "disabled" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_post_exit_sync_disabled(self, plugin):
+        """post_exit_sync skips when save sync disabled."""
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = False
+        result = await plugin.post_exit_sync(42)
+        assert result["success"] is True
+        assert result["synced"] == 0
+        assert "disabled" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_sync_rom_saves_disabled(self, plugin):
+        """sync_rom_saves returns error when save sync disabled."""
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = False
+        result = await plugin.sync_rom_saves(42)
+        assert result["success"] is False
+        assert "disabled" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_sync_all_saves_disabled(self, plugin):
+        """sync_all_saves returns error when save sync disabled."""
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = False
+        result = await plugin.sync_all_saves()
+        assert result["success"] is False
+        assert "disabled" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_enable_via_settings_update(self, plugin):
+        """save_sync_enabled can be toggled via update_save_sync_settings."""
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = False
+        result = await plugin.update_save_sync_settings({"save_sync_enabled": True})
+        assert result["success"] is True
+        assert plugin._save_sync_state["settings"]["save_sync_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_disable_via_settings_update(self, plugin):
+        """save_sync_enabled can be disabled via update_save_sync_settings."""
+        result = await plugin.update_save_sync_settings({"save_sync_enabled": False})
+        assert result["success"] is True
+        assert plugin._save_sync_state["settings"]["save_sync_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_settings_includes_flag(self, plugin):
+        """get_save_sync_settings returns save_sync_enabled field."""
+        result = await plugin.get_save_sync_settings()
+        assert "save_sync_enabled" in result
+
+    @pytest.mark.asyncio
+    async def test_is_save_sync_enabled_helper(self, plugin):
+        """_is_save_sync_enabled reflects the settings value."""
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = True
+        assert plugin._is_save_sync_enabled() is True
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = False
+        assert plugin._is_save_sync_enabled() is False

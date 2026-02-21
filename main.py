@@ -93,6 +93,10 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             decky.logger.error(f"Failed to save settings: {e}")
             return {"success": False, "message": f"Save failed: {e}"}
 
+    async def debug_log(self, message):
+        if self.settings.get("debug_logging"):
+            decky.logger.info(f"[FE] {message}")
+
     async def save_debug_logging(self, enabled):
         self.settings["debug_logging"] = bool(enabled)
         self._save_settings_to_disk()

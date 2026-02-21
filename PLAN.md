@@ -679,36 +679,82 @@ Separate file from `state.json` to avoid bloating the main state. Structure:
 
 The offline queue drain (`sync_all_saves`, next `pre_launch_sync`) should also use retry logic when processing queued entries.
 
-#### 2. Pre-launch sync toast notifications
-`sessionManager.ts` only shows toasts for post-exit sync (success/failure/conflicts). Pre-launch sync (lines 70-80) silently logs to console. Add toasts:
-- Success: "Saves downloaded from RomM" (only if files were actually downloaded, not on no-op)
+#### 2. Custom Play button, launch blocking, save sync UX, and conflict resolution
+
+This is the largest remaining item — it replaces the native Play button with a state-aware custom button, adds a global launch interceptor as safety net, and integrates proactive save sync checks with conflict resolution. Also includes pre-launch toast notifications.
+
+**Research finding**: There is NO Steam API to change the Play button text from "Play" to "Install"/"Download" for non-Steam shortcuts. `EDisplayStatus`, `display_status`, `installed` etc. are Steam-internal and cannot be reliably overridden. The proven approach (used by Unifideck, GPL-3.0 compatible) is: hide the native Play button via React tree style mutation, render a custom replacement, and intercept launches globally as a safety net.
+
+**Part A — Custom Play button replacement** (`gameDetailPatch.tsx`):
+
+When the game detail page renders for a RomM shortcut, hide the native PlaySection via React tree style mutation (`playSection.props.style = { display: 'none' }`) and render a custom button in its place. The button has 4 states:
+
+1. **Checking**: Loading spinner shown while proactive save sync check runs. Retry count displayed in the center of the spinner (e.g. "1", "2", "3" as retries happen). This state is brief — typically <1 second on LAN.
+2. **Download**: ROM not installed. Button text: "Download" (or "Install"). Click triggers the existing ROM download flow (`startDownload(romId)`). While downloading, show inline progress bar with percentage and a cancel option. On completion, transition to state 4 (Play).
+3. **Resolve Conflict**: Save conflict detected in "ask_me" mode. Button text: "Resolve Conflict" (orange/warning style). Click opens the conflict resolution popup (see Part D). Other conflict modes (newest_wins, always_upload, always_download) auto-resolve during the check phase and go straight to state 4.
+4. **Play**: All clear — ROM downloaded, no conflicts. Green button, same as native. Click calls `SteamClient.Apps.RunGame()`.
+
+State transitions:
+- Page open → **Checking** → (no ROM) → **Download**
+- Page open → **Checking** → (conflict) → **Resolve Conflict** → (resolved) → **Play**
+- Page open → **Checking** → (all clear) → **Play**
+- **Download** → (complete) → **Checking** → **Play**
+
+The custom button should visually match Steam's native Play button as closely as possible (use `appActionButtonClasses.PlayButton`, `playSectionClasses`, green styling for Play/Download, orange for Resolve Conflict).
+
+**Part B — Global launch interceptor** (`index.tsx`):
+
+Safety net for launches from context menus, Steam search, etc. — anywhere outside the game detail page where our custom button doesn't exist.
+
+```typescript
+SteamClient.Apps.RegisterForGameActionStart((gameActionId, appIdStr, action) => {
+  if (action !== "LaunchApp") return;
+  const appId = parseInt(appIdStr, 10);
+  if (!isOurApp(appId)) return;
+
+  if (!isRomDownloaded(appId)) {
+    SteamClient.Apps.CancelGameAction(gameActionId);
+    // Toast: "ROM not downloaded — open game page to download"
+  }
+  if (hasSaveConflict(appId)) {
+    SteamClient.Apps.CancelGameAction(gameActionId);
+    // Toast: "Save conflict — resolve on game page before playing"
+  }
+});
+```
+
+Register on plugin load, unregister on unload. This is the authoritative block — the custom button is UX polish, this interceptor is the functional gate.
+
+**Part C — Proactive save sync check on detail page**:
+
+When `GameDetailPanel` mounts for a RomM game:
+1. Call `preLaunchSync(romId)` in the background to detect/resolve conflicts before the user hits Play
+2. Result determines the custom button state (Play vs Resolve Conflict)
+3. This replaces the old approach of syncing inside `RegisterForAppLifetimeNotifications` lifecycle hooks
+
+Pre-launch sync still happens in the session manager for the case where users launch from context menu (interceptor cancels → user opens detail page → sync runs → user can play).
+
+**Pre-launch toast notifications** (also part of this task):
+- Success: "Saves downloaded from RomM" (only when files were actually downloaded, not on no-op)
 - Failure: "Failed to sync saves — playing with local saves"
-- Conflict in "ask me" mode: "Save conflict detected — resolve in Save Sync settings"
+- Conflict queued: "Save conflict detected — resolve on game page"
 
-**Blocking behavior on conflict**: If a save conflict is detected during pre-launch sync, **block the game launch** and show a popup/modal asking the user to resolve immediately. This mirrors Steam Cloud's native behavior. Options in the popup:
-- "Use Local Save" — upload local, then launch
-- "Use Server Save" — download server save, then launch
-- "Launch Anyway" — skip sync, launch with whatever is on disk
-- "Cancel" — abort launch entirely
+**Part D — Conflict resolution popup**:
 
-This only applies to "ask_me" conflict mode. Other modes (newest_wins, always_upload, always_download) auto-resolve and launch without interruption. If the server is unreachable, show a brief toast ("RomM unreachable — playing with local saves") and launch without blocking. On the next launch where the server IS reachable, if there are unresolved conflicts from previous offline sessions, show the conflict resolution popup before launching.
-
-#### 3. Conflict resolution popup with file details
-The current SaveSyncSettings page shows basic "Keep Local" / "Keep Server" buttons for pending conflicts. Improve this with a detailed popup/modal when the user clicks to resolve a conflict. The popup should show:
+Triggered from the "Resolve Conflict" custom button or from SaveSyncSettings page. Shows:
 - File name and system (e.g. "Pokemon FireRed.srm — GBA")
-- Local file: size, last modified timestamp, which device
-- Server file: size, `updated_at` timestamp, which device last uploaded
-- Options: "Keep Local" (upload ours), "Keep Server" (download theirs), "Keep Both" (upload ours as new slot, download theirs alongside), "Skip" (defer)
+- Local file: last modified timestamp, which device
+- Server file: `updated_at` timestamp, which device last uploaded
+- Options: "Keep Local" (upload ours), "Keep Server" (download theirs), "Skip" (defer)
+- ~~"Keep Both"~~ — requires RomM 4.7+ save slots. Stub in code as commented-out option with `// TODO: Enable when RomM 4.7+ save slots are available`
+- After resolution, custom button transitions to **Play** state
 
-This gives users enough information to make an informed choice, especially in multi-device scenarios where they may have played on different machines.
+File sizes are omitted — `.srm` saves are fixed-size per cartridge/core, providing no useful decision-making information. Revisit in Phase 7 when standalone emulator saves (variable-size memory cards) are added.
 
-#### 4. Retry UI for failed sync operations
-When a save sync fails (after all backend retries exhausted), the user should have a way to retry:
-- Show a toast with the failure message. If the Decky toast API supports action buttons, add a "Retry" action.
-- In SaveSyncSettings, show failed/queued operations with a "Retry Now" button per entry.
-- In the game detail panel, if a save sync failed for that ROM, show a "Sync Failed — Retry" indicator.
+**SaveSyncSettings consistency**: The existing "Keep Local" / "Keep Server" buttons on the SaveSyncSettings page should also use this improved popup for consistency.
 
-The offline queue already persists failed operations — this is about surfacing them to the user and letting them trigger manual retries.
+#### ~~4. Retry UI for failed sync operations~~ — ALREADY IMPLEMENTED
+SaveSyncSettings already shows failed operations with "Retry Now" per item and "Clear All Failed". Game detail panel shows failed ops with retry button. Toast on failure covered by item #2 Part C toasts.
 
 #### 5. Playtime storage via RomM user notes — IMPLEMENTED
 RomM has no dedicated playtime field (feature request #1225 open). Implemented using the per-ROM Notes API to store playtime as a separate note per ROM.
@@ -741,6 +787,95 @@ PLAN.md specifies: "Users MUST use their own RomM account (not a shared/generic 
 - Show an orange warning below the username field: "Save sync requires a personal account. Shared accounts (like 'admin') will mix save files between users."
 - Non-blocking — the user can still proceed, it's just informational
 
+#### 7. Save sync feature flag (off by default)
+
+Save sync must be an opt-in feature. Default state: **disabled**. Nothing related to save sync should run, register, or be interactive until the user explicitly enables it.
+
+**New setting**: `save_sync_enabled: boolean` (default: `false`) in `save_sync_state.json` → `settings`.
+
+**Backend guards** (`lib/save_sync.py`):
+- `pre_launch_sync()` and `post_exit_sync()` — early return if `save_sync_enabled` is false
+- `sync_all_saves()` — early return if disabled
+- Device registration (`ensure_device_registered`) — skip if disabled (no device_id generated until first enable)
+- New callable `enable_save_sync()` — sets `save_sync_enabled = true`, performs device registration on first enable
+- New callable `disable_save_sync()` — sets `save_sync_enabled = false`, does NOT clear existing sync state (preserving snapshot hashes, playtime, etc. so re-enabling is seamless)
+
+**Frontend — session manager** (`src/utils/sessionManager.ts`):
+- `initSessionManager()` — check `save_sync_enabled` before registering lifetime/suspend hooks. If disabled, skip all hook registration.
+- When the flag is toggled on at runtime, re-initialize the session manager (register hooks). When toggled off, destroy hooks.
+
+**Frontend — QAM navigation** (`src/components/MainPage.tsx`):
+- The "Save Sync" navigation button is **hidden** while `save_sync_enabled` is false. The settings page is inaccessible.
+- Alternative: show the button but greyed out with a label like "Save Sync (Disabled)" — tapping it goes to the settings page where the user sees the enable toggle prominently at the top. This is better for discoverability.
+
+**Frontend — SaveSyncSettings.tsx**:
+- Add a master toggle at the very top of the page: "Enable Save Sync"
+- While disabled, all other controls (auto-sync toggles, conflict mode dropdown, sync all button, conflicts list) are visually disabled / non-interactive
+- Enabling the toggle triggers a **two-step confirmation**:
+  1. First confirmation: warning dialog explaining the feature and risks. Text:
+     > "Save Sync will automatically synchronize your RetroArch save files (.srm) with your RomM server. Before enabling, please back up your save files. While unlikely, save data loss is possible due to sync conflicts, network issues, or bugs. Your saves are located at: [saves_path from retrodeck.json]."
+  2. Second confirmation: explicit consent. Text:
+     > "I have backed up my save files and understand that save data loss is possible. Enable Save Sync?"
+     With "Enable" and "Cancel" buttons.
+- Only after both confirmations does the toggle flip to enabled and `enable_save_sync()` is called
+- Disabling does NOT require confirmation (safe direction — just stops syncing)
+
+**Frontend — GameDetailPanel.tsx**:
+- The "Saves & Playtime" section is **greyed out and non-interactive** while `save_sync_enabled` is false
+- The manual "Sync" button is disabled
+- Show a subtle label: "Save Sync disabled" or "Enable in Save Sync settings"
+- Playtime display can remain visible (read-only, harmless) but sync actions must be blocked
+
+**Plugin startup** (`src/index.tsx`):
+- Check `save_sync_enabled` before calling `ensureDeviceRegistered()` and `initSessionManager()`
+- If disabled, skip both — no device registration, no session hooks, no background sync activity whatsoever
+
+**State persistence**:
+- The `save_sync_enabled` flag persists across plugin restarts via `save_sync_state.json`
+- Existing sync state (snapshot hashes, playtime, conflicts) is preserved when disabling — re-enabling picks up where it left off
+- The flag is independent of `sync_before_launch` / `sync_after_exit` — those sub-toggles only matter when the master flag is on
+
+#### 8. Native Steam playtime display — INVESTIGATED
+
+**Root cause (confirmed by investigation)**:
+
+1. **Primary: Flatpak process sandboxing**. Our launcher does `exec flatpak run net.retrodeck.retrodeck "$ROM_PATH"` — the `exec` is correct (replaces shell PID), but `flatpak run` creates a bubblewrap sandbox with a separate PID namespace. Steam tracks the `flatpak run` PID, which may exit before the sandboxed emulator finishes. Steam sees 0 seconds of playtime.
+2. **Secondary: Re-sync app ID instability**. Full re-syncs (DangerZone remove + re-sync) create new app IDs, resetting Steam's playtime counter. Normal syncs correctly preserve app IDs via `existing.get(rom_id)`.
+3. **Ruled out: BIsModOrShortcut bypass**. The bypass counter restores `true` during launch (via `GetGameID`/`GetPrimaryAppID` hooks), so Steam's launch pipeline sees shortcuts correctly. Only UI rendering uses `false`.
+
+**Solution: Write our tracked playtime to `SteamAppOverview` via `stateTransaction()`**
+
+`SteamAppOverview` has writable MobX-observed properties:
+- `minutes_playtime_forever: number`
+- `minutes_playtime_last_two_weeks: number`
+- `rt_last_time_played: number` (Unix timestamp)
+- `rt_last_time_played_or_installed: number`
+
+We already use `stateTransaction()` to write `controller_support` and `metacritic_score` in `applyDirectMutations()`. Same pattern:
+
+```typescript
+function updatePlaytimeDisplay(appId: number, totalMinutes: number) {
+  const overview = appStore.GetAppOverviewByAppID(appId);
+  if (!overview) return;
+  stateTransaction(() => {
+    overview.minutes_playtime_forever = totalMinutes;
+    overview.rt_last_time_played = Math.floor(Date.now() / 1000);
+  });
+}
+```
+
+**When to call this**:
+- On plugin load: iterate all ROM shortcuts in registry, read playtime from `save_sync_state.json`, apply via `stateTransaction()` during `applyDirectMutations()`
+- After `recordSessionEnd()` in `sessionManager.ts`: update the just-played game's playtime display immediately
+- After sync completes (if app IDs are preserved): re-apply playtime for all synced shortcuts
+
+**Limitations**:
+- Values don't survive Steam restarts — they're MobX state, not persisted to Steam's `localconfig.vdf`. We re-apply on every plugin load.
+- Steam's own process tracking may overwrite with 0 (due to the flatpak issue). We re-apply after session end to correct this.
+- No other Decky plugin (SDH-PlayTime, SteamlessTimes) has solved persistent playtime writes — all use the same workaround approach.
+
+**Future improvement**: Investigate whether `flatpak run` blocks until RetroDECK exits on SteamOS. If it does, Steam's native tracking would work and we'd only need the `stateTransaction` as a supplement. If not, consider a wrapper that polls for the emulator process and keeps the parent alive.
+
 ### Verification:
 - [ ] Save file uploaded to RomM after play session ends
 - [ ] Save file downloaded from RomM before game launch
@@ -757,6 +892,200 @@ PLAN.md specifies: "Users MUST use their own RomM account (not a shared/generic 
 - [ ] Failed uploads retry 3 times before falling to offline queue
 - [ ] User can manually retry failed sync operations
 - [ ] Shared account warning shown for generic usernames
+- [ ] Save sync disabled by default — no hooks registered, no device registration on fresh install
+- [ ] Enabling save sync requires two-step confirmation with backup warning
+- [ ] Disabling save sync stops all sync activity without confirmation
+- [ ] Save Sync settings page shows master toggle at top, all controls disabled when off
+- [ ] Game detail page "Saves & Playtime" section greyed out and non-interactive when disabled
+- [ ] QAM "Save Sync" button hidden or visually disabled when feature is off
+- [ ] Re-enabling preserves existing sync state (hashes, playtime, conflicts)
+- [ ] Plugin startup skips all save sync initialization when disabled
+- [ ] Playtime displayed in Steam's native UI or prominently in game detail panel
+
+### Phase 5.5: Custom PlaySection — Native-Looking Game Detail Page
+
+**Goal**: Replace the native Steam PlaySection entirely with a pixel-perfect custom version that provides RomM-specific functionality (download, save sync, BIOS status) while looking indistinguishable from native Steam UI.
+
+**Current state**: We hide the native PlaySection via CSS (`.PlaySection:not([data-romm]) { display: none !important }`) and inject a CustomPlayButton wrapped in native CSS class hierarchy. The button renders correctly with a dropdown menu (Uninstall, BIOS Status, Sync Saves). GameDetailPanel ("ROMM SYNC" section) has been **removed** from game detail page injection — all its functionality is now in the CustomPlayButton dropdown. The old GameDetailPanel component file remains in the codebase but is no longer injected.
+
+**Known issue — shadow/grey line**: Our injected PlaySection wrapper shows a grey shadow line at the bottom that does NOT appear on native Steam PlaySection elements. This indicates the shadow comes from a CSS rule that targets our wrapper specifically (or that native elements have an override we're missing). Current mitigation: `[data-romm] { box-shadow: none !important; border-bottom: none !important; border-image: none !important; background-image: none !important; }` in `styleInjector.ts`. Needs further investigation — inspect native PlaySection's computed styles vs our wrapper's.
+
+#### Research findings
+
+**Native Play button approach — NOT viable**:
+- Steam's native Play button text CANNOT be changed for non-Steam shortcuts (no API exists)
+- No dropdown/context menu capability exists on the native Play button for shortcuts
+- MoonDeck confirmed: adds a SEPARATE MenuButton, does NOT modify the native Play button
+- Hybrid approach (native for Play, custom for Download/Conflict) gives inconsistent UX
+- **Decision**: Keep custom button replacement approach. Launch interceptor stays as safety net.
+
+**PlaySectionClasses from `@decky/ui`** — 116 properties available via `playSectionClasses`:
+
+Key classes for the info bar (right of Play button):
+- `GameStat` — Individual stat item container
+- `GameStatIcon` — Icon within a stat
+- `GameStatRight` — Right-aligned value portion
+- `GameStatsSection` — Container for all stats (horizontal flex)
+- `PlayBarDetailLabel` — Small uppercase label text (e.g. "PLAYTIME")
+- `DetailsSection` — Container for details area
+- `DetailsSectionStatus` — Status indicators
+- `ClickablePlayBarItem` — Makes stats interactive
+- `CloudStatusIcon`, `CloudStatusLabel`, `CloudStatusRow` — Cloud sync status display
+- `CloudStatusSyncFail`, `CloudSynching` — Sync state classes
+- `LastPlayedInfo`, `Playtime`, `PlaytimeIcon` — Native playtime display classes
+
+Key classes for button area:
+- `AppButtonsContainer` — Layout for buttons
+- `MenuButtonContainer` — Dropdown menu button
+- `RightControls` — Right-side controls
+- `PlayBar` — Main play bar container
+- `PlayBarIconAndGame` — Left side with icon + game name
+
+Styling classes:
+- `Glassy` — Glass morphism effect
+- `BackgroundAnimation` — Animated background
+- `BreakNarrow`, `BreakShort`, `BreakWide`, `BreakTall` — Responsive breakpoints
+
+**basicAppDetailsSectionStylerClasses** — wrapper classes:
+- `PlaySection` — Outer container
+- `AppActionButton` — Button container
+- `ActionButtonAndStatusPanel` — Action + status layout
+
+**DOM structure of one info item** (confirmed from HLTB plugin analysis):
+```html
+<div class="GameStat">
+  <div class="PlayBarDetailLabel">PLAYTIME</div>
+  <div class="GameStatRight">19 Minutes</div>
+</div>
+```
+All items sit within `GameStatsSection` which provides horizontal flex layout.
+
+**HLTB plugin** — confirmed to use `GameStat` class (8 occurrences in compiled code) for injecting "How Long To Beat" stats into the info row.
+
+**Injection approach for info items**: Can splice into `GameStatsSection.props.children` via React tree patching (same pattern we use for InnerContainer). Alternatively, recreate the full bar using the same CSS classes.
+
+#### Implementation plan: RomMPlaySection component
+
+A unified component that replaces CustomPlayButton and merges relevant parts of GameDetailPanel. Structure:
+
+```
+PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm="true")
+├── AppButtonsContainer (playSectionClasses.AppButtonsContainer)
+│   ├── AppActionButton (basicAppDetailsSectionStylerClasses.AppActionButton)
+│   │   ├── Primary button (Play / Download / Checking / Resolve Conflict)
+│   │   └── Dropdown arrow button (⌄) → Context menu
+│   │       ├── Uninstall (when installed)
+│   │       ├── BIOS Status → opens BIOS modal
+│   │       └── Sync Saves (when installed + save sync enabled)
+│   └── Info items row (GameStatsSection)
+│       ├── BIOS Status: green ● / orange ● / red ✕ circle + "X/Y files"
+│       ├── Last Sync: "5m ago" or "Never" + success/failure indicator
+│       └── Playtime: "2h 14m" formatted duration
+```
+
+**Button states** (unchanged from CustomPlayButton):
+1. **Loading**: Initial mount, returns null
+2. **Not RomM**: Not a RomM shortcut, returns null (native UI shows)
+3. **Checking**: Spinner + "Checking saves..." + retry count
+4. **Download**: Blue "Download" button
+5. **Downloading**: Progress bar with percentage
+6. **Conflict**: Orange "Resolve Save Conflict" button
+7. **Play**: Green "Play" button
+
+**Dropdown menu** (via `showContextMenu` + `Menu`/`MenuItem` from `@decky/ui`):
+- **Uninstall**: Only when state === "play" (ROM installed). Calls `removeRom(romId)`, dispatches `romm_rom_uninstalled` event
+- **BIOS Status**: Always visible. Opens modal with per-file status list (reuses GameDetailPanel BIOS modal pattern). Label shows counts when BIOS needed
+- **Sync Saves**: Only when installed AND `save_sync_enabled`. Calls `syncRomSaves(romId)`, shows toast
+- **Refresh Metadata**: Always visible. Calls `fetchSgdbArtwork()` + `getRomMetadata()`
+
+**Info items** (right of buttons, same row):
+- **BIOS**: Color-coded circle indicator
+  - Green `●` = all BIOS files present
+  - Orange `●` = some BIOS files missing
+  - Red `✕` = no BIOS files (or platform needs BIOS but none downloaded)
+  - Hidden if platform doesn't need BIOS
+  - Label: "BIOS" / Value: "Ready" / "2/5" / "Missing"
+- **Last Sync**: When save sync enabled and ROM installed
+  - Label: "LAST SYNC" / Value: "5m ago" / "Never" / "Failed"
+  - Red text for failed, normal for success
+- **Playtime**: When any tracked playtime exists
+  - Label: "PLAYTIME" / Value: "2h 14m" / "< 1 min"
+  - Uses `PlaytimeIcon` class for clock icon if available
+
+**Data sources** (all fetched in single `useEffect` on mount):
+- ROM info: `getRomBySteamAppId(appId)` → rom_id, platform_slug, platform_name
+- Install status: `getInstalledRom(romId)` → installed path
+- BIOS status: `checkPlatformBios(platformSlug)` → needs_bios, file counts
+- Save sync settings: `getSaveSyncSettings()` → save_sync_enabled, conflict_mode
+- Save status: `getSaveStatus(romId)` → last sync time, playtime
+- Pre-launch sync: `preLaunchSync(romId)` → conflict detection
+
+**File changes**:
+- **New**: `src/components/RomMPlaySection.tsx` — unified component (~400-500 lines)
+- **Modify**: `src/patches/gameDetailPatch.tsx` — inject RomMPlaySection instead of CustomPlayButton
+- **Remove from injection**: `src/components/GameDetailPanel.tsx` — no longer injected into game detail page (done). Component file remains for potential future use. BIOS modal, uninstall, save sync moved to CustomPlayButton dropdown.
+- **Migrate to**: `src/components/CustomPlayButton.tsx` → `RomMPlaySection.tsx` — add info items row, consolidate logic
+- **Modify**: `src/utils/styleInjector.ts` — may need to target more specifically (PlayBar vs full PlaySection) depending on what native elements we want to preserve
+
+**CSS class usage mapping**:
+
+| Element | CSS Class Source | Property |
+|---------|-----------------|----------|
+| Outer wrapper | `basicAppDetailsSectionStylerClasses` | `PlaySection` |
+| Button container | `playSectionClasses` | `AppButtonsContainer` |
+| Button wrapper | `basicAppDetailsSectionStylerClasses` | `AppActionButton` |
+| Play button | `appActionButtonClasses` | `PlayButtonContainer`, `PlayButton`, `Green` |
+| Dropdown menu | `playSectionClasses` | `MenuButtonContainer` |
+| Stats container | `playSectionClasses` | `GameStatsSection` |
+| Individual stat | `playSectionClasses` | `GameStat` |
+| Stat label | `playSectionClasses` | `PlayBarDetailLabel` |
+| Stat value | `playSectionClasses` | `GameStatRight` |
+| Stat icon | `playSectionClasses` | `GameStatIcon` |
+| Playtime icon | `playSectionClasses` | `PlaytimeIcon` |
+
+**Estimated effort**: 500-700 lines of TypeScript, 4-6 hours implementation.
+
+#### Verification:
+- [ ] Custom PlaySection visually matches native Steam PlaySection
+- [ ] Play/Download/Checking/Conflict button states all work
+- [ ] Dropdown menu appears with correct options per state
+- [ ] Uninstall from dropdown removes ROM and updates button to Download
+- [ ] BIOS modal opens from dropdown with correct file list
+- [ ] Sync Saves from dropdown triggers sync and shows toast
+- [ ] BIOS indicator: green when ready, orange when partial, red when missing
+- [ ] Last sync time displays correctly with success/failure coloring
+- [ ] Playtime displays formatted duration
+- [ ] Info items hidden when data not available (no BIOS needed, no playtime, sync disabled)
+- [ ] Non-RomM games show native PlaySection (no custom replacement)
+- [ ] Grey line eliminated from custom PlaySection
+- [ ] No visual artifacts (extra borders, shadows, backgrounds) from CSS class usage
+
+### Phase 5.6: Unifideck-Style Game Detail Page Replacement
+
+**Goal**: Replace the entire game detail page content area for RomM games with a custom layout, similar to how Unifideck replaces both PlaySection and the metadata panel. Most native Steam game detail sections (DLC, achievements, community hub, store categories) are useless for ROM games.
+
+**Reference**: Unifideck injects two components into `InnerContainer`:
+1. `PlaySectionWrapper` — custom Play/Install button (replaces native PlaySection, hidden via CDP)
+2. `GameInfoPanel` — custom metadata panel with: compatibility badge, developer/publisher/release, Metacritic, genres, navigation buttons, synopsis, uninstall
+
+**Our equivalent for RomM games**:
+1. **RomMPlaySection** — custom Play/Download button with dropdown (already being built in Phase 5.5)
+2. **RomMGameInfoPanel** — custom metadata panel replacing native sections:
+   - Platform name and system (e.g. "PlayStation — psx")
+   - ROM file info (name, size, multi-disc indicator)
+   - BIOS status (color-coded: green/orange/red with file counts, clickable for detail modal)
+   - Save sync status (last sync time, success/failure, manual sync button)
+   - Playtime (tracked by us, formatted duration)
+   - Description/summary (from RomM metadata, already cached)
+   - Developer/publisher (from RomM metadata)
+   - Genre tags (from RomM metadata)
+   - "Refresh Metadata" and "Refresh Artwork" actions
+
+**Hiding native content**: For RomM games, hide or collapse the native metadata sections that don't apply (DLC, achievements, community hub, etc.) while preserving the header/hero area. Approach TBD — either CSS hiding of specific sections or replace AppDetailsRoot content entirely.
+
+**Metadata patches interaction**: Once we have a custom GameInfoPanel, we may no longer need the store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for the game detail page — the custom panel renders our data directly. However, keep the patches for contexts where native UI still renders (library grid tooltips, etc.).
+
+**Estimated effort**: Medium-large. Build after Phase 5.5 PlaySection is stable.
 
 ---
 
@@ -792,6 +1121,8 @@ PLAN.md specifies: "Users MUST use their own RomM account (not a shared/generic 
 - Check if `updateSyncProgress` in syncManager is being called (the applying phase runs entirely in frontend)
 - Consider whether the 250ms polling interval is too slow or if React batching is preventing re-renders
 - Test with a minimal reproduction: hardcode progress updates on a timer to isolate whether the issue is data flow or rendering
+
+**Related: safety timeout fragility in `_do_sync()`**: The 60-second safety timeout for frontend shortcut processing can fire prematurely for very large libraries (1000+ ROMs with artwork fetching), causing the sync to be reported as failed even though the frontend is still processing. Fix options: make the timeout configurable, scale it based on ROM count (e.g. 60s base + 1s per ROM), or switch to a heartbeat-based approach where the frontend periodically signals it's still working.
 
 ### Bug 2: Cancel Sync Not Working
 
@@ -836,18 +1167,21 @@ PLAN.md specifies: "Users MUST use their own RomM account (not a shared/generic 
 3. **Download atomicity**: Single-file ROM downloads should write to `{file_path}.tmp` and `os.replace()` to final path on completion.
 4. **Save state after pruning**: Write the cleaned state back to `state.json` before normal operation begins.
 
-### Bug 5: SSL Certificate Verification for External HTTPS APIs
+### Bug 5: SSL Certificate Verification — CRITICAL for Plugin Store
 
 **Symptom**: SGDB API calls fail with certificate errors on Steam Deck. The `ssl.create_default_context()` can't find CA certs in the embedded Python environment.
 
-**Current workaround**: RomM API calls (local LAN) use `ctx.verify_mode = ssl.CERT_NONE` which is acceptable for a self-hosted server on a trusted network. SGDB calls currently also use `CERT_NONE` as a temporary fix.
+**Current state**: SSL verification is completely disabled **everywhere** — `lib/romm_client.py` (`_romm_request`, `_romm_download`), `lib/sgdb.py`, and `lib/save_sync.py` (`_romm_json_request`, `_romm_upload_multipart`). Every HTTP helper creates its own `ssl.create_default_context()` with `check_hostname = False` and `verify_mode = ssl.CERT_NONE`. This is 4+ independent locations that all need fixing.
 
-**Proper fix needed**: For public internet APIs (SteamGridDB, IGDB), we should use proper certificate verification. Options:
-- Bundle `certifi` package and set `ctx.load_verify_locations(cafile=certifi.where())`
-- Point to the system CA bundle if available (`/etc/ssl/certs/ca-certificates.crt`)
-- Use `requests` library instead of `urllib` (handles certs automatically)
+**Proper fix — two tiers**:
+- **RomM API calls** (local LAN, self-signed certs common): Add a user-facing setting "Accept self-signed certificates" (default: off). When off, use proper SSL verification. When on, disable verification. This is acceptable for self-hosted services on trusted networks.
+- **Public internet APIs** (SteamGridDB): Always use proper SSL verification. Options:
+  - Bundle `certifi` package and set `ctx.load_verify_locations(cafile=certifi.where())`
+  - Point to the system CA bundle if available (`/etc/ssl/certs/ca-certificates.crt`)
+  - Use `requests` library instead of `urllib` (handles certs automatically)
+- **Consolidation**: SSL context creation should be extracted into a shared helper (see External Review Findings #6) so this logic lives in one place, not 4+ copies.
 
-This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. Low risk for this use case (API keys, not credentials) but should be fixed before any production release.
+This is a security concern — `CERT_NONE` on public APIs allows MITM attacks. Low risk for this use case (API keys, not credentials) but must be fixed before Plugin Store submission.
 
 ### Bug 6: Secrets Stored in Plain Text
 
@@ -1025,6 +1359,7 @@ Card2Path = <saves_path>/psx/duckstation/memcards/shared_card_2.mcd
 - Shared memory cards: must sync at system level, not per-game; conflicts affect all games on the card
 - Multiple save slots: some emulators support multiple save slots per game
 - All paths are relative to `saves_path` from `retrodeck.json` — must never be hardcoded
+- **Streaming multipart upload**: Current `_romm_upload_multipart()` reads the entire file into memory (`f.read()`). This is fine for `.srm` files (<64KB) but PS2 memory cards (PCSX2) are 8MB and Wii NAND saves can be larger. When implementing standalone emulator save sync, switch to streaming multipart upload for files over a threshold (e.g. 1MB).
 
 ---
 
@@ -1044,6 +1379,71 @@ Card2Path = <saves_path>/psx/duckstation/memcards/shared_card_2.mcd
 
 ---
 
+## External Review Findings
+
+Items from a full code review of the `main` and `feat/phase-5-save-sync` branches. Findings that enriched existing entries are noted inline (Phase 5 #2, Phase 6 Bugs 1/5, Phase 7 shared challenges). The items below are genuinely new — not tracked elsewhere in this plan.
+
+### EXT-1: Platform Map Caching
+
+`_load_platform_map()` reads `config.json` from disk on every `_resolve_system()` call. During batch operations (sync, downloads), this file is read repeatedly for each ROM.
+
+**Recommendation**: Cache the platform map once during plugin initialization or on first access, with a manual invalidation when settings change. Low priority given current usage patterns, but becomes relevant for large libraries (1000+ ROMs).
+
+### EXT-2: Atomic Writes for Settings
+
+`_save_state()` correctly uses atomic writes (write to `.tmp`, then `os.replace()` to final path). `_save_save_sync_state()` also does this correctly. However, `_save_settings_to_disk()` writes directly to the target file without atomic operation.
+
+**Risk**: Corrupted `settings.json` if the plugin crashes or power is lost during a write.
+
+**Fix**: Apply the same `.tmp` + `os.replace()` pattern to `_save_settings_to_disk()`. Small fix, one consistent pattern everywhere.
+
+### EXT-3: Download Queue Memory Growth
+
+`_download_queue` dict grows indefinitely — completed and failed download entries are never pruned. For users who install and uninstall many ROMs over time, this is a slow memory leak.
+
+**Recommendation**: Prune completed/failed entries after N days (e.g. 7), or implement a max queue size (e.g. 100 completed entries).
+
+### EXT-4: HTTP Client Code Duplication
+
+There are now four places that independently build SSL contexts + Basic Auth headers:
+- `_romm_request()` in `lib/romm_client.py`
+- `_romm_download()` in `lib/romm_client.py`
+- `_romm_json_request()` in `lib/save_sync.py`
+- `_romm_upload_multipart()` in `lib/save_sync.py`
+
+Each one creates its own `ssl.create_default_context()`, builds credentials with `base64.b64encode()`, and adds auth headers independently.
+
+**Recommendation**: Extract shared helpers (e.g. `_get_ssl_context()` + `_get_auth_header()`) in `romm_client.py` that all HTTP methods use. Critical for:
+- The SSL verification fix (Phase 6 Bug 5) — currently needs changes in 4+ places
+- Future auth changes (e.g. OAuth2 bearer support mentioned in Key Decisions)
+- Consistency in timeout handling
+
+Consider as part of a Phase 4.5-style restructuring pass.
+
+### EXT-5: Blocking I/O Assumption in Async Callables
+
+`pre_launch_sync()`, `post_exit_sync()`, and `sync_all_saves()` are async callables that internally call synchronous `_sync_rom_saves()`, which uses `time.sleep()` in `_with_retry()`. This blocks the event loop during retries.
+
+**Current impact**: None — Decky's `callable()` mechanism runs these in a thread pool, so blocking is fine.
+
+**Risk**: If Decky's threading model changes in a future version, this becomes a problem.
+
+**Documentation note**: Assumes Decky `callable()` executes in thread pool. If this changes, wrap `_sync_rom_saves` calls in `run_in_executor`.
+
+### EXT-6: Shell Interpolation in `bin/romm-launcher`
+
+`bin/romm-launcher` interpolates `$STATE_FILE` and `$ROM_ID` into Python strings. `ROM_ID` is regex-validated (digits only), so this is safe in practice, but the pattern is fragile.
+
+**Recommendation**: Pass `ROM_ID` and `STATE_FILE` as environment variables or command-line arguments to the Python snippet instead of string interpolation. Low priority given the validation already in place.
+
+### EXT-7: No Rate Limiting on RomM API Calls During Sync
+
+During a full sync, the backend fires rapid sequential requests to the RomM API (list platforms, paginate ROMs, fetch artwork per ROM). For large libraries this could be hundreds of requests in quick succession. If RomM has rate limiting or if the server is resource-constrained, this could cause failures.
+
+**Recommendation**: Add a configurable delay between API calls during batch operations (e.g. `sync_api_delay_ms`, default 0 for LAN, adjustable for remote/slow servers). Low priority for typical homelab use.
+
+---
+
 ## Future Improvements (nice-to-have)
 
 - **Concurrent download queue**: Support multiple queued downloads instead of one at a time.
@@ -1059,3 +1459,5 @@ Card2Path = <saves_path>/psx/duckstation/memcards/shared_card_2.mcd
   - **Device availability labels** (default: on): Show "Also on [device]" / "Streamable from [device]" in game detail panel. When off, hide device info.
   - **Custom device display name**: Override the hostname shown in collections and labels (e.g. "Deck" instead of "steamdeck-12345").
   - Future UI toggles (metadata display, artwork preferences, etc.) would live here too.
+- **Per-game sync selection**: Currently sync is all-or-nothing per platform. Add ability to select/deselect individual games within a platform for syncing. UI: game list with checkboxes on the Platforms settings page (expand a platform to see its games). Backend: per-ROM `sync_enabled` flag in shortcut_registry, checked during sync to skip deselected games. Useful for large platforms where only a subset of games are wanted.
+- **Translations / i18n**: All user-facing strings (button labels, toasts, settings, modals) are currently hardcoded in English. Add i18n support so the plugin adapts to the user's Steam language. Reference: Unifideck uses `src/i18n/` with per-language JSON files. Decky plugins can read Steam's language setting to pick the right locale.

@@ -33,6 +33,7 @@ export const downloadFirmware = callable<[number], FirmwareDownloadResult>("down
 export const downloadAllFirmware = callable<[string], FirmwareDownloadResult>("download_all_firmware");
 export const checkPlatformBios = callable<[string], BiosStatus>("check_platform_bios");
 export const saveDebugLogging = callable<[boolean], { success: boolean }>("save_debug_logging");
+export const debugLog = callable<[string], void>("debug_log");
 export const fixRetroarchInputDriver = callable<[], { success: boolean; message: string }>("fix_retroarch_input_driver");
 export const getRomMetadata = callable<[number], RomMetadata>("get_rom_metadata");
 export const getAllMetadataCache = callable<[], Record<string, RomMetadata>>("get_all_metadata_cache");
@@ -54,6 +55,9 @@ export const recordSessionStart = callable<[number], { success: boolean }>("reco
 export const recordSessionEnd = callable<[number], { success: boolean; duration_sec?: number; total_seconds?: number; session_count?: number; message?: string }>("record_session_end");
 export const getSaveSyncSettings = callable<[], SaveSyncSettings>("get_save_sync_settings");
 export const updateSaveSyncSettings = callable<[SaveSyncSettings], { success: boolean }>("update_save_sync_settings");
+
+// Bulk playtime for plugin-load UI update
+export const getAllPlaytime = callable<[], { playtime: Record<string, { total_seconds: number; session_count: number }> }>("get_all_playtime");
 
 // Offline queue (failed sync retry)
 export const getOfflineQueue = callable<[], { queue: OfflineQueueItem[] }>("get_offline_queue");
