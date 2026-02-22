@@ -6,30 +6,23 @@
  *   Status Row:   Install status (Downloaded / Not Installed) + Platform badge
  *   Game Info:    Description, Developer/Publisher, Genre tags, Release date
  *   ROM File:     Filename (only when installed)
- *   BIOS:         Status + Download All (only when platform needs BIOS)
- *   Save Sync:    Status + Sync Now (only when save sync enabled)
- *   Actions:      Refresh Artwork, Refresh Metadata, Uninstall (when installed)
+ *   BIOS:         Status (only when platform needs BIOS)
+ *   Save Sync:    Status (only when save sync enabled)
+ *   Purely informational — all actions live in RomMPlaySection gear menu.
  *
  * Uses createElement throughout (no JSX) to match the RomMPlaySection pattern.
  * CSS classes prefixed with `romm-panel-` are injected separately by styleInjector.
  */
 
-import { useState, useEffect, useRef, FC, createElement, CSSProperties } from "react";
-import { toaster } from "@decky/api";
-import { Focusable, DialogButton } from "@decky/ui";
+import { useState, useEffect, useRef, FC, createElement } from "react";
 import {
   getRomBySteamAppId,
   getRomMetadata,
   getInstalledRom,
-  getSgdbArtworkBase64,
-  removeRom,
   checkPlatformBios,
-  downloadAllFirmware,
   getSaveSyncSettings,
   getSaveStatus,
   getPendingConflicts,
-  syncRomSaves,
-  resolveConflict,
   debugLog,
 } from "../api/backend";
 import type { RomMetadata, InstalledRom, BiosStatus, SaveSyncSettings, SaveStatus, PendingConflict } from "../types";
@@ -93,7 +86,6 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     conflicts: [],
     error: false,
   });
-  const [actionPending, setActionPending] = useState<string | null>(null);
   const romIdRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -164,118 +156,48 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     };
     window.addEventListener("romm_rom_uninstalled", onUninstall);
 
-    return () => {
-      cancelled = true;
-      window.removeEventListener("romm_rom_uninstalled", onUninstall);
-    };
-  }, [appId]);
+    const onDataChanged = async (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!romIdRef.current) return;
 
-  // --- Action handlers ---
-
-  const handleRefreshArtwork = async () => {
-    if (actionPending) return;
-    setActionPending("artwork");
-    try {
-      // Fetch all three artwork types: 0=grid, 1=hero, 2=logo
-      const results = await Promise.all([
-        getSgdbArtworkBase64(appId, 0).catch(() => ({ base64: null, no_api_key: false })),
-        getSgdbArtworkBase64(appId, 1).catch(() => ({ base64: null, no_api_key: false })),
-        getSgdbArtworkBase64(appId, 2).catch(() => ({ base64: null, no_api_key: false })),
-      ]);
-
-      const anyNoKey = results.some((r) => r.no_api_key);
-      if (anyNoKey) {
-        toaster.toast({ title: "RomM Sync", body: "Set a SteamGridDB API key in settings first" });
-      } else {
-        const fetched = results.filter((r) => r.base64).length;
-        toaster.toast({ title: "RomM Sync", body: `Artwork refreshed (${fetched}/3 images)` });
-      }
-    } catch {
-      toaster.toast({ title: "RomM Sync", body: "Failed to refresh artwork" });
-    } finally {
-      setActionPending(null);
-    }
-  };
-
-  const handleRefreshMetadata = async () => {
-    if (actionPending || !state.romId) return;
-    setActionPending("metadata");
-    try {
-      const metadata = await getRomMetadata(state.romId);
-      setState((prev) => ({ ...prev, metadata }));
-      toaster.toast({ title: "RomM Sync", body: "Metadata refreshed" });
-    } catch {
-      toaster.toast({ title: "RomM Sync", body: "Failed to refresh metadata" });
-    } finally {
-      setActionPending(null);
-    }
-  };
-
-  const handleUninstall = async () => {
-    if (actionPending || !state.romId) return;
-    setActionPending("uninstall");
-    try {
-      const result = await removeRom(state.romId);
-      if (result.success) {
-        window.dispatchEvent(new CustomEvent("romm_rom_uninstalled", { detail: { rom_id: state.romId } }));
-        setState((prev) => ({ ...prev, installed: false, installedRom: null }));
-        toaster.toast({ title: "RomM Sync", body: `${state.romName || "ROM"} uninstalled` });
-      } else {
-        toaster.toast({ title: "RomM Sync", body: result.message || "Uninstall failed" });
-      }
-    } catch {
-      toaster.toast({ title: "RomM Sync", body: "Uninstall failed" });
-    } finally {
-      setActionPending(null);
-    }
-  };
-
-  const handleDownloadBios = async () => {
-    if (actionPending || !state.platformSlug) return;
-    setActionPending("bios");
-    try {
-      const result = await downloadAllFirmware(state.platformSlug);
-      if (result.success) {
-        toaster.toast({ title: "RomM Sync", body: `BIOS downloaded (${result.downloaded ?? 0} files)` });
-        // Refresh BIOS status
-        const updated = await checkPlatformBios(state.platformSlug).catch((): BiosStatus => ({ needs_bios: false }));
-        setState((prev) => ({ ...prev, biosStatus: updated.needs_bios ? updated : null }));
-      } else {
-        toaster.toast({ title: "RomM Sync", body: result.message || "BIOS download failed" });
-      }
-    } catch {
-      toaster.toast({ title: "RomM Sync", body: "BIOS download failed" });
-    } finally {
-      setActionPending(null);
-    }
-  };
-
-  const handleSyncSaves = async () => {
-    if (actionPending || !state.romId) return;
-    setActionPending("savesync");
-    try {
-      const result = await syncRomSaves(state.romId);
-      if (result.success) {
-        toaster.toast({ title: "RomM Sync", body: `Saves synced (${result.synced} files)` });
-        // Refresh save status
+      if (detail?.type === "save_sync" && detail.rom_id === romIdRef.current) {
         const [updatedStatus, updatedConflicts] = await Promise.all([
-          getSaveStatus(state.romId).catch((): SaveStatus | null => null),
+          getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null),
           getPendingConflicts().catch((): { conflicts: PendingConflict[] } => ({ conflicts: [] })),
         ]);
         setState((prev) => ({
           ...prev,
           saveStatus: updatedStatus,
-          conflicts: updatedConflicts.conflicts.filter((c) => c.rom_id === state.romId),
+          conflicts: updatedConflicts.conflicts.filter((c) => c.rom_id === romIdRef.current),
         }));
-      } else {
-        toaster.toast({ title: "RomM Sync", body: result.message || "Save sync failed" });
+      } else if (detail?.type === "bios" && detail.platform_slug) {
+        const updated = await checkPlatformBios(detail.platform_slug).catch((): BiosStatus => ({ needs_bios: false }));
+        setState((prev) => ({ ...prev, biosStatus: updated.needs_bios ? updated : null }));
+      } else if (detail?.type === "metadata" && detail.rom_id === romIdRef.current) {
+        const meta = await getRomMetadata(romIdRef.current).catch((): RomMetadata | null => null);
+        setState((prev) => ({ ...prev, metadata: meta }));
       }
-    } catch {
-      toaster.toast({ title: "RomM Sync", body: "Save sync failed" });
-    } finally {
-      setActionPending(null);
+    };
+    window.addEventListener("romm_data_changed", onDataChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("romm_rom_uninstalled", onUninstall);
+      window.removeEventListener("romm_data_changed", onDataChanged);
+    };
+  }, [appId]);
+
+  // Force Steam's scroll container to recalculate after content loads.
+  // Double-RAF ensures the browser has painted the expanded content first.
+  useEffect(() => {
+    if (!state.loading && !state.error && state.romId) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("resize"));
+        });
+      });
     }
-  };
+  }, [state.loading, state.error, state.romId]);
 
   // --- Render helpers ---
 
@@ -294,10 +216,13 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     );
 
   // --- Loading state ---
+  // Use minHeight so Steam's scroll container allocates enough space
+  // before async data loads and expands the panel.
   if (state.loading) {
     return createElement("div", {
       "data-romm": "true",
       className: "romm-panel-container",
+      style: { minHeight: "500px" },
     },
       createElement("div", { className: "romm-panel-loading" }, "Loading..."),
     );
@@ -394,30 +319,17 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     const biosChildren: (ReturnType<typeof createElement> | null)[] = [];
 
-    // Summary count + Download All button
+    // Summary count
     biosChildren.push(
       createElement("div", {
         key: "bios-row",
-        className: "romm-panel-status-action-row",
+        className: "romm-panel-status-inline",
       },
-        createElement("div", {
-          className: "romm-panel-status-inline",
-        },
-          createElement("span", {
-            className: "romm-status-dot",
-            style: { backgroundColor: biosColor },
-          }),
-          createElement("span", { className: "romm-panel-value" }, biosLabel),
-        ),
-        !bios.all_downloaded
-          ? createElement(DialogButton, {
-              key: "download-bios",
-              className: "romm-panel-action-btn",
-              style: { width: "auto", minWidth: 0, padding: "6px 14px" } as CSSProperties,
-              onClick: handleDownloadBios,
-              disabled: !!actionPending,
-            }, actionPending === "bios" ? "Downloading..." : "Download All")
-          : null,
+        createElement("span", {
+          className: "romm-status-dot",
+          style: { backgroundColor: biosColor },
+        }),
+        createElement("span", { className: "romm-panel-value" }, biosLabel),
       ),
     );
 
@@ -454,13 +366,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       syncStatusLabel = "Conflict detected";
       syncStatusColor = "#d94126";
     } else if (fileCount > 0) {
-      const lastSync = state.saveStatus?.files
-        ?.map((f) => f.last_sync_at)
-        .filter(Boolean)
-        .sort()
-        .reverse()[0];
-      if (lastSync) {
-        const diffMs = Date.now() - new Date(lastSync).getTime();
+      const lastCheck = state.saveStatus?.last_sync_check_at;
+      if (lastCheck) {
+        const diffMs = Date.now() - new Date(lastCheck).getTime();
         const diffMin = Math.floor(diffMs / 60000);
         if (diffMin < 1) syncStatusLabel = "Synced just now";
         else if (diffMin < 60) syncStatusLabel = `Synced ${diffMin}m ago`;
@@ -478,28 +386,17 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     const saveSyncChildren: (ReturnType<typeof createElement> | null)[] = [];
 
-    // Status row with Sync Now button
+    // Status row
     saveSyncChildren.push(
       createElement("div", {
         key: "savesync-status-row",
-        className: "romm-panel-status-action-row",
+        className: "romm-panel-status-inline",
       },
-        createElement("div", {
-          className: "romm-panel-status-inline",
-        },
-          createElement("span", {
-            className: "romm-status-dot",
-            style: { backgroundColor: syncStatusColor },
-          }),
-          createElement("span", { className: "romm-panel-value" }, syncStatusLabel),
-        ),
-        createElement(DialogButton, {
-          key: "sync-now",
-          className: "romm-panel-action-btn",
-          style: { width: "auto", minWidth: 0, padding: "6px 14px" } as CSSProperties,
-          onClick: handleSyncSaves,
-          disabled: !!actionPending,
-        }, actionPending === "savesync" ? "Syncing..." : "Sync Now"),
+        createElement("span", {
+          className: "romm-status-dot",
+          style: { backgroundColor: syncStatusColor },
+        }),
+        createElement("span", { className: "romm-panel-value" }, syncStatusLabel),
       ),
     );
 
@@ -516,33 +413,6 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     // Individual save file rows
     if (state.saveStatus?.files && state.saveStatus.files.length > 0) {
-      const handleResolveConflict = async (filename: string) => {
-        if (actionPending || !state.romId) return;
-        setActionPending("resolve");
-        try {
-          const result = await resolveConflict(state.romId, filename, "newest_wins");
-          if (result.success) {
-            toaster.toast({ title: "RomM Sync", body: `Conflict resolved for ${filename}` });
-            // Refresh save status and conflicts
-            const [updatedStatus, updatedConflicts] = await Promise.all([
-              getSaveStatus(state.romId!).catch((): SaveStatus | null => null),
-              getPendingConflicts().catch((): { conflicts: PendingConflict[] } => ({ conflicts: [] })),
-            ]);
-            setState((prev) => ({
-              ...prev,
-              saveStatus: updatedStatus,
-              conflicts: updatedConflicts.conflicts.filter((c) => c.rom_id === state.romId),
-            }));
-          } else {
-            toaster.toast({ title: "RomM Sync", body: result.message || "Resolve failed" });
-          }
-        } catch {
-          toaster.toast({ title: "RomM Sync", body: "Failed to resolve conflict" });
-        } finally {
-          setActionPending(null);
-        }
-      };
-
       saveSyncChildren.push(
         createElement("div", { key: "save-file-list", className: "romm-panel-file-list" },
           ...state.saveStatus.files.map((f) => {
@@ -573,26 +443,26 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
               createElement("span", { key: "name", className: "romm-panel-file-name" }, f.filename),
             );
 
-            // Sync datetime
+            // Last synced datetime
             fileRowChildren.push(
               createElement("span", { key: "sync-time", className: "romm-panel-file-detail" },
-                formatSyncDateTime(f.last_sync_at),
+                `Synced: ${formatSyncDateTime(f.last_sync_at)}`,
               ),
             );
 
-            // Conflict label + resolve button
+            // Last changed datetime (file modification time)
+            if (f.local_mtime) {
+              fileRowChildren.push(
+                createElement("span", { key: "change-time", className: "romm-panel-file-detail" },
+                  `Changed: ${formatSyncDateTime(f.local_mtime)}`,
+                ),
+              );
+            }
+
+            // Conflict label (informational only)
             if (f.status === "conflict" || conflictForFile) {
               fileRowChildren.push(
                 createElement("span", { key: "conflict-label", className: "romm-panel-file-conflict" }, "Conflict"),
-              );
-              fileRowChildren.push(
-                createElement(DialogButton, {
-                  key: "resolve-btn",
-                  className: "romm-panel-action-btn",
-                  style: { width: "auto", minWidth: 0, padding: "3px 10px", fontSize: "11px" } as CSSProperties,
-                  onClick: () => handleResolveConflict(f.filename),
-                  disabled: !!actionPending,
-                }, actionPending === "resolve" ? "..." : "Resolve"),
               );
             }
 
@@ -602,7 +472,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
                 createElement("span", {
                   key: "path",
                   className: "romm-panel-file-path",
-                  style: { flexBasis: "100%" } as CSSProperties,
+                  style: { flexBasis: "100%" },
                 }, f.local_path),
               );
             }
@@ -618,62 +488,16 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     saveSyncSection = section("save-sync", "Save Sync", ...saveSyncChildren);
   }
 
-  // --- Actions section ---
-  const actionButtons: ReturnType<typeof createElement>[] = [];
-
-  const compactBtnStyle: CSSProperties = { width: "auto", minWidth: 0, padding: "6px 14px" };
-
-  actionButtons.push(
-    createElement(DialogButton, {
-      key: "refresh-artwork",
-      className: "romm-panel-action-btn",
-      style: compactBtnStyle,
-      onClick: handleRefreshArtwork,
-      disabled: !!actionPending,
-    }, actionPending === "artwork" ? "Refreshing..." : "Refresh Artwork"),
-  );
-
-  actionButtons.push(
-    createElement(DialogButton, {
-      key: "refresh-metadata",
-      className: "romm-panel-action-btn",
-      style: compactBtnStyle,
-      onClick: handleRefreshMetadata,
-      disabled: !!actionPending,
-    }, actionPending === "metadata" ? "Refreshing..." : "Refresh Metadata"),
-  );
-
-  if (state.installed) {
-    actionButtons.push(
-      createElement(DialogButton, {
-        key: "uninstall",
-        className: "romm-panel-action-btn romm-panel-action-destructive",
-        style: compactBtnStyle,
-        onClick: handleUninstall,
-        disabled: !!actionPending,
-      }, actionPending === "uninstall" ? "Uninstalling..." : "Uninstall"),
-    );
-  }
-
-  const actionsSection = section("actions", "Actions",
-    createElement(Focusable, {
-      key: "action-buttons",
-      className: "romm-panel-actions-row",
-      style: { display: "flex", gap: "8px", flexWrap: "wrap" } as CSSProperties,
-      children: actionButtons,
-    }),
-  );
-
   // --- Assemble panel ---
   return createElement("div", {
     "data-romm": "true",
     className: "romm-panel-container",
+    style: { paddingBottom: "48px" },
   },
     statusRow,
     gameInfoSection,
     romFileSection,
     saveSyncSection,
     biosSection,
-    actionsSection,
   );
 };

@@ -709,6 +709,10 @@ class SaveSyncMixin:
             if err_filename and err_filename in all_filenames:
                 self._add_to_offline_queue(rom_id, err_filename, direction, err)
 
+        # Record when this sync check ran (regardless of whether files transferred)
+        save_entry = self._save_sync_state["saves"].setdefault(rom_id_str, {})
+        save_entry["last_sync_check_at"] = datetime.now(timezone.utc).isoformat()
+
         return synced, errors
 
     def _add_to_offline_queue(self, rom_id, filename, direction, error_msg):
@@ -827,11 +831,13 @@ class SaveSyncMixin:
                 })
 
         playtime = self._save_sync_state.get("playtime", {}).get(rom_id_str, {})
+        save_entry = self._save_sync_state.get("saves", {}).get(rom_id_str, {})
         return {
             "rom_id": rom_id,
             "files": file_statuses,
             "playtime": playtime,
             "device_id": self._save_sync_state.get("device_id", ""),
+            "last_sync_check_at": save_entry.get("last_sync_check_at"),
         }
 
     async def pre_launch_sync(self, rom_id):

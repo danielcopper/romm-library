@@ -16,6 +16,8 @@ import {
   Menu,
   MenuItem,
   showContextMenu,
+  Navigation,
+  QuickAccessTab,
   appActionButtonClasses,
   basicAppDetailsSectionStylerClasses,
 } from "@decky/ui";
@@ -320,7 +322,8 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
             background: "linear-gradient(to right, #d4a72c, #b8941f)",
           }}
           onClick={() => {
-            toaster.toast({ title: "RomM Sync", body: "Resolve save conflict in RomM Sync settings" });
+            Navigation.OpenQuickAccessMenu(QuickAccessTab.Decky);
+            toaster.toast({ title: "RomM Sync", body: "Open RomM Sync → Save Sync to resolve conflicts" });
           }}
         >
           Resolve Conflict

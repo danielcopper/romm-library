@@ -4,6 +4,7 @@ const ROMM_PLAY_HIDE_ID = "romm-hide-native-play";
 const ROMM_FOCUS_STYLES_ID = "romm-focus-styles";
 const ROMM_INFO_ITEMS_ID = "romm-info-items-styles";
 const ROMM_GAME_INFO_PANEL_ID = "romm-game-info-panel-styles";
+const ROMM_GEAR_BUTTONS_ID = "romm-gear-btn-styles";
 
 export function hideNativePlaySection(playSectionClass: string) {
   const sp = findSP();
@@ -286,6 +287,35 @@ export function hideNativePlaySection(playSectionClass: string) {
 }`;
     sp.window.document.head.appendChild(panelStyle);
   }
+
+  // Gear icon button styles for RomMPlaySection (RomM actions + Steam properties)
+  if (!sp.window.document.getElementById(ROMM_GEAR_BUTTONS_ID)) {
+    const gearStyle = sp.window.document.createElement("style");
+    gearStyle.id = ROMM_GEAR_BUTTONS_ID;
+    gearStyle.textContent = `
+.romm-gear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+.romm-gear-btn:hover, .romm-gear-btn.gpfocus {
+  background: rgba(255,255,255,0.14);
+  filter: brightness(1.2);
+}
+.romm-gear-btn:active {
+  filter: brightness(0.9);
+}`;
+    sp.window.document.head.appendChild(gearStyle);
+  }
 }
 
 export function showNativePlaySection() {
@@ -295,4 +325,5 @@ export function showNativePlaySection() {
   sp.window.document.getElementById(ROMM_FOCUS_STYLES_ID)?.remove();
   sp.window.document.getElementById(ROMM_INFO_ITEMS_ID)?.remove();
   sp.window.document.getElementById(ROMM_GAME_INFO_PANEL_ID)?.remove();
+  sp.window.document.getElementById(ROMM_GEAR_BUTTONS_ID)?.remove();
 }

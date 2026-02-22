@@ -199,8 +199,7 @@ export function registerGameDetailPatch() {
                   debugLog(`gameDetailPatch: inserting RomMPlaySection after native at index ${nativePlayIdx}`);
                   // INSERT after the native PlaySection (not replace) — keeping
                   // the native in the tree preserves the scroll container's height
-                  // calculation.  The CSS rule in styleInjector hides it visually,
-                  // and we defang it below to prevent ghost gamepad focus.
+                  // calculation.  The CSS rule in styleInjector hides it visually.
                   children.splice(nativePlayIdx + 1, 0, rommPlaySection);
 
                   // Defang native PlaySection: replace the React element with an

@@ -228,30 +228,26 @@ InnerContainer (Steam's native container)
   [0] HeaderCapsule — hero banner, logo (preserved)
   [1] RomMPlaySection (replaces native PlaySection)
   │   └── CustomPlayButton — Play/Download with dropdown
-  [2] RomMGameInfoPanel (replaces native metadata sections)
+  [2] RomMGameInfoPanel (info-only, no interactive elements)
       ├── Status Row
       │   ├── Install status (Downloaded / Not Installed)
-      │   └── Platform badge (e.g. "PlayStation" with system slug)
+      │   └── Platform badge (e.g. "Game Boy Advance")
       ├── Game Info
       │   ├── Description / Summary
       │   ├── Developer / Publisher
-      │   ├── Genre tags
-      │   └── Release date
-      ├── Saves & Playtime (only when save_sync_enabled)
-      │   ├── Last sync time + status indicator
-      │   ├── Playtime (formatted duration)
-      │   └── Manual sync button
-      ├── BIOS (only for platforms that need BIOS)
-      │   ├── Status indicator (green/orange/red)
-      │   ├── File counts (e.g. "3/5 downloaded")
-      │   └── Clickable → opens BIOS detail modal
+      │   ├── Genre tags, Release date, Game Modes, Players, Rating
       ├── ROM File
-      │   ├── Filename, size
-      │   └── Multi-disc indicator (if applicable)
-      └── Actions
-          ├── Refresh Artwork (SteamGridDB)
-          ├── Refresh Metadata
-          └── Uninstall (when installed)
+      │   └── Filename
+      ├── Save Sync (only when save_sync_enabled)
+      │   ├── Last sync check time + status indicator
+      │   ├── File count
+      │   └── Per-file: filename, "Synced: datetime", "Changed: datetime", path
+      └── BIOS (only for platforms that need BIOS)
+          ├── Status indicator (green/orange/red) + counts
+          └── Per-file: filename + local path
+  Actions live in the RomM gear icon menu in RomMPlaySection:
+      ├── Refresh Artwork, Refresh Metadata, Sync Save Files, Download BIOS
+      └── Uninstall (destructive)
 ```
 
 ### CustomPlayButton states (existing)

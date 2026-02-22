@@ -1134,13 +1134,21 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 
 #### Remaining work
 
-- [ ] Auto-select play button on page entry (`preferredFocus` added — needs testing)
+- [x] Auto-select play button on page entry (DOM-based focus with 400ms delay — confirmed working)
 - [ ] Conflict blocking state on CustomPlayButton (implemented — needs testing)
-- [x] RomMGameInfoPanel (metadata, actions, BIOS detail, Save Sync detail)
+- [x] RomMGameInfoPanel (metadata, BIOS detail, Save Sync detail — info-only, no buttons)
 - [x] Type `getRomBySteamAppId` return value properly (RomLookupResult)
+- [x] RomM gear icon menu (Refresh Artwork, Refresh Metadata, Sync Saves, Download BIOS, Uninstall)
+- [x] Steam gear icon menu (Properties via NavigateToAppProperties)
+- [x] Cross-component state refresh (romm_data_changed events from PlaySection → GameInfoPanel)
+- [x] Fix download_all_firmware slug mismatch (_platform_to_firmware_slugs)
 - [ ] Test Unifideck coexistence (4 scenarios above)
-- [ ] Scrolling: game detail page can't scroll all the way down to see all panel content
+- [ ] Scrolling: game detail page can't scroll all the way down to see all panel content (minHeight + resize helps with mouse but not gamepad)
 - [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
+- [x] Save sync timestamp UX: separated "last sync check" (ROM-level, updated every sync run) from "last data transfer" (per-file). PlaySection shows last sync check. GameInfoPanel shows both per-file: "Synced: ..." and "Changed: ..."
+- [ ] Delete save files: add per-game or bulk option in main plugin menu (NOT on game detail page). Save files should persist after ROM uninstall.
+- [ ] Delete BIOS files: add per-platform option in main plugin menu (NOT on game detail page)
+- [ ] Steam gear menu: research Collection/Favorites APIs for add/remove options
 
 #### BIOS intelligence improvements (future)
 

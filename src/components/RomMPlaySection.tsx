@@ -11,7 +11,16 @@
  */
 
 import { useState, useEffect, FC, createElement } from "react";
-import { basicAppDetailsSectionStylerClasses } from "@decky/ui";
+import { toaster } from "@decky/api";
+import {
+  basicAppDetailsSectionStylerClasses,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  showContextMenu,
+  Navigation,
+} from "@decky/ui";
+import { FaGamepad, FaCog } from "react-icons/fa";
 import { CustomPlayButton } from "./CustomPlayButton";
 import {
   getRomBySteamAppId,
@@ -19,6 +28,11 @@ import {
   getSaveStatus,
   getPendingConflicts,
   checkPlatformBios,
+  getSgdbArtworkBase64,
+  getRomMetadata,
+  removeRom,
+  downloadAllFirmware,
+  syncRomSaves,
   debugLog,
 } from "../api/backend";
 import type { BiosStatus, SaveSyncSettings, SaveStatus, PendingConflict } from "../types";
@@ -28,6 +42,9 @@ interface RomMPlaySectionProps {
 }
 
 interface InfoState {
+  romId: number | null;
+  romName: string;
+  platformSlug: string;
   lastPlayed: string;
   playtime: string;
   saveSyncEnabled: boolean;
@@ -91,6 +108,9 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   const initialPlaytime = formatPlaytime(overview?.minutes_playtime_forever ?? 0);
 
   const [info, setInfo] = useState<InfoState>({
+    romId: null,
+    romName: "",
+    platformSlug: "",
     lastPlayed: initialLastPlayed,
     playtime: initialPlaytime,
     saveSyncEnabled: false,
@@ -100,6 +120,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     biosStatus: null,
     biosLabel: "",
   });
+  const [actionPending, setActionPending] = useState<string | null>(null);
 
   // Load async info (save sync, BIOS) — play button and playtime render immediately
   useEffect(() => {
@@ -140,15 +161,11 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
             saveSyncStatus = "conflict";
             saveSyncLabel = "Conflict";
           } else if (saveStatus && saveStatus.files.length > 0) {
-            const lastSync = saveStatus.files
-              .map((f) => f.last_sync_at)
-              .filter(Boolean)
-              .sort()
-              .reverse()[0];
-            if (lastSync) {
+            const lastCheck = saveStatus.last_sync_check_at;
+            if (lastCheck) {
               saveSyncStatus = "synced";
-              const syncDate = new Date(lastSync);
-              const diffMs = Date.now() - syncDate.getTime();
+              const checkDate = new Date(lastCheck);
+              const diffMs = Date.now() - checkDate.getTime();
               const diffMin = Math.floor(diffMs / 60000);
               if (diffMin < 1) saveSyncLabel = "Just now";
               else if (diffMin < 60) saveSyncLabel = `${diffMin}m ago`;
@@ -183,6 +200,9 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         if (cancelled) return;
         setInfo((prev) => ({
           ...prev,
+          romId,
+          romName: rom.name || "",
+          platformSlug,
           // Override playtime if RomM has tracked data
           ...(playtime ? { playtime } : {}),
           saveSyncEnabled: saveSyncSettings.save_sync_enabled,
@@ -229,6 +249,136 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         value,
       ),
     );
+
+  // --- Gear button action handlers ---
+
+  const handleRefreshArtwork = async () => {
+    if (actionPending) return;
+    setActionPending("artwork");
+    try {
+      const results = await Promise.all([
+        getSgdbArtworkBase64(appId, 0).catch(() => ({ base64: null, no_api_key: false })),
+        getSgdbArtworkBase64(appId, 1).catch(() => ({ base64: null, no_api_key: false })),
+        getSgdbArtworkBase64(appId, 2).catch(() => ({ base64: null, no_api_key: false })),
+      ]);
+      const anyNoKey = results.some((r) => r.no_api_key);
+      if (anyNoKey) {
+        toaster.toast({ title: "RomM Sync", body: "Set a SteamGridDB API key in settings first" });
+      } else {
+        const fetched = results.filter((r) => r.base64).length;
+        toaster.toast({ title: "RomM Sync", body: `Artwork refreshed (${fetched}/3 images)` });
+      }
+    } catch {
+      toaster.toast({ title: "RomM Sync", body: "Failed to refresh artwork" });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleRefreshMetadata = async () => {
+    if (actionPending || !info.romId) return;
+    setActionPending("metadata");
+    try {
+      await getRomMetadata(info.romId);
+      toaster.toast({ title: "RomM Sync", body: "Metadata refreshed" });
+      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "metadata", rom_id: info.romId } }));
+    } catch {
+      toaster.toast({ title: "RomM Sync", body: "Failed to refresh metadata" });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleSyncSaves = async () => {
+    if (actionPending || !info.romId) return;
+    setActionPending("savesync");
+    try {
+      const result = await syncRomSaves(info.romId);
+      if (result.success) {
+        toaster.toast({ title: "RomM Sync", body: `Saves synced (${result.synced} files)` });
+        window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: info.romId } }));
+        // Refresh save sync status — last_sync_check_at was just set by the backend
+        setInfo((prev) => ({ ...prev, saveSyncStatus: "synced" as const, saveSyncLabel: "Just now" }));
+      } else {
+        toaster.toast({ title: "RomM Sync", body: result.message || "Save sync failed" });
+      }
+    } catch {
+      toaster.toast({ title: "RomM Sync", body: "Save sync failed" });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleDownloadBios = async () => {
+    if (actionPending || !info.platformSlug) return;
+    setActionPending("bios");
+    try {
+      const result = await downloadAllFirmware(info.platformSlug);
+      if (result.success) {
+        toaster.toast({ title: "RomM Sync", body: `BIOS downloaded (${result.downloaded ?? 0} files)` });
+        window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "bios", platform_slug: info.platformSlug } }));
+        // Refresh BIOS status
+        const updated = await checkPlatformBios(info.platformSlug).catch((): BiosStatus => ({ needs_bios: false }));
+        if (updated.needs_bios) {
+          setInfo((prev) => ({
+            ...prev,
+            biosStatus: getBiosLevel(updated),
+            biosLabel: formatBiosLabel(updated),
+          }));
+        }
+      } else {
+        toaster.toast({ title: "RomM Sync", body: result.message || "BIOS download failed" });
+      }
+    } catch {
+      toaster.toast({ title: "RomM Sync", body: "BIOS download failed" });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleUninstall = async () => {
+    if (actionPending || !info.romId) return;
+    setActionPending("uninstall");
+    try {
+      const result = await removeRom(info.romId);
+      if (result.success) {
+        window.dispatchEvent(new CustomEvent("romm_rom_uninstalled", { detail: { rom_id: info.romId } }));
+        toaster.toast({ title: "RomM Sync", body: `${info.romName || "ROM"} uninstalled` });
+      } else {
+        toaster.toast({ title: "RomM Sync", body: result.message || "Uninstall failed" });
+      }
+    } catch {
+      toaster.toast({ title: "RomM Sync", body: "Uninstall failed" });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const showRomMMenu = (e: MouseEvent) => {
+    showContextMenu(
+      createElement(Menu, { label: "RomM Actions" },
+        createElement(MenuItem, { key: "refresh-artwork", onClick: handleRefreshArtwork }, "Refresh Artwork"),
+        createElement(MenuItem, { key: "refresh-metadata", onClick: handleRefreshMetadata }, "Refresh Metadata"),
+        createElement(MenuItem, { key: "sync-saves", onClick: handleSyncSaves }, "Sync Save Files"),
+        createElement(MenuItem, { key: "download-bios", onClick: handleDownloadBios }, "Download BIOS"),
+        createElement(MenuSeparator, { key: "sep" }),
+        createElement(MenuItem, { key: "uninstall", tone: "destructive", onClick: handleUninstall }, "Uninstall"),
+      ),
+      (e.currentTarget ?? e.target) as HTMLElement,
+    );
+  };
+
+  const showSteamMenu = (e: MouseEvent) => {
+    showContextMenu(
+      createElement(Menu, { label: "Steam" },
+        createElement(MenuItem, { key: "properties", onClick: () => {
+          Navigation.NavigateToAppProperties();
+        } }, "Properties"),
+        // TODO: Add to/Remove from Collection and Favorites when APIs are explored
+      ),
+      (e.currentTarget ?? e.target) as HTMLElement,
+    );
+  };
 
   // Build info items array
   const infoItems: ReturnType<typeof createElement>[] = [];
@@ -290,6 +440,33 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       },
     },
       ...infoItems,
+    ),
+    // Gear icon buttons pushed to the far right
+    createElement("div", {
+      style: {
+        marginLeft: "auto",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        flexShrink: 0,
+      },
+    },
+      // RomM actions button
+      createElement("button", {
+        className: "romm-gear-btn",
+        onClick: showRomMMenu,
+        title: "RomM Actions",
+      },
+        createElement(FaGamepad, { size: 18, color: "#553e98" }),
+      ),
+      // Steam properties button
+      createElement("button", {
+        className: "romm-gear-btn",
+        onClick: showSteamMenu,
+        title: "Steam Properties",
+      },
+        createElement(FaCog, { size: 18, color: "#8f98a0" }),
+      ),
     ),
   );
 };

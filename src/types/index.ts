@@ -218,6 +218,7 @@ export interface SaveStatus {
   files: SaveFileStatus[];
   playtime: PlaytimeEntry;
   device_id: string;
+  last_sync_check_at: string | null;
 }
 
 export interface RomLookupResult {
