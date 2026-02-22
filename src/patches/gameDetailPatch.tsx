@@ -4,16 +4,54 @@ import {
   afterPatch,
   findInReactTree,
   appDetailsClasses,
-  playSectionClasses,
   createReactTreePatcher,
+  playSectionClasses,
+  basicAppDetailsSectionStylerClasses,
 } from "@decky/ui";
 import { CustomPlayButton } from "../components/CustomPlayButton";
-import { setBypassBypass } from "./metadataPatches";
 import { debugLog } from "../api/backend";
 import type { RoutePatch } from "@decky/api";
 
 // Cached set of RomM app IDs — updated by registerRomMAppId / unregisterRomMAppId
 const rommAppIds = new Set<number>();
+
+// Tracks which appIds have already had their tree dumped (once per page load)
+const dumpedAppIds = new Set<number>();
+
+/**
+ * Recursively walk a React element tree and log each node.
+ * Useful for diagnosing tree structure changes after Steam updates.
+ * Runs once per appId to avoid log spam on re-renders.
+ */
+function deepTreeDump(node: any, depth: number, index: number, prefix: string): void {
+  if (depth > 5) return;
+  if (node == null || typeof node !== "object") return;
+
+  const indent = "  ".repeat(depth);
+  const typeName =
+    node?.type?.name ||
+    node?.type?.displayName ||
+    (typeof node?.type === "string" ? node.type : typeof node?.type === "function" ? "(anonymous fn)" : String(node?.type ?? "null"));
+  const key = node?.key ?? "null";
+  const className = (node?.props?.className || "").substring(0, 60) || "(none)";
+  const childrenRaw = node?.props?.children;
+  const childCount = Array.isArray(childrenRaw)
+    ? childrenRaw.length
+    : childrenRaw != null
+    ? 1
+    : 0;
+
+  debugLog(`${prefix}${indent}[${depth}:${index}] type=${typeName} key=${key} cls=${className} children=${childCount}`);
+
+  // Recurse into children
+  if (Array.isArray(childrenRaw)) {
+    for (let i = 0; i < childrenRaw.length; i++) {
+      deepTreeDump(childrenRaw[i], depth + 1, i, prefix);
+    }
+  } else if (childrenRaw != null && typeof childrenRaw === "object") {
+    deepTreeDump(childrenRaw, depth + 1, 0, prefix);
+  }
+}
 
 export function registerRomMAppId(appId: number) {
   rommAppIds.add(appId);
@@ -73,14 +111,52 @@ export function registerGameDetailPatch() {
             const isRomM = rommAppIds.has(appId);
             debugLog(`gameDetailPatch: appId=${appId} isRomM=${isRomM} setSize=${rommAppIds.size}`);
 
-            // Set bypass counter so BIsModOrShortcut returns false during
-            // this render pass, enabling metadata sections for our shortcuts.
-            if (isRomM) {
-              setBypassBypass(11);
+            // Diagnostic tree dump — runs once per appId per plugin load.
+            // Logs the full InnerContainer structure for debugging tree changes.
+            if (isRomM && !dumpedAppIds.has(appId)) {
+              dumpedAppIds.add(appId);
+              debugLog(`===== DEEP TREE DUMP for appId=${appId} =====`);
+              debugLog(`InnerContainer className: ${container.props.className}`);
+
+              const children = container.props.children;
+              debugLog(`InnerContainer direct children count: ${children.length}`);
+              for (let i = 0; i < children.length; i++) {
+                deepTreeDump(children[i], 0, i, "TREE: ");
+              }
+
+              // Search for playSectionClasses.Container deep in tree
+              const psContainerClass = playSectionClasses?.Container;
+              debugLog(`playSectionClasses.Container = "${psContainerClass || "UNDEFINED"}"`);
+              if (psContainerClass) {
+                const psFound = findInReactTree(
+                  container,
+                  (x: any) => x?.props?.className?.includes?.(psContainerClass),
+                );
+                debugLog(`findInReactTree(playSectionClasses.Container): ${psFound ? "FOUND" : "NOT FOUND"}`);
+                if (psFound) {
+                  debugLog(`  -> type=${psFound?.type?.name || psFound?.type?.displayName || typeof psFound?.type} cls=${(psFound?.props?.className || "").substring(0, 80)}`);
+                }
+              }
+
+              // Search for basicAppDetailsSectionStylerClasses.PlaySection deep in tree
+              const bpsClass = basicAppDetailsSectionStylerClasses?.PlaySection;
+              debugLog(`basicAppDetailsSectionStylerClasses.PlaySection = "${bpsClass || "UNDEFINED"}"`);
+              if (bpsClass) {
+                const bpsFound = findInReactTree(
+                  container,
+                  (x: any) => x?.props?.className?.includes?.(bpsClass),
+                );
+                debugLog(`findInReactTree(basicAppDetailsSectionStylerClasses.PlaySection): ${bpsFound ? "FOUND" : "NOT FOUND"}`);
+                if (bpsFound) {
+                  debugLog(`  -> type=${bpsFound?.type?.name || bpsFound?.type?.displayName || typeof bpsFound?.type} cls=${(bpsFound?.props?.className || "").substring(0, 80)}`);
+                }
+              }
+
+              debugLog(`===== END DEEP TREE DUMP =====`);
             }
 
-            // For RomM games: inject CustomPlayButton into InnerContainer
-            // after the native PlaySection
+            // For RomM games: inject CustomPlayButton into InnerContainer,
+            // REPLACING the native PlaySection so gamepad focus can't reach it
             if (isRomM) {
               const children = container.props.children;
 
@@ -89,70 +165,53 @@ export function registerGameDetailPatch() {
                 (c: any) => c?.key === "romm-play-section",
               );
               if (!alreadyHasPlayBtn) {
-                // Find the native PlaySection by matching playSectionClasses.Container
-                let insertIdx = -1;
+                // Identify the native PlaySection by position. Steam's
+                // InnerContainer native order is [HeaderCapsule, PlaySection, ...].
+                // Skip children injected by other plugins. Detection uses both
+                // key prefixes AND component type names, since most plugins
+                // (ProtonDB, HLTB) don't set React keys on their injected elements.
+                const PLUGIN_KEY_PREFIXES = ["romm-", "unifideck-", "hltb-", "protondb-"];
+                const PLUGIN_TYPE_NAMES = ["ProtonMedal", "GameStats", "AudioLoaderCompatStateContextProvider"];
+                let nativePlayIdx = -1;
+                let nativeCount = 0;
                 for (let i = 0; i < children.length; i++) {
                   const child = children[i];
-                  if (
-                    child?.props?.className &&
-                    typeof child.props.className === "string" &&
-                    playSectionClasses?.Container &&
-                    child.props.className.includes(playSectionClasses.Container)
-                  ) {
-                    insertIdx = i + 1;
+                  const key = child?.key;
+                  const typeName = child?.type?.name || child?.type?.displayName || "";
+                  const isPluginByKey = key && typeof key === "string" &&
+                    PLUGIN_KEY_PREFIXES.some((p) => key.startsWith(p));
+                  const isPluginByType = typeName && PLUGIN_TYPE_NAMES.includes(typeName);
+                  if (isPluginByKey || isPluginByType) continue;
+                  nativeCount++;
+                  if (nativeCount === 2) {
+                    nativePlayIdx = i;
                     break;
                   }
                 }
-                // Fallback: insert at position 1 if PlaySection not found
-                if (insertIdx < 0) insertIdx = 1;
 
-                debugLog(`gameDetailPatch: inserting CustomPlayButton at index ${insertIdx}`);
-
-                children.splice(
-                  insertIdx,
-                  0,
-                  createElement("div", {
-                    key: "romm-play-section",
-                    "data-romm": "true",
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      width: "100%",
-                      padding: "16px 2.8vw",
-                      boxSizing: "border-box",
-                      background: "rgba(14, 20, 27, 0.33)",
-                      position: "relative",
-                    },
+                const rommPlaySection = createElement("div", {
+                  key: "romm-play-section",
+                  "data-romm": "true",
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    width: "100%",
+                    padding: "16px 2.8vw",
+                    boxSizing: "border-box",
+                    background: "rgba(14, 20, 27, 0.33)",
+                    position: "relative",
+                    zIndex: 2,
                   },
-                    createElement(CustomPlayButton, { appId }),
-                  ),
+                },
+                  createElement(CustomPlayButton, { appId }),
                 );
-              } else {
-                // Position correction: ensure our element stays at the right spot
-                const currentIdx = children.findIndex(
-                  (c: any) => c?.key === "romm-play-section",
-                );
-                if (currentIdx >= 0) {
-                  let expectedIdx = -1;
-                  for (let i = 0; i < children.length; i++) {
-                    if (i === currentIdx) continue;
-                    const child = children[i];
-                    if (
-                      child?.props?.className &&
-                      typeof child.props.className === "string" &&
-                      playSectionClasses?.Container &&
-                      child.props.className.includes(playSectionClasses.Container)
-                    ) {
-                      expectedIdx = i + 1;
-                      break;
-                    }
-                  }
-                  if (expectedIdx >= 0 && currentIdx !== expectedIdx) {
-                    const [elem] = children.splice(currentIdx, 1);
-                    // Adjust index if we removed before the target
-                    const adjustedIdx = currentIdx < expectedIdx ? expectedIdx - 1 : expectedIdx;
-                    children.splice(adjustedIdx, 0, elem);
-                  }
+
+                if (nativePlayIdx >= 0) {
+                  debugLog(`gameDetailPatch: replacing native PlaySection at index ${nativePlayIdx}`);
+                  children.splice(nativePlayIdx, 1, rommPlaySection);
+                } else {
+                  debugLog(`gameDetailPatch: fallback, inserting at index 1`);
+                  children.splice(1, 0, rommPlaySection);
                 }
               }
             }

@@ -20,7 +20,6 @@ import {
   basicAppDetailsSectionStylerClasses,
 } from "@decky/ui";
 import { hideNativePlaySection, showNativePlaySection } from "../utils/styleInjector";
-import { prepareForLaunch } from "../patches/metadataPatches";
 import {
   getRomBySteamAppId,
   getInstalledRom,
@@ -136,7 +135,6 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     const gameId = overview?.GetGameID?.() ?? String(appId);
     debugLog(`CustomPlayButton: handlePlay appId=${appId} gameId=${gameId}`);
     setState("launching");
-    prepareForLaunch();
     SteamClient.Apps.RunGame(gameId, "", -1, 100);
   };
 
@@ -211,7 +209,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
       >
         <DialogButton
-          className={appActionButtonClasses?.PlayButton}
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-download"].filter(Boolean).join(" ")}
           style={{
             height: "100%",
             flex: "1 0 auto",
@@ -226,7 +224,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           onClick={handleDownload}
           disabled={actionPending}
         >
-          {actionPending ? "Starting..." : "Download"}
+          {actionPending ? "Downloading..." : "Download"}
         </DialogButton>
       </Focusable>
     );
@@ -239,7 +237,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
       >
         <div
-          className={appActionButtonClasses?.PlayButton}
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
           style={{
             height: "100%",
             flex: "1 0 auto",
@@ -272,7 +270,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
       style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
     >
       <DialogButton
-        className={appActionButtonClasses?.PlayButton}
+        className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
         style={{
           height: "100%",
           flex: "1 0 auto",
@@ -291,6 +289,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         Play
       </DialogButton>
       <DialogButton
+        className="romm-btn-dropdown"
         style={{
           ...dropdownArrowStyle,
           background: "linear-gradient(to right, #4da636, #3f8a2b)",

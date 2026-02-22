@@ -902,8 +902,11 @@ function updatePlaytimeDisplay(appId: number, totalMinutes: number) {
 - [ ] Plugin startup skips all save sync initialization when disabled
 - [ ] Playtime displayed in Steam's native UI or prominently in game detail panel
 
-### Phase 5.5: Custom PlaySection — Native-Looking Game Detail Page
+### Phase 5.5: ~~Custom PlaySection — Native-Looking Game Detail Page~~ DEFERRED
 
+> **Deferred**: This phase was overly ambitious in trying to pixel-perfect replicate the native Steam PlaySection with info items inline. The approach gets a major rework in Phase 5.6 which takes a different direction — replacing the entire game detail content area (Unifideck-style) rather than trying to match native UI element-by-element. Research findings below are preserved as reference for 5.6.
+
+<!--
 **Goal**: Replace the native Steam PlaySection entirely with a pixel-perfect custom version that provides RomM-specific functionality (download, save sync, BIOS status) while looking indistinguishable from native Steam UI.
 
 **Current state**: We hide the native PlaySection via CSS (`.PlaySection:not([data-romm]) { display: none !important }`) and inject a CustomPlayButton wrapped in native CSS class hierarchy. The button renders correctly with a dropdown menu (Uninstall, BIOS Status, Sync Saves). GameDetailPanel ("ROMM SYNC" section) has been **removed** from game detail page injection — all its functionality is now in the CustomPlayButton dropdown. The old GameDetailPanel component file remains in the codebase but is no longer injected.
@@ -1059,8 +1062,11 @@ PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm=
 - [ ] Non-RomM games show native PlaySection (no custom replacement)
 - [ ] Grey line eliminated from custom PlaySection
 - [ ] No visual artifacts (extra borders, shadows, backgrounds) from CSS class usage
+-->
 
 ### Phase 5.6: Unifideck-Style Game Detail Page Replacement
+
+> **Detailed design document**: See [`docs/game-detail-ui.md`](docs/game-detail-ui.md) for architecture decisions, React tree findings, gamepad navigation research, and layout design.
 
 **Goal**: Replace the entire game detail page content area for RomM games with a custom layout, similar to how Unifideck replaces both PlaySection and the metadata panel. Most native Steam game detail sections (DLC, achievements, community hub, store categories) are useless for ROM games.
 
@@ -1069,7 +1075,7 @@ PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm=
 2. `GameInfoPanel` — custom metadata panel with: compatibility badge, developer/publisher/release, Metacritic, genres, navigation buttons, synopsis, uninstall
 
 **Our equivalent for RomM games**:
-1. **RomMPlaySection** — custom Play/Download button with dropdown (already being built in Phase 5.5)
+1. **RomMPlaySection** — custom Play/Download button with dropdown (CustomPlayButton, evolved in Phase 5.6)
 2. **RomMGameInfoPanel** — custom metadata panel replacing native sections:
    - Platform name and system (e.g. "PlayStation — psx")
    - ROM file info (name, size, multi-disc indicator)
@@ -1085,7 +1091,13 @@ PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm=
 
 **Metadata patches interaction**: Once we have a custom GameInfoPanel, we may no longer need the store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for the game detail page — the custom panel renders our data directly. However, keep the patches for contexts where native UI still renders (library grid tooltips, etc.).
 
-**Estimated effort**: Medium-large. Build after Phase 5.5 PlaySection is stable.
+**Unifideck compatibility**: Our game detail page injection uses the same position-based heuristic as Unifideck (count native children, skip plugin-injected ones, replace the 2nd native child). Since our patch only activates for RomM games (`isRomM` check), both plugins should coexist — Unifideck handles native Steam games, we handle RomM shortcuts. Test scenarios:
+- [ ] RomM game with Unifideck installed: our patch takes priority, no double-injection
+- [ ] Native Steam game with both plugins: Unifideck patches normally, we skip entirely
+- [ ] Gamepad navigation works on both RomM and native games with both plugins active
+- [ ] Uninstalling one plugin doesn't break the other
+
+**Estimated effort**: Medium-large.
 
 ---
 
