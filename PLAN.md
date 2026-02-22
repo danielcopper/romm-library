@@ -1064,19 +1064,19 @@ PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm=
 - [ ] No visual artifacts (extra borders, shadows, backgrounds) from CSS class usage
 -->
 
-### Phase 5.6: Unifideck-Style Game Detail Page Replacement
+### Phase 5.6: Unifideck-Style Game Detail Page — IN PROGRESS
 
 > **Detailed design document**: See [`docs/game-detail-ui.md`](docs/game-detail-ui.md) for architecture decisions, React tree findings, gamepad navigation research, and layout design.
 
-**Goal**: Replace the entire game detail page content area for RomM games with a custom layout, similar to how Unifideck replaces both PlaySection and the metadata panel. Most native Steam game detail sections (DLC, achievements, community hub, store categories) are useless for ROM games.
+**Goal**: Custom game detail page components for RomM games. PlaySection with info items mirroring Steam's native layout. Future: RomMGameInfoPanel below the PlaySection for metadata/actions.
 
 **Reference**: Unifideck injects two components into `InnerContainer`:
 1. `PlaySectionWrapper` — custom Play/Install button (replaces native PlaySection, hidden via CDP)
 2. `GameInfoPanel` — custom metadata panel with: compatibility badge, developer/publisher/release, Metacritic, genres, navigation buttons, synopsis, uninstall
 
 **Our equivalent for RomM games**:
-1. **RomMPlaySection** — custom PlaySection that mirrors Steam's native layout: play button on the left, info items to the right in a horizontal row
-2. **RomMGameInfoPanel** — custom metadata panel inserted after the PlaySection (future work, not part of initial 5.6)
+1. **RomMPlaySection** — custom PlaySection that mirrors Steam's native layout: play button on the left, info items to the right in a horizontal row — ✅ IMPLEMENTED
+2. **RomMGameInfoPanel** — custom metadata panel inserted after the PlaySection (future work)
 
 #### RomMPlaySection Layout (mirrors native Steam PlaySection)
 
@@ -1113,7 +1113,7 @@ All info items follow Steam's native two-line pattern: **uppercase header label 
    - Only visible for platforms that need BIOS (`BiosStatus.needs_bios === true`), hidden otherwise.
    - Data source: `checkPlatformBios(platformSlug)` — already returns `needs_bios`, `server_count`, `local_count`, `all_downloaded`.
 
-**CustomPlayButton** stays as-is (play/download/launching states + dropdown with uninstall). Only addition: a conflict blocking state when save sync is enabled and a conflict is detected for this ROM (orange button, "Resolve Conflict").
+**CustomPlayButton** stays as-is (play/download/launching states + dropdown with uninstall). Consistent button width across all states. CSS spinner fallback for launching throbber. Future addition: a conflict blocking state when save sync is enabled and a conflict is detected for this ROM (orange button, "Resolve Conflict").
 
 **Metadata patches interaction**: Keep store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for contexts where native UI still renders (library grid tooltips, search results, etc.). The PlaySection info items use our own data sources directly, not store patches.
 
@@ -1132,7 +1132,13 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 - [ ] Gamepad navigation works on both RomM and native games with both plugins active
 - [ ] Uninstalling one plugin doesn't break the other
 
-**Estimated effort**: Medium-large.
+#### Remaining work
+
+- [ ] Auto-select play button on page entry (Steam auto-focuses native PlaySection; our custom button doesn't receive focus)
+- [ ] Conflict blocking state on CustomPlayButton (orange "Resolve Conflict" button when save sync conflict detected)
+- [ ] RomMGameInfoPanel (metadata, actions — separate component, inserted after PlaySection)
+- [ ] Test Unifideck coexistence (4 scenarios below)
+- [ ] Type `getRomBySteamAppId` return value properly (currently `any | null` in backend.ts)
 
 ---
 
