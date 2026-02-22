@@ -1075,21 +1075,56 @@ PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm=
 2. `GameInfoPanel` — custom metadata panel with: compatibility badge, developer/publisher/release, Metacritic, genres, navigation buttons, synopsis, uninstall
 
 **Our equivalent for RomM games**:
-1. **RomMPlaySection** — custom Play/Download button with dropdown (CustomPlayButton, evolved in Phase 5.6)
-2. **RomMGameInfoPanel** — custom metadata panel replacing native sections:
-   - Platform name and system (e.g. "PlayStation — psx")
-   - ROM file info (name, size, multi-disc indicator)
-   - BIOS status (color-coded: green/orange/red with file counts, clickable for detail modal)
-   - Save sync status (last sync time, success/failure, manual sync button)
-   - Playtime (tracked by us, formatted duration)
-   - Description/summary (from RomM metadata, already cached)
-   - Developer/publisher (from RomM metadata)
-   - Genre tags (from RomM metadata)
-   - "Refresh Metadata" and "Refresh Artwork" actions
+1. **RomMPlaySection** — custom PlaySection that mirrors Steam's native layout: play button on the left, info items to the right in a horizontal row
+2. **RomMGameInfoPanel** — custom metadata panel inserted after the PlaySection (future work, not part of initial 5.6)
 
-**Hiding native content**: For RomM games, hide or collapse the native metadata sections that don't apply (DLC, achievements, community hub, etc.) while preserving the header/hero area. Approach TBD — either CSS hiding of specific sections or replace AppDetailsRoot content entirely.
+#### RomMPlaySection Layout (mirrors native Steam PlaySection)
 
-**Metadata patches interaction**: Once we have a custom GameInfoPanel, we may no longer need the store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for the game detail page — the custom panel renders our data directly. However, keep the patches for contexts where native UI still renders (library grid tooltips, etc.).
+The native Steam PlaySection is a horizontal bar: `[Play Button] [Last Played] [Playtime] [Achievements]`. Our RomMPlaySection replicates this layout with ROM-specific info items:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  [▶ Play ▾]   LAST PLAYED    PLAYTIME    ACHIEVEMENTS    SAVE SYNC    BIOS │
+│               24. Jan.       14 Hours    To be impl.     ✅ 2h ago    🟢 OK │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+All info items follow Steam's native two-line pattern: **uppercase header label on top, value below**.
+
+**Info items** (displayed to the right of the play button, horizontal row):
+
+1. **Last Played** — header: "LAST PLAYED", value: date or relative time (e.g. "24. Jan.", "2 days ago"). Source: `SteamAppOverview` playtime data or our tracked `last_session_start` from `SaveStatus.playtime`.
+
+2. **Playtime** — header: "PLAYTIME", value: formatted duration (e.g. "14 Hours", "45 Minutes"). Source: `SaveStatus.playtime.total_seconds` via `getSaveStatus(romId)`. Shows "—" when no playtime tracked.
+
+3. **Achievements** — header: "ACHIEVEMENTS", value: "To be implemented" in dimmed/muted text. Future: RetroAchievements integration or discovery of an existing Decky plugin that provides this.
+
+4. **Save Sync** — header: "SAVE SYNC", value line: status icon + text:
+   - ✅ + "Synced 2h ago" (or last sync datetime): last sync successful, no conflicts.
+   - ❌ + "Conflict": conflict detected or sync failed.
+   - "—" + "Disabled": save sync not enabled.
+   - Only visible when `save_sync_enabled` is true in settings, otherwise hidden entirely.
+   - Data source: `getSaveStatus(romId)` for file statuses + `getPendingConflicts()` to check for conflicts on this ROM.
+
+5. **BIOS** — header: "BIOS", value line: colored icon + state text:
+   - 🟢 + "OK" or "Ready": all required BIOS files present.
+   - 🟠 + "Partial" or "X/Y": some BIOS files missing but not all, or uncertain status.
+   - 🔴 + "Missing": required BIOS files missing, game may not launch.
+   - Only visible for platforms that need BIOS (`BiosStatus.needs_bios === true`), hidden otherwise.
+   - Data source: `checkPlatformBios(platformSlug)` — already returns `needs_bios`, `server_count`, `local_count`, `all_downloaded`.
+
+**CustomPlayButton** stays as-is (play/download/launching states + dropdown with uninstall). Only addition: a conflict blocking state when save sync is enabled and a conflict is detected for this ROM (orange button, "Resolve Conflict").
+
+**Metadata patches interaction**: Keep store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for contexts where native UI still renders (library grid tooltips, search results, etc.). The PlaySection info items use our own data sources directly, not store patches.
+
+**Native content**: Non-Steam shortcuts have minimal native content below the PlaySection (no DLC, achievements, community hub sections). Keep native children as-is; RomMGameInfoPanel will be inserted as a new child after the PlaySection in a future step.
+
+#### Future: In-Home Streaming Integration
+
+Investigate whether we can hook into Steam's In-Home Streaming / Remote Play protocol for RomM games. When another PC on the LAN has the ROM installed and is online, ideally the play button dropdown would show a "Stream from [device name]" option — similar to how Steam natively offers streaming for games installed on another machine. This ties into the Remote Play discovery protocol documented in Phase 4.5 Bug 3 (`CMsgRemoteClientAppStatus` / `ShortcutInfo` advertisements). Research needed:
+- Can we detect which remote devices have a specific ROM installed (via `per_client_data`)?
+- Can we trigger a Remote Play stream session programmatically via `SteamClient` APIs?
+- Does the native "Stream" button work for non-Steam shortcuts between devices? (Known Steam bugs: issue #12315)
 
 **Unifideck compatibility**: Our game detail page injection uses the same position-based heuristic as Unifideck (count native children, skip plugin-injected ones, replace the 2nd native child). Since our patch only activates for RomM games (`isRomM` check), both plugins should coexist — Unifideck handles native Steam games, we handle RomM shortcuts. Test scenarios:
 - [ ] RomM game with Unifideck installed: our patch takes priority, no double-injection

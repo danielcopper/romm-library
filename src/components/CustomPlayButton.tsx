@@ -202,24 +202,36 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     borderLeft: "1px solid rgba(0, 0, 0, 0.2)",
   };
 
+  // Consistent button container size across all states (Play has dropdown = 36px extra)
+  const btnContainerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "row",
+    width: "200px",
+    height: "48px",
+  };
+
+  const mainBtnStyle: React.CSSProperties = {
+    height: "100%",
+    flex: "1 1 auto",
+    padding: "4px 12px",
+    border: "none",
+    color: "#fff",
+    fontSize: "16px",
+    fontWeight: "bold",
+  };
+
   if (state === "download") {
     return (
       <Focusable
         className={appActionButtonClasses?.PlayButtonContainer}
-        style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
+        style={btnContainerStyle}
       >
         <DialogButton
           className={[appActionButtonClasses?.PlayButton, "romm-btn-download"].filter(Boolean).join(" ")}
           style={{
-            height: "100%",
-            flex: "1 0 auto",
-            padding: "4px 12px",
+            ...mainBtnStyle,
             borderRadius: "2px",
-            border: "none",
             background: "linear-gradient(to right, #1a9fff, #0078d4)",
-            color: "#fff",
-            fontSize: "16px",
-            fontWeight: "bold",
           }}
           onClick={handleDownload}
           disabled={actionPending}
@@ -234,31 +246,26 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     return (
       <Focusable
         className={appActionButtonClasses?.PlayButtonContainer}
-        style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
+        style={btnContainerStyle}
       >
-        <div
+        <DialogButton
           className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
           style={{
-            height: "100%",
-            flex: "1 0 auto",
-            padding: "4px 12px",
+            ...mainBtnStyle,
             borderRadius: "2px",
-            border: "none",
             background: "linear-gradient(to right, #70d61d 0%, #01a75b 60%)",
             backgroundPosition: "25%",
             backgroundSize: "330% 100%",
-            color: "#fff",
-            fontSize: "16px",
-            fontWeight: "bold",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             gap: "8px",
           }}
+          disabled
         >
-          <span className={appActionButtonClasses?.Throbber} style={{ width: "20px", height: "20px" }} />
+          <span className={`${appActionButtonClasses?.Throbber || ""} romm-throbber`.trim()} />
           Launching...
-        </div>
+        </DialogButton>
       </Focusable>
     );
   }
@@ -267,22 +274,16 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   return (
     <Focusable
       className={[appActionButtonClasses?.PlayButtonContainer, appActionButtonClasses?.Green].filter(Boolean).join(" ")}
-      style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
+      style={btnContainerStyle}
     >
       <DialogButton
         className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
         style={{
-          height: "100%",
-          flex: "1 0 auto",
-          padding: "4px 12px",
+          ...mainBtnStyle,
           borderRadius: "2px 0 0 2px",
-          border: "none",
           background: "linear-gradient(to right, #70d61d 0%, #01a75b 60%)",
           backgroundPosition: "25%",
           backgroundSize: "330% 100%",
-          color: "#fff",
-          fontSize: "16px",
-          fontWeight: "bold",
         }}
         onClick={handlePlay}
       >

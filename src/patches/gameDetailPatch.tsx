@@ -8,7 +8,7 @@ import {
   playSectionClasses,
   basicAppDetailsSectionStylerClasses,
 } from "@decky/ui";
-import { CustomPlayButton } from "../components/CustomPlayButton";
+import { RomMPlaySection } from "../components/RomMPlaySection";
 import { debugLog } from "../api/backend";
 import type { RoutePatch } from "@decky/api";
 
@@ -203,7 +203,7 @@ export function registerGameDetailPatch() {
                     zIndex: 2,
                   },
                 },
-                  createElement(CustomPlayButton, { appId }),
+                  createElement(RomMPlaySection, { appId }),
                 );
 
                 if (nativePlayIdx >= 0) {
