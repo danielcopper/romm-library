@@ -9,6 +9,7 @@ import {
   basicAppDetailsSectionStylerClasses,
 } from "@decky/ui";
 import { RomMPlaySection } from "../components/RomMPlaySection";
+import { RomMGameInfoPanel } from "../components/RomMGameInfoPanel";
 import { debugLog } from "../api/backend";
 import type { RoutePatch } from "@decky/api";
 
@@ -155,8 +156,8 @@ export function registerGameDetailPatch() {
               debugLog(`===== END DEEP TREE DUMP =====`);
             }
 
-            // For RomM games: inject CustomPlayButton into InnerContainer,
-            // REPLACING the native PlaySection so gamepad focus can't reach it
+            // For RomM games: inject RomMPlaySection into InnerContainer
+            // alongside the (defanged) native PlaySection to preserve scroll height
             if (isRomM) {
               const children = container.props.children;
 
@@ -189,30 +190,50 @@ export function registerGameDetailPatch() {
                   }
                 }
 
-                const rommPlaySection = createElement("div", {
+                const rommPlaySection = createElement(RomMPlaySection, {
                   key: "romm-play-section",
-                  "data-romm": "true",
-                  style: {
-                    display: "flex",
-                    alignItems: "center",
-                    width: "100%",
-                    padding: "16px 2.8vw",
-                    boxSizing: "border-box",
-                    background: "rgba(14, 20, 27, 0.33)",
-                    position: "relative",
-                    zIndex: 2,
-                  },
-                },
-                  createElement(RomMPlaySection, { appId }),
-                );
+                  appId,
+                });
 
                 if (nativePlayIdx >= 0) {
-                  debugLog(`gameDetailPatch: replacing native PlaySection at index ${nativePlayIdx}`);
-                  children.splice(nativePlayIdx, 1, rommPlaySection);
+                  debugLog(`gameDetailPatch: inserting RomMPlaySection after native at index ${nativePlayIdx}`);
+                  // INSERT after the native PlaySection (not replace) — keeping
+                  // the native in the tree preserves the scroll container's height
+                  // calculation.  The CSS rule in styleInjector hides it visually,
+                  // and we defang it below to prevent ghost gamepad focus.
+                  children.splice(nativePlayIdx + 1, 0, rommPlaySection);
+
+                  // Defang native PlaySection: replace the React element with an
+                  // inert hidden div so gamepad focus can't land on its children.
+                  const nativePlay = children[nativePlayIdx];
+                  children[nativePlayIdx] = createElement('div', {
+                    key: nativePlay?.key || 'native-play-hidden',
+                    style: { display: 'none' },
+                    'aria-hidden': 'true',
+                  });
                 } else {
                   debugLog(`gameDetailPatch: fallback, inserting at index 1`);
                   children.splice(1, 0, rommPlaySection);
                 }
+              }
+
+              // Inject RomMGameInfoPanel right after the PlaySection
+              const alreadyHasInfoPanel = children.some(
+                (c: any) => c?.key === "romm-info-panel",
+              );
+              if (!alreadyHasInfoPanel) {
+                const playSectionIdx = children.findIndex(
+                  (c: any) => c?.key === "romm-play-section",
+                );
+                const insertIdx = playSectionIdx >= 0 ? playSectionIdx + 1 : 2;
+
+                const rommInfoPanel = createElement(RomMGameInfoPanel, {
+                  key: "romm-info-panel",
+                  appId,
+                });
+
+                debugLog(`gameDetailPatch: inserting RomMGameInfoPanel at index ${insertIdx}`);
+                children.splice(insertIdx, 0, rommInfoPanel);
               }
             }
 

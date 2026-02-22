@@ -1134,11 +1134,29 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 
 #### Remaining work
 
-- [ ] Auto-select play button on page entry (Steam auto-focuses native PlaySection; our custom button doesn't receive focus)
-- [ ] Conflict blocking state on CustomPlayButton (orange "Resolve Conflict" button when save sync conflict detected)
-- [ ] RomMGameInfoPanel (metadata, actions — separate component, inserted after PlaySection)
-- [ ] Test Unifideck coexistence (4 scenarios below)
-- [ ] Type `getRomBySteamAppId` return value properly (currently `any | null` in backend.ts)
+- [ ] Auto-select play button on page entry (`preferredFocus` added — needs testing)
+- [ ] Conflict blocking state on CustomPlayButton (implemented — needs testing)
+- [x] RomMGameInfoPanel (metadata, actions, BIOS detail, Save Sync detail)
+- [x] Type `getRomBySteamAppId` return value properly (RomLookupResult)
+- [ ] Test Unifideck coexistence (4 scenarios above)
+- [ ] Scrolling: game detail page can't scroll all the way down to see all panel content
+- [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
+
+#### BIOS intelligence improvements (future)
+
+Current BIOS detection is naive: if RomM has firmware files matching the platform slug, we say "needs BIOS". This has several gaps:
+
+1. **Required vs optional BIOS**: No distinction. Some emulators work without BIOS (e.g. PSX HLE mode in PCSX-ReARMed), others require it (Beetle PSX). Currently we treat all firmware as required, which may scare users with unnecessary "Missing" warnings.
+
+2. **Emulator-specific requirements**: We don't consider which emulator RetroDECK is configured to use per system. Different emulators for the same platform have different BIOS needs. Need to either query RetroDECK's config or maintain a mapping of emulator → required BIOS files.
+
+3. **Multiple emulator options per system**: `defaults/config.json` maps each platform to a single system slug. If a user switches emulators (e.g. from DuckStation to Beetle PSX for PSX), BIOS requirements change. We don't detect this.
+
+4. **Incomplete mappings**: `_platform_to_firmware_slugs` only covers PSX and PS2. `BIOS_DEST_MAP` only covers DC and PS2. Other systems needing BIOS (Saturn, 3DO, Jaguar, Lynx, etc.) rely on fallback which may not match RomM's firmware directory naming or RetroDECK's expected paths.
+
+5. **Region-specific BIOS**: Some games need region-specific BIOS (e.g. JP BIOS for JP games). We don't track which BIOS files match which game regions.
+
+Potential approach: Build a comprehensive BIOS requirements table (platform × emulator × required/optional × region) and cross-reference with RetroDECK's emulator config. This is a significant research + implementation effort.
 
 ---
 

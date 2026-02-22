@@ -200,6 +200,7 @@ class FirmwareMixin:
                     files.append({
                         "file_name": fw.get("file_name", ""),
                         "downloaded": downloaded,
+                        "local_path": dest,
                     })
         except Exception:
             pass

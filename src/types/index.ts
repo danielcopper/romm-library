@@ -131,6 +131,7 @@ export interface FirmwareStatus {
 export interface BiosFileStatus {
   file_name: string;
   downloaded: boolean;
+  local_path: string;
 }
 
 export interface BiosStatus {
@@ -217,6 +218,14 @@ export interface SaveStatus {
   files: SaveFileStatus[];
   playtime: PlaytimeEntry;
   device_id: string;
+}
+
+export interface RomLookupResult {
+  rom_id: number;
+  name: string;
+  platform_name: string;
+  platform_slug: string;
+  installed: InstalledRom | null;
 }
 
 export interface DownloadProgressEvent {

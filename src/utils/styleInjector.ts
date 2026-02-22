@@ -3,6 +3,7 @@ import { findSP } from "@decky/ui";
 const ROMM_PLAY_HIDE_ID = "romm-hide-native-play";
 const ROMM_FOCUS_STYLES_ID = "romm-focus-styles";
 const ROMM_INFO_ITEMS_ID = "romm-info-items-styles";
+const ROMM_GAME_INFO_PANEL_ID = "romm-game-info-panel-styles";
 
 export function hideNativePlaySection(playSectionClass: string) {
   const sp = findSP();
@@ -34,6 +35,10 @@ export function hideNativePlaySection(playSectionClass: string) {
 }
 .romm-btn-play:hover, .romm-btn-play.gpfocus {
   background: linear-gradient(to right, #80e62a, #01b866) !important;
+  filter: brightness(1.2);
+}
+.romm-btn-conflict:hover, .romm-btn-conflict.gpfocus {
+  background: linear-gradient(to right, #c49a28, #a6851b) !important;
   filter: brightness(1.2);
 }
 .romm-btn-dropdown:hover, .romm-btn-dropdown.gpfocus {
@@ -104,6 +109,183 @@ export function hideNativePlaySection(playSectionClass: string) {
 }`;
     sp.window.document.head.appendChild(infoStyle);
   }
+
+  // Game info panel styles for RomMGameInfoPanel (Description, Metadata, Genres, ROM File)
+  if (!sp.window.document.getElementById(ROMM_GAME_INFO_PANEL_ID)) {
+    const panelStyle = sp.window.document.createElement("style");
+    panelStyle.id = ROMM_GAME_INFO_PANEL_ID;
+    panelStyle.textContent = `
+.romm-panel-container {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 2.8vw;
+  gap: 16px;
+  background: rgba(14, 20, 27, 0.33);
+}
+.romm-panel-section {
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.romm-panel-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.romm-panel-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8f98a0;
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+.romm-panel-summary {
+  color: #acb2b8;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+.romm-panel-info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 2px 0;
+}
+.romm-panel-label {
+  color: #8f98a0;
+  font-size: 12px;
+  flex-shrink: 0;
+  min-width: 120px;
+}
+.romm-panel-value {
+  color: #dcdedf;
+  font-size: 13px;
+}
+.romm-panel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.romm-panel-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  color: #8f98a0;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.romm-panel-status-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.romm-panel-status-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.romm-panel-status-installed {
+  background: rgba(91,163,43,0.2);
+  color: #5ba32b;
+}
+.romm-panel-status-not-installed {
+  background: rgba(143,152,160,0.15);
+  color: #8f98a0;
+}
+.romm-panel-platform-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-weight: 600;
+  background: rgba(26,159,255,0.15);
+  color: #1a9fff;
+}
+.romm-panel-actions-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.romm-panel-action-btn {
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  color: #dcdedf;
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+}
+.romm-panel-action-btn:hover, .romm-panel-action-btn.gpfocus {
+  background: rgba(255,255,255,0.12);
+  filter: brightness(1.1);
+}
+.romm-panel-action-destructive {
+  color: #d94126;
+  border-color: rgba(217,65,38,0.3);
+}
+.romm-panel-action-destructive:hover, .romm-panel-action-destructive.gpfocus {
+  background: rgba(217,65,38,0.15);
+}
+.romm-panel-muted {
+  color: #5e6770;
+  font-size: 13px;
+  font-style: italic;
+}
+.romm-panel-loading {
+  color: #8f98a0;
+  font-size: 13px;
+  padding: 8px 0;
+}
+.romm-panel-status-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.romm-panel-status-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.romm-panel-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.romm-panel-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.romm-panel-file-name {
+  font-size: 12px;
+  color: #dcdedf;
+  font-weight: 500;
+}
+.romm-panel-file-path {
+  font-size: 11px;
+  color: #5e6770;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.romm-panel-file-detail {
+  font-size: 11px;
+  color: #8f98a0;
+  white-space: nowrap;
+}
+.romm-panel-file-conflict {
+  font-size: 11px;
+  color: #d94126;
+  font-weight: 600;
+}`;
+    sp.window.document.head.appendChild(panelStyle);
+  }
 }
 
 export function showNativePlaySection() {
@@ -112,4 +294,5 @@ export function showNativePlaySection() {
   sp.window.document.getElementById(ROMM_PLAY_HIDE_ID)?.remove();
   sp.window.document.getElementById(ROMM_FOCUS_STYLES_ID)?.remove();
   sp.window.document.getElementById(ROMM_INFO_ITEMS_ID)?.remove();
+  sp.window.document.getElementById(ROMM_GAME_INFO_PANEL_ID)?.remove();
 }

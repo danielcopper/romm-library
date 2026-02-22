@@ -5,13 +5,13 @@
  *   [▶ Play ▾]   LAST PLAYED    PLAYTIME    ACHIEVEMENTS    SAVE SYNC    BIOS
  *                24. Jan.       14 Hours    To be impl.     ✅ 2h ago    🟢 OK
  *
- * Uses playSectionClasses.Container on the root for section positioning.
+ * Uses our own romm-play-section-row CSS class on the root.
  * Individual info items use our own romm-info-* CSS classes.
  * Save Sync and BIOS items only appear when relevant.
  */
 
 import { useState, useEffect, FC, createElement } from "react";
-import { playSectionClasses } from "@decky/ui";
+import { basicAppDetailsSectionStylerClasses } from "@decky/ui";
 import { CustomPlayButton } from "./CustomPlayButton";
 import {
   getRomBySteamAppId,
@@ -265,11 +265,15 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   }
 
   return createElement("div", {
-    className: `${playSectionClasses?.Container || ""} romm-play-section-row`.trim(),
+    "data-romm": "true",
+    className: `romm-play-section-row ${basicAppDetailsSectionStylerClasses?.PlaySection || ""}`.trim(),
     style: {
       display: "flex",
       alignItems: "center",
       gap: "20px",
+      padding: "16px 2.8vw",
+      background: "rgba(14, 20, 27, 0.33)",
+      boxSizing: "border-box",
     },
   },
     // Play button on the left

@@ -26,10 +26,12 @@ import {
   startDownload,
   removeRom,
   debugLog,
+  getSaveSyncSettings,
+  getPendingConflicts,
 } from "../api/backend";
-import type { DownloadProgressEvent, DownloadCompleteEvent } from "../types";
+import type { DownloadProgressEvent, DownloadCompleteEvent, SaveSyncSettings, PendingConflict } from "../types";
 
-type PlayButtonState = "loading" | "not_romm" | "download" | "play" | "launching";
+type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "play" | "launching";
 
 interface CustomPlayButtonProps {
   appId: number;
@@ -42,6 +44,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   const [romName, setRomName] = useState<string>("");
   const [actionPending, setActionPending] = useState(false);
   const romIdRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Hide the native PlaySection via CSS while this component is mounted
   useEffect(() => {
@@ -77,6 +80,21 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           debugLog(`CustomPlayButton: -> download`);
           setState("download");
         } else {
+          // Check for save sync conflicts before allowing play
+          try {
+            const settings: SaveSyncSettings = await getSaveSyncSettings();
+            if (settings.save_sync_enabled) {
+              const { conflicts }: { conflicts: PendingConflict[] } = await getPendingConflicts();
+              const hasConflict = conflicts.some((c: PendingConflict) => c.rom_id === rom.rom_id);
+              if (hasConflict) {
+                debugLog(`CustomPlayButton: -> conflict (rom_id=${rom.rom_id})`);
+                if (!cancelled) setState("conflict");
+                return;
+              }
+            }
+          } catch (e) {
+            debugLog(`CustomPlayButton: conflict check failed, proceeding to play: ${e}`);
+          }
           debugLog(`CustomPlayButton: -> play`);
           setState("play");
         }
@@ -129,6 +147,22 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
       window.removeEventListener("romm_rom_uninstalled", onUninstall);
     };
   }, []);
+
+  // Programmatically focus our Play/Download button after mount.
+  // This beats HLTB and other plugins that also compete for initial focus.
+  useEffect(() => {
+    if (state !== "play" && state !== "download" && state !== "conflict") return;
+    const timer = setTimeout(() => {
+      if (containerRef.current) {
+        const btn = containerRef.current.querySelector("button");
+        if (btn) {
+          btn.focus();
+          btn.classList.add("gpfocus");
+        }
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [state]);
 
   const handlePlay = () => {
     const overview = appStore.GetAppOverviewByAppID(appId);
@@ -223,6 +257,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   if (state === "download") {
     return (
       <Focusable
+        ref={containerRef}
         className={appActionButtonClasses?.PlayButtonContainer}
         style={btnContainerStyle}
       >
@@ -270,9 +305,34 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     );
   }
 
+  if (state === "conflict") {
+    return (
+      <Focusable
+        ref={containerRef}
+        className={appActionButtonClasses?.PlayButtonContainer}
+        style={btnContainerStyle}
+      >
+        <DialogButton
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-conflict"].filter(Boolean).join(" ")}
+          style={{
+            ...mainBtnStyle,
+            borderRadius: "2px",
+            background: "linear-gradient(to right, #d4a72c, #b8941f)",
+          }}
+          onClick={() => {
+            toaster.toast({ title: "RomM Sync", body: "Resolve save conflict in RomM Sync settings" });
+          }}
+        >
+          Resolve Conflict
+        </DialogButton>
+      </Focusable>
+    );
+  }
+
   // state === "play"
   return (
     <Focusable
+      ref={containerRef}
       className={[appActionButtonClasses?.PlayButtonContainer, appActionButtonClasses?.Green].filter(Boolean).join(" ")}
       style={btnContainerStyle}
     >
