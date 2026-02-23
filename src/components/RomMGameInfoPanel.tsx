@@ -27,6 +27,7 @@ import {
   getSaveSyncSettings,
   getSaveStatus,
   getPendingConflicts,
+  getArtworkBase64,
   debugLog,
 } from "../api/backend";
 import type { RomMetadata, InstalledRom, BiosStatus, SaveSyncSettings, SaveStatus, PendingConflict } from "../types";
@@ -44,6 +45,7 @@ interface PanelState {
   installed: boolean;
   installedRom: InstalledRom | null;
   metadata: RomMetadata | null;
+  coverBase64: string | null;
   biosStatus: BiosStatus | null;
   saveSyncEnabled: boolean;
   saveStatus: SaveStatus | null;
@@ -84,6 +86,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     installed: false,
     installedRom: null,
     metadata: null,
+    coverBase64: null,
     biosStatus: null,
     saveSyncEnabled: false,
     saveStatus: null,
@@ -111,9 +114,10 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         romIdRef.current = romId;
 
         // Fetch metadata, installed status, BIOS, save sync in parallel
-        const [metadata, installedRom, biosResult, saveSyncSettings, saveStatus, conflictsResult] = await Promise.all([
+        const [metadata, installedRom, coverResult, biosResult, saveSyncSettings, saveStatus, conflictsResult] = await Promise.all([
           getRomMetadata(romId).catch((): RomMetadata | null => null),
           getInstalledRom(romId).catch((): InstalledRom | null => null),
+          getArtworkBase64(romId).catch((): { base64: string | null } => ({ base64: null })),
           checkPlatformBios(platformSlug).catch((): BiosStatus => ({ needs_bios: false })),
           getSaveSyncSettings().catch((): SaveSyncSettings => ({
             save_sync_enabled: false,
@@ -137,6 +141,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           installed: !!installedRom,
           installedRom,
           metadata,
+          coverBase64: coverResult.base64 ?? null,
           biosStatus: biosResult.needs_bios ? biosResult : null,
           saveSyncEnabled: saveSyncSettings.save_sync_enabled,
           saveStatus,
@@ -317,11 +322,25 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     }
   }
 
-  const gameInfoSection = gameInfoChildren.length > 0
-    ? section("game-info", "Game Info", ...gameInfoChildren)
-    : section("game-info", "Game Info",
-        createElement("div", { key: "no-meta", className: "romm-panel-muted" }, "No metadata available"),
-      );
+  const gameInfoContent = gameInfoChildren.length > 0
+    ? gameInfoChildren
+    : [createElement("div", { key: "no-meta", className: "romm-panel-muted" }, "No metadata available")];
+
+  const gameInfoSection = state.coverBase64
+    ? section("game-info", "Game Info",
+        createElement("div", {
+          key: "game-info-row",
+          style: { display: "flex", gap: "16px", alignItems: "flex-start" },
+        },
+          createElement("img", {
+            key: "cover",
+            src: `data:image/png;base64,${state.coverBase64}`,
+            style: { width: "120px", borderRadius: "4px", flexShrink: 0, objectFit: "cover" as const },
+          }),
+          createElement("div", { key: "details", style: { flex: 1 } }, ...gameInfoContent),
+        ),
+      )
+    : section("game-info", "Game Info", ...gameInfoContent);
 
   // --- ROM File section (only when installed) ---
   const romFileSection = state.installed && state.installedRom
