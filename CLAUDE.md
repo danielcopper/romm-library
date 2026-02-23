@@ -29,7 +29,7 @@ RomM Server <-HTTP-> Python Backend (main.py)
 - **Large payloads**: Never send bulk base64 data through `decky.emit()` — WebSocket bridge has size limits. Use per-item callables instead.
 - **SteamGridDB**: Requires `User-Agent` header — Python's default `Python-urllib` gets 403'd. Use `decky-romm-sync/0.1`.
 - **AddShortcut ignores most params**: `SteamClient.Apps.AddShortcut(name, exe, startDir, launchOptions)` ignores startDir and launchOptions (confirmed by MoonDeck plugin). Must use `Set*` calls (`SetShortcutName`, `SetShortcutExe`, `SetShortcutStartDir`, `SetAppLaunchOptions`) after a 500ms delay. Do NOT pass quoted exe paths — the API handles quoting internally.
-- **BIsModOrShortcut bypass counter**: Patching `BIsModOrShortcut()` to return false makes metadata display but BREAKS game launches (Steam skips the shortcut launch path). Must use the MetaDeck bypass counter pattern: default state returns false (metadata shows), temporarily returns true during launch via counter hooks on `GetGameID`, `GetPrimaryAppID`, `BHasRecentlyLaunched`, `GetPerClientData`. See `src/patches/metadataPatches.ts`.
+- **BIsModOrShortcut bypass DROPPED**: Phase 5.6 removed the bypass counter entirely. Shortcuts return `BIsModOrShortcut() = true` (natural state). We own the entire game detail UI via RomMPlaySection + future RomMGameInfoPanel. See `docs/game-detail-ui.md` section 2 for the rationale.
 - **Shortcut property re-sync**: Changing exe, startDir, or launchOptions on existing shortcuts may not take effect reliably. Full delete + recreate (re-sync) is required for changes to launch config.
 - **RomM 4.6.1 Save API**: `GET /api/saves/{id}/content` does not exist — use `download_path` from save metadata (URL-encode spaces/parens). No `content_hash` in SaveSchema — use hybrid timestamp + download-and-hash. `POST /api/saves` upserts by filename. `GET /api/roms/{id}/notes` returns 500 — read `all_user_notes` from ROM detail instead. `device_id` param is accepted but ignored. See `.romm-api-verified.md` for full details.
 
@@ -46,10 +46,11 @@ src/components/PlatformSync.tsx      # Per-platform enable/disable toggles
 src/components/DangerZone.tsx        # Per-platform and bulk removal
 src/components/DownloadQueue.tsx     # Active/completed downloads
 src/components/BiosManager.tsx       # Per-platform BIOS file status and downloads
-src/components/CustomPlayButton.tsx  # Custom Play/Download button with dropdown menu (replaces native PlaySection for RomM games)
+src/components/CustomPlayButton.tsx  # Custom Play/Download button with dropdown menu
+src/components/RomMPlaySection.tsx   # PlaySection wrapper: CustomPlayButton + info items (last played, playtime, achievements, save sync, BIOS)
 src/components/SaveSyncSettings.tsx  # Save sync settings QAM page
-src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid
-src/patches/metadataPatches.ts       # BIsModOrShortcut bypass counter for metadata display + launch
+src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid, injects RomMPlaySection
+src/patches/metadataPatches.ts       # Store patches for metadata display, playtime writes
 src/api/backend.ts                   # callable() wrappers (typed)
 src/types/index.ts                   # Shared TypeScript interfaces
 src/types/steam.d.ts                 # SteamClient/collectionStore/appStore type declarations

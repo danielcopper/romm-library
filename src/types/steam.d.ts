@@ -11,6 +11,7 @@ declare var SteamClient: {
     SetShortcutExe(appId: number, exePath: string): void;
     SetShortcutStartDir(appId: number, startDir: string): void;
     SetAppLaunchOptions(appId: number, options: string): void;
+    OpenAppSettingsDialog(appId: number, section: string): void;
     SetCustomArtworkForApp(
       appId: number,
       base64Data: string,

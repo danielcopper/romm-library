@@ -902,8 +902,11 @@ function updatePlaytimeDisplay(appId: number, totalMinutes: number) {
 - [ ] Plugin startup skips all save sync initialization when disabled
 - [ ] Playtime displayed in Steam's native UI or prominently in game detail panel
 
-### Phase 5.5: Custom PlaySection — Native-Looking Game Detail Page
+### Phase 5.5: ~~Custom PlaySection — Native-Looking Game Detail Page~~ DEFERRED
 
+> **Deferred**: This phase was overly ambitious in trying to pixel-perfect replicate the native Steam PlaySection with info items inline. The approach gets a major rework in Phase 5.6 which takes a different direction — replacing the entire game detail content area (Unifideck-style) rather than trying to match native UI element-by-element. Research findings below are preserved as reference for 5.6.
+
+<!--
 **Goal**: Replace the native Steam PlaySection entirely with a pixel-perfect custom version that provides RomM-specific functionality (download, save sync, BIOS status) while looking indistinguishable from native Steam UI.
 
 **Current state**: We hide the native PlaySection via CSS (`.PlaySection:not([data-romm]) { display: none !important }`) and inject a CustomPlayButton wrapped in native CSS class hierarchy. The button renders correctly with a dropdown menu (Uninstall, BIOS Status, Sync Saves). GameDetailPanel ("ROMM SYNC" section) has been **removed** from game detail page injection — all its functionality is now in the CustomPlayButton dropdown. The old GameDetailPanel component file remains in the codebase but is no longer injected.
@@ -1059,33 +1062,128 @@ PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm=
 - [ ] Non-RomM games show native PlaySection (no custom replacement)
 - [ ] Grey line eliminated from custom PlaySection
 - [ ] No visual artifacts (extra borders, shadows, backgrounds) from CSS class usage
+-->
 
-### Phase 5.6: Unifideck-Style Game Detail Page Replacement
+### Phase 5.6: Unifideck-Style Game Detail Page — IN PROGRESS
 
-**Goal**: Replace the entire game detail page content area for RomM games with a custom layout, similar to how Unifideck replaces both PlaySection and the metadata panel. Most native Steam game detail sections (DLC, achievements, community hub, store categories) are useless for ROM games.
+> **Detailed design document**: See [`docs/game-detail-ui.md`](docs/game-detail-ui.md) for architecture decisions, React tree findings, gamepad navigation research, and layout design.
+
+**Goal**: Custom game detail page components for RomM games. PlaySection with info items mirroring Steam's native layout. Future: RomMGameInfoPanel below the PlaySection for metadata/actions.
 
 **Reference**: Unifideck injects two components into `InnerContainer`:
 1. `PlaySectionWrapper` — custom Play/Install button (replaces native PlaySection, hidden via CDP)
 2. `GameInfoPanel` — custom metadata panel with: compatibility badge, developer/publisher/release, Metacritic, genres, navigation buttons, synopsis, uninstall
 
 **Our equivalent for RomM games**:
-1. **RomMPlaySection** — custom Play/Download button with dropdown (already being built in Phase 5.5)
-2. **RomMGameInfoPanel** — custom metadata panel replacing native sections:
-   - Platform name and system (e.g. "PlayStation — psx")
-   - ROM file info (name, size, multi-disc indicator)
-   - BIOS status (color-coded: green/orange/red with file counts, clickable for detail modal)
-   - Save sync status (last sync time, success/failure, manual sync button)
-   - Playtime (tracked by us, formatted duration)
-   - Description/summary (from RomM metadata, already cached)
-   - Developer/publisher (from RomM metadata)
-   - Genre tags (from RomM metadata)
-   - "Refresh Metadata" and "Refresh Artwork" actions
+1. **RomMPlaySection** — custom PlaySection that mirrors Steam's native layout: play button on the left, info items to the right in a horizontal row — ✅ IMPLEMENTED
+2. **RomMGameInfoPanel** — custom metadata panel inserted after the PlaySection — ✅ IMPLEMENTED
 
-**Hiding native content**: For RomM games, hide or collapse the native metadata sections that don't apply (DLC, achievements, community hub, etc.) while preserving the header/hero area. Approach TBD — either CSS hiding of specific sections or replace AppDetailsRoot content entirely.
+#### RomMPlaySection Layout (mirrors native Steam PlaySection)
 
-**Metadata patches interaction**: Once we have a custom GameInfoPanel, we may no longer need the store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for the game detail page — the custom panel renders our data directly. However, keep the patches for contexts where native UI still renders (library grid tooltips, etc.).
+The native Steam PlaySection is a horizontal bar: `[Play Button] [Last Played] [Playtime] [Achievements]`. Our RomMPlaySection replicates this layout with ROM-specific info items:
 
-**Estimated effort**: Medium-large. Build after Phase 5.5 PlaySection is stable.
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  [▶ Play ▾]   LAST PLAYED    PLAYTIME    ACHIEVEMENTS    SAVE SYNC    BIOS │
+│               24. Jan.       14 Hours    To be impl.     ✅ 2h ago    🟢 OK │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+All info items follow Steam's native two-line pattern: **uppercase header label on top, value below**.
+
+**Info items** (displayed to the right of the play button, horizontal row):
+
+1. **Last Played** — header: "LAST PLAYED", value: date or relative time (e.g. "24. Jan.", "2 days ago"). Source: `SteamAppOverview` playtime data or our tracked `last_session_start` from `SaveStatus.playtime`.
+
+2. **Playtime** — header: "PLAYTIME", value: formatted duration (e.g. "14 Hours", "45 Minutes"). Source: `SaveStatus.playtime.total_seconds` via `getSaveStatus(romId)`. Shows "—" when no playtime tracked.
+
+3. **Achievements** — header: "ACHIEVEMENTS", value: "To be implemented" in dimmed/muted text. Future: RetroAchievements integration or discovery of an existing Decky plugin that provides this.
+
+4. **Save Sync** — header: "SAVE SYNC", value line: status icon + text:
+   - ✅ + "Synced 2h ago" (or last sync datetime): last sync successful, no conflicts.
+   - ❌ + "Conflict": conflict detected or sync failed.
+   - "—" + "Disabled": save sync not enabled.
+   - Only visible when `save_sync_enabled` is true in settings, otherwise hidden entirely.
+   - Data source: `getSaveStatus(romId)` for file statuses + `getPendingConflicts()` to check for conflicts on this ROM.
+
+5. **BIOS** — header: "BIOS", value line: colored icon + state text:
+   - 🟢 + "OK" or "Ready": all required BIOS files present.
+   - 🟠 + "Partial" or "X/Y": some BIOS files missing but not all, or uncertain status.
+   - 🔴 + "Missing": required BIOS files missing, game may not launch.
+   - Only visible for platforms that need BIOS (`BiosStatus.needs_bios === true`), hidden otherwise.
+   - Data source: `checkPlatformBios(platformSlug)` — already returns `needs_bios`, `server_count`, `local_count`, `all_downloaded`.
+
+**CustomPlayButton** stays as-is (play/download/launching states + dropdown with uninstall). Consistent button width across all states. CSS spinner fallback for launching throbber. Future addition: a conflict blocking state when save sync is enabled and a conflict is detected for this ROM (orange button, "Resolve Conflict").
+
+**Metadata patches interaction**: Keep store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for contexts where native UI still renders (library grid tooltips, search results, etc.). The PlaySection info items use our own data sources directly, not store patches.
+
+**Native content**: Non-Steam shortcuts have minimal native content below the PlaySection (no DLC, achievements, community hub sections). Native children are kept as-is. RomMGameInfoPanel is inserted as a new child after the PlaySection.
+
+#### Future: In-Home Streaming Integration
+
+Investigate whether we can hook into Steam's In-Home Streaming / Remote Play protocol for RomM games. When another PC on the LAN has the ROM installed and is online, ideally the play button dropdown would show a "Stream from [device name]" option — similar to how Steam natively offers streaming for games installed on another machine. This ties into the Remote Play discovery protocol documented in Phase 4.5 Bug 3 (`CMsgRemoteClientAppStatus` / `ShortcutInfo` advertisements). Research needed:
+- Can we detect which remote devices have a specific ROM installed (via `per_client_data`)?
+- Can we trigger a Remote Play stream session programmatically via `SteamClient` APIs?
+- Does the native "Stream" button work for non-Steam shortcuts between devices? (Known Steam bugs: issue #12315)
+
+**Unifideck compatibility**: Our game detail page injection uses the same position-based heuristic as Unifideck (count native children, skip plugin-injected ones, replace the 2nd native child). Since our patch only activates for RomM games (`isRomM` check), both plugins should coexist — Unifideck handles native Steam games, we handle RomM shortcuts. Test scenarios:
+- [ ] RomM game with Unifideck installed: our patch takes priority, no double-injection
+- [ ] Native Steam game with both plugins: Unifideck patches normally, we skip entirely
+- [ ] Gamepad navigation works on both RomM and native games with both plugins active
+- [ ] Uninstalling one plugin doesn't break the other
+
+#### Remaining work
+
+- [x] Auto-select play button on page entry (DOM-based focus with 400ms delay — confirmed working)
+- [x] RomMGameInfoPanel (metadata, BIOS detail, Save Sync detail — info-only, no buttons)
+- [x] Type `getRomBySteamAppId` return value properly (RomLookupResult)
+- [x] RomM gear icon menu (Refresh Artwork, Refresh Metadata, Sync Saves, Download BIOS, Uninstall)
+- [x] Steam gear icon menu (Properties via `SteamClient.Apps.OpenAppSettingsDialog` — `NavigateToAppProperties` was broken for shortcuts)
+- [x] Cross-component state refresh (romm_data_changed events from PlaySection → GameInfoPanel)
+- [x] Fix download_all_firmware slug mismatch (_platform_to_firmware_slugs)
+- [x] Scrolling: solved via DialogButton sections (not Focusable — Focusable doesn't register with gamepad in this context). Each section uses `onFocus → scrollIntoView({ block: "center" })`. See `docs/scroll-and-hiding-research.md` Approach 8.
+- [x] Save sync timestamp UX: separated "last sync check" (ROM-level, updated every sync run) from "last data transfer" (per-file). PlaySection shows last sync check. GameInfoPanel shows both per-file: "Synced: ..." and "Changed: ..."
+- [x] SGDB artwork restore: hero, logo, wide grid, icon. Auto-apply on first game detail visit. Cover image in GameInfoPanel.
+- [ ] Steam gear menu: research Collection/Favorites APIs for add/remove options
+- [ ] Conflict blocking state on CustomPlayButton (implemented — needs testing). Note: `newest_wins` mode auto-resolves conflicts without showing the UI. Must test with `ask_me` mode to see the blocking state.
+- [ ] Bug: gear icon buttons (RomM actions + Steam properties) not clickable with mouse. Gamepad activation (onActivate) untested. Code looks correct — no obvious overlap or pointer-events issue. Needs devtools DOM inspection.
+
+#### Future improvements (Phase 5.6+)
+
+- [ ] Test Unifideck coexistence (4 scenarios above)
+- [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
+- [ ] Delete save files: add per-game or bulk option in main plugin menu (NOT on game detail page). Save files should persist after ROM uninstall.
+- [ ] Delete BIOS files: add per-platform option in main plugin menu (NOT on game detail page)
+- [ ] Investigate excessive re-renders on game detail page (see below)
+
+#### Game detail page re-render issue
+
+**Symptom**: `gameDetailPatch` runs 2-3 times per page visit. `CustomPlayButton` mounts 5-6 times, resetting to `state=loading` each time. This causes a visible "Loading..." flash and delays the page becoming interactive.
+
+**Root cause (suspected)**: `createReactTreePatcher` fires on every React render cycle. Each cycle produces a fresh virtual tree, so the patch correctly re-applies (splicing our elements in). But each splice creates a NEW `createElement(RomMPlaySection, ...)` / `createElement(RomMGameInfoPanel, ...)` call. React should reuse fibers for same key + same type, but something is causing it to unmount and remount instead.
+
+**Investigation steps**:
+1. **Verify unmount vs re-render**: Add a `useEffect(() => { return () => debugLog("UNMOUNT") }, [])` cleanup to CustomPlayButton. If "UNMOUNT" logs between each "mounted", it's a true remount (fiber destroyed). If not, the "mounted" log is just from a re-running useEffect.
+2. **Check key stability**: Log the React keys of InnerContainer children before and after splice. If sibling keys shift (e.g. other children move positions), React may discard and recreate fibers. Using `children.splice()` to insert/remove changes indices of siblings.
+3. **Check if parent re-renders cause full subtree remounts**: The patcher callback runs inside `createReactTreePatcher` which wraps the original render. If it returns a new tree reference each time, React may treat the whole subtree as new.
+4. **Potential fix — memoize elements**: Cache the `createElement` results outside the patcher callback (keyed by appId) so React sees the exact same element reference across render cycles. This would prevent fiber recreation.
+5. **Potential fix — move to component-level rendering**: Instead of creating elements in the patcher, have the patcher inject a thin wrapper component that renders RomMPlaySection/RomMGameInfoPanel internally. The wrapper's identity stays stable across patcher re-runs.
+
+#### BIOS intelligence improvements (future)
+
+Current BIOS detection is naive: if RomM has firmware files matching the platform slug, we say "needs BIOS". This has several gaps:
+
+1. **Required vs optional BIOS**: No distinction. Some emulators work without BIOS (e.g. PSX HLE mode in PCSX-ReARMed), others require it (Beetle PSX). Currently we treat all firmware as required, which may scare users with unnecessary "Missing" warnings.
+
+2. **Emulator-specific requirements**: We don't consider which emulator RetroDECK is configured to use per system. Different emulators for the same platform have different BIOS needs. Need to either query RetroDECK's config or maintain a mapping of emulator → required BIOS files.
+
+3. **Multiple emulator options per system**: `defaults/config.json` maps each platform to a single system slug. If a user switches emulators (e.g. from DuckStation to Beetle PSX for PSX), BIOS requirements change. We don't detect this.
+
+4. **Incomplete mappings**: `_platform_to_firmware_slugs` only covers PSX and PS2. `BIOS_DEST_MAP` only covers DC and PS2. Other systems needing BIOS (Saturn, 3DO, Jaguar, Lynx, etc.) rely on fallback which may not match RomM's firmware directory naming or RetroDECK's expected paths.
+
+5. **Region-specific BIOS**: Some games need region-specific BIOS (e.g. JP BIOS for JP games). We don't track which BIOS files match which game regions.
+
+Potential approach: Build a comprehensive BIOS requirements table (platform × emulator × required/optional × region) and cross-reference with RetroDECK's emulator config. This is a significant research + implementation effort.
 
 ---
 
@@ -1376,6 +1474,8 @@ Card2Path = <saves_path>/psx/duckstation/memcards/shared_card_2.mcd
 - **Connection settings: remove save button, save on popup confirm**: Each connection field (URL, username, password) already has an edit button that opens a popup. Change behavior so that confirming the popup immediately persists the new value to settings. Cancelling the popup must discard any changes and restore the original value. Remove the global "Save" button entirely — it is no longer needed since each field saves independently on popup confirmation.
 - **RomM playtime API integration**: When RomM adds a playtime field (feature request #1225), plug in our existing delta-based accumulation to sync playtime bidirectionally. Architecture is already in place — just needs the API endpoint.
 - **Emulator save state sync**: RomM supports "States" (emulator save states / quick saves) separately from "Saves" (SRAM `.srm` files). RetroArch save states live at `<states_path>/{system}/` (path from `retrodeck.json` → `paths.states_path`). These are `.state`, `.state1`, `.state.auto` etc. files. Currently we only sync `.srm` saves — save states are not synced. Challenges: save states are larger (100KB-10MB+), emulator-version-specific (not portable between different RetroArch core versions), and there can be multiple per game (numbered slots + auto). Consider syncing at least the auto-save state for convenience, with a user toggle and size warnings.
+- Toggling save sync on shoudl prompt to ask if user wants to create a backup of local save files.
+this backup can and should be created at other points of actions flows as well. e.g. manually, or as an option before or while solving save game sync conflicts.
 
 ---
 

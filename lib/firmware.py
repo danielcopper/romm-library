@@ -153,11 +153,12 @@ class FirmwareMixin:
             decky.logger.error(f"Failed to fetch firmware: {e}")
             return {"success": False, "message": f"Failed to fetch firmware: {e}", "downloaded": 0}
 
-        # Filter by platform slug
+        # Filter by platform slug (use mapped slugs, e.g. "psx" -> ["psx", "ps"])
+        fw_slugs = self._platform_to_firmware_slugs(platform_slug)
         platform_firmware = []
         for fw in firmware_list:
             slug = self._firmware_slug(fw.get("file_path", ""))
-            if slug == platform_slug:
+            if slug in fw_slugs:
                 platform_firmware.append(fw)
 
         downloaded = 0
@@ -200,6 +201,7 @@ class FirmwareMixin:
                     files.append({
                         "file_name": fw.get("file_name", ""),
                         "downloaded": downloaded,
+                        "local_path": dest,
                     })
         except Exception:
             pass

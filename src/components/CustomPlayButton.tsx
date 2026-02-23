@@ -16,21 +16,24 @@ import {
   Menu,
   MenuItem,
   showContextMenu,
+  Navigation,
+  QuickAccessTab,
   appActionButtonClasses,
   basicAppDetailsSectionStylerClasses,
 } from "@decky/ui";
 import { hideNativePlaySection, showNativePlaySection } from "../utils/styleInjector";
-import { prepareForLaunch } from "../patches/metadataPatches";
 import {
   getRomBySteamAppId,
   getInstalledRom,
   startDownload,
   removeRom,
   debugLog,
+  getSaveSyncSettings,
+  getPendingConflicts,
 } from "../api/backend";
-import type { DownloadProgressEvent, DownloadCompleteEvent } from "../types";
+import type { DownloadProgressEvent, DownloadCompleteEvent, SaveSyncSettings, PendingConflict } from "../types";
 
-type PlayButtonState = "loading" | "not_romm" | "download" | "play" | "launching";
+type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "play" | "launching";
 
 interface CustomPlayButtonProps {
   appId: number;
@@ -43,6 +46,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   const [romName, setRomName] = useState<string>("");
   const [actionPending, setActionPending] = useState(false);
   const romIdRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Hide the native PlaySection via CSS while this component is mounted
   useEffect(() => {
@@ -78,6 +82,21 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           debugLog(`CustomPlayButton: -> download`);
           setState("download");
         } else {
+          // Check for save sync conflicts before allowing play
+          try {
+            const settings: SaveSyncSettings = await getSaveSyncSettings();
+            if (settings.save_sync_enabled) {
+              const { conflicts }: { conflicts: PendingConflict[] } = await getPendingConflicts();
+              const hasConflict = conflicts.some((c: PendingConflict) => c.rom_id === rom.rom_id);
+              if (hasConflict) {
+                debugLog(`CustomPlayButton: -> conflict (rom_id=${rom.rom_id})`);
+                if (!cancelled) setState("conflict");
+                return;
+              }
+            }
+          } catch (e) {
+            debugLog(`CustomPlayButton: conflict check failed, proceeding to play: ${e}`);
+          }
           debugLog(`CustomPlayButton: -> play`);
           setState("play");
         }
@@ -131,12 +150,27 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     };
   }, []);
 
+  // Programmatically focus our Play/Download button after mount.
+  // This beats HLTB and other plugins that also compete for initial focus.
+  useEffect(() => {
+    if (state !== "play" && state !== "download" && state !== "conflict") return;
+    const timer = setTimeout(() => {
+      if (containerRef.current) {
+        const btn = containerRef.current.querySelector("button");
+        if (btn) {
+          btn.focus();
+          btn.classList.add("gpfocus");
+        }
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [state]);
+
   const handlePlay = () => {
     const overview = appStore.GetAppOverviewByAppID(appId);
     const gameId = overview?.GetGameID?.() ?? String(appId);
     debugLog(`CustomPlayButton: handlePlay appId=${appId} gameId=${gameId}`);
     setState("launching");
-    prepareForLaunch();
     SteamClient.Apps.RunGame(gameId, "", -1, 100);
   };
 
@@ -204,29 +238,42 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     borderLeft: "1px solid rgba(0, 0, 0, 0.2)",
   };
 
+  // Consistent button container size across all states (Play has dropdown = 36px extra)
+  const btnContainerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "row",
+    width: "200px",
+    height: "48px",
+  };
+
+  const mainBtnStyle: React.CSSProperties = {
+    height: "100%",
+    flex: "1 1 auto",
+    padding: "4px 12px",
+    border: "none",
+    color: "#fff",
+    fontSize: "16px",
+    fontWeight: "bold",
+  };
+
   if (state === "download") {
     return (
       <Focusable
+        ref={containerRef}
         className={appActionButtonClasses?.PlayButtonContainer}
-        style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
+        style={btnContainerStyle}
       >
         <DialogButton
-          className={appActionButtonClasses?.PlayButton}
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-download"].filter(Boolean).join(" ")}
           style={{
-            height: "100%",
-            flex: "1 0 auto",
-            padding: "4px 12px",
+            ...mainBtnStyle,
             borderRadius: "2px",
-            border: "none",
             background: "linear-gradient(to right, #1a9fff, #0078d4)",
-            color: "#fff",
-            fontSize: "16px",
-            fontWeight: "bold",
           }}
           onClick={handleDownload}
           disabled={actionPending}
         >
-          {actionPending ? "Starting..." : "Download"}
+          {actionPending ? "Downloading..." : "Download"}
         </DialogButton>
       </Focusable>
     );
@@ -236,31 +283,51 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     return (
       <Focusable
         className={appActionButtonClasses?.PlayButtonContainer}
-        style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
+        style={btnContainerStyle}
       >
-        <div
-          className={appActionButtonClasses?.PlayButton}
+        <DialogButton
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
           style={{
-            height: "100%",
-            flex: "1 0 auto",
-            padding: "4px 12px",
+            ...mainBtnStyle,
             borderRadius: "2px",
-            border: "none",
             background: "linear-gradient(to right, #70d61d 0%, #01a75b 60%)",
             backgroundPosition: "25%",
             backgroundSize: "330% 100%",
-            color: "#fff",
-            fontSize: "16px",
-            fontWeight: "bold",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             gap: "8px",
           }}
+          disabled
         >
-          <span className={appActionButtonClasses?.Throbber} style={{ width: "20px", height: "20px" }} />
+          <span className={`${appActionButtonClasses?.Throbber || ""} romm-throbber`.trim()} />
           Launching...
-        </div>
+        </DialogButton>
+      </Focusable>
+    );
+  }
+
+  if (state === "conflict") {
+    return (
+      <Focusable
+        ref={containerRef}
+        className={appActionButtonClasses?.PlayButtonContainer}
+        style={btnContainerStyle}
+      >
+        <DialogButton
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-conflict"].filter(Boolean).join(" ")}
+          style={{
+            ...mainBtnStyle,
+            borderRadius: "2px",
+            background: "linear-gradient(to right, #d4a72c, #b8941f)",
+          }}
+          onClick={() => {
+            Navigation.OpenQuickAccessMenu(QuickAccessTab.Decky);
+            toaster.toast({ title: "RomM Sync", body: "Open RomM Sync → Save Sync to resolve conflicts" });
+          }}
+        >
+          Resolve Conflict
+        </DialogButton>
       </Focusable>
     );
   }
@@ -268,29 +335,25 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   // state === "play"
   return (
     <Focusable
+      ref={containerRef}
       className={[appActionButtonClasses?.PlayButtonContainer, appActionButtonClasses?.Green].filter(Boolean).join(" ")}
-      style={{ display: "flex", flexDirection: "row", minWidth: "164px", height: "48px" }}
+      style={btnContainerStyle}
     >
       <DialogButton
-        className={appActionButtonClasses?.PlayButton}
+        className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
         style={{
-          height: "100%",
-          flex: "1 0 auto",
-          padding: "4px 12px",
+          ...mainBtnStyle,
           borderRadius: "2px 0 0 2px",
-          border: "none",
           background: "linear-gradient(to right, #70d61d 0%, #01a75b 60%)",
           backgroundPosition: "25%",
           backgroundSize: "330% 100%",
-          color: "#fff",
-          fontSize: "16px",
-          fontWeight: "bold",
         }}
         onClick={handlePlay}
       >
         Play
       </DialogButton>
       <DialogButton
+        className="romm-btn-dropdown"
         style={{
           ...dropdownArrowStyle,
           background: "linear-gradient(to right, #4da636, #3f8a2b)",
