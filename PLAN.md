@@ -1149,6 +1149,20 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 - [ ] Delete save files: add per-game or bulk option in main plugin menu (NOT on game detail page). Save files should persist after ROM uninstall.
 - [ ] Delete BIOS files: add per-platform option in main plugin menu (NOT on game detail page)
 - [ ] Steam gear menu: research Collection/Favorites APIs for add/remove options
+- [ ] Investigate excessive re-renders on game detail page (see below)
+
+#### Game detail page re-render issue
+
+**Symptom**: `gameDetailPatch` runs 2-3 times per page visit. `CustomPlayButton` mounts 5-6 times, resetting to `state=loading` each time. This causes a visible "Loading..." flash and delays the page becoming interactive.
+
+**Root cause (suspected)**: `createReactTreePatcher` fires on every React render cycle. Each cycle produces a fresh virtual tree, so the patch correctly re-applies (splicing our elements in). But each splice creates a NEW `createElement(RomMPlaySection, ...)` / `createElement(RomMGameInfoPanel, ...)` call. React should reuse fibers for same key + same type, but something is causing it to unmount and remount instead.
+
+**Investigation steps**:
+1. **Verify unmount vs re-render**: Add a `useEffect(() => { return () => debugLog("UNMOUNT") }, [])` cleanup to CustomPlayButton. If "UNMOUNT" logs between each "mounted", it's a true remount (fiber destroyed). If not, the "mounted" log is just from a re-running useEffect.
+2. **Check key stability**: Log the React keys of InnerContainer children before and after splice. If sibling keys shift (e.g. other children move positions), React may discard and recreate fibers. Using `children.splice()` to insert/remove changes indices of siblings.
+3. **Check if parent re-renders cause full subtree remounts**: The patcher callback runs inside `createReactTreePatcher` which wraps the original render. If it returns a new tree reference each time, React may treat the whole subtree as new.
+4. **Potential fix — memoize elements**: Cache the `createElement` results outside the patcher callback (keyed by appId) so React sees the exact same element reference across render cycles. This would prevent fiber recreation.
+5. **Potential fix — move to component-level rendering**: Instead of creating elements in the patcher, have the patcher inject a thin wrapper component that renders RomMPlaySection/RomMGameInfoPanel internally. The wrapper's identity stays stable across patcher re-runs.
 
 #### BIOS intelligence improvements (future)
 

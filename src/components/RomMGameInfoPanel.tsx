@@ -15,9 +15,10 @@
  */
 
 import { useState, useEffect, useRef, FC, createElement } from "react";
-// No Focusable needed — purely informational panel with no interactive elements.
-// Unifideck confirms: Focusable is only for horizontal button rows, not text sections.
-// Steam's scroll container handles gamepad scrolling for plain div content.
+import { DialogButton } from "@decky/ui";
+// DialogButton is natively focusable by Steam's gamepad engine (unlike Focusable
+// wrappers around non-interactive content, which don't register in this injection
+// context). Style as content sections, not buttons.
 import {
   getRomBySteamAppId,
   getRomMetadata,
@@ -211,9 +212,29 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       createElement("span", { className: "romm-panel-value" }, value),
     );
 
-  /** A section with a title and children */
+  /** A section with a title and children — uses DialogButton (not Focusable)
+   *  because DialogButton is natively focusable by Steam's gamepad engine.
+   *  Styled to look like a content section, not a button.
+   *  onFocus → scrollIntoView keeps the section visible when navigated to. */
   const section = (key: string, title: string | null, ...children: (ReturnType<typeof createElement> | null)[]) =>
-    createElement("div", { key, className: "romm-panel-section" },
+    createElement(DialogButton as any, {
+      key,
+      className: "romm-panel-section",
+      style: {
+        background: "transparent",
+        border: "none",
+        padding: "12px 0",
+        textAlign: "left" as const,
+        width: "100%",
+        cursor: "default",
+        display: "block",
+      },
+      noFocusRing: false,
+      onFocus: (e: FocusEvent) => {
+        debugLog(`GameInfoPanel section "${key}" focused`);
+        (e.currentTarget as HTMLElement)?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+      },
+    },
       title ? createElement("div", { className: "romm-panel-section-title" }, title) : null,
       ...children.filter(Boolean),
     );
@@ -493,6 +514,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
   }
 
   // --- Assemble panel ---
+  // Root is a plain div — DialogButton sections inside are individually focusable.
   return createElement("div", {
     "data-romm": "true",
     className: "romm-panel-container",

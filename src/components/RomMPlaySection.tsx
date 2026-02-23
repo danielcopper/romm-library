@@ -19,7 +19,6 @@ import {
   MenuItem,
   MenuSeparator,
   showContextMenu,
-  Navigation,
 } from "@decky/ui";
 import { FaGamepad, FaCog } from "react-icons/fa";
 import { CustomPlayButton } from "./CustomPlayButton";
@@ -373,7 +372,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     showContextMenu(
       createElement(Menu, { label: "Steam" },
         createElement(MenuItem, { key: "properties", onClick: () => {
-          Navigation.NavigateToAppProperties();
+          SteamClient.Apps.OpenAppSettingsDialog(appId, "");
         } }, "Properties"),
         // TODO: Add to/Remove from Collection and Favorites when APIs are explored
       ),

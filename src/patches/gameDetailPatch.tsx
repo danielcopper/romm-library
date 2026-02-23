@@ -156,8 +156,8 @@ export function registerGameDetailPatch() {
               debugLog(`===== END DEEP TREE DUMP =====`);
             }
 
-            // For RomM games: inject RomMPlaySection into InnerContainer
-            // alongside the (defanged) native PlaySection to preserve scroll height
+            // For RomM games: replace native PlaySection with RomMPlaySection,
+            // then insert RomMGameInfoPanel as a separate child below it.
             if (isRomM) {
               const children = container.props.children;
 
@@ -168,9 +168,7 @@ export function registerGameDetailPatch() {
               if (!alreadyHasPlayBtn) {
                 // Identify the native PlaySection by position. Steam's
                 // InnerContainer native order is [HeaderCapsule, PlaySection, ...].
-                // Skip children injected by other plugins. Detection uses both
-                // key prefixes AND component type names, since most plugins
-                // (ProtonDB, HLTB) don't set React keys on their injected elements.
+                // Skip children injected by other plugins.
                 const PLUGIN_KEY_PREFIXES = ["romm-", "unifideck-", "hltb-", "protondb-"];
                 const PLUGIN_TYPE_NAMES = ["ProtonMedal", "GameStats", "AudioLoaderCompatStateContextProvider"];
                 let nativePlayIdx = -1;
@@ -196,22 +194,10 @@ export function registerGameDetailPatch() {
                 });
 
                 if (nativePlayIdx >= 0) {
-                  debugLog(`gameDetailPatch: inserting RomMPlaySection after native at index ${nativePlayIdx}`);
-                  // INSERT after the native PlaySection (not replace) — keeping
-                  // the native in the tree preserves the scroll container's height
-                  // calculation.  The CSS rule in styleInjector hides it visually.
-                  children.splice(nativePlayIdx + 1, 0, rommPlaySection);
-
-                  // Defang native PlaySection: replace the React element with an
-                  // inert hidden div so gamepad focus can't land on its children.
-                  const nativePlay = children[nativePlayIdx];
-                  children[nativePlayIdx] = createElement('div', {
-                    key: nativePlay?.key || 'native-play-hidden',
-                    style: { display: 'none' },
-                    'aria-hidden': 'true',
-                  });
+                  debugLog(`gameDetailPatch: replacing native PlaySection at index ${nativePlayIdx} with RomMPlaySection`);
+                  children.splice(nativePlayIdx, 1, rommPlaySection);
                 } else {
-                  debugLog(`gameDetailPatch: fallback, inserting at index 1`);
+                  debugLog(`gameDetailPatch: fallback, inserting RomMPlaySection at index 1`);
                   children.splice(1, 0, rommPlaySection);
                 }
               }
