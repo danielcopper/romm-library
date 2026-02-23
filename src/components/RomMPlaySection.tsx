@@ -14,6 +14,7 @@ import { useState, useEffect, FC, createElement } from "react";
 import { toaster } from "@decky/api";
 import {
   basicAppDetailsSectionStylerClasses,
+  Focusable,
   Menu,
   MenuItem,
   MenuSeparator,
@@ -354,7 +355,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     }
   };
 
-  const showRomMMenu = (e: MouseEvent) => {
+  const showRomMMenu = (e: Event) => {
     showContextMenu(
       createElement(Menu, { label: "RomM Actions" },
         createElement(MenuItem, { key: "refresh-artwork", onClick: handleRefreshArtwork }, "Refresh Artwork"),
@@ -368,7 +369,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     );
   };
 
-  const showSteamMenu = (e: MouseEvent) => {
+  const showSteamMenu = (e: Event) => {
     showContextMenu(
       createElement(Menu, { label: "Steam" },
         createElement(MenuItem, { key: "properties", onClick: () => {
@@ -414,9 +415,10 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     infoItems.push(statusInfoItem("bios", "BIOS", info.biosLabel, biosColor));
   }
 
-  return createElement("div", {
+  return createElement(Focusable, {
     "data-romm": "true",
     className: `romm-play-section-row ${basicAppDetailsSectionStylerClasses?.PlaySection || ""}`.trim(),
+    "flow-children": "right",
     style: {
       display: "flex",
       alignItems: "center",
@@ -425,7 +427,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       background: "rgba(14, 20, 27, 0.33)",
       boxSizing: "border-box",
     },
-  },
+  } as any,
     // Play button on the left
     createElement(CustomPlayButton, { appId }),
     // Info items row
@@ -452,20 +454,32 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       },
     },
       // RomM actions button
-      createElement("button", {
-        className: "romm-gear-btn",
-        onClick: showRomMMenu,
-        title: "RomM Actions",
-      },
-        createElement(FaGamepad, { size: 18, color: "#553e98" }),
+      createElement(Focusable, {
+        style: { display: "flex" },
+        focusWithinClassName: "romm-gear-focused",
+        onActivate: showRomMMenu,
+      } as any,
+        createElement("button", {
+          className: "romm-gear-btn",
+          onClick: showRomMMenu,
+          title: "RomM Actions",
+        },
+          createElement(FaGamepad, { size: 18, color: "#553e98" }),
+        ),
       ),
       // Steam properties button
-      createElement("button", {
-        className: "romm-gear-btn",
-        onClick: showSteamMenu,
-        title: "Steam Properties",
-      },
-        createElement(FaCog, { size: 18, color: "#8f98a0" }),
+      createElement(Focusable, {
+        style: { display: "flex" },
+        focusWithinClassName: "romm-gear-focused",
+        onActivate: showSteamMenu,
+      } as any,
+        createElement("button", {
+          className: "romm-gear-btn",
+          onClick: showSteamMenu,
+          title: "Steam Properties",
+        },
+          createElement(FaCog, { size: 18, color: "#8f98a0" }),
+        ),
       ),
     ),
   );

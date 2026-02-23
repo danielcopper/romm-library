@@ -31,8 +31,8 @@ export function hideNativePlaySection(playSectionClass: string) {
     focusStyle.id = ROMM_FOCUS_STYLES_ID;
     focusStyle.textContent = `
 .romm-btn-download:hover, .romm-btn-download.gpfocus {
-  background: linear-gradient(to right, #0d8bf0, #0068c0) !important;
-  filter: brightness(1.2);
+  background: linear-gradient(to right, #47b3ff, #1a9fff) !important;
+  filter: brightness(1.3);
 }
 .romm-btn-play:hover, .romm-btn-play.gpfocus {
   background: linear-gradient(to right, #80e62a, #01b866) !important;
@@ -310,6 +310,12 @@ export function hideNativePlaySection(playSectionClass: string) {
 .romm-gear-btn:hover, .romm-gear-btn.gpfocus {
   background: rgba(255,255,255,0.14);
   filter: brightness(1.2);
+}
+.romm-gear-focused .romm-gear-btn {
+  background: rgba(255,255,255,0.14);
+  filter: brightness(1.2);
+  outline: 2px solid #1a9fff;
+  outline-offset: 2px;
 }
 .romm-gear-btn:active {
   filter: brightness(0.9);

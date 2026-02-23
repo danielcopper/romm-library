@@ -15,6 +15,9 @@
  */
 
 import { useState, useEffect, useRef, FC, createElement } from "react";
+// No Focusable needed — purely informational panel with no interactive elements.
+// Unifideck confirms: Focusable is only for horizontal button rows, not text sections.
+// Steam's scroll container handles gamepad scrolling for plain div content.
 import {
   getRomBySteamAppId,
   getRomMetadata,
@@ -443,10 +446,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
               createElement("span", { key: "name", className: "romm-panel-file-name" }, f.filename),
             );
 
-            // Last synced datetime
+            // Last synced datetime (use ROM-level check time — covers all files in the sync run)
+            const syncTime = state.saveStatus?.last_sync_check_at || f.last_sync_at;
             fileRowChildren.push(
               createElement("span", { key: "sync-time", className: "romm-panel-file-detail" },
-                `Synced: ${formatSyncDateTime(f.last_sync_at)}`,
+                `Synced: ${formatSyncDateTime(syncTime)}`,
               ),
             );
 

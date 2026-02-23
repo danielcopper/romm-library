@@ -1455,6 +1455,8 @@ Card2Path = <saves_path>/psx/duckstation/memcards/shared_card_2.mcd
 - **Connection settings: remove save button, save on popup confirm**: Each connection field (URL, username, password) already has an edit button that opens a popup. Change behavior so that confirming the popup immediately persists the new value to settings. Cancelling the popup must discard any changes and restore the original value. Remove the global "Save" button entirely — it is no longer needed since each field saves independently on popup confirmation.
 - **RomM playtime API integration**: When RomM adds a playtime field (feature request #1225), plug in our existing delta-based accumulation to sync playtime bidirectionally. Architecture is already in place — just needs the API endpoint.
 - **Emulator save state sync**: RomM supports "States" (emulator save states / quick saves) separately from "Saves" (SRAM `.srm` files). RetroArch save states live at `<states_path>/{system}/` (path from `retrodeck.json` → `paths.states_path`). These are `.state`, `.state1`, `.state.auto` etc. files. Currently we only sync `.srm` saves — save states are not synced. Challenges: save states are larger (100KB-10MB+), emulator-version-specific (not portable between different RetroArch core versions), and there can be multiple per game (numbered slots + auto). Consider syncing at least the auto-save state for convenience, with a user toggle and size warnings.
+- Toggling save sync on shoudl prompt to ask if user wants to create a backup of local save files.
+this backup can and should be created at other points of actions flows as well. e.g. manually, or as an option before or while solving save game sync conflicts.
 
 ---
 
