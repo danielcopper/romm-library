@@ -10,13 +10,12 @@ This is modeled after [Unifideck](https://github.com/UNIFiDECK/unifideck), which
 
 Our equivalent:
 1. **CustomPlayButton** — Play/Download button with dropdown menu (already working, `src/components/CustomPlayButton.tsx`)
-2. **RomMGameInfoPanel** — custom metadata and status panel (to be built)
+2. **RomMGameInfoPanel** — custom metadata and status panel (`src/components/RomMGameInfoPanel.tsx`) — ✅ IMPLEMENTED
 
 Key files:
 - `/home/deck/Repos/decky-romm-sync/src/patches/gameDetailPatch.tsx` — route patch, tree manipulation
 - `/home/deck/Repos/decky-romm-sync/src/components/CustomPlayButton.tsx` — play/download button
-- `/home/deck/Repos/decky-romm-sync/src/utils/styleInjector.ts` — CSS hiding and focus styles
-- `/home/deck/Repos/decky-romm-sync/src/patches/metadataPatches.ts` — store patches and BIsModOrShortcut bypass
+- `/home/deck/Repos/decky-romm-sync/src/patches/metadataPatches.ts` — store patches for metadata display
 
 ## 2. Architecture Decision: Drop BIsModOrShortcut Bypass
 
@@ -131,19 +130,9 @@ const PLUGIN_KEY_PREFIXES = ["romm-", "unifideck-", "hltb-", "protondb-"];
 const PLUGIN_TYPE_NAMES = ["ProtonMedal", "GameStats", "AudioLoaderCompatStateContextProvider"];
 ```
 
-### CSS hiding as safety layer
+### CSS hiding (removed)
 
-`styleInjector.ts` injects CSS rules that hide the native PlaySection as a belt-and-suspenders measure alongside React tree replacement:
-
-```css
-.${playSectionClass}:not([data-romm]) {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-```
-
-The `pointer-events: none` is critical for gamepad focus — it helps prevent Steam's focus traversal from reaching the hidden element.
+Previously, `styleInjector.ts` injected CSS rules to hide the native PlaySection as a belt-and-suspenders measure. This was removed — splice-replace (removing the element from the React tree entirely) is sufficient and more reliable. CSS hiding cannot prevent Steam's gamepad focus engine from reaching hidden elements since it walks the React tree, not the DOM.
 
 ### Splice replacement
 
@@ -164,26 +153,50 @@ Steam's gamepad navigation system traverses the **React component tree**, not th
 
 - **CSS hiding is insufficient**: `display: none`, `visibility: hidden`, and even `pointer-events: none` cannot fully prevent focus traversal. Steam walks the React tree looking for focusable components regardless of their CSS state.
 - **React tree removal is the only reliable fix**: The native component must be removed (spliced out) from the React tree entirely to prevent gamepad focus from landing on it.
-- **`pointer-events: none` helps significantly** but is not complete — it prevents click/tap interaction but Steam's traversal code may still consider the component focusable.
+
+### DialogButton for gamepad-focusable content sections
+
+**Key discovery**: `Focusable` wrappers around non-interactive content do NOT register with Steam's gamepad focus engine in the game detail page injection context. However, `DialogButton` from `@decky/ui` (which renders as an actual button element) is natively focusable.
+
+`RomMGameInfoPanel` uses `DialogButton` styled as transparent content sections (no button appearance):
+
+```typescript
+const section = (key, title, ...children) =>
+  createElement(DialogButton as any, {
+    key,
+    className: "romm-panel-section",
+    style: {
+      background: "transparent",
+      border: "none",
+      padding: "12px 0",
+      textAlign: "left",
+      width: "100%",
+      cursor: "default",
+      display: "block",
+    },
+    noFocusRing: false,
+    onFocus: (e) => {
+      (e.currentTarget as HTMLElement)?.scrollIntoView?.({
+        behavior: "smooth", block: "center"
+      });
+    },
+  },
+    title ? createElement("div", { ... }, title) : null,
+    ...children,
+  );
+```
+
+Each section (Game Info, ROM File, Save Sync, BIOS) is individually focusable via gamepad D-pad. When focused, `scrollIntoView({ block: "center" })` ensures the section scrolls into the visible area. `noFocusRing: false` shows the standard Steam focus ring on the selected section.
 
 ### Focus styles
 
-Steam applies the `.gpfocus` CSS class to the currently focused element during gamepad navigation. Our custom buttons need matching styles, injected by `styleInjector.ts`:
+Steam applies the `.gpfocus` CSS class to the currently focused element during gamepad navigation. `DialogButton` handles this natively — no custom focus styles needed for the info panel sections.
 
-```css
-.romm-btn-download.gpfocus { ... }
-.romm-btn-play.gpfocus { ... }
-.romm-btn-dropdown.gpfocus { ... }
-[data-romm] .gpfocus { outline: 2px solid #1a9fff; ... }
-```
+`CustomPlayButton` in `RomMPlaySection` uses `Focusable` with `appActionButtonClasses.PlayButtonContainer` which integrates with Steam's gamepad focus system for the play/download button area.
 
-### Using Decky UI components for focusability
+### Auto-select play button
 
-`CustomPlayButton.tsx` uses `Focusable` and `DialogButton` from `@decky/ui`, which integrate with Steam's gamepad focus system. The `Focusable` wrapper with `appActionButtonClasses.PlayButtonContainer` ensures Steam recognizes the button group as a navigation target.
-
-### Open: Auto-select play button
-
-When entering the game detail page, the play button should be auto-selected (focused) so the user can immediately press A to play. This is not yet implemented. Steam auto-focuses the native PlaySection; we need to replicate this behavior for our custom button.
+When entering the game detail page, the play button is auto-selected (focused) with a 400ms DOM-based delay — confirmed working.
 
 ## 6. Compatibility with Other Plugins
 
@@ -228,7 +241,7 @@ InnerContainer (Steam's native container)
   [0] HeaderCapsule — hero banner, logo (preserved)
   [1] RomMPlaySection (replaces native PlaySection)
   │   └── CustomPlayButton — Play/Download with dropdown
-  [2] RomMGameInfoPanel (info-only, no interactive elements)
+  [2] RomMGameInfoPanel (DialogButton sections for gamepad focus, no action handlers)
       ├── Status Row
       │   ├── Install status (Downloaded / Not Installed)
       │   └── Platform badge (e.g. "Game Boy Advance")
@@ -278,9 +291,9 @@ The BIOS section has edge cases:
 
 ## 8. Open Questions / TODO
 
-- **Re-investigate tree structure after dropping BIsModOrShortcut bypass**: The tree changes when `BIsModOrShortcut` returns `true`. Use the existing diagnostic tree dump in `gameDetailPatch.tsx` to capture the new structure. This is the first step before implementing RomMGameInfoPanel.
+- **Re-investigate tree structure after dropping BIsModOrShortcut bypass**: **RESOLVED** — tree structure investigated and documented. Non-Steam shortcuts have minimal native children: HeaderCapsule, plugin injections (ProtonMedal, GameStats, AudioLoader), and a `p` element. No native PlaySection component exists for shortcuts.
 
-- **Auto-select play button on page entry**: Steam auto-focuses the native PlaySection when entering a game detail page. Our custom button does not receive automatic focus. Need to investigate how to trigger focus programmatically (possibly via `Focusable` ref or a Steam gamepad focus API).
+- **Auto-select play button on page entry**: **RESOLVED** — auto-select implemented with 400ms DOM-based delay.
 
 - **Determine if store patches are still needed**: With a fully custom game detail page, `GetDescriptions`, `GetAssociations`, `BHasStoreCategory`, etc. may be unnecessary. However, they might still be consumed by:
   - Library grid hover tooltips
@@ -291,10 +304,6 @@ The BIOS section has edge cases:
 
 - **Test Unifideck coexistence**: Both plugins use position-based heuristics on `InnerContainer.props.children`. Verify no double-injection or index conflicts when both are active. Test all four scenarios listed in section 6.
 
-- **Determine if styleInjector.ts CSS hiding is still needed**: Once we do proper React tree replacement (splice), CSS hiding of the native PlaySection may be redundant. The splice removes the component from the tree entirely. However, there may be edge cases where the tree re-renders and briefly shows the native element before our patch runs. Keep CSS hiding as a safety net until we confirm it's unnecessary.
+- **Determine if styleInjector.ts CSS hiding is still needed**: **RESOLVED** — CSS hiding removed. Splice-replace is sufficient.
 
-- **Hiding native metadata sections below PlaySection**: For RomM games, native sections like DLC, achievements, community hub are useless. Options:
-  - CSS-hide specific section classes for RomM games
-  - Replace all children after HeaderCapsule with our custom components
-  - Wrap remaining native children in a hidden container
-  The approach depends on the tree structure investigation.
+- **Hiding native metadata sections below PlaySection**: **RESOLVED** — Non-Steam shortcuts have minimal native content below PlaySection (no DLC, achievements, community hub). No hiding needed.

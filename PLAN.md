@@ -1076,7 +1076,7 @@ PlaySection wrapper (basicAppDetailsSectionStylerClasses.PlaySection, data-romm=
 
 **Our equivalent for RomM games**:
 1. **RomMPlaySection** — custom PlaySection that mirrors Steam's native layout: play button on the left, info items to the right in a horizontal row — ✅ IMPLEMENTED
-2. **RomMGameInfoPanel** — custom metadata panel inserted after the PlaySection (future work)
+2. **RomMGameInfoPanel** — custom metadata panel inserted after the PlaySection — ✅ IMPLEMENTED
 
 #### RomMPlaySection Layout (mirrors native Steam PlaySection)
 
@@ -1117,7 +1117,7 @@ All info items follow Steam's native two-line pattern: **uppercase header label 
 
 **Metadata patches interaction**: Keep store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for contexts where native UI still renders (library grid tooltips, search results, etc.). The PlaySection info items use our own data sources directly, not store patches.
 
-**Native content**: Non-Steam shortcuts have minimal native content below the PlaySection (no DLC, achievements, community hub sections). Keep native children as-is; RomMGameInfoPanel will be inserted as a new child after the PlaySection in a future step.
+**Native content**: Non-Steam shortcuts have minimal native content below the PlaySection (no DLC, achievements, community hub sections). Native children are kept as-is. RomMGameInfoPanel is inserted as a new child after the PlaySection.
 
 #### Future: In-Home Streaming Integration
 
@@ -1139,11 +1139,11 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 - [x] RomMGameInfoPanel (metadata, BIOS detail, Save Sync detail — info-only, no buttons)
 - [x] Type `getRomBySteamAppId` return value properly (RomLookupResult)
 - [x] RomM gear icon menu (Refresh Artwork, Refresh Metadata, Sync Saves, Download BIOS, Uninstall)
-- [x] Steam gear icon menu (Properties via NavigateToAppProperties)
+- [x] Steam gear icon menu (Properties via `SteamClient.Apps.OpenAppSettingsDialog` — `NavigateToAppProperties` was broken for shortcuts)
 - [x] Cross-component state refresh (romm_data_changed events from PlaySection → GameInfoPanel)
 - [x] Fix download_all_firmware slug mismatch (_platform_to_firmware_slugs)
 - [ ] Test Unifideck coexistence (4 scenarios above)
-- [ ] Scrolling: game detail page can't scroll all the way down to see all panel content (minHeight + resize helps with mouse but not gamepad)
+- [x] Scrolling: solved via DialogButton sections (not Focusable — Focusable doesn't register with gamepad in this context). Each section uses `onFocus → scrollIntoView({ block: "center" })`. See `docs/scroll-and-hiding-research.md` Approach 8.
 - [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
 - [x] Save sync timestamp UX: separated "last sync check" (ROM-level, updated every sync run) from "last data transfer" (per-file). PlaySection shows last sync check. GameInfoPanel shows both per-file: "Synced: ..." and "Changed: ..."
 - [ ] Delete save files: add per-game or bulk option in main plugin menu (NOT on game detail page). Save files should persist after ROM uninstall.

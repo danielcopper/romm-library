@@ -14,8 +14,9 @@ Two interrelated issues on the game detail page for RomM shortcuts:
 
 This means:
 - The scroll issue has **nothing to do with defang vs no-defang** — it's about our GameInfoPanel having zero Focusable elements
-- Defang (replacing native PlaySection with hidden div in React tree) works fine for hiding
-- The `Focusable` + `scrollIntoView` pattern (from SteamGridDB plugin) is the correct approach
+- Splice-replace (removing native PlaySection entirely from React tree) is the most reliable hiding method
+- The `Focusable` + `scrollIntoView` pattern does NOT work in this injection context — `Focusable` wrappers around non-interactive content don't register with Steam's gamepad focus engine
+- The **`DialogButton` + `scrollIntoView` pattern** is the correct approach (see Approach 8 below)
 
 ## Approaches Investigated
 
@@ -46,12 +47,12 @@ This means:
 - **Previous attempt failed**: Wrapping the ROOT panel in Focusable broke the layout. The correct pattern is per-SECTION Focusable, not root-level.
 - **Cons**: We tried this and it broke layout, but that was root-level wrapping not section-level
 
-### Approach 5: Focusable + `scrollIntoView` on Focus (SteamGridDB pattern) ← BEST
+### Approach 5: Focusable + `scrollIntoView` on Focus (SteamGridDB pattern) ← DID NOT WORK
 - Wrap each GameInfoPanel section in `Focusable` with `noFocusRing`
-- Add `onFocus={(e) => e.target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })}` to each section
-- **Pros**: Proven pattern (SteamGridDB uses it for asset grid), explicit scroll control, minimal code
-- **Cons**: Makes non-interactive sections focusable (but with noFocusRing, invisible to user)
-- **Key insight**: Focusable only on SECTIONS, not the root container. Root Focusable breaks layout.
+- Add `onFocus` handler to scroll into view
+- **Result**: Focusable wrappers around non-interactive content do NOT register with Steam's gamepad focus engine in the game detail page injection context. Zero focus events were received — neither `onFocus` nor `onGamepadFocus` fired.
+- **Tested variations**: root-level Focusable, per-section Focusable, Focusable with `flow-children="column"`, wrapper Focusable with `display: "contents"`. None worked.
+- **Why it works for SteamGridDB**: Their Focusable elements wrap interactive content on custom pages (not injected into the game detail page tree).
 
 ### Approach 6: Find Scroll Container + Force Reflow
 - Locate the actual scroll container DOM element, force a reflow
@@ -63,6 +64,16 @@ This means:
 - **Pros**: Simplest, native completely gone
 - **Cons**: Same scroll issue as defang (which turned out to be unrelated)
 
+### Approach 8: DialogButton as content sections ← ACTUAL SOLUTION
+- Replace `Focusable` with `DialogButton` from `@decky/ui` for each GameInfoPanel section
+- Style DialogButton as transparent content container (no button appearance): `background: transparent`, `border: none`, `cursor: default`, `display: block`, `textAlign: left`
+- Add `onFocus` handler with `scrollIntoView({ behavior: "smooth", block: "center" })`
+- Keep `noFocusRing: false` so users see focus indicator when navigating
+- **Pros**: Works! DialogButton renders as an actual `<button>` element which Steam's gamepad engine recognizes natively. Minimal code (~20 lines for the section helper). Each section individually focusable.
+- **Cons**: Semantically using buttons for non-interactive content. No onClick handler — sections are display-only.
+- **Key insight**: The difference is that `DialogButton` renders a native HTML button element, while `Focusable` renders a div with React-level focus management. Steam's gamepad focus engine in the game detail page context only discovers native button elements, not Focusable divs.
+- **Evidence**: An earlier commit (201b1ef) had `DialogButton` elements for action buttons inside the panel — those WERE reachable by gamepad. This proved that element type (not tree position) determines focusability.
+
 ## Plugin Ecosystem Survey
 
 | Plugin | Injects into game detail? | Scroll handling | Gamepad handling |
@@ -73,7 +84,7 @@ This means:
 | SteamGridDB | No (context menu + custom page) | IntersectionObserver + scrollContainer | **Focusable + scrollIntoView onFocus** |
 | Unifideck | Yes, PlaySection + InfoPanel + badge | None (trusts Steam scroll container) | Focusable with flow-children="row" for button rows |
 
-**No plugin has solved the exact problem of making large injected informational content scrollable via gamepad.**
+**No other plugin has solved the exact problem of making large injected informational content scrollable via gamepad.** We solved this with DialogButton-as-content-sections (Approach 8 above).
 
 ## How Steam's Scroll Container Works (Inferred)
 
@@ -98,8 +109,9 @@ This means:
 
 ### Native PlaySection Hiding
 - CSS hiding (`display:none + pointer-events:none`) insufficient — Steam's gamepad focus walks React tree, not DOM
-- Defang (replace React element with hidden div) works for removing from focus
-- CDP (unifideck) works but heavy and fragile
+- **Splice-replace** (`children.splice(idx, 1, replacement)`) — current approach, removes native from React tree entirely
+- Defang (replace React element with hidden div) also works but splice is cleaner
+- CDP (unifideck) works but heavy and fragile (~530 LOC)
 - `inert` attribute untested in ecosystem
 
 ## References
