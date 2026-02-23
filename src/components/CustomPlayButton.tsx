@@ -1,8 +1,9 @@
 /**
  * Custom Play button that replaces the native Steam Play button on RomM game
- * detail pages. Handles 2 primary states:
+ * detail pages. Handles 3 primary states:
  * - Download: ROM not installed, click to download
- * - Play: ROM installed, launches the game
+ * - Play: ROM installed, launches the game (with pre-launch save sync)
+ * - Syncing: Save sync in progress before launch
  *
  * Includes a dropdown menu button (arrow) to the right of the Play button
  * with action: Uninstall.
@@ -13,11 +14,11 @@ import { addEventListener, removeEventListener, toaster } from "@decky/api";
 import {
   Focusable,
   DialogButton,
+  ConfirmModal,
   Menu,
   MenuItem,
   showContextMenu,
-  Navigation,
-  QuickAccessTab,
+  showModal,
   appActionButtonClasses,
   basicAppDetailsSectionStylerClasses,
 } from "@decky/ui";
@@ -28,15 +29,31 @@ import {
   startDownload,
   removeRom,
   debugLog,
-  getSaveSyncSettings,
-  getPendingConflicts,
+  preLaunchSync,
+  getSaveStatus,
 } from "../api/backend";
-import type { DownloadProgressEvent, DownloadCompleteEvent, SaveSyncSettings, PendingConflict } from "../types";
+import { showConflictResolutionModal } from "./ConflictModal";
+import type { DownloadProgressEvent, DownloadCompleteEvent } from "../types";
 
-type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "play" | "launching";
+type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "syncing" | "play" | "launching";
 
 interface CustomPlayButtonProps {
   appId: number;
+}
+
+function showLaunchConfirmation(title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    showModal(
+      <ConfirmModal
+        strTitle={title}
+        strDescription={message}
+        strOKButtonText="Launch Anyway"
+        strCancelButtonText="Cancel"
+        onOK={() => resolve(true)}
+        onCancel={() => resolve(false)}
+      />,
+    );
+  });
 }
 
 export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
@@ -82,23 +99,17 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           debugLog(`CustomPlayButton: -> download`);
           setState("download");
         } else {
-          // Check for save sync conflicts before allowing play
-          try {
-            const settings: SaveSyncSettings = await getSaveSyncSettings();
-            if (settings.save_sync_enabled) {
-              const { conflicts }: { conflicts: PendingConflict[] } = await getPendingConflicts();
-              const hasConflict = conflicts.some((c: PendingConflict) => c.rom_id === rom.rom_id);
-              if (hasConflict) {
-                debugLog(`CustomPlayButton: -> conflict (rom_id=${rom.rom_id})`);
-                if (!cancelled) setState("conflict");
-                return;
-              }
-            }
-          } catch (e) {
-            debugLog(`CustomPlayButton: conflict check failed, proceeding to play: ${e}`);
+          // Real-time conflict detection via get_save_status (calls _detect_conflict per file)
+          const saveStatus = await getSaveStatus(rom.rom_id).catch(() => null);
+          if (cancelled) return;
+          const hasConflict = saveStatus?.files?.some((f: { status: string }) => f.status === "conflict") ?? false;
+          if (hasConflict) {
+            debugLog(`CustomPlayButton: -> conflict (detected)`);
+            setState("conflict");
+          } else {
+            debugLog(`CustomPlayButton: -> play`);
+            setState("play");
           }
-          debugLog(`CustomPlayButton: -> play`);
-          setState("play");
         }
       } catch (e) {
         console.error("[RomM] CustomPlayButton init error:", e);
@@ -166,12 +177,73 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     return () => clearTimeout(timer);
   }, [state]);
 
-  const handlePlay = () => {
+  const handlePlay = async () => {
+    if (state === "syncing" || state === "launching") return; // debounce
     const overview = appStore.GetAppOverviewByAppID(appId);
     const gameId = overview?.GetGameID?.() ?? String(appId);
     debugLog(`CustomPlayButton: handlePlay appId=${appId} gameId=${gameId}`);
+
+    // Pre-launch save sync — backend handles settings checks and returns conflicts
+    if (romId) {
+      setState("syncing");
+      try {
+        const result = await Promise.race([
+          preLaunchSync(romId),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000)),
+        ]);
+
+        debugLog(`CustomPlayButton: preLaunchSync result: synced=${result.synced} conflicts=${result.conflicts?.length ?? 0} success=${result.success}`);
+
+        if (result.conflicts && result.conflicts.length > 0) {
+          const resolution = await showConflictResolutionModal(result.conflicts);
+          if (resolution === "cancel") {
+            setState("conflict");
+            return;
+          }
+          // Conflict resolved — notify sibling components to refresh
+          window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+        }
+      } catch (e) {
+        debugLog(`CustomPlayButton: pre-launch sync failed: ${e}`);
+        const proceed = await showLaunchConfirmation(
+          "Save Sync Unavailable",
+          "Couldn't sync saves with RomM server. Launch with local saves?",
+        );
+        if (!proceed) {
+          setState("play");
+          return;
+        }
+      }
+    }
+
     setState("launching");
     SteamClient.Apps.RunGame(gameId, "", -1, 100);
+  };
+
+  const handleResolveConflict = async () => {
+    if (!romId) return;
+    setState("syncing");
+    try {
+      const result = await Promise.race([
+        preLaunchSync(romId),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000)),
+      ]);
+
+      if (result.conflicts && result.conflicts.length > 0) {
+        const resolution = await showConflictResolutionModal(result.conflicts);
+        if (resolution === "cancel") {
+          setState("conflict");
+          return;
+        }
+      }
+      // Resolved or no conflicts left — notify siblings and go back to play
+      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+      setState("play");
+    } catch (e) {
+      debugLog(`CustomPlayButton: resolve conflict failed: ${e}`);
+      toaster.toast({ title: "RomM Sync", body: "Couldn't reach server to resolve conflict" });
+      setState("conflict");
+    }
   };
 
   const handleDownload = async () => {
@@ -307,6 +379,34 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     );
   }
 
+  if (state === "syncing") {
+    return (
+      <Focusable
+        className={appActionButtonClasses?.PlayButtonContainer}
+        style={btnContainerStyle}
+      >
+        <DialogButton
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
+          style={{
+            ...mainBtnStyle,
+            borderRadius: "2px",
+            background: "linear-gradient(to right, #70d61d 0%, #01a75b 60%)",
+            backgroundPosition: "25%",
+            backgroundSize: "330% 100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+          }}
+          disabled
+        >
+          <span className={`${appActionButtonClasses?.Throbber || ""} romm-throbber`.trim()} />
+          Syncing saves...
+        </DialogButton>
+      </Focusable>
+    );
+  }
+
   if (state === "conflict") {
     return (
       <Focusable
@@ -321,10 +421,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
             borderRadius: "2px",
             background: "linear-gradient(to right, #d4a72c, #b8941f)",
           }}
-          onClick={() => {
-            Navigation.OpenQuickAccessMenu(QuickAccessTab.Decky);
-            toaster.toast({ title: "RomM Sync", body: "Open RomM Sync → Save Sync to resolve conflicts" });
-          }}
+          onClick={handleResolveConflict}
         >
           Resolve Conflict
         </DialogButton>

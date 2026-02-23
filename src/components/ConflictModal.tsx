@@ -4,7 +4,7 @@ import { showModal } from "@decky/ui";
 import { resolveConflict } from "../api/backend";
 import type { PendingConflict } from "../types";
 
-export type ConflictResolution = "use_local" | "use_server" | "skip" | "launch_anyway" | "cancel";
+export type ConflictResolution = "use_local" | "use_server" | "launch_anyway" | "cancel";
 
 interface ConflictModalProps {
   conflicts: PendingConflict[];
@@ -65,7 +65,7 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
         console.error("[RomM] Failed to resolve conflict (download):", e);
       }
     }
-    // "skip" and "launch_anyway" leave the conflict unresolved
+    // "launch_anyway" leaves the conflict unresolved
     closeModal?.();
     onDone(resolution);
   };
@@ -145,12 +145,6 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
             Keep Both
           </DialogButton>
           */}
-          <DialogButton
-            onClick={() => handleChoice("skip")}
-            style={{ opacity: 0.7 }}
-          >
-            Skip
-          </DialogButton>
           <DialogButton
             onClick={() => handleChoice("launch_anyway")}
             style={{ opacity: 0.7 }}

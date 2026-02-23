@@ -8,7 +8,6 @@
 
 import { toaster } from "@decky/api";
 import {
-  preLaunchSync,
   postExitSync,
   recordSessionStart,
   recordSessionEnd,
@@ -17,7 +16,6 @@ import {
   getPendingConflicts,
 } from "../api/backend";
 import { updatePlaytimeDisplay } from "../patches/metadataPatches";
-import { showConflictResolutionModal } from "../components/ConflictModal";
 
 declare var Router: {
   MainRunningApp: { appid: number; display_name: string } | null;
@@ -74,42 +72,7 @@ async function handleGameStart(appId: number): Promise<void> {
   } catch (e) {
     console.error("[RomM] Failed to record session start:", e);
   }
-
-  // Pre-launch save sync (if enabled)
-  try {
-    const settings = await getSaveSyncSettings();
-    if (settings.save_sync_enabled && settings.sync_before_launch) {
-      const result = await preLaunchSync(romId);
-      if (result.success) {
-        if (result.synced && result.synced > 0) {
-          toaster.toast({ title: "RomM Save Sync", body: "Saves downloaded from RomM" });
-        }
-      } else {
-        console.warn("[RomM] Pre-launch sync issue:", result.message);
-        toaster.toast({ title: "RomM Save Sync", body: "Failed to sync saves \u2014 playing with local saves" });
-      }
-
-      // Check for pending conflicts (ask_me mode shows modal, others just toast)
-      try {
-        const conflictsResult = await getPendingConflicts();
-        if (conflictsResult.conflicts && conflictsResult.conflicts.length > 0) {
-          if (settings.conflict_mode === "ask_me") {
-            await showConflictResolutionModal(conflictsResult.conflicts);
-          } else {
-            toaster.toast({
-              title: "RomM Save Sync",
-              body: "Save conflict detected \u2014 resolve in Save Sync settings",
-            });
-          }
-        }
-      } catch {
-        // non-critical
-      }
-    }
-  } catch (e) {
-    console.error("[RomM] Pre-launch sync failed:", e);
-    toaster.toast({ title: "RomM Save Sync", body: "Failed to sync saves \u2014 playing with local saves" });
-  }
+  // Pre-launch sync moved to CustomPlayButton.handlePlay
 }
 
 async function handleGameStop(): Promise<void> {

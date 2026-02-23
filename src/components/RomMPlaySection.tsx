@@ -26,7 +26,6 @@ import {
   getRomBySteamAppId,
   getSaveSyncSettings,
   getSaveStatus,
-  getPendingConflicts,
   checkPlatformBios,
   getSgdbArtworkBase64,
   getRomMetadata,
@@ -36,7 +35,7 @@ import {
   saveShortcutIcon,
   debugLog,
 } from "../api/backend";
-import type { BiosStatus, SaveSyncSettings, SaveStatus, PendingConflict } from "../types";
+import type { BiosStatus, SaveSyncSettings, SaveStatus } from "../types";
 
 /** Track which appIds have had auto-artwork applied this session */
 const artworkApplied = new Set<number>();
@@ -177,8 +176,8 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         const romId: number = rom.rom_id;
         const platformSlug: string = rom.platform_slug;
 
-        // Fetch save sync settings, save status, conflicts, and BIOS in parallel
-        const [saveSyncSettings, saveStatus, conflictsResult, biosResult] = await Promise.all([
+        // Fetch save sync settings, save status, and BIOS in parallel
+        const [saveSyncSettings, saveStatus, biosResult] = await Promise.all([
           getSaveSyncSettings().catch((): SaveSyncSettings => ({
             save_sync_enabled: false,
             conflict_mode: "newest_wins",
@@ -187,7 +186,6 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
             clock_skew_tolerance_sec: 60,
           })),
           getSaveStatus(romId).catch((): SaveStatus | null => null),
-          getPendingConflicts().catch((): { conflicts: PendingConflict[] } => ({ conflicts: [] })),
           checkPlatformBios(platformSlug).catch((): BiosStatus => ({ needs_bios: false })),
         ]);
 
@@ -197,7 +195,8 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         let saveSyncStatus: "synced" | "conflict" | "none" | null = null;
         let saveSyncLabel = "";
         if (saveSyncSettings.save_sync_enabled) {
-          const hasConflict = conflictsResult.conflicts.some((c) => c.rom_id === romId);
+          // Use real-time conflict detection from get_save_status (calls _detect_conflict per file)
+          const hasConflict = saveStatus?.files?.some((f) => f.status === "conflict") ?? false;
           if (hasConflict) {
             saveSyncStatus = "conflict";
             saveSyncLabel = "Conflict";
@@ -265,7 +264,32 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     }
 
     loadInfo();
-    return () => { cancelled = true; };
+
+    // Listen for conflict resolution / save sync changes from sibling components
+    const onDataChanged = async (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.type !== "save_sync") return;
+      const romId = info.romId ?? detail.rom_id;
+      if (!romId) return;
+      const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
+      const hasConflict = saveStatus?.files?.some((f) => f.status === "conflict") ?? false;
+      let saveSyncStatus: "synced" | "conflict" | "none" = "none";
+      let saveSyncLabel = "";
+      if (hasConflict) {
+        saveSyncStatus = "conflict";
+        saveSyncLabel = "Conflict";
+      } else if (saveStatus && saveStatus.files.length > 0) {
+        saveSyncStatus = "synced";
+        saveSyncLabel = "Just now";
+      }
+      setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel }));
+    };
+    window.addEventListener("romm_data_changed", onDataChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("romm_data_changed", onDataChanged);
+    };
   }, [appId]);
 
   // Helper: create an info item with header and value (Steam's two-line pattern)
