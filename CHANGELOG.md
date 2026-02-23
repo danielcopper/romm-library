@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.4.0...decky-romm-sync-v0.5.0) (2026-02-23)
+
+
+### Features
+
+* pre-launch save sync with conflict detection and resolution UI ([#37](https://github.com/danielcopper/decky-romm-sync/issues/37)) ([516b8b1](https://github.com/danielcopper/decky-romm-sync/commit/516b8b15c3340a3b62c6524f4132714721be6a5c))
+
 ## [0.4.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.3.0...decky-romm-sync-v0.4.0) (2026-02-23)
 
 
