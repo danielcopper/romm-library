@@ -1135,20 +1135,25 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 #### Remaining work
 
 - [x] Auto-select play button on page entry (DOM-based focus with 400ms delay — confirmed working)
-- [ ] Conflict blocking state on CustomPlayButton (implemented — needs testing)
 - [x] RomMGameInfoPanel (metadata, BIOS detail, Save Sync detail — info-only, no buttons)
 - [x] Type `getRomBySteamAppId` return value properly (RomLookupResult)
 - [x] RomM gear icon menu (Refresh Artwork, Refresh Metadata, Sync Saves, Download BIOS, Uninstall)
 - [x] Steam gear icon menu (Properties via `SteamClient.Apps.OpenAppSettingsDialog` — `NavigateToAppProperties` was broken for shortcuts)
 - [x] Cross-component state refresh (romm_data_changed events from PlaySection → GameInfoPanel)
 - [x] Fix download_all_firmware slug mismatch (_platform_to_firmware_slugs)
-- [ ] Test Unifideck coexistence (4 scenarios above)
 - [x] Scrolling: solved via DialogButton sections (not Focusable — Focusable doesn't register with gamepad in this context). Each section uses `onFocus → scrollIntoView({ block: "center" })`. See `docs/scroll-and-hiding-research.md` Approach 8.
-- [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
 - [x] Save sync timestamp UX: separated "last sync check" (ROM-level, updated every sync run) from "last data transfer" (per-file). PlaySection shows last sync check. GameInfoPanel shows both per-file: "Synced: ..." and "Changed: ..."
+- [x] SGDB artwork restore: hero, logo, wide grid, icon. Auto-apply on first game detail visit. Cover image in GameInfoPanel.
+- [ ] Steam gear menu: research Collection/Favorites APIs for add/remove options
+- [ ] Conflict blocking state on CustomPlayButton (implemented — needs testing). Note: `newest_wins` mode auto-resolves conflicts without showing the UI. Must test with `ask_me` mode to see the blocking state.
+- [ ] Bug: gear icon buttons (RomM actions + Steam properties) not clickable with mouse. Gamepad activation (onActivate) untested. Code looks correct — no obvious overlap or pointer-events issue. Needs devtools DOM inspection.
+
+#### Future improvements (Phase 5.6+)
+
+- [ ] Test Unifideck coexistence (4 scenarios above)
+- [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
 - [ ] Delete save files: add per-game or bulk option in main plugin menu (NOT on game detail page). Save files should persist after ROM uninstall.
 - [ ] Delete BIOS files: add per-platform option in main plugin menu (NOT on game detail page)
-- [ ] Steam gear menu: research Collection/Favorites APIs for add/remove options
 - [ ] Investigate excessive re-renders on game detail page (see below)
 
 #### Game detail page re-render issue
