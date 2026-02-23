@@ -48,7 +48,7 @@ class SaveSyncMixin:
             "offline_queue": [],
             "settings": {
                 "save_sync_enabled": False,
-                "conflict_mode": "newest_wins",
+                "conflict_mode": "ask_me",
                 "sync_before_launch": True,
                 "sync_after_exit": True,
                 "clock_skew_tolerance_sec": 60,
@@ -475,12 +475,21 @@ class SaveSyncMixin:
                         file_state["last_sync_server_size"] = server_size
 
         if not local_changed and not server_changed:
-            return "skip"
-        if not local_changed and server_changed:
-            return "download"
-        if local_changed and not server_changed:
-            return "upload"
-        return "conflict"
+            result = "skip"
+        elif not local_changed and server_changed:
+            result = "download"
+        elif local_changed and not server_changed:
+            result = "upload"
+        else:
+            result = "conflict"
+
+        self._log_debug(
+            f"_detect_conflict({rom_id}, {filename}): "
+            f"local_hash={local_hash[:8] if local_hash else None}… "
+            f"baseline={last_sync_hash[:8] if last_sync_hash else None}… "
+            f"local_changed={local_changed} server_changed={server_changed} → {result}"
+        )
+        return result
 
     def _resolve_conflict_by_mode(self, local_mtime, server_save):
         """Apply configured conflict resolution mode.
@@ -488,7 +497,7 @@ class SaveSyncMixin:
         Returns: "upload", "download", or "ask".
         """
         settings = self._save_sync_state.get("settings", {})
-        mode = settings.get("conflict_mode", "newest_wins")
+        mode = settings.get("conflict_mode", "ask_me")
 
         if mode == "always_upload":
             return "upload"
@@ -857,6 +866,13 @@ class SaveSyncMixin:
         synced, errors = self._sync_rom_saves(rom_id, direction="download")
         self._save_save_sync_state()
 
+        # Return conflicts for this ROM so the frontend doesn't need a separate call
+        rom_id_int = int(rom_id)
+        conflicts = [
+            c for c in self._save_sync_state["pending_conflicts"]
+            if c.get("rom_id") == rom_id_int
+        ]
+
         msg = f"Downloaded {synced} save(s)"
         if errors:
             msg += f", {len(errors)} error(s)"
@@ -865,6 +881,7 @@ class SaveSyncMixin:
             "message": msg,
             "synced": synced,
             "errors": errors,
+            "conflicts": conflicts,
         }
 
     async def post_exit_sync(self, rom_id):
@@ -966,15 +983,12 @@ class SaveSyncMixin:
         if resolution not in ("upload", "download"):
             return {"success": False, "message": f"Invalid resolution: {resolution}"}
 
-        # Find and remove from pending
+        # Find the matching conflict (don't remove yet — wait for success)
         conflict = None
-        remaining = []
         for c in self._save_sync_state["pending_conflicts"]:
             if c.get("rom_id") == rom_id and c.get("filename") == filename:
                 conflict = c
-            else:
-                remaining.append(c)
-        self._save_sync_state["pending_conflicts"] = remaining
+                break
 
         if not conflict:
             return {"success": False, "message": "Conflict not found"}
@@ -1013,6 +1027,11 @@ class SaveSyncMixin:
                     system, server_save
                 )
 
+            # Remove from pending only after successful resolution
+            self._save_sync_state["pending_conflicts"] = [
+                c for c in self._save_sync_state["pending_conflicts"]
+                if not (c.get("rom_id") == rom_id and c.get("filename") == filename)
+            ]
             self._save_save_sync_state()
             return {"success": True, "message": f"Conflict resolved: {resolution}"}
         except Exception as e:
@@ -1081,7 +1100,7 @@ class SaveSyncMixin:
         """Return current save sync settings."""
         return self._save_sync_state.get("settings", {
             "save_sync_enabled": False,
-            "conflict_mode": "newest_wins",
+            "conflict_mode": "ask_me",
             "sync_before_launch": True,
             "sync_after_exit": True,
             "clock_skew_tolerance_sec": 60,

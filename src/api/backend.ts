@@ -45,7 +45,7 @@ export const saveShortcutIcon = callable<[number, string], { success: boolean }>
 // Save sync callables
 export const ensureDeviceRegistered = callable<[], { success: boolean; device_id: string; device_name: string }>("ensure_device_registered");
 export const getSaveStatus = callable<[number], SaveStatus>("get_save_status");
-export const preLaunchSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[] }>("pre_launch_sync");
+export const preLaunchSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: PendingConflict[] }>("pre_launch_sync");
 export const postExitSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[] }>("post_exit_sync");
 export const syncRomSaves = callable<[number], { success: boolean; message: string; synced: number; errors?: string[] }>("sync_rom_saves");
 export const syncAllSaves = callable<[], { success: boolean; message: string; synced: number; conflicts: number }>("sync_all_saves");

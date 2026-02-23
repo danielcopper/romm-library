@@ -26,10 +26,10 @@ interface SaveSyncSettingsProps {
 }
 
 const conflictModeOptions = [
-  { data: "newest_wins" as ConflictMode, label: "Newest Wins (Default)" },
+  { data: "ask_me" as ConflictMode, label: "Ask Me (Default)" },
+  { data: "newest_wins" as ConflictMode, label: "Newest Wins" },
   { data: "always_upload" as ConflictMode, label: "Always Upload" },
   { data: "always_download" as ConflictMode, label: "Always Download" },
-  { data: "ask_me" as ConflictMode, label: "Ask Me" },
 ];
 
 export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
@@ -152,12 +152,19 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
 
   const handleToggleEnable = (value: boolean) => {
     if (value) {
-      // Two-step confirmation before enabling
       showModal(
         <ConfirmModal
           strTitle="Enable Save Sync?"
-          strDescription="This will sync RetroArch save files between this device and your RomM server. Make sure you are NOT using a shared RomM account (e.g. admin, romm, guest) — save sync is per-user."
-          strOKButtonText="Enable"
+          strDescription={
+            "This will sync RetroArch save files (.srm) between this device and your RomM server.\n\n" +
+            "Before enabling, please back up your local save files. " +
+            "They are stored in your RetroArch/RetroDECK saves directory.\n\n" +
+            "Also make sure you are not using this on a shared RomM account " +
+            "(e.g. admin, romm, guest) - unless you know what you are doing. " +
+            "Save sync is intended for single user accounts.\n\n" +
+            "Are you sure you want to proceed?"
+          }
+          strOKButtonText="I am sure"
           strCancelButtonText="Cancel"
           onOK={() => handleSettingChange({ save_sync_enabled: true })}
         />,
