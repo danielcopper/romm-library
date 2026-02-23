@@ -232,7 +232,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       noFocusRing: false,
       onFocus: (e: FocusEvent) => {
         debugLog(`GameInfoPanel section "${key}" focused`);
-        (e.currentTarget as HTMLElement)?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+        (e.currentTarget as HTMLElement)?.scrollIntoView?.({ behavior: "smooth", block: "center" });
       },
     },
       title ? createElement("div", { className: "romm-panel-section-title" }, title) : null,
