@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.3.0...decky-romm-sync-v0.4.0) (2026-02-23)
+
+
+### Features
+
+* Phase 5.6 — Restyle game detail page ([#35](https://github.com/danielcopper/decky-romm-sync/issues/35)) ([66e08e8](https://github.com/danielcopper/decky-romm-sync/commit/66e08e8b33d4d88f1b195e94307d13f1b57dcab5))
+
 ## [0.3.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.2.1...decky-romm-sync-v0.3.0) (2026-02-21)
 
 
