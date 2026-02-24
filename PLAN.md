@@ -1154,8 +1154,9 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 #### Future improvements (Phase 5.6+)
 
 - [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
-- [ ] Delete save files: add per-game or bulk option in main plugin menu (NOT on game detail page). Save files should persist after ROM uninstall.
-- [ ] Delete BIOS files: add per-platform option in main plugin menu (NOT on game detail page)
+- [x] Delete save files: per-game via RomM gear icon (ConfirmModal), per-platform in DangerZone. Post-delete events refresh PlaySection + GameInfoPanel live.
+- [x] Delete BIOS files: per-platform in DangerZone with confirmation.
+- [x] Live update fixes: post-exit sync, DangerZone, and Sync All Saves now dispatch `romm_data_changed` events. Fixed stale closure (romIdRef) and server-only file status logic in PlaySection listener.
 - [ ] Investigate excessive re-renders on game detail page (see below)
 
 #### Game detail page re-render issue
