@@ -6,6 +6,8 @@
  * when Steam Cloud syncs collections: "RomM: Platform (hostname)"
  */
 
+import { logInfo, logWarn, logError } from "../api/backend";
+
 let _hostname = "";
 
 async function getHostname(): Promise<string> {
@@ -41,12 +43,12 @@ export async function createOrUpdateCollections(
 ): Promise<void> {
   try {
     if (typeof collectionStore === "undefined") {
-      console.warn("[RomM] collectionStore not available, skipping collections");
+      logWarn("collectionStore not available, skipping collections");
       return;
     }
 
     const hostname = await getHostname();
-    console.log("[RomM] Creating/updating collections for platforms:", Object.keys(platformAppIds), `(hostname: ${hostname})`);
+    logInfo(`Creating/updating collections for platforms: ${Object.keys(platformAppIds).join(", ")} (hostname: ${hostname})`);
 
     const entries = Object.entries(platformAppIds);
     let idx = 0;
@@ -62,7 +64,7 @@ export async function createOrUpdateCollections(
         );
 
         if (existing) {
-          console.log(`[RomM] Updating collection "${collectionName}" with ${appIds.length} apps`);
+          logInfo(`Updating collection "${collectionName}" with ${appIds.length} apps`);
           const existingApps = existing.allApps;
           if (existingApps.length > 0) {
             existing.AsDragDropCollection().RemoveApps(existingApps);
@@ -70,25 +72,25 @@ export async function createOrUpdateCollections(
           existing.AsDragDropCollection().AddApps(overviews);
           await existing.Save();
         } else {
-          console.log(`[RomM] Creating collection "${collectionName}" with ${appIds.length} apps`);
+          logInfo(`Creating collection "${collectionName}" with ${appIds.length} apps`);
           const collection = collectionStore.NewUnsavedCollection(collectionName, undefined, []);
           collection.AsDragDropCollection().AddApps(overviews);
           await collection.Save();
         }
-        console.log(`[RomM] Successfully saved collection "${collectionName}"`);
+        logInfo(`Successfully saved collection "${collectionName}"`);
       } catch (colErr) {
-        console.error(`[RomM] Failed to save collection "${collectionName}":`, colErr);
+        logError(`Failed to save collection "${collectionName}": ${colErr}`);
       }
     }
   } catch (e) {
-    console.error("[RomM] Failed to update collections:", e);
+    logError(`Failed to update collections: ${e}`);
   }
 }
 
 export async function clearPlatformCollection(platformName: string): Promise<void> {
   try {
     if (typeof collectionStore === "undefined") {
-      console.warn("[RomM] collectionStore not available, cannot clear platform collection");
+      logWarn("collectionStore not available, cannot clear platform collection");
       return;
     }
     const hostname = await getHostname();
@@ -100,7 +102,7 @@ export async function clearPlatformCollection(platformName: string): Promise<voi
       (c) => c.displayName === scopedName
     );
     if (scoped) {
-      console.log(`[RomM] Deleting collection "${scopedName}" (id=${scoped.id})`);
+      logInfo(`Deleting collection "${scopedName}" (id=${scoped.id})`);
       await scoped.Delete();
     }
 
@@ -109,22 +111,22 @@ export async function clearPlatformCollection(platformName: string): Promise<voi
       (c) => c.displayName === legacyName
     );
     if (legacy) {
-      console.log(`[RomM] Deleting legacy collection "${legacyName}" (id=${legacy.id})`);
+      logInfo(`Deleting legacy collection "${legacyName}" (id=${legacy.id})`);
       await legacy.Delete();
     }
 
     if (!scoped && !legacy) {
-      console.log(`[RomM] Collection "${scopedName}" not found, nothing to clear`);
+      logInfo(`Collection "${scopedName}" not found, nothing to clear`);
     }
   } catch (e) {
-    console.error("[RomM] Failed to clear platform collection:", e);
+    logError(`Failed to clear platform collection: ${e}`);
   }
 }
 
 export async function clearAllRomMCollections(): Promise<void> {
   try {
     if (typeof collectionStore === "undefined") {
-      console.warn("[RomM] collectionStore not available, cannot clear collections");
+      logWarn("collectionStore not available, cannot clear collections");
       return;
     }
     const hostname = await getHostname();
@@ -142,12 +144,12 @@ export async function clearAllRomMCollections(): Promise<void> {
       return false;
     });
 
-    console.log(`[RomM] Deleting ${rommCollections.length} RomM collections (hostname: ${hostname})`);
+    logInfo(`Deleting ${rommCollections.length} RomM collections (hostname: ${hostname})`);
     for (const c of rommCollections) {
-      console.log(`[RomM] Deleting collection "${c.displayName}" (id=${c.id})`);
+      logInfo(`Deleting collection "${c.displayName}" (id=${c.id})`);
       await c.Delete();
     }
   } catch (e) {
-    console.error("[RomM] Failed to clear collections:", e);
+    logError(`Failed to clear collections: ${e}`);
   }
 }

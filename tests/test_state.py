@@ -53,103 +53,181 @@ class TestSettings:
         assert plugin.settings["romm_pass"] == "newpass"
 
 
-class TestDebugLogging:
+class TestLogLevel:
     def test_log_debug_enabled(self, plugin):
-        """_log_debug logs when debug_logging is True."""
+        """_log_debug logs when log_level is 'debug'."""
         from unittest.mock import patch
         import decky
-        plugin.settings["debug_logging"] = True
+        plugin.settings["log_level"] = "debug"
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
             mock_info.assert_called_once_with("test message")
 
-    def test_log_debug_disabled(self, plugin):
-        """_log_debug does not log when debug_logging is False."""
+    def test_log_debug_disabled_at_warn(self, plugin):
+        """_log_debug does not log when log_level is 'warn' (default)."""
         from unittest.mock import patch
         import decky
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
             mock_info.assert_not_called()
 
-    def test_log_debug_missing_setting(self, plugin):
-        """_log_debug does not log when debug_logging key is missing."""
+    def test_log_debug_disabled_at_info(self, plugin):
+        """_log_debug does not log when log_level is 'info'."""
         from unittest.mock import patch
         import decky
-        plugin.settings.pop("debug_logging", None)
+        plugin.settings["log_level"] = "info"
+        with patch.object(decky.logger, "info") as mock_info:
+            plugin._log_debug("test message")
+            mock_info.assert_not_called()
+
+    def test_log_debug_disabled_at_error(self, plugin):
+        """_log_debug does not log when log_level is 'error'."""
+        from unittest.mock import patch
+        import decky
+        plugin.settings["log_level"] = "error"
+        with patch.object(decky.logger, "info") as mock_info:
+            plugin._log_debug("test message")
+            mock_info.assert_not_called()
+
+    def test_log_debug_missing_setting_defaults_warn(self, plugin):
+        """_log_debug does not log when log_level key is missing (defaults to warn)."""
+        from unittest.mock import patch
+        import decky
+        plugin.settings.pop("log_level", None)
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
             mock_info.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_save_debug_logging_enables(self, plugin, tmp_path):
+    async def test_save_log_level_valid(self, plugin, tmp_path):
         import decky
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
-        result = await plugin.save_debug_logging(True)
-        assert result["success"] is True
-        assert plugin.settings["debug_logging"] is True
+        for level in ("debug", "info", "warn", "error"):
+            result = await plugin.save_log_level(level)
+            assert result["success"] is True
+            assert plugin.settings["log_level"] == level
 
     @pytest.mark.asyncio
-    async def test_save_debug_logging_disables(self, plugin, tmp_path):
+    async def test_save_log_level_invalid(self, plugin, tmp_path):
         import decky
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
-        plugin.settings["debug_logging"] = True
-        result = await plugin.save_debug_logging(False)
-        assert result["success"] is True
-        assert plugin.settings["debug_logging"] is False
+        plugin.settings["log_level"] = "warn"
+        result = await plugin.save_log_level("verbose")
+        assert result["success"] is False
+        assert plugin.settings["log_level"] == "warn"  # unchanged
 
     @pytest.mark.asyncio
-    async def test_save_debug_logging_coerces_to_bool(self, plugin, tmp_path):
-        import decky
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
-        await plugin.save_debug_logging(1)
-        assert plugin.settings["debug_logging"] is True
-        await plugin.save_debug_logging(0)
-        assert plugin.settings["debug_logging"] is False
-
-    @pytest.mark.asyncio
-    async def test_get_settings_includes_debug_logging(self, plugin):
-        plugin.settings["debug_logging"] = True
+    async def test_get_settings_includes_log_level(self, plugin):
+        plugin.settings["log_level"] = "info"
         result = await plugin.get_settings()
-        assert result["debug_logging"] is True
+        assert result["log_level"] == "info"
 
     @pytest.mark.asyncio
-    async def test_get_settings_defaults_debug_logging_false(self, plugin):
-        plugin.settings.pop("debug_logging", None)
+    async def test_get_settings_defaults_log_level_warn(self, plugin):
+        plugin.settings.pop("log_level", None)
         result = await plugin.get_settings()
-        assert result["debug_logging"] is False
+        assert result["log_level"] == "warn"
+
+    @pytest.mark.asyncio
+    async def test_frontend_log_respects_level(self, plugin):
+        """frontend_log only logs when message level >= configured level."""
+        from unittest.mock import patch
+        import decky
+
+        plugin.settings["log_level"] = "warn"
+        with patch.object(decky.logger, "info") as mock_info, \
+             patch.object(decky.logger, "warning") as mock_warning, \
+             patch.object(decky.logger, "error") as mock_error:
+            await plugin.frontend_log("debug", "debug msg")
+            await plugin.frontend_log("info", "info msg")
+            await plugin.frontend_log("warn", "warn msg")
+            await plugin.frontend_log("error", "error msg")
+            mock_info.assert_not_called()
+            mock_warning.assert_called_once_with("[FE] warn msg")
+            mock_error.assert_called_once_with("[FE] error msg")
+
+    @pytest.mark.asyncio
+    async def test_frontend_log_debug_level_logs_all(self, plugin):
+        """With log_level=debug, all levels are logged."""
+        from unittest.mock import patch
+        import decky
+
+        plugin.settings["log_level"] = "debug"
+        with patch.object(decky.logger, "info") as mock_info, \
+             patch.object(decky.logger, "warning") as mock_warning, \
+             patch.object(decky.logger, "error") as mock_error:
+            await plugin.frontend_log("debug", "d")
+            await plugin.frontend_log("info", "i")
+            await plugin.frontend_log("warn", "w")
+            await plugin.frontend_log("error", "e")
+            assert mock_info.call_count == 2  # debug + info both use logger.info
+            mock_warning.assert_called_once_with("[FE] w")
+            mock_error.assert_called_once_with("[FE] e")
+
+    @pytest.mark.asyncio
+    async def test_debug_log_backward_compat(self, plugin):
+        """debug_log callable delegates to frontend_log('debug', ...)."""
+        from unittest.mock import patch
+        import decky
+
+        plugin.settings["log_level"] = "debug"
+        with patch.object(decky.logger, "info") as mock_info:
+            await plugin.debug_log("test backward compat")
+            mock_info.assert_called_once_with("[FE] test backward compat")
+
+    def test_migration_debug_logging_true(self, plugin, tmp_path):
+        """Old debug_logging=True migrates to log_level='debug'."""
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        # Write old-format settings
+        settings_path = os.path.join(str(tmp_path), "settings.json")
+        os.makedirs(str(tmp_path), exist_ok=True)
+        with open(settings_path, "w") as f:
+            json.dump({"debug_logging": True, "romm_url": ""}, f)
+        plugin._load_settings()
+        assert "debug_logging" not in plugin.settings
+        assert plugin.settings["log_level"] == "debug"
+
+    def test_migration_debug_logging_false(self, plugin, tmp_path):
+        """Old debug_logging=False migrates to log_level='warn' (default)."""
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        settings_path = os.path.join(str(tmp_path), "settings.json")
+        os.makedirs(str(tmp_path), exist_ok=True)
+        with open(settings_path, "w") as f:
+            json.dump({"debug_logging": False, "romm_url": ""}, f)
+        plugin._load_settings()
+        assert "debug_logging" not in plugin.settings
+        assert plugin.settings["log_level"] == "warn"
 
     @pytest.mark.asyncio
     async def test_sgdb_artwork_silent_when_debug_off(self, plugin, tmp_path):
-        """SGDB artwork info calls should not log when debug_logging is False."""
+        """SGDB artwork info calls should not log when log_level is 'warn'."""
         from unittest.mock import patch
         import decky
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
         with patch.object(decky.logger, "info") as mock_info:
-            # Call with an invalid asset_type_num to trigger early return after the debug log
             result = await plugin.get_sgdb_artwork_base64(1, 99)
             assert result["base64"] is None
-            # The SGDB artwork request log should NOT have been called since debug is off
             for call in mock_info.call_args_list:
                 assert "SGDB artwork" not in str(call)
 
     @pytest.mark.asyncio
     async def test_sgdb_artwork_logs_when_debug_enabled(self, plugin, tmp_path):
-        """SGDB artwork info calls should log when debug_logging is True."""
+        """SGDB artwork info calls should log when log_level is 'debug'."""
         from unittest.mock import patch
         import decky
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin.settings["debug_logging"] = True
-        # asset_type 1 = hero, no API key -> will log "skipped: no API key"
+        plugin.settings["log_level"] = "debug"
         plugin.settings["steamgriddb_api_key"] = ""
         plugin._state["shortcut_registry"]["1"] = {"sgdb_id": None, "igdb_id": None}
         with patch.object(decky.logger, "info") as mock_info:
             result = await plugin.get_sgdb_artwork_base64(1, 1)
             assert result["no_api_key"] is True
-            # Should have logged debug messages
             logged_msgs = [str(c) for c in mock_info.call_args_list]
             assert any("SGDB artwork" in m for m in logged_msgs)
 

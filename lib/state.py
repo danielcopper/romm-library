@@ -30,12 +30,17 @@ class StateMixin:
         self.settings.setdefault("enabled_platforms", {})
         self.settings.setdefault("steam_input_mode", "default")
         self.settings.setdefault("steamgriddb_api_key", "")
-        self.settings.setdefault("debug_logging", False)
         # Migrate old boolean setting
         if "disable_steam_input" in self.settings:
             if self.settings.pop("disable_steam_input"):
                 self.settings["steam_input_mode"] = "force_off"
             self._save_settings_to_disk()
+        # Migrate old boolean debug_logging to log_level
+        if "debug_logging" in self.settings:
+            if self.settings.pop("debug_logging"):
+                self.settings.setdefault("log_level", "debug")
+            self._save_settings_to_disk()
+        self.settings.setdefault("log_level", "warn")
 
     def _save_settings_to_disk(self):
         settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
@@ -44,9 +49,12 @@ class StateMixin:
         with open(settings_path, "w") as f:
             json.dump(self.settings, f, indent=2)
 
+    LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+
     def _log_debug(self, msg):
-        """Log a message only when debug_logging is enabled in settings."""
-        if self.settings.get("debug_logging", False):
+        """Log a message only when log_level allows debug messages."""
+        configured = self.settings.get("log_level", "warn")
+        if self.LOG_LEVELS.get("debug", 0) >= self.LOG_LEVELS.get(configured, 2):
             decky.logger.info(msg)
 
     def _load_state(self):

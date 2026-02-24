@@ -1,4 +1,5 @@
 import type { RomMetadata } from "../types";
+import { debugLog, logInfo } from "../api/backend";
 
 // Module-level state
 let metadataCache: Record<string, RomMetadata> = {};
@@ -124,7 +125,7 @@ export function registerMetadataPatches(
     if (meta) applyDirectMutations(appId, meta);
   }
 
-  console.log(`[RomM] Applied metadata mutations for ${registeredAppIds.size} apps`);
+  logInfo(`Applied metadata mutations for ${registeredAppIds.size} apps`);
 }
 
 /**
@@ -134,36 +135,42 @@ export function unregisterMetadataPatches() {
   metadataCache = {};
   appIdToRomId = {};
   registeredAppIds = new Set();
-  console.log("[RomM] Cleared metadata state");
+  logInfo("Cleared metadata state");
 }
 
 /**
  * Write tracked playtime to Steam's native UI fields.
  * Sets minutes_playtime_forever and rt_last_time_played so Steam shows
  * actual play time instead of "Never Played" for RomM shortcuts.
+ * Returns true if the write succeeded, false if the overview wasn't available.
  */
-export function updatePlaytimeDisplay(appId: number, totalSeconds: number) {
+export function updatePlaytimeDisplay(appId: number, totalSeconds: number): boolean {
   const overview = appStore.GetAppOverviewByAppID(appId);
-  if (!overview) return;
+  if (!overview) {
+    debugLog(`updatePlaytimeDisplay: appId=${appId} overview=null, skipping`);
+    return false;
+  }
 
   const totalMinutes = Math.floor(totalSeconds / 60);
-  if (totalMinutes <= 0) return;
+  if (totalMinutes <= 0) return true; // Nothing to write, but not a failure
 
+  const prevMinutes = overview.minutes_playtime_forever;
+  const prevLastPlayed = overview.rt_last_time_played;
   stateTransaction(() => {
     overview.minutes_playtime_forever = totalMinutes;
-    // Set rt_last_time_played to now (Unix epoch seconds) so Steam
-    // shows "Last played: today" instead of "Never Played"
-    if (!overview.rt_last_time_played) {
-      overview.rt_last_time_played = Math.floor(Date.now() / 1000);
-    }
+    overview.rt_last_time_played = Math.floor(Date.now() / 1000);
   });
+  debugLog(`updatePlaytimeDisplay: appId=${appId} wrote ${totalMinutes}min (was ${prevMinutes}), rt_last_time_played was ${prevLastPlayed}`);
+  return true;
 }
 
 /**
  * Apply playtime data for all known apps from the bulk playtime map.
+ * Retries apps whose appStore overview isn't available yet (Steam may
+ * still be loading shortcuts into its MobX store at plugin init).
  * Called at plugin load and after sync_complete.
  */
-export function applyAllPlaytime(
+export async function applyAllPlaytime(
   playtimeMap: Record<string, { total_seconds: number }>,
   appIdMap: Record<string, number>,
 ) {
@@ -173,11 +180,41 @@ export function applyAllPlaytime(
     romIdToAppId[String(romId)] = Number(appIdStr);
   }
 
+  // Build list of {appId, totalSeconds} to apply
+  let pending: { appId: number; totalSeconds: number }[] = [];
   for (const [romIdStr, entry] of Object.entries(playtimeMap)) {
     const appId = romIdToAppId[romIdStr];
     if (appId && entry.total_seconds > 0) {
-      updatePlaytimeDisplay(appId, entry.total_seconds);
+      pending.push({ appId, totalSeconds: entry.total_seconds });
     }
+  }
+
+  debugLog(`applyAllPlaytime: ${Object.keys(playtimeMap).length} entries in playtimeMap, ${pending.length} with appId and >0 seconds`);
+
+  if (pending.length === 0) return;
+
+  // Try up to 4 times with increasing delays (0ms, 1s, 3s, 5s)
+  const delays = [0, 1000, 3000, 5000];
+  for (let attempt = 0; attempt < delays.length && pending.length > 0; attempt++) {
+    if (delays[attempt] > 0) {
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+
+    const failed: typeof pending = [];
+    for (const item of pending) {
+      if (!updatePlaytimeDisplay(item.appId, item.totalSeconds)) {
+        failed.push(item);
+      }
+    }
+    pending = failed;
+
+    if (pending.length > 0 && attempt < delays.length - 1) {
+      debugLog(`applyAllPlaytime: attempt ${attempt + 1}, ${pending.length} apps not in appStore yet, retrying in ${delays[attempt + 1]}ms...`);
+    }
+  }
+
+  if (pending.length > 0) {
+    debugLog(`applyAllPlaytime: ${pending.length} apps still unavailable in appStore after all retries`);
   }
 }
 

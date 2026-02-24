@@ -169,6 +169,25 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       const detail = (e as CustomEvent).detail;
       if (!romIdRef.current) return;
 
+      if (detail?.type === "save_sync_settings") {
+        const enabled = detail.save_sync_enabled as boolean;
+        if (enabled) {
+          const [updatedStatus, updatedConflicts] = await Promise.all([
+            getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null),
+            getPendingConflicts().catch((): { conflicts: PendingConflict[] } => ({ conflicts: [] })),
+          ]);
+          setState((prev) => ({
+            ...prev,
+            saveSyncEnabled: true,
+            saveStatus: updatedStatus,
+            conflicts: updatedConflicts.conflicts.filter((c) => c.rom_id === romIdRef.current),
+          }));
+        } else {
+          setState((prev) => ({ ...prev, saveSyncEnabled: false }));
+        }
+        return;
+      }
+
       if (detail?.type === "save_sync" && (!detail.rom_id || detail.rom_id === romIdRef.current)) {
         const [updatedStatus, updatedConflicts] = await Promise.all([
           getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null),

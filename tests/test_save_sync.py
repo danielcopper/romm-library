@@ -19,7 +19,7 @@ def plugin(tmp_path):
         "romm_user": "user",
         "romm_pass": "pass",
         "enabled_platforms": {},
-        "debug_logging": False,
+        "log_level": "warn",
     }
     p._sync_running = False
     p._sync_cancel = False

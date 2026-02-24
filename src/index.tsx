@@ -19,7 +19,7 @@ import { updateDownload } from "./utils/downloadStore";
 import { registerGameDetailPatch, unregisterGameDetailPatch, registerRomMAppId } from "./patches/gameDetailPatch";
 import { registerMetadataPatches, unregisterMetadataPatches, applyAllPlaytime } from "./patches/metadataPatches";
 import { registerLaunchInterceptor, unregisterLaunchInterceptor } from "./utils/launchInterceptor";
-import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveSyncSettings, getAllPlaytime } from "./api/backend";
+import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveSyncSettings, getAllPlaytime, logError, logInfo } from "./api/backend";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
@@ -76,10 +76,10 @@ export default definePlugin(() => {
         const { playtime } = await getAllPlaytime();
         applyAllPlaytime(playtime, appIdMap);
       } catch (e) {
-        console.error("[RomM] Failed to apply playtime:", e);
+        logError(`Failed to apply playtime: ${e}`);
       }
     } catch (e) {
-      console.error("[RomM] Failed to load metadata cache:", e);
+      logError(`Failed to load metadata cache: ${e}`);
     }
   })();
 
@@ -93,7 +93,7 @@ export default definePlugin(() => {
       // Always init session manager — it handles playtime tracking too
       await initSessionManager();
     } catch (e) {
-      console.error("[RomM] Failed to init save sync:", e);
+      logError(`Failed to init save sync: ${e}`);
     }
   })();
 
@@ -101,7 +101,7 @@ export default definePlugin(() => {
     platform_app_ids: Record<string, number[]>;
     total_games: number;
   }) => {
-    console.log("[RomM] sync_complete received:", data.total_games, "games");
+    logInfo(`sync_complete received: ${data.total_games} games`);
     toaster.toast({
       title: "RomM Sync",
       body: `Sync complete! ${data.total_games} games added.`,
@@ -123,7 +123,7 @@ export default definePlugin(() => {
         ]);
         applyAllPlaytime(playtime, appIdMap);
       } catch (e) {
-        console.error("[RomM] Failed to re-apply playtime after sync:", e);
+        logError(`Failed to re-apply playtime after sync: ${e}`);
       }
     })();
   };

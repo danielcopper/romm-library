@@ -16,6 +16,9 @@ import {
   uninstallAllRoms,
   deletePlatformSaves,
   deletePlatformBios,
+  logInfo,
+  logWarn,
+  logError,
 } from "../api/backend";
 import { removeShortcut } from "../utils/steamShortcuts";
 import { clearPlatformCollection, clearAllRomMCollections } from "../utils/collections";
@@ -59,17 +62,17 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
     const apps: { appId: number; name: string }[] = [];
     try {
       if (typeof collectionStore === "undefined") {
-        console.warn("[RomM] collectionStore not available");
+        logWarn("collectionStore not available");
         setNonSteamApps([]);
         return;
       }
       const deckApps = collectionStore.deckDesktopApps?.apps;
       if (!deckApps) {
-        console.warn("[RomM] deckDesktopApps.apps not available");
+        logWarn("deckDesktopApps.apps not available");
         setNonSteamApps([]);
         return;
       }
-      console.log("[RomM] deckDesktopApps.apps size:", deckApps.size);
+      logInfo(`deckDesktopApps.apps size: ${deckApps.size}`);
       let appIds = Array.from(deckApps.keys());
       const autoWhitelist = new Set<number>();
       for (const appId of appIds) {
@@ -94,7 +97,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
         });
       }
     } catch (e) {
-      console.error("[RomM] Failed to enumerate non-steam games:", e);
+      logError(`Failed to enumerate non-steam games: ${e}`);
     }
     apps.sort((a, b) => a.name.localeCompare(b.name));
     setNonSteamApps(apps);

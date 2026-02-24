@@ -1,4 +1,5 @@
 import type { SyncAddItem } from "../types";
+import { logError } from "../api/backend";
 
 const ROMM_MARKER = "romm:";
 
@@ -75,7 +76,7 @@ export async function addShortcut(data: SyncAddItem): Promise<number | null> {
 
     return appId;
   } catch (e) {
-    console.error(`[RomM] Failed to add shortcut for ${data.name}:`, e);
+    logError(`Failed to add shortcut for ${data.name}: ${e}`);
     return null;
   }
 }
@@ -87,6 +88,6 @@ export function removeShortcut(appId: number): void {
   try {
     SteamClient.Apps.RemoveShortcut(appId);
   } catch (e) {
-    console.error(`[RomM] Failed to remove shortcut ${appId}:`, e);
+    logError(`Failed to remove shortcut ${appId}: ${e}`);
   }
 }

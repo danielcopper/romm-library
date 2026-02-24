@@ -93,12 +93,25 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             decky.logger.error(f"Failed to save settings: {e}")
             return {"success": False, "message": f"Save failed: {e}"}
 
-    async def debug_log(self, message):
-        if self.settings.get("debug_logging"):
-            decky.logger.info(f"[FE] {message}")
+    async def frontend_log(self, level, message):
+        """Log a frontend message. Respects log_level setting."""
+        configured = self.settings.get("log_level", "warn")
+        if self.LOG_LEVELS.get(level, 0) >= self.LOG_LEVELS.get(configured, 2):
+            if level == "error":
+                decky.logger.error(f"[FE] {message}")
+            elif level == "warn":
+                decky.logger.warning(f"[FE] {message}")
+            else:
+                decky.logger.info(f"[FE] {message}")
 
-    async def save_debug_logging(self, enabled):
-        self.settings["debug_logging"] = bool(enabled)
+    async def debug_log(self, message):
+        """Backward-compat wrapper: logs at debug level."""
+        await self.frontend_log("debug", message)
+
+    async def save_log_level(self, level):
+        if level not in ("debug", "info", "warn", "error"):
+            return {"success": False, "message": "Invalid log level"}
+        self.settings["log_level"] = level
         self._save_settings_to_disk()
         return {"success": True}
 
@@ -121,5 +134,5 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "steam_input_mode": self.settings.get("steam_input_mode", "default"),
             "sgdb_api_key_masked": "••••" if self.settings.get("steamgriddb_api_key") else "",
             "retroarch_input_check": self._check_retroarch_input_driver(),
-            "debug_logging": self.settings.get("debug_logging", False),
+            "log_level": self.settings.get("log_level", "warn"),
         }
