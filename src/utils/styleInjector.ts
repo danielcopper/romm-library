@@ -294,24 +294,26 @@ export function hideNativePlaySection(playSectionClass: string) {
     gearStyle.id = ROMM_GEAR_BUTTONS_ID;
     gearStyle.textContent = `
 .romm-gear-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.06);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  border-radius: 4px !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  background: rgba(255,255,255,0.06) !important;
   cursor: pointer;
   transition: background 0.15s ease, filter 0.15s ease;
-  padding: 0;
+  padding: 0 !important;
   flex-shrink: 0;
+  line-height: normal !important;
 }
-.romm-gear-btn:hover, .romm-gear-btn.gpfocus {
+.romm-gear-btn:hover {
   background: rgba(255,255,255,0.14);
   filter: brightness(1.2);
 }
-.romm-gear-focused .romm-gear-btn {
+.romm-gear-btn.gpfocus, .romm-gear-btn:focus-visible {
   background: rgba(255,255,255,0.14);
   filter: brightness(1.2);
   outline: 2px solid #1a9fff;

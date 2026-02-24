@@ -14,6 +14,7 @@ import { useState, useEffect, FC, createElement } from "react";
 import { toaster } from "@decky/api";
 import {
   basicAppDetailsSectionStylerClasses,
+  DialogButton,
   Focusable,
   Menu,
   MenuItem,
@@ -524,32 +525,20 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       },
     },
       // RomM actions button
-      createElement(Focusable, {
-        style: { display: "flex" },
-        focusWithinClassName: "romm-gear-focused",
-        onActivate: showRomMMenu,
+      createElement(DialogButton, {
+        className: "romm-gear-btn",
+        onClick: showRomMMenu,
+        title: "RomM Actions",
       } as any,
-        createElement("button", {
-          className: "romm-gear-btn",
-          onClick: showRomMMenu,
-          title: "RomM Actions",
-        },
-          createElement(FaGamepad, { size: 18, color: "#553e98" }),
-        ),
+        createElement(FaGamepad, { size: 18, color: "#553e98" }),
       ),
       // Steam properties button
-      createElement(Focusable, {
-        style: { display: "flex" },
-        focusWithinClassName: "romm-gear-focused",
-        onActivate: showSteamMenu,
+      createElement(DialogButton, {
+        className: "romm-gear-btn",
+        onClick: showSteamMenu,
+        title: "Steam Properties",
       } as any,
-        createElement("button", {
-          className: "romm-gear-btn",
-          onClick: showSteamMenu,
-          title: "Steam Properties",
-        },
-          createElement(FaCog, { size: 18, color: "#8f98a0" }),
-        ),
+        createElement(FaCog, { size: 18, color: "#8f98a0" }),
       ),
     ),
   );
