@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.5.0...decky-romm-sync-v0.6.0) (2026-02-24)
+
+
+### Features
+
+* delete local save files and BIOS files ([#41](https://github.com/danielcopper/decky-romm-sync/issues/41)) ([d460600](https://github.com/danielcopper/decky-romm-sync/commit/d460600eb37166f9b9b23743a59073318706358e))
+
+
+### Bug Fixes
+
+* gear icon buttons mouse/touch clicks and Properties dialog ([#39](https://github.com/danielcopper/decky-romm-sync/issues/39)) ([55f45ed](https://github.com/danielcopper/decky-romm-sync/commit/55f45ed549c55daf4dc1456eac078419b693f67d))
+
 ## [0.5.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.4.0...decky-romm-sync-v0.5.0) (2026-02-23)
 
 
