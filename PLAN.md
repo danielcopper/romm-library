@@ -650,10 +650,10 @@ Separate file from `state.json` to avoid bloating the main state. Structure:
     }
   ],
   "settings": {
-    "conflict_mode": "newest_wins",
+    "conflict_mode": "ask_me",
     "sync_before_launch": true,
     "sync_after_exit": true,
-    "clock_skew_tolerance_sec": 5
+    "clock_skew_tolerance_sec": 60
   }
 }
 ```
@@ -679,7 +679,11 @@ Separate file from `state.json` to avoid bloating the main state. Structure:
 
 The offline queue drain (`sync_all_saves`, next `pre_launch_sync`) should also use retry logic when processing queued entries.
 
-#### 2. Custom Play button, launch blocking, save sync UX, and conflict resolution
+#### 2. Custom Play button, launch blocking, save sync UX, and conflict resolution — MOSTLY DONE
+
+> **Status**: Core flow implemented. `handlePlay` does pre-launch sync -> conflict modal -> launch. `handleResolveConflict` for resolve-only. All components use `get_save_status` for consistent conflict display. `pre_launch_sync` returns conflicts directly (no separate `getPendingConflicts` call needed from frontend). Default conflict mode is `ask_me`. Enable dialog warns about backups.
+>
+> **Not yet done**: Launch interceptor (Part B), pre-launch toast notifications, proactive sync check on page open (Part C -- currently sync only runs when Play is clicked). The "Checking" state from Part A was not implemented -- instead the button shows "Syncing saves..." during pre-launch sync.
 
 This is the largest remaining item — it replaces the native Play button with a state-aware custom button, adds a global launch interceptor as safety net, and integrates proactive save sync checks with conflict resolution. Also includes pre-launch toast notifications.
 
@@ -879,26 +883,26 @@ function updatePlaytimeDisplay(appId: number, totalMinutes: number) {
 ### Verification:
 - [ ] Save file uploaded to RomM after play session ends
 - [ ] Save file downloaded from RomM before game launch
-- [ ] Three-way conflict correctly identified (both sides changed)
+- [x] Three-way conflict correctly identified (both sides changed)
 - [ ] "Newest wins" resolves based on timestamp comparison
-- [ ] "Ask me" queues conflict and shows in detailed popup UI
+- [x] "Ask me" queues conflict and shows in detailed popup UI
 - [ ] Manual "Sync All Saves Now" processes all installed ROMs
 - [ ] Playtime tracked accurately (suspend/resume excluded)
 - [ ] Playtime stored in RomM user notes, readable across devices
 - [ ] Device registration persists across plugin restarts
 - [ ] save_sync_state.json separate from state.json
-- [ ] Pre-launch sync does not block game launch on failure
+- [x] Pre-launch sync does not block game launch on failure
 - [ ] Pre-launch and post-exit sync show toast notifications
 - [ ] Failed uploads retry 3 times before falling to offline queue
 - [ ] User can manually retry failed sync operations
 - [ ] Shared account warning shown for generic usernames
-- [ ] Save sync disabled by default — no hooks registered, no device registration on fresh install
-- [ ] Enabling save sync requires two-step confirmation with backup warning
-- [ ] Disabling save sync stops all sync activity without confirmation
-- [ ] Save Sync settings page shows master toggle at top, all controls disabled when off
+- [x] Save sync disabled by default — no hooks registered, no device registration on fresh install
+- [x] Enabling save sync requires two-step confirmation with backup warning
+- [x] Disabling save sync stops all sync activity without confirmation
+- [x] Save Sync settings page shows master toggle at top, all controls disabled when off
 - [ ] Game detail page "Saves & Playtime" section greyed out and non-interactive when disabled
 - [ ] QAM "Save Sync" button hidden or visually disabled when feature is off
-- [ ] Re-enabling preserves existing sync state (hashes, playtime, conflicts)
+- [x] Re-enabling preserves existing sync state (hashes, playtime, conflicts)
 - [ ] Plugin startup skips all save sync initialization when disabled
 - [ ] Playtime displayed in Steam's native UI or prominently in game detail panel
 
@@ -1104,7 +1108,7 @@ All info items follow Steam's native two-line pattern: **uppercase header label 
    - ❌ + "Conflict": conflict detected or sync failed.
    - "—" + "Disabled": save sync not enabled.
    - Only visible when `save_sync_enabled` is true in settings, otherwise hidden entirely.
-   - Data source: `getSaveStatus(romId)` for file statuses + `getPendingConflicts()` to check for conflicts on this ROM.
+   - Data source: `getSaveStatus(romId)` — per-file `_detect_conflict` results include conflict status directly.
 
 5. **BIOS** — header: "BIOS", value line: colored icon + state text:
    - 🟢 + "OK" or "Ready": all required BIOS files present.
@@ -1113,7 +1117,7 @@ All info items follow Steam's native two-line pattern: **uppercase header label 
    - Only visible for platforms that need BIOS (`BiosStatus.needs_bios === true`), hidden otherwise.
    - Data source: `checkPlatformBios(platformSlug)` — already returns `needs_bios`, `server_count`, `local_count`, `all_downloaded`.
 
-**CustomPlayButton** stays as-is (play/download/launching states + dropdown with uninstall). Consistent button width across all states. CSS spinner fallback for launching throbber. Future addition: a conflict blocking state when save sync is enabled and a conflict is detected for this ROM (orange button, "Resolve Conflict").
+**CustomPlayButton** handles play/download/syncing/conflict/launching states + dropdown with uninstall. On init, checks `getSaveStatus` for existing conflicts (orange "Resolve Conflict" button). `handlePlay` runs pre-launch sync with 15s timeout, shows conflict modal if needed. `handleResolveConflict` resolves without launching. Consistent button width across all states. CSS spinner fallback for launching/syncing throbber.
 
 **Metadata patches interaction**: Keep store object patches (GetDescriptions, GetAssociations, BHasStoreCategory) for contexts where native UI still renders (library grid tooltips, search results, etc.). The PlaySection info items use our own data sources directly, not store patches.
 
@@ -1144,9 +1148,8 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 - [x] Scrolling: solved via DialogButton sections (not Focusable — Focusable doesn't register with gamepad in this context). Each section uses `onFocus → scrollIntoView({ block: "center" })`. See `docs/scroll-and-hiding-research.md` Approach 8.
 - [x] Save sync timestamp UX: separated "last sync check" (ROM-level, updated every sync run) from "last data transfer" (per-file). PlaySection shows last sync check. GameInfoPanel shows both per-file: "Synced: ..." and "Changed: ..."
 - [x] SGDB artwork restore: hero, logo, wide grid, icon. Auto-apply on first game detail visit. Cover image in GameInfoPanel.
-- [ ] Steam gear menu: research Collection/Favorites APIs for add/remove options
-- [ ] Conflict blocking state on CustomPlayButton (implemented — needs testing). Note: `newest_wins` mode auto-resolves conflicts without showing the UI. Must test with `ask_me` mode to see the blocking state.
-- [ ] Bug: gear icon buttons (RomM actions + Steam properties) not clickable with mouse. Gamepad activation (onActivate) untested. Code looks correct — no obvious overlap or pointer-events issue. Needs devtools DOM inspection.
+- [x] Conflict blocking state on CustomPlayButton — tested and working. Init checks `getSaveStatus` for conflicts. `handlePlay` runs `preLaunchSync` which returns conflicts directly. `handleResolveConflict` for resolve-only (no launch). All three components (play button, status bar, detail panel) use `get_save_status` for consistent conflict display.
+- [x] Bug fix: gear icon buttons not clickable with mouse — root cause was Focusable wrappers swallowing first click for focus management. Fixed by switching to DialogButton which handles both mouse and gamepad natively. Properties dialog fixed by passing `"general"` section param instead of empty string.
 
 #### Future improvements (Phase 5.6+)
 
@@ -1474,6 +1477,7 @@ Card2Path = <saves_path>/psx/duckstation/memcards/shared_card_2.mcd
 - **Connection settings: remove save button, save on popup confirm**: Each connection field (URL, username, password) already has an edit button that opens a popup. Change behavior so that confirming the popup immediately persists the new value to settings. Cancelling the popup must discard any changes and restore the original value. Remove the global "Save" button entirely — it is no longer needed since each field saves independently on popup confirmation.
 - **RomM playtime API integration**: When RomM adds a playtime field (feature request #1225), plug in our existing delta-based accumulation to sync playtime bidirectionally. Architecture is already in place — just needs the API endpoint.
 - **Emulator save state sync**: RomM supports "States" (emulator save states / quick saves) separately from "Saves" (SRAM `.srm` files). RetroArch save states live at `<states_path>/{system}/` (path from `retrodeck.json` → `paths.states_path`). These are `.state`, `.state1`, `.state.auto` etc. files. Currently we only sync `.srm` saves — save states are not synced. Challenges: save states are larger (100KB-10MB+), emulator-version-specific (not portable between different RetroArch core versions), and there can be multiple per game (numbered slots + auto). Consider syncing at least the auto-save state for convenience, with a user toggle and size warnings.
+- **Steam gear menu: full native actions**: Expand the Steam gear icon menu with remaining native actions — Add to/Remove from Favorites, Add to/Remove from Collection, Hide Game, Manage shortcut. Research `collectionStore` and `SteamClient.Apps` APIs for these.
 - Toggling save sync on shoudl prompt to ask if user wants to create a backup of local save files.
 this backup can and should be created at other points of actions flows as well. e.g. manually, or as an option before or while solving save game sync conflicts.
 
