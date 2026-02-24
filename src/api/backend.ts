@@ -63,3 +63,8 @@ export const getAllPlaytime = callable<[], { playtime: Record<string, { total_se
 export const getOfflineQueue = callable<[], { queue: OfflineQueueItem[] }>("get_offline_queue");
 export const retryFailedSync = callable<[number, string], { success: boolean; message: string; synced?: number }>("retry_failed_sync");
 export const clearOfflineQueue = callable<[], { success: boolean }>("clear_offline_queue");
+
+// Delete operations
+export const deleteLocalSaves = callable<[number], { success: boolean; deleted_count: number; message: string }>("delete_local_saves");
+export const deletePlatformSaves = callable<[string], { success: boolean; deleted_count: number; message: string }>("delete_platform_saves");
+export const deletePlatformBios = callable<[string], { success: boolean; deleted_count: number; message: string }>("delete_platform_bios");

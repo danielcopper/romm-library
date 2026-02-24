@@ -14,12 +14,14 @@ import { useState, useEffect, FC, createElement } from "react";
 import { toaster } from "@decky/api";
 import {
   basicAppDetailsSectionStylerClasses,
+  ConfirmModal,
   DialogButton,
   Focusable,
   Menu,
   MenuItem,
   MenuSeparator,
   showContextMenu,
+  showModal,
 } from "@decky/ui";
 import { FaGamepad, FaCog } from "react-icons/fa";
 import { CustomPlayButton } from "./CustomPlayButton";
@@ -33,6 +35,7 @@ import {
   removeRom,
   downloadAllFirmware,
   syncRomSaves,
+  deleteLocalSaves,
   saveShortcutIcon,
   debugLog,
 } from "../api/backend";
@@ -428,6 +431,35 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     }
   };
 
+  const handleDeleteSaves = () => {
+    if (actionPending || !info.romId) return;
+    const romId = info.romId;
+    showModal(
+      createElement(ConfirmModal, {
+        strTitle: "Delete Local Saves",
+        strDescription: "This will delete local save files for this game. Make sure saves are synced to RomM first — the next sync will re-download them from the server.",
+        strOKButtonText: "Delete",
+        strCancelButtonText: "Cancel",
+        onOK: async () => {
+          setActionPending("deletesaves");
+          try {
+            const result = await deleteLocalSaves(romId);
+            if (result.success) {
+              toaster.toast({ title: "RomM Sync", body: result.message });
+              window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+            } else {
+              toaster.toast({ title: "RomM Sync", body: result.message || "Failed to delete saves" });
+            }
+          } catch {
+            toaster.toast({ title: "RomM Sync", body: "Failed to delete saves" });
+          } finally {
+            setActionPending(null);
+          }
+        },
+      } as any),
+    );
+  };
+
   const showRomMMenu = (e: Event) => {
     showContextMenu(
       createElement(Menu, { label: "RomM Actions" },
@@ -436,6 +468,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         createElement(MenuItem, { key: "sync-saves", onClick: handleSyncSaves }, "Sync Save Files"),
         createElement(MenuItem, { key: "download-bios", onClick: handleDownloadBios }, "Download BIOS"),
         createElement(MenuSeparator, { key: "sep" }),
+        createElement(MenuItem, { key: "delete-saves", tone: "destructive", onClick: handleDeleteSaves }, "Delete Local Saves"),
         createElement(MenuItem, { key: "uninstall", tone: "destructive", onClick: handleUninstall }, "Uninstall"),
       ),
       (e.currentTarget ?? e.target) as HTMLElement,

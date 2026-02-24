@@ -205,3 +205,68 @@ class TestDownloadAllFirmware:
         assert result["downloaded"] == 1
         assert 2 in download_called_ids
         assert 1 not in download_called_ids
+
+
+class TestDeletePlatformBios:
+    @pytest.mark.asyncio
+    async def test_delete_platform_bios_happy_path(self, plugin, tmp_path):
+        """Deleting platform BIOS removes downloaded files."""
+        from unittest.mock import AsyncMock
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        bios_dir = tmp_path / "retrodeck" / "bios"
+        bios_dir.mkdir(parents=True)
+        bios_file = bios_dir / "scph5501.bin"
+        bios_file.write_bytes(b"\x00" * 512)
+
+        # Mock check_platform_bios to return our test file
+        async def mock_check(slug):
+            return {
+                "needs_bios": True,
+                "server_count": 1,
+                "local_count": 1,
+                "all_downloaded": True,
+                "files": [{"file_name": "scph5501.bin", "downloaded": True, "local_path": str(bios_file)}],
+            }
+        plugin.check_platform_bios = mock_check
+
+        result = await plugin.delete_platform_bios("psx")
+        assert result["success"] is True
+        assert result["deleted_count"] == 1
+        assert not bios_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_platform_bios_no_files(self, plugin):
+        """Deleting BIOS when none exist returns success with 0."""
+        async def mock_check(slug):
+            return {"needs_bios": False}
+        plugin.check_platform_bios = mock_check
+
+        result = await plugin.delete_platform_bios("snes")
+        assert result["success"] is True
+        assert result["deleted_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_platform_bios_skips_not_downloaded(self, plugin, tmp_path):
+        """Only files with downloaded=True are deleted."""
+        from unittest.mock import AsyncMock
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        async def mock_check(slug):
+            return {
+                "needs_bios": True,
+                "server_count": 2,
+                "local_count": 0,
+                "all_downloaded": False,
+                "files": [
+                    {"file_name": "bios1.bin", "downloaded": False, "local_path": "/fake/path1"},
+                    {"file_name": "bios2.bin", "downloaded": False, "local_path": "/fake/path2"},
+                ],
+            }
+        plugin.check_platform_bios = mock_check
+
+        result = await plugin.delete_platform_bios("psx")
+        assert result["success"] is True
+        assert result["deleted_count"] == 0
