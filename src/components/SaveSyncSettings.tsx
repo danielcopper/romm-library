@@ -84,6 +84,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
     try {
       const result = await syncAllSaves();
       setSyncStatus(result.message);
+      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
       if (result.conflicts > 0) {
         await loadConflicts();
       }

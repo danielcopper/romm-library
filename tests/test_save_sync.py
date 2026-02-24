@@ -3836,3 +3836,123 @@ class TestDefaultConflictMode:
         """_init_save_sync_state sets conflict_mode to ask_me."""
         plugin._init_save_sync_state()
         assert plugin._save_sync_state["settings"]["conflict_mode"] == "ask_me"
+
+
+# ============================================================================
+# Delete Local Saves Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_delete_local_saves_happy_path(plugin, tmp_path):
+    """Deleting local saves removes files and cleans sync state."""
+    rom_id = 100
+    system = "snes"
+    rom_name = "TestGame"
+
+    # Register as installed (file_path needed for _get_rom_save_info)
+    plugin._state["installed_roms"]["100"] = {
+        "rom_id": 100,
+        "file_name": f"{rom_name}.sfc",
+        "file_path": str(tmp_path / "retrodeck" / "roms" / system / f"{rom_name}.sfc"),
+        "system": system,
+        "platform_slug": "snes",
+    }
+
+    # Create fake save files in the fallback saves path
+    saves_dir = tmp_path / "retrodeck" / "saves" / system
+    saves_dir.mkdir(parents=True)
+    srm = saves_dir / f"{rom_name}.srm"
+    rtc = saves_dir / f"{rom_name}.rtc"
+    srm.write_bytes(b"\x00" * 32)
+    rtc.write_bytes(b"\x00" * 16)
+
+    # Set up sync state
+    plugin._save_sync_state["saves"]["100"] = {
+        "files": {
+            f"{rom_name}.srm": {"last_sync_hash": "abc123"},
+            f"{rom_name}.rtc": {"last_sync_hash": "def456"},
+        },
+        "system": system,
+    }
+
+    result = await plugin.delete_local_saves(rom_id)
+    assert result["success"] is True
+    assert result["deleted_count"] == 2
+    assert not srm.exists()
+    assert not rtc.exists()
+    assert "100" not in plugin._save_sync_state["saves"]
+
+
+@pytest.mark.asyncio
+async def test_delete_local_saves_no_files(plugin, tmp_path):
+    """Deleting saves when none exist returns success with 0."""
+    plugin._state["installed_roms"]["200"] = {
+        "rom_id": 200,
+        "file_name": "NoSaves.sfc",
+        "file_path": str(tmp_path / "retrodeck" / "roms" / "snes" / "NoSaves.sfc"),
+        "system": "snes",
+        "platform_slug": "snes",
+    }
+
+    result = await plugin.delete_local_saves(200)
+    assert result["success"] is True
+    assert result["deleted_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_local_saves_not_installed(plugin):
+    """Deleting saves for a non-installed ROM returns success with 0."""
+    result = await plugin.delete_local_saves(999)
+    assert result["success"] is True
+    assert result["deleted_count"] == 0
+
+
+# ============================================================================
+# Delete Platform Saves Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_delete_platform_saves(plugin, tmp_path):
+    """Deleting platform saves removes files for all ROMs on that platform."""
+    saves_dir = tmp_path / "retrodeck" / "saves" / "snes"
+    saves_dir.mkdir(parents=True)
+
+    srm1 = saves_dir / "Game1.srm"
+    srm2 = saves_dir / "Game2.srm"
+    srm1.write_bytes(b"\x00" * 32)
+    srm2.write_bytes(b"\x00" * 32)
+
+    plugin._state["installed_roms"]["10"] = {
+        "rom_id": 10,
+        "file_name": "Game1.sfc",
+        "file_path": str(tmp_path / "retrodeck" / "roms" / "snes" / "Game1.sfc"),
+        "system": "snes",
+        "platform_slug": "snes",
+    }
+    plugin._state["installed_roms"]["20"] = {
+        "rom_id": 20,
+        "file_name": "Game2.sfc",
+        "file_path": str(tmp_path / "retrodeck" / "roms" / "snes" / "Game2.sfc"),
+        "system": "snes",
+        "platform_slug": "snes",
+    }
+    plugin._state["installed_roms"]["30"] = {
+        "rom_id": 30,
+        "file_name": "GBAGame.gba",
+        "file_path": str(tmp_path / "retrodeck" / "roms" / "gba" / "GBAGame.gba"),
+        "system": "gba",
+        "platform_slug": "gba",
+    }
+
+    plugin._save_sync_state["saves"]["10"] = {"files": {"Game1.srm": {}}, "system": "snes"}
+    plugin._save_sync_state["saves"]["20"] = {"files": {"Game2.srm": {}}, "system": "snes"}
+
+    result = await plugin.delete_platform_saves("snes")
+    assert result["success"] is True
+    assert result["deleted_count"] == 2
+    assert not srm1.exists()
+    assert not srm2.exists()
+    assert "10" not in plugin._save_sync_state["saves"]
+    assert "20" not in plugin._save_sync_state["saves"]

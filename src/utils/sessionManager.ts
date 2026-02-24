@@ -109,6 +109,7 @@ async function handleGameStop(): Promise<void> {
         if (result.synced && result.synced > 0) {
           toaster.toast({ title: "RomM Save Sync", body: "Saves uploaded to RomM" });
         }
+        window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
       } else {
         toaster.toast({ title: "RomM Save Sync", body: "Failed to sync saves after exit" });
       }

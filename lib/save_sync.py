@@ -1203,3 +1203,56 @@ class SaveSyncMixin:
         self._save_sync_state["offline_queue"] = []
         self._save_save_sync_state()
         return {"success": True}
+
+    async def delete_local_saves(self, rom_id):
+        """Delete local save files (.srm, .rtc) for a ROM."""
+        rom_id = int(rom_id)
+        rom_id_str = str(rom_id)
+
+        files = self._find_save_files(rom_id)
+        if not files:
+            return {"success": True, "deleted_count": 0, "message": "No local save files found"}
+
+        deleted = 0
+        errors = []
+        for f in files:
+            try:
+                os.remove(f["path"])
+                deleted += 1
+            except Exception as e:
+                errors.append(f"{f['filename']}: {e}")
+
+        # Clean up sync state for this ROM
+        self._save_sync_state.get("saves", {}).pop(rom_id_str, None)
+        self._save_save_sync_state()
+
+        if errors:
+            return {"success": False, "deleted_count": deleted, "message": f"Deleted {deleted} file(s), {len(errors)} error(s)"}
+        return {"success": True, "deleted_count": deleted, "message": f"Deleted {deleted} save file(s)"}
+
+    async def delete_platform_saves(self, platform_slug):
+        """Delete local save files for all installed ROMs on a platform."""
+        total_deleted = 0
+        total_errors = []
+        rom_count = 0
+
+        for rom_id_str, entry in list(self._state["installed_roms"].items()):
+            if entry.get("platform_slug") != platform_slug:
+                continue
+            rom_count += 1
+            rom_id = int(rom_id_str)
+            files = self._find_save_files(rom_id)
+            for f in files:
+                try:
+                    os.remove(f["path"])
+                    total_deleted += 1
+                except Exception as e:
+                    total_errors.append(f"{f['filename']}: {e}")
+            # Clean up sync state
+            self._save_sync_state.get("saves", {}).pop(rom_id_str, None)
+
+        self._save_save_sync_state()
+
+        if total_errors:
+            return {"success": False, "deleted_count": total_deleted, "message": f"Deleted {total_deleted} file(s) from {rom_count} ROM(s), {len(total_errors)} error(s)"}
+        return {"success": True, "deleted_count": total_deleted, "message": f"Deleted {total_deleted} save file(s) from {rom_count} ROM(s)"}

@@ -1153,10 +1153,10 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 
 #### Future improvements (Phase 5.6+)
 
-- [ ] Test Unifideck coexistence (4 scenarios above)
 - [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
-- [ ] Delete save files: add per-game or bulk option in main plugin menu (NOT on game detail page). Save files should persist after ROM uninstall.
-- [ ] Delete BIOS files: add per-platform option in main plugin menu (NOT on game detail page)
+- [x] Delete save files: per-game via RomM gear icon (ConfirmModal), per-platform in DangerZone. Post-delete events refresh PlaySection + GameInfoPanel live.
+- [x] Delete BIOS files: per-platform in DangerZone with confirmation.
+- [x] Live update fixes: post-exit sync, DangerZone, and Sync All Saves now dispatch `romm_data_changed` events. Fixed stale closure (romIdRef) and server-only file status logic in PlaySection listener.
 - [ ] Investigate excessive re-renders on game detail page (see below)
 
 #### Game detail page re-render issue
@@ -1478,6 +1478,7 @@ Card2Path = <saves_path>/psx/duckstation/memcards/shared_card_2.mcd
 - **RomM playtime API integration**: When RomM adds a playtime field (feature request #1225), plug in our existing delta-based accumulation to sync playtime bidirectionally. Architecture is already in place — just needs the API endpoint.
 - **Emulator save state sync**: RomM supports "States" (emulator save states / quick saves) separately from "Saves" (SRAM `.srm` files). RetroArch save states live at `<states_path>/{system}/` (path from `retrodeck.json` → `paths.states_path`). These are `.state`, `.state1`, `.state.auto` etc. files. Currently we only sync `.srm` saves — save states are not synced. Challenges: save states are larger (100KB-10MB+), emulator-version-specific (not portable between different RetroArch core versions), and there can be multiple per game (numbered slots + auto). Consider syncing at least the auto-save state for convenience, with a user toggle and size warnings.
 - **Steam gear menu: full native actions**: Expand the Steam gear icon menu with remaining native actions — Add to/Remove from Favorites, Add to/Remove from Collection, Hide Game, Manage shortcut. Research `collectionStore` and `SteamClient.Apps` APIs for these.
+- **Unifideck coexistence testing**: Verify both plugins work together — RomM game with Unifideck installed (our patch takes priority, no double-injection), native Steam game with both plugins (Unifideck patches normally, we skip), gamepad nav works on both, uninstalling one doesn't break the other.
 - Toggling save sync on shoudl prompt to ask if user wants to create a backup of local save files.
 this backup can and should be created at other points of actions flows as well. e.g. manually, or as an option before or while solving save game sync conflicts.
 

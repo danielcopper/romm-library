@@ -216,3 +216,24 @@ class FirmwareMixin:
             "all_downloaded": local_count >= server_count,
             "files": files,
         }
+
+    async def delete_platform_bios(self, platform_slug):
+        """Delete locally downloaded BIOS files for a platform."""
+        bios_status = await self.check_platform_bios(platform_slug)
+        if not bios_status.get("needs_bios") or not bios_status.get("files"):
+            return {"success": True, "deleted_count": 0, "message": "No BIOS files for this platform"}
+
+        deleted = 0
+        errors = []
+        for f in bios_status["files"]:
+            if not f.get("downloaded"):
+                continue
+            try:
+                os.remove(f["local_path"])
+                deleted += 1
+            except Exception as e:
+                errors.append(f"{f['file_name']}: {e}")
+
+        if errors:
+            return {"success": False, "deleted_count": deleted, "message": f"Deleted {deleted} file(s), {len(errors)} error(s)"}
+        return {"success": True, "deleted_count": deleted, "message": f"Deleted {deleted} BIOS file(s)"}
