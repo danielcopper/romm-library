@@ -10,7 +10,7 @@
  * Save Sync and BIOS items only appear when relevant.
  */
 
-import { useState, useEffect, FC, createElement } from "react";
+import { useState, useEffect, useRef, FC, createElement } from "react";
 import { toaster } from "@decky/api";
 import {
   basicAppDetailsSectionStylerClasses,
@@ -165,6 +165,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     biosLabel: "",
   });
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const romIdRef = useRef<number | null>(null);
 
   // Load async info (save sync, BIOS) — play button and playtime render immediately
   useEffect(() => {
@@ -178,6 +179,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         if (cancelled || !rom) return;
 
         const romId: number = rom.rom_id;
+        romIdRef.current = romId;
         const platformSlug: string = rom.platform_slug;
 
         // Fetch save sync settings, save status, and BIOS in parallel
@@ -273,18 +275,27 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     const onDataChanged = async (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.type !== "save_sync") return;
-      const romId = info.romId ?? detail.rom_id;
+      const romId = romIdRef.current ?? detail.rom_id;
       if (!romId) return;
+      // If event specifies a rom_id, skip if it's not for this game
+      if (detail.rom_id && romIdRef.current && detail.rom_id !== romIdRef.current) return;
       const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
       const hasConflict = saveStatus?.files?.some((f) => f.status === "conflict") ?? false;
+      const hasLocalFiles = saveStatus?.files?.some((f) => f.local_path) ?? false;
       let saveSyncStatus: "synced" | "conflict" | "none" = "none";
       let saveSyncLabel = "";
       if (hasConflict) {
         saveSyncStatus = "conflict";
         saveSyncLabel = "Conflict";
-      } else if (saveStatus && saveStatus.files.length > 0) {
+      } else if (hasLocalFiles) {
         saveSyncStatus = "synced";
         saveSyncLabel = "Just now";
+      } else if (saveStatus && saveStatus.files.length > 0) {
+        saveSyncStatus = "none";
+        saveSyncLabel = "No local saves";
+      } else {
+        saveSyncStatus = "none";
+        saveSyncLabel = "No saves";
       }
       setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel }));
     };
@@ -446,6 +457,8 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
             const result = await deleteLocalSaves(romId);
             if (result.success) {
               toaster.toast({ title: "RomM Sync", body: result.message });
+              // Directly update PlaySection status — no local saves remain
+              setInfo((prev) => ({ ...prev, saveSyncStatus: "none" as const, saveSyncLabel: "No saves" }));
               window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
             } else {
               toaster.toast({ title: "RomM Sync", body: result.message || "Failed to delete saves" });

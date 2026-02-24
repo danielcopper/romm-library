@@ -278,6 +278,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                   try {
                     const result = await deletePlatformSaves(p.slug);
                     setSaveDeleteStatus(result.message);
+                    window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
                   } catch {
                     setSaveDeleteStatus("Failed to delete saves");
                   }
