@@ -5,7 +5,7 @@ import {
   ButtonItem,
   Field,
   ProgressBarWithInfo,
-  ToggleField,
+  DropdownItem,
 } from "@decky/ui";
 import {
   testConnection,
@@ -13,7 +13,7 @@ import {
   cancelSync,
   getSyncStats,
   getSettings,
-  saveDebugLogging,
+  saveLogLevel,
   fixRetroarchInputDriver,
 } from "../api/backend";
 import { getSyncProgress } from "../utils/syncProgress";
@@ -32,7 +32,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
-  const [debugLogging, setDebugLogging] = useState(false);
+  const [logLevel, setLogLevel] = useState("warn");
   const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string } | null>(null);
   const [retroarchFixStatus, setRetroarchFixStatus] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -68,7 +68,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     getSyncStats().then(setStats);
     testConnection().then((r) => setConnected(r.success));
     getSettings().then((s) => {
-      setDebugLogging(s.debug_logging ?? false);
+      setLogLevel(s.log_level ?? "warn");
       if (s.retroarch_input_check) {
         setRetroarchWarning(s.retroarch_input_check);
       }
@@ -295,13 +295,19 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
 
       <PanelSection title="Advanced">
         <PanelSectionRow>
-          <ToggleField
-            label="Debug Logging"
-            description="Log additional details for troubleshooting"
-            checked={debugLogging}
-            onChange={(value) => {
-              setDebugLogging(value);
-              saveDebugLogging(value);
+          <DropdownItem
+            label="Log Level"
+            description="Controls which frontend messages are written to the plugin log file"
+            rgOptions={[
+              { data: "error", label: "Error" },
+              { data: "warn", label: "Warn" },
+              { data: "info", label: "Info" },
+              { data: "debug", label: "Debug" },
+            ]}
+            selectedOption={logLevel}
+            onChange={(option) => {
+              setLogLevel(option.data);
+              saveLogLevel(option.data);
             }}
           />
         </PanelSectionRow>

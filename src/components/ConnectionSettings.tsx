@@ -10,7 +10,7 @@ import {
   ConfirmModal,
   showModal,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting } from "../api/backend";
+import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, logError } from "../api/backend";
 
 // Module-level state survives component remounts (modal close can remount QAM)
 const pendingEdits: { url?: string; username?: string; password?: string } = {};
@@ -72,7 +72,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       setSgdbApiKey(s.sgdb_api_key_masked);
       setSteamInputMode(s.steam_input_mode || "default");
     }).catch((e) => {
-      console.error("[RomM] Failed to load settings:", e);
+      logError(`Failed to load settings: ${e}`);
       setStatus("Failed to load settings");
     });
   }, []);

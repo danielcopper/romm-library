@@ -1,6 +1,6 @@
 import { addEventListener } from "@decky/api";
 import type { SyncApplyData } from "../types";
-import { getArtworkBase64, reportSyncResults } from "../api/backend";
+import { getArtworkBase64, reportSyncResults, logInfo, logError } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
 import { createOrUpdateCollections, clearPlatformCollection } from "./collections";
 import { updateSyncProgress } from "./syncProgress";
@@ -20,7 +20,7 @@ export function requestSyncCancel(): void {
  */
 export function initSyncManager(): ReturnType<typeof addEventListener> {
   return addEventListener("sync_apply", async (data: SyncApplyData) => {
-    console.log("[RomM] sync_apply received:", data.shortcuts.length, "add,", data.remove_rom_ids.length, "remove");
+    logInfo(`sync_apply received: ${data.shortcuts.length} add, ${data.remove_rom_ids.length} remove`);
 
     _cancelRequested = false;
     let cancelled = false;
@@ -61,23 +61,23 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
             const artResult = await getArtworkBase64(item.rom_id);
             if (artResult.base64) {
               await SteamClient.Apps.SetCustomArtworkForApp(appId, artResult.base64, "png", 0);
-              console.log(`[RomM] Set cover artwork for ${item.name} (appId=${appId})`);
+              logInfo(`Set cover artwork for ${item.name} (appId=${appId})`);
             }
           } catch (artErr) {
-            console.error(`[RomM] Failed to fetch/set artwork for ${item.name}:`, artErr);
+            logError(`Failed to fetch/set artwork for ${item.name}: ${artErr}`);
           }
 
           // SGDB artwork (hero, logo, wide grid, icon) is fetched on-demand
           // when user visits the game detail page — not during sync
         }
       } catch (e) {
-        console.error(`[RomM] Failed to process shortcut for rom ${item.rom_id}:`, e);
+        logError(`Failed to process shortcut for rom ${item.rom_id}: ${e}`);
       }
       // Small delay between operations to avoid overwhelming Steam
       await delay(50);
 
       if (_cancelRequested) {
-        console.log(`[RomM] Cancel requested after processing ${i + 1}/${total} shortcuts`);
+        logInfo(`Cancel requested after processing ${i + 1}/${total} shortcuts`);
         cancelled = true;
         break;
       }
@@ -94,7 +94,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
         }
 
         if (_cancelRequested) {
-          console.log("[RomM] Cancel requested during removals");
+          logInfo("Cancel requested during removals");
           cancelled = true;
           break;
         }
@@ -135,7 +135,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       for (const c of staleCollections) {
         const afterPrefix = c.displayName.slice(6);
         const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
-        console.log(`[RomM] Removing stale collection "${c.displayName}"`);
+        logInfo(`Removing stale collection "${c.displayName}"`);
         await clearPlatformCollection(platformName);
       }
     }
@@ -144,13 +144,13 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
     try {
       await reportSyncResults(romIdToAppId, removedRomIds);
     } catch (e) {
-      console.error("[RomM] Failed to report sync results:", e);
+      logError(`Failed to report sync results: ${e}`);
     }
 
     const doneMsg = cancelled
       ? `Sync cancelled (${Object.keys(romIdToAppId).length} processed)`
       : "Sync complete";
     updateSyncProgress({ running: false, phase: "done", current: total, total, message: doneMsg });
-    console.log(`[RomM] sync_apply ${cancelled ? "cancelled" : "complete"}:`, Object.keys(romIdToAppId).length, "added/updated,", removedRomIds.length, "removed");
+    logInfo(`sync_apply ${cancelled ? "cancelled" : "complete"}: ${Object.keys(romIdToAppId).length} added/updated, ${removedRomIds.length} removed`);
   });
 }

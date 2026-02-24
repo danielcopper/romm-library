@@ -14,6 +14,8 @@ import {
   getAppIdRomIdMap,
   getSaveSyncSettings,
   getPendingConflicts,
+  logInfo,
+  logError,
 } from "../api/backend";
 import { updatePlaytimeDisplay } from "../patches/metadataPatches";
 
@@ -53,7 +55,7 @@ async function refreshAppIdMap(): Promise<void> {
   try {
     appIdToRomId = await getAppIdRomIdMap();
   } catch (e) {
-    console.error("[RomM] Failed to refresh app ID map:", e);
+    logError(`Failed to refresh app ID map: ${e}`);
   }
 }
 
@@ -61,7 +63,7 @@ async function handleGameStart(appId: number): Promise<void> {
   const romId = getRomIdForApp(appId);
   if (!romId) return; // Not a RomM shortcut
 
-  console.log(`[RomM] Session start: romId=${romId}, appId=${appId}`);
+  logInfo(`Session start: romId=${romId}, appId=${appId}`);
   activeRomId = romId;
   sessionStartTime = Date.now();
   totalPausedMs = 0;
@@ -70,7 +72,7 @@ async function handleGameStart(appId: number): Promise<void> {
   try {
     await recordSessionStart(romId);
   } catch (e) {
-    console.error("[RomM] Failed to record session start:", e);
+    logError(`Failed to record session start: ${e}`);
   }
   // Pre-launch sync moved to CustomPlayButton.handlePlay
 }
@@ -79,7 +81,7 @@ async function handleGameStop(): Promise<void> {
   if (!activeRomId) return;
 
   const romId = activeRomId;
-  console.log(`[RomM] Session end: romId=${romId}`);
+  logInfo(`Session end: romId=${romId}`);
 
   // Clear active session immediately to avoid double-processing
   activeRomId = null;
@@ -97,7 +99,7 @@ async function handleGameStop(): Promise<void> {
       }
     }
   } catch (e) {
-    console.error("[RomM] Failed to record session end:", e);
+    logError(`Failed to record session end: ${e}`);
   }
 
   // Post-exit save sync (if enabled)
@@ -125,7 +127,7 @@ async function handleGameStop(): Promise<void> {
       }
     }
   } catch (e) {
-    console.error("[RomM] Post-exit sync failed:", e);
+    logError(`Post-exit sync failed: ${e}`);
   }
 }
 
@@ -139,7 +141,7 @@ function notifyConflicts(count: number): void {
 function handleSuspend(): void {
   if (activeRomId && sessionStartTime) {
     suspendedAt = Date.now();
-    console.log("[RomM] Device suspended during session, pausing playtime");
+    logInfo("Device suspended during session, pausing playtime");
   }
 }
 
@@ -147,7 +149,7 @@ function handleResume(): void {
   if (activeRomId && suspendedAt) {
     const pauseDuration = Date.now() - suspendedAt;
     totalPausedMs += pauseDuration;
-    console.log(`[RomM] Device resumed, paused for ${Math.round(pauseDuration / 1000)}s`);
+    logInfo(`Device resumed, paused for ${Math.round(pauseDuration / 1000)}s`);
     suspendedAt = null;
   }
 }
@@ -184,7 +186,7 @@ export async function initSessionManager(): Promise<void> {
   suspendHook = SteamClient.System.RegisterForOnSuspendRequest(handleSuspend);
   resumeHook = SteamClient.System.RegisterForOnResumeFromSuspend(handleResume);
 
-  console.log("[RomM] Session manager initialized");
+  logInfo("Session manager initialized");
 }
 
 /**
@@ -210,5 +212,5 @@ export function destroySessionManager(): void {
   suspendedAt = null;
   totalPausedMs = 0;
 
-  console.log("[RomM] Session manager destroyed");
+  logInfo("Session manager destroyed");
 }

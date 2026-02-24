@@ -116,7 +116,7 @@ class TestGetRomMetadata:
             "player_count": "1",
             "cached_at": time.time(),
         }
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
         result = await plugin.get_rom_metadata(42)
         assert result["summary"] == "Cached summary"
         assert result["genres"] == ["RPG"]
@@ -129,7 +129,7 @@ class TestGetRomMetadata:
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
 
         romm_response = {
             "id": 42,
@@ -170,7 +170,7 @@ class TestGetRomMetadata:
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
 
         # Set cache as 8 days old
         plugin._metadata_cache["42"] = {
@@ -202,7 +202,7 @@ class TestGetRomMetadata:
         from unittest.mock import patch
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
 
         # Stale cache (8 days old)
         plugin._metadata_cache["42"] = {
@@ -228,7 +228,7 @@ class TestGetRomMetadata:
         from unittest.mock import patch
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
 
         with patch.object(plugin, "_romm_request", side_effect=Exception("Connection refused")):
             result = await plugin.get_rom_metadata(42)
@@ -249,7 +249,7 @@ class TestGetRomMetadata:
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
 
         romm_response = {"id": 42, "summary": "Just a summary"}
 
@@ -267,7 +267,7 @@ class TestGetRomMetadata:
         import time
         import decky
 
-        plugin.settings["debug_logging"] = True
+        plugin.settings["log_level"] = "debug"
         plugin._metadata_cache["42"] = {
             "summary": "cached",
             "genres": [],
@@ -292,7 +292,7 @@ class TestGetRomMetadata:
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = True
+        plugin.settings["log_level"] = "debug"
 
         romm_response = {"id": 42, "summary": "test", "metadatum": {}}
 
@@ -483,7 +483,7 @@ class TestGetRomMetadata404:
         import urllib.error
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
 
         http_404 = urllib.error.HTTPError(
             url="http://example.com/api/roms/999",
@@ -509,7 +509,7 @@ class TestGetRomMetadata404:
         import urllib.error
 
         plugin.loop = asyncio.get_event_loop()
-        plugin.settings["debug_logging"] = False
+        plugin.settings["log_level"] = "warn"
 
         plugin._metadata_cache["999"] = {
             "summary": "Old cached data",

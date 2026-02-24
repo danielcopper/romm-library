@@ -1153,24 +1153,24 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 
 #### Future improvements (Phase 5.6+)
 
-- [ ] Live reactivity: toggling save sync on/off in QAM settings should immediately update the game detail page (currently requires navigating away and back)
+- [x] Live reactivity: toggling save sync on/off in QAM settings immediately updates game detail page via `romm_data_changed` event with type `save_sync_settings`.
 - [x] Delete save files: per-game via RomM gear icon (ConfirmModal), per-platform in DangerZone. Post-delete events refresh PlaySection + GameInfoPanel live.
 - [x] Delete BIOS files: per-platform in DangerZone with confirmation.
 - [x] Live update fixes: post-exit sync, DangerZone, and Sync All Saves now dispatch `romm_data_changed` events. Fixed stale closure (romIdRef) and server-only file status logic in PlaySection listener.
-- [ ] Investigate excessive re-renders on game detail page (see below)
+- [x] Investigate excessive re-renders on game detail page — **no fix needed** (see findings below)
 
-#### Game detail page re-render issue
+#### Game detail page re-render investigation — RESOLVED
 
-**Symptom**: `gameDetailPatch` runs 2-3 times per page visit. `CustomPlayButton` mounts 5-6 times, resetting to `state=loading` each time. This causes a visible "Loading..." flash and delays the page becoming interactive.
+**Original symptom**: `gameDetailPatch` runs 2-3 times per page visit. `CustomPlayButton` "mounts" 5-6 times.
 
-**Root cause (suspected)**: `createReactTreePatcher` fires on every React render cycle. Each cycle produces a fresh virtual tree, so the patch correctly re-applies (splicing our elements in). But each splice creates a NEW `createElement(RomMPlaySection, ...)` / `createElement(RomMGameInfoPanel, ...)` call. React should reuse fibers for same key + same type, but something is causing it to unmount and remount instead.
+**Investigation findings (2026-02-24)**:
+- Added `useEffect(() => { debugLog("EFFECT-MOUNT"); return () => debugLog("EFFECT-UNMOUNT"); }, [])` to all three injected components, plus a patcher run counter.
+- **Result**: Each component has exactly **1 EFFECT-MOUNT** and **1 EFFECT-UNMOUNT** (on page leave). No true remounts occur — React fibers are stable.
+- The patcher callback fires ~7 times per page visit (React render cycles), but the deduplication check (`alreadyHasPlayBtn`) correctly prevents re-injection.
+- CustomPlayButton's component body runs ~9 times — these are normal re-renders (state settling from async init), not remounts.
+- The original "5-6 mounts" claim was based on a `debugLog("mounted")` at the top of the component body, which runs on every render, not just actual mounts.
 
-**Investigation steps**:
-1. **Verify unmount vs re-render**: Add a `useEffect(() => { return () => debugLog("UNMOUNT") }, [])` cleanup to CustomPlayButton. If "UNMOUNT" logs between each "mounted", it's a true remount (fiber destroyed). If not, the "mounted" log is just from a re-running useEffect.
-2. **Check key stability**: Log the React keys of InnerContainer children before and after splice. If sibling keys shift (e.g. other children move positions), React may discard and recreate fibers. Using `children.splice()` to insert/remove changes indices of siblings.
-3. **Check if parent re-renders cause full subtree remounts**: The patcher callback runs inside `createReactTreePatcher` which wraps the original render. If it returns a new tree reference each time, React may treat the whole subtree as new.
-4. **Potential fix — memoize elements**: Cache the `createElement` results outside the patcher callback (keyed by appId) so React sees the exact same element reference across render cycles. This would prevent fiber recreation.
-5. **Potential fix — move to component-level rendering**: Instead of creating elements in the patcher, have the patcher inject a thin wrapper component that renders RomMPlaySection/RomMGameInfoPanel internally. The wrapper's identity stays stable across patcher re-runs.
+**Conclusion**: No fix needed. The patcher deduplication works correctly, React preserves fibers across patcher re-runs, and the re-renders are normal state-settling behavior.
 
 #### BIOS intelligence improvements (future)
 
@@ -1558,7 +1558,8 @@ During a full sync, the backend fires rapid sequential requests to the RomM API 
 - **BIsModOrShortcut bypass counter**: MetaDeck uses a counter system to let `BIsModOrShortcut` return `true` for specific internal Steam calls (GetGameID, GetPrimaryAppID, GetPerClientData, BHasRecentlyLaunched) while returning `false` for UI rendering. Our simple "always false for our apps" approach works for now since ROM shortcuts are cleanly in the non-Steam ID range. Implement if users report: broken play time tracking, missing from Recently Played, or console errors about app ID lookups. ~80 lines, small-medium effort.
 - **RetroAchievements integration**: Show and track RetroAchievements for games. RomM supports adding RA data. Research needed: fetch from RomM's RA data vs. query RetroAchievements API directly vs. leverage an existing Decky plugin (e.g. there may be a dedicated RA Decky plugin). Display options: badge on game detail page, achievement list overlay, progress tracking.
 - **Sync completion notification accuracy**: The post-sync toast always reports "Added X games" using the total count of shortcuts processed. This is misleading — re-syncing an unchanged library shows the same count as a fresh sync. Fix: track which shortcuts are truly new (didn't exist before) vs. updated (already existed, metadata/artwork refreshed) vs. unchanged (skipped entirely). Display an accurate breakdown like "Added 3 new, updated 12, 485 unchanged" or just "Library up to date" when nothing changed. Requires comparing incoming ROM data against `shortcut_registry` before processing and counting each outcome category in `syncManager.ts`.
-- **Playtime sync between RomM and Steam**: Sync playtime data bidirectionally between Steam's per-shortcut playtime and RomM's per-ROM playtime tracking. Challenges: merging playtime across multiple devices (additive — sum deltas, not overwrite), deciding sync direction (Steam → RomM after play sessions, RomM → Steam on sync for display), and displaying it in Steam's native playtime field (research if `SteamClient.Apps` or store patching can set the played-time value). Could also surface RomM's cross-device total playtime in the game detail panel.
+- **Library home "Recently Played" playtime display**: Non-Steam shortcuts show "Never Played" / "NOCH NICHT GESPIELT" on the library home page despite having tracked playtime. **Root cause (researched 2026-02-24)**: Steam does NOT persist `minutes_playtime_forever` for non-Steam shortcuts — no VDF field, no SteamClient API, no server-side mechanism. The `appOverview.minutes_playtime_forever` field is populated from Steam's servers for real games only; for shortcuts it starts at 0 on every Steam restart. Our MobX `stateTransaction` write sometimes works if it races ahead of Steam's UI render, but is unreliable. Every other plugin in this space (SDH-PlayTime, SteamlessTimes, Non-Steam Playtimes/K0D13) has the same limitation — none of them solve the library home display. They all use their own storage + custom UI components. Our game detail page (RomMPlaySection) already shows accurate playtime from our own data, so this is a cosmetic issue limited to the library home cards. Possible improvements: (a) write playtime earlier and more aggressively on plugin load, (b) periodic re-application for the first 30s, (c) accept it as best-effort on library home, focus on game detail page accuracy.
+- **Playtime sync between RomM and Steam**: Sync playtime data bidirectionally between Steam's per-shortcut playtime and RomM's per-ROM playtime tracking. Challenges: merging playtime across multiple devices (additive — sum deltas, not overwrite), deciding sync direction (Steam → RomM after play sessions, RomM → Steam on sync for display). Could surface RomM's cross-device total playtime in the game detail panel.
 - **UI settings page**: Add a settings sub-page for UI display preferences. Toggleable options with sensible defaults:
   - **Machine-scoped collections** (default: on): Append hostname to collection names, e.g. "RomM: N64 (steamdeck)". When off, use plain "RomM: N64".
   - **Device availability labels** (default: on): Show "Also on [device]" / "Streamable from [device]" in game detail panel. When off, hide device info.

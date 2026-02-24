@@ -144,6 +144,31 @@ function getBiosLevel(bios: BiosStatus): "ok" | "partial" | "missing" {
   return "missing";
 }
 
+/** Compute save sync display status and label from a SaveStatus response */
+function computeSaveSyncDisplay(saveStatus: SaveStatus | null): { status: "synced" | "conflict" | "none"; label: string } {
+  const hasConflict = saveStatus?.files?.some((f) => f.status === "conflict") ?? false;
+  if (hasConflict) return { status: "conflict", label: "Conflict" };
+
+  const hasLocalFiles = saveStatus?.files?.some((f) => f.local_path) ?? false;
+  if (hasLocalFiles) {
+    const lastCheck = saveStatus?.last_sync_check_at;
+    if (lastCheck) {
+      const diffMs = Date.now() - new Date(lastCheck).getTime();
+      const diffMin = Math.floor(diffMs / 60000);
+      let label: string;
+      if (diffMin < 1) label = "Just now";
+      else if (diffMin < 60) label = `${diffMin}m ago`;
+      else if (diffMin < 1440) label = `${Math.floor(diffMin / 60)}h ago`;
+      else label = `${Math.floor(diffMin / 1440)}d ago`;
+      return { status: "synced", label };
+    }
+    return { status: "synced", label: "Not synced" };
+  }
+
+  if (saveStatus && saveStatus.files.length > 0) return { status: "none", label: "No local saves" };
+  return { status: "none", label: "No saves" };
+}
+
 export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   // Read playtime from Steam's own overview synchronously (already written by metadataPatches)
   // This avoids an unnecessary render from setting it inside the async effect.
@@ -201,30 +226,9 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         let saveSyncStatus: "synced" | "conflict" | "none" | null = null;
         let saveSyncLabel = "";
         if (saveSyncSettings.save_sync_enabled) {
-          // Use real-time conflict detection from get_save_status (calls _detect_conflict per file)
-          const hasConflict = saveStatus?.files?.some((f) => f.status === "conflict") ?? false;
-          if (hasConflict) {
-            saveSyncStatus = "conflict";
-            saveSyncLabel = "Conflict";
-          } else if (saveStatus && saveStatus.files.length > 0) {
-            const lastCheck = saveStatus.last_sync_check_at;
-            if (lastCheck) {
-              saveSyncStatus = "synced";
-              const checkDate = new Date(lastCheck);
-              const diffMs = Date.now() - checkDate.getTime();
-              const diffMin = Math.floor(diffMs / 60000);
-              if (diffMin < 1) saveSyncLabel = "Just now";
-              else if (diffMin < 60) saveSyncLabel = `${diffMin}m ago`;
-              else if (diffMin < 1440) saveSyncLabel = `${Math.floor(diffMin / 60)}h ago`;
-              else saveSyncLabel = `${Math.floor(diffMin / 1440)}d ago`;
-            } else {
-              saveSyncStatus = "none";
-              saveSyncLabel = "Not synced";
-            }
-          } else {
-            saveSyncStatus = "none";
-            saveSyncLabel = "No saves";
-          }
+          const display = computeSaveSyncDisplay(saveStatus);
+          saveSyncStatus = display.status;
+          saveSyncLabel = display.label;
         }
 
         // Process BIOS info
@@ -274,29 +278,32 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     // Listen for conflict resolution / save sync changes from sibling components
     const onDataChanged = async (e: Event) => {
       const detail = (e as CustomEvent).detail;
+
+      // Handle save sync settings toggle (show/hide save sync info item)
+      if (detail?.type === "save_sync_settings") {
+        const enabled = detail.save_sync_enabled as boolean;
+        if (enabled) {
+          const rid = romIdRef.current;
+          if (rid) {
+            const saveStatus = await getSaveStatus(rid).catch((): SaveStatus | null => null);
+            const { status: ss, label: sl } = computeSaveSyncDisplay(saveStatus);
+            setInfo((prev) => ({ ...prev, saveSyncEnabled: true, saveSyncStatus: ss, saveSyncLabel: sl }));
+          } else {
+            setInfo((prev) => ({ ...prev, saveSyncEnabled: true }));
+          }
+        } else {
+          setInfo((prev) => ({ ...prev, saveSyncEnabled: false, saveSyncStatus: null, saveSyncLabel: "" }));
+        }
+        return;
+      }
+
       if (detail?.type !== "save_sync") return;
       const romId = romIdRef.current ?? detail.rom_id;
       if (!romId) return;
       // If event specifies a rom_id, skip if it's not for this game
       if (detail.rom_id && romIdRef.current && detail.rom_id !== romIdRef.current) return;
       const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
-      const hasConflict = saveStatus?.files?.some((f) => f.status === "conflict") ?? false;
-      const hasLocalFiles = saveStatus?.files?.some((f) => f.local_path) ?? false;
-      let saveSyncStatus: "synced" | "conflict" | "none" = "none";
-      let saveSyncLabel = "";
-      if (hasConflict) {
-        saveSyncStatus = "conflict";
-        saveSyncLabel = "Conflict";
-      } else if (hasLocalFiles) {
-        saveSyncStatus = "synced";
-        saveSyncLabel = "Just now";
-      } else if (saveStatus && saveStatus.files.length > 0) {
-        saveSyncStatus = "none";
-        saveSyncLabel = "No local saves";
-      } else {
-        saveSyncStatus = "none";
-        saveSyncLabel = "No saves";
-      }
+      const { status: saveSyncStatus, label: saveSyncLabel } = computeSaveSyncDisplay(saveStatus);
       setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel }));
     };
     window.addEventListener("romm_data_changed", onDataChanged);

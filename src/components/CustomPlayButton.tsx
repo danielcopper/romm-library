@@ -31,6 +31,7 @@ import {
   debugLog,
   preLaunchSync,
   getSaveStatus,
+  logError,
 } from "../api/backend";
 import { showConflictResolutionModal } from "./ConflictModal";
 import type { DownloadProgressEvent, DownloadCompleteEvent } from "../types";
@@ -57,7 +58,6 @@ function showLaunchConfirmation(title: string, message: string): Promise<boolean
 }
 
 export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
-  debugLog(`CustomPlayButton: mounted appId=${appId}`);
   const [state, setState] = useState<PlayButtonState>("loading");
   const [romId, setRomId] = useState<number | null>(null);
   const [romName, setRomName] = useState<string>("");
@@ -112,7 +112,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           }
         }
       } catch (e) {
-        console.error("[RomM] CustomPlayButton init error:", e);
+        logError(`CustomPlayButton init error: ${e}`);
         if (!cancelled) {
           setState("not_romm");
           toaster.toast({ title: "RomM Sync", body: "Could not connect to RomM server" });

@@ -17,6 +17,7 @@ import {
   getOfflineQueue,
   retryFailedSync,
   clearOfflineQueue,
+  logError,
 } from "../api/backend";
 import { showConflictResolutionModal } from "./ConflictModal";
 import type { SaveSyncSettings as SaveSyncSettingsType, PendingConflict, ConflictMode, OfflineQueueItem } from "../types";
@@ -36,6 +37,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
   const [settings, setSettings] = useState<SaveSyncSettingsType | null>(null);
   const [conflicts, setConflicts] = useState<PendingConflict[]>([]);
   const [failedOps, setFailedOps] = useState<OfflineQueueItem[]>([]);
+  const [toggleKey, setToggleKey] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState("");
   const [resolving, setResolving] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
   useEffect(() => {
     getSaveSyncSettings()
       .then(setSettings)
-      .catch((e) => console.error("[RomM] Failed to load save sync settings:", e));
+      .catch((e) => logError(`Failed to load save sync settings: ${e}`));
     loadConflicts();
     loadFailedOps();
   }, []);
@@ -54,7 +56,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
       const result = await getPendingConflicts();
       setConflicts(result.conflicts);
     } catch (e) {
-      console.error("[RomM] Failed to load conflicts:", e);
+      logError(`Failed to load conflicts: ${e}`);
     }
   };
 
@@ -63,7 +65,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
       const result = await getOfflineQueue();
       setFailedOps(result.queue);
     } catch (e) {
-      console.error("[RomM] Failed to load offline queue:", e);
+      logError(`Failed to load offline queue: ${e}`);
     }
   };
 
@@ -73,8 +75,14 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
     setSettings(updated);
     try {
       await updateSaveSyncSettings(updated);
+      // Notify game detail page when save_sync_enabled changes
+      if ("save_sync_enabled" in partial) {
+        window.dispatchEvent(new CustomEvent("romm_data_changed", {
+          detail: { type: "save_sync_settings", save_sync_enabled: updated.save_sync_enabled },
+        }));
+      }
     } catch (e) {
-      console.error("[RomM] Failed to save settings:", e);
+      logError(`Failed to save settings: ${e}`);
     }
   };
 
@@ -122,7 +130,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
         );
       }
     } catch (e) {
-      console.error("[RomM] Retry failed:", e);
+      logError(`Retry failed: ${e}`);
     }
     setRetrying(null);
   };
@@ -132,7 +140,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
       await clearOfflineQueue();
       setFailedOps([]);
     } catch (e) {
-      console.error("[RomM] Failed to clear queue:", e);
+      logError(`Failed to clear queue: ${e}`);
     }
   };
 
@@ -168,6 +176,10 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
           strOKButtonText="I am sure"
           strCancelButtonText="Cancel"
           onOK={() => handleSettingChange({ save_sync_enabled: true })}
+          onCancel={() => {
+            // Force ToggleField to remount and pick up checked={false}
+            setToggleKey((k) => k + 1);
+          }}
         />,
       );
     } else {
@@ -188,6 +200,7 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
       <PanelSection title="Save Sync">
         <PanelSectionRow>
           <ToggleField
+            key={toggleKey}
             label="Enable Save Sync"
             description="Sync RetroArch saves between this device and RomM server"
             checked={enabled}

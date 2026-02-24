@@ -7,7 +7,7 @@
 
 import { toaster } from "@decky/api";
 import { isRomMAppId } from "../patches/gameDetailPatch";
-import { getInstalledRom, getPendingConflicts, getSaveSyncSettings } from "../api/backend";
+import { getInstalledRom, getPendingConflicts, getSaveSyncSettings, logInfo, logError } from "../api/backend";
 
 let gameActionHook: { unregister: () => void } | null = null;
 
@@ -58,13 +58,13 @@ export function registerLaunchInterceptor(): void {
           // Non-critical — let the game launch if we can't check conflicts
         }
       } catch (e) {
-        console.error("[RomM] Launch interceptor error:", e);
+        logError(`Launch interceptor error: ${e}`);
         // On error, don't block the launch
       }
     },
   );
 
-  console.log("[RomM] Launch interceptor registered");
+  logInfo("Launch interceptor registered");
 }
 
 export function unregisterLaunchInterceptor(): void {
@@ -72,5 +72,5 @@ export function unregisterLaunchInterceptor(): void {
     gameActionHook.unregister();
     gameActionHook = null;
   }
-  console.log("[RomM] Launch interceptor unregistered");
+  logInfo("Launch interceptor unregistered");
 }

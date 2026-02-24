@@ -1,7 +1,7 @@
 import { FC } from "react";
 import { ModalRoot, DialogButton } from "@decky/ui";
 import { showModal } from "@decky/ui";
-import { resolveConflict } from "../api/backend";
+import { resolveConflict, logError } from "../api/backend";
 import type { PendingConflict } from "../types";
 
 export type ConflictResolution = "use_local" | "use_server" | "launch_anyway" | "cancel";
@@ -56,13 +56,13 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
       try {
         await resolveConflict(conflict.rom_id, conflict.filename, "upload");
       } catch (e) {
-        console.error("[RomM] Failed to resolve conflict (upload):", e);
+        logError(`Failed to resolve conflict (upload): ${e}`);
       }
     } else if (resolution === "use_server") {
       try {
         await resolveConflict(conflict.rom_id, conflict.filename, "download");
       } catch (e) {
-        console.error("[RomM] Failed to resolve conflict (download):", e);
+        logError(`Failed to resolve conflict (download): ${e}`);
       }
     }
     // "launch_anyway" leaves the conflict unresolved
