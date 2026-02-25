@@ -39,10 +39,9 @@ Core flow implemented: `handlePlay` does pre-launch sync → conflict modal → 
 
 **Not yet done**:
 - **Pre-launch toast notifications**: success ("Saves downloaded from RomM"), failure ("Failed to sync saves"), conflict queued
-- **Part C — Proactive sync check on page open**: Currently sync only runs when Play is clicked. Should run in background when RomMPlaySection mounts.
 
-#### 6. RomM shared account warning
-Warning in ConnectionSettings when username looks like a shared account ("admin", "romm", "user", "guest"). Non-blocking informational orange warning.
+#### ~~6. RomM shared account warning~~ — DONE
+Warning in ConnectionSettings when username looks like a shared account. Orange non-blocking warning below username field.
 
 ### Verification (unchecked items remaining)
 - [ ] Save file uploaded to RomM after play session ends
@@ -91,7 +90,12 @@ Warning in ConnectionSettings when username looks like a shared account ("admin"
 **Proposed solution — cache-first, then refresh**:
 1. **Immediate render from cached data**: On mount, populate UI from local state files (`installed_roms`, `metadata_cache.json`, `shortcut_registry`, `save_sync_state.json`, artwork cache). BIOS defaults to last-known state.
 2. **Connection status indicator**: Info item in PlaySection showing "Connecting..." (spinner) → "Connected" (green, refresh live data) → "Offline" (dimmed, cached data only).
-3. **Background refresh**: Once connected, silently refresh save/BIOS status and conflict detection. Update UI reactively.
+3. **Background refresh**: Once connected, silently refresh save/BIOS status and conflict detection. Update UI reactively. This subsumes the "proactive sync check on page open" idea — rather than a separate pre-launch sync on mount, the background refresh handles it. Save status and conflicts are surfaced immediately from cache, then updated live when the server responds.
+
+**Open questions**:
+- Should the background refresh do a full `_sync_rom_saves(direction="download")` or just a lightweight status check (list server saves, compare timestamps, detect conflicts without downloading)?
+- If a conflict is detected during background refresh, should it show the conflict modal immediately or just update the Play button to "Resolve Conflict" state and let the user initiate resolution?
+- How aggressive should the refresh be — every page visit, or only if last check was >N minutes ago?
 
 **Files to modify**: `CustomPlayButton.tsx`, `RomMPlaySection.tsx`, `RomMGameInfoPanel.tsx`, `backend.ts`, `main.py`/`lib/`
 
