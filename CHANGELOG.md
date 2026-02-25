@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.7.0...decky-romm-sync-v0.8.0) (2026-02-25)
+
+
+### Features
+
+* Phase 5.6 remaining — cache-first game detail, save sync improvements ([#45](https://github.com/danielcopper/decky-romm-sync/issues/45)) ([7d5ca4d](https://github.com/danielcopper/decky-romm-sync/commit/7d5ca4dbf80eeab9141fed314c08614845c5401d))
+
+
+### Bug Fixes
+
+* sync & download progress bars, cancel sync ([#47](https://github.com/danielcopper/decky-romm-sync/issues/47)) ([27a4aff](https://github.com/danielcopper/decky-romm-sync/commit/27a4affef5e5110ccee073ba00f2d2099a803509))
+
 ## [0.7.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.6.0...decky-romm-sync-v0.7.0) (2026-02-25)
 
 
