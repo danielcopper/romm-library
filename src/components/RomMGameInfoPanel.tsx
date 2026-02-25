@@ -3,8 +3,7 @@
  * on RomM game detail pages.
  *
  * Layout:
- *   Status Row:   Install status (Downloaded / Not Installed) + Platform badge
- *   Game Info:    Description, Developer/Publisher, Genre tags, Release date
+ *   Game Info:    Platform, Description, Developer/Publisher, Genre tags, Release date
  *   ROM File:     Filename (only when installed)
  *   BIOS:         Status (only when platform needs BIOS)
  *   Save Sync:    Status (only when save sync enabled)
@@ -356,19 +355,6 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
   const meta = state.metadata;
 
-  // --- Status Row ---
-  const statusRow = createElement("div", {
-    key: "status-row",
-    className: "romm-panel-status-row",
-  },
-    createElement("span", {
-      className: `romm-panel-status-badge ${state.installed ? "romm-panel-status-installed" : "romm-panel-status-not-installed"}`,
-    }, state.installed ? "Downloaded" : "Not Installed"),
-    state.platformName
-      ? createElement("span", { className: "romm-panel-platform-badge" }, state.platformName)
-      : null,
-  );
-
   // --- Game Info section ---
   const gameInfoChildren: ReturnType<typeof createElement>[] = [];
 
@@ -377,6 +363,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       gameInfoChildren.push(
         createElement("div", { key: "summary", className: "romm-panel-summary" }, meta.summary),
       );
+    }
+
+    // Platform after description
+    if (state.platformName) {
+      gameInfoChildren.push(infoRow("platform", "Platform", state.platformName));
     }
 
     if (meta.companies && meta.companies.length > 0) {
@@ -411,6 +402,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     if (meta.average_rating != null && meta.average_rating > 0) {
       gameInfoChildren.push(infoRow("rating", "Rating", `${Math.round(meta.average_rating)}%`));
+    }
+  } else {
+    // No metadata — still show platform
+    if (state.platformName) {
+      gameInfoChildren.push(infoRow("platform", "Platform", state.platformName));
     }
   }
 
@@ -631,7 +627,6 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     className: "romm-panel-container",
     style: { paddingBottom: "48px" },
   },
-    statusRow,
     gameInfoSection,
     romFileSection,
     saveSyncSection,
