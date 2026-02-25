@@ -2,26 +2,27 @@
 
 ## Overview
 
-The Python backend (`main.py` + `lib/`) uses a **mixin-based** architecture. A single `Plugin` class inherits from 8 mixin classes, each owning a distinct domain. At runtime, Python's MRO (Method Resolution Order) composes them into one object — all methods are accessible on `self`, and Decky's `callable()` discovery works transparently.
+The Python backend (`main.py` + `lib/`) uses a **mixin-based** architecture. A single `Plugin` class inherits from 9 mixin classes, each owning a distinct domain. At runtime, Python's MRO (Method Resolution Order) composes them into one object — all methods are accessible on `self`, and Decky's `callable()` discovery works transparently.
 
 ```python
 class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin,
-             FirmwareMixin, MetadataMixin, DownloadMixin, SyncMixin)
+             FirmwareMixin, MetadataMixin, DownloadMixin, SyncMixin, SaveSyncMixin)
 ```
 
 ## Module Responsibilities
 
 | Module            | Lines | Domain                                                       |
 | ----------------- | ----- | ------------------------------------------------------------ |
-| `state.py`        | ~100  | Settings, state, metadata cache persistence                  |
+| `state.py`        | ~110  | Settings, state, metadata cache persistence                  |
 | `romm_client.py`  | ~80   | RomM HTTP client, platform config loading                    |
-| `steam_config.py` | ~180  | VDF operations, Steam paths, Steam Input config              |
-| `firmware.py`     | ~215  | BIOS/firmware status, download, platform checks              |
+| `steam_config.py` | ~200  | VDF operations, Steam paths, Steam Input config              |
+| `firmware.py`     | ~240  | BIOS/firmware status, download, platform checks              |
 | `metadata.py`     | ~95   | ROM metadata extraction, caching (7-day TTL)                 |
-| `sgdb.py`         | ~225  | SteamGridDB artwork fetch, API key management                |
-| `downloads.py`    | ~395  | ROM downloads, multi-file/ZIP, M3U, cleanup                  |
+| `sgdb.py`         | ~280  | SteamGridDB artwork fetch, API key management                |
+| `downloads.py`    | ~390  | ROM downloads, multi-file/ZIP, M3U, cleanup                  |
 | `sync.py`         | ~710  | Sync engine, registry, artwork, platform management          |
-| `main.py`         | ~115  | Plugin class composition, lifecycle, thin settings callables |
+| `save_sync.py`    | ~1260 | Save file sync, device registration, conflict detection      |
+| `main.py`         | ~140  | Plugin class composition, lifecycle, thin settings callables |
 
 ## Runtime Dependency Diagram
 
@@ -38,9 +39,9 @@ Each mixin documents its runtime dependencies via a `TYPE_CHECKING` Protocol. Th
         │  romm   │  │   steam     │        │ metadata │
         │ client  │  │   config    │        │          │
         └─────────┘  └─────────────┘        └──────────┘
-              ▲           ▲                  ▲    ▲
-              │           │                  │    │
-     ┌────────┼───────────┼──────────────────┘    │
+         ▲    ▲           ▲                  ▲    ▲
+         │    │           │                  │    │
+     ┌───┘    ├───────────┼──────────────────┘    │
      │        │           │                       │
      │   ┌────┴────┐  ┌───┴──┐  ┌──────────┐      │
      │   │firmware │  │ sgdb │  │downloads │      │
@@ -50,8 +51,12 @@ Each mixin documents its runtime dependencies via a `TYPE_CHECKING` Protocol. Th
      │        └───────────┼──────────┘            │
      │                    │                       │
      │              ┌─────┴────┐                  │
-     └──────────────┤   sync   ├──────────────────┘
-                    └──────────┘
+     ├──────────────┤   sync   ├──────────────────┘
+     │              └──────────┘
+     │
+┌────┴──────┐
+│ save_sync │
+└───────────┘
 ```
 
 Arrow direction: depends-on (A → B means A calls methods from B).
@@ -133,6 +138,15 @@ Uses: self.settings, self._state, self._sync_running, self._sync_cancel,
       _generate_artwork_id(), _read_shortcuts(), _write_shortcuts() (from steam_config)
 ```
 
+**save_sync** — depends on: state, romm_client
+
+```python
+Uses: self.settings, self._state, self._save_sync_state, self.loop (from state/Plugin)
+      self._romm_request(), self._romm_download() (from romm_client)
+      self._resolve_system() (from romm_client)
+      self._save_state(), self._log_debug() (from state)
+```
+
 ## Boundary Enforcement
 
 ### 1. import-linter (compile-time)
@@ -172,9 +186,9 @@ All internal/cross-mixin methods use `_` prefix. Public callables (exposed to fr
 
 ## When to Reconsider
 
-The mixin pattern works well at the current scale (~2000 lines across 8 modules, single maintainer). Consider switching to **delegation** (separate service objects injected into Plugin) if:
+The mixin pattern works well at the current scale (~3500 lines across 9 modules, single maintainer), though approaching the threshold below. Consider switching to **delegation** (separate service objects injected into Plugin) if:
 
-- The codebase exceeds ~4000 lines of backend logic
+- The codebase exceeds ~4000 lines of backend logic (currently ~3500)
 - Multiple contributors need to work on modules simultaneously
 - Circular runtime dependencies emerge between mixins
 - Testing requires isolating one mixin from another's side effects

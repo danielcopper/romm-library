@@ -69,32 +69,15 @@ Drop the `BIsModOrShortcut` bypass entirely for Phase 5.6. Let `BIsModOrShortcut
 
 ## 3. React Tree Structure for Non-Steam Shortcuts
 
-### What we know (with bypass active)
+Non-Steam shortcuts have minimal native children in the `InnerContainer`:
 
-From diagnostic tree dumps logged by `gameDetailPatch.tsx` (gated behind `debug_logging` setting), the `InnerContainer` children for shortcuts when `BIsModOrShortcut` returns `false` are:
-
-1. `HeaderCapsule` (type `oe`) — hero banner, logo, header area
-2. Plugin injections — `ProtonMedal` (ProtonDB), `GameStats` (HLTB), etc.
+1. `HeaderCapsule` — hero banner, logo, header area
+2. Plugin injections — `ProtonMedal` (ProtonDB), `GameStats` (HLTB), `AudioLoaderCompat`, etc.
 3. `p` element — possibly a native text node or separator
-4. `[object Object]` — unknown native component
-5. `AudioLoaderCompat` — AudioLoader plugin injection
 
-The native PlaySection (`playSectionClasses.Container` and `basicAppDetailsSectionStylerClasses.PlaySection`) was NOT FOUND in the tree for shortcuts, even with the bypass active. This means Steam simply does not render a PlaySection React component for non-Steam shortcuts — the "Play" button users see is rendered through a different mechanism or at a different tree level.
+No native PlaySection component exists for non-Steam shortcuts. Steam does not render a PlaySection React component for them — the "Play" button users see is rendered through a different mechanism or at a different tree level.
 
-### After dropping the bypass
-
-The tree structure will change when `BIsModOrShortcut` returns `true` (its natural state). This needs re-investigation. The diagnostic tree dump logging is already built into `gameDetailPatch.tsx`:
-
-```typescript
-// gameDetailPatch.tsx lines 123-163
-if (isRomM && !dumpedAppIds.has(appId)) {
-  dumpedAppIds.add(appId);
-  debugLog(`===== DEEP TREE DUMP for appId=${appId} =====`);
-  // ... logs full InnerContainer structure
-}
-```
-
-Enable `debug_logging` in plugin settings, navigate to a RomM game, and check the Decky log for the tree dump.
+Diagnostic tree dump logging is built into `gameDetailPatch.tsx` (gated behind the `debug_logging` setting) for future investigation if needed.
 
 ## 4. PlaySection Replacement Strategy
 
@@ -130,9 +113,9 @@ const PLUGIN_KEY_PREFIXES = ["romm-", "unifideck-", "hltb-", "protondb-"];
 const PLUGIN_TYPE_NAMES = ["ProtonMedal", "GameStats", "AudioLoaderCompatStateContextProvider"];
 ```
 
-### CSS hiding (removed)
+### CSS hiding (no longer used for PlaySection)
 
-Previously, `styleInjector.ts` injected CSS rules to hide the native PlaySection as a belt-and-suspenders measure. This was removed — splice-replace (removing the element from the React tree entirely) is sufficient and more reliable. CSS hiding cannot prevent Steam's gamepad focus engine from reaching hidden elements since it walks the React tree, not the DOM.
+`styleInjector.ts` still exists and is used by `RomMGameInfoPanel.tsx` and `CustomPlayButton.tsx` for component styling. However, it is no longer used to hide the native PlaySection — splice-replace (removing the element from the React tree entirely) is sufficient and more reliable. CSS hiding cannot prevent Steam's gamepad focus engine from reaching hidden elements since it walks the React tree, not the DOM.
 
 ### Splice replacement
 
@@ -289,11 +272,7 @@ The BIOS section has edge cases:
 - **BIOS section**: Only shown for platforms that need BIOS files.
 - **Playtime**: Only shown when tracked playtime > 0.
 
-## 8. Open Questions / TODO
-
-- **Re-investigate tree structure after dropping BIsModOrShortcut bypass**: **RESOLVED** — tree structure investigated and documented. Non-Steam shortcuts have minimal native children: HeaderCapsule, plugin injections (ProtonMedal, GameStats, AudioLoader), and a `p` element. No native PlaySection component exists for shortcuts.
-
-- **Auto-select play button on page entry**: **RESOLVED** — auto-select implemented with 400ms DOM-based delay.
+## 8. Open Questions
 
 - **Determine if store patches are still needed**: With a fully custom game detail page, `GetDescriptions`, `GetAssociations`, `BHasStoreCategory`, etc. may be unnecessary. However, they might still be consumed by:
   - Library grid hover tooltips
@@ -303,7 +282,3 @@ The BIOS section has edge cases:
   Evaluate which contexts still use native rendering and keep patches only for those.
 
 - **Test Unifideck coexistence**: Both plugins use position-based heuristics on `InnerContainer.props.children`. Verify no double-injection or index conflicts when both are active. Test all four scenarios listed in section 6.
-
-- **Determine if styleInjector.ts CSS hiding is still needed**: **RESOLVED** — CSS hiding removed. Splice-replace is sufficient.
-
-- **Hiding native metadata sections below PlaySection**: **RESOLVED** — Non-Steam shortcuts have minimal native content below PlaySection (no DLC, achievements, community hub). No hiding needed.

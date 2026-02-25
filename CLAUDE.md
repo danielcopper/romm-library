@@ -31,7 +31,7 @@ RomM Server <-HTTP-> Python Backend (main.py)
 - **AddShortcut ignores most params**: `SteamClient.Apps.AddShortcut(name, exe, startDir, launchOptions)` ignores startDir and launchOptions (confirmed by MoonDeck plugin). Must use `Set*` calls (`SetShortcutName`, `SetShortcutExe`, `SetShortcutStartDir`, `SetAppLaunchOptions`) after a 500ms delay. Do NOT pass quoted exe paths — the API handles quoting internally.
 - **BIsModOrShortcut bypass DROPPED**: Phase 5.6 removed the bypass counter entirely. Shortcuts return `BIsModOrShortcut() = true` (natural state). We own the entire game detail UI via RomMPlaySection + future RomMGameInfoPanel. See `docs/game-detail-ui.md` section 2 for the rationale.
 - **Shortcut property re-sync**: Changing exe, startDir, or launchOptions on existing shortcuts may not take effect reliably. Full delete + recreate (re-sync) is required for changes to launch config.
-- **RomM 4.6.1 Save API**: `GET /api/saves/{id}/content` does not exist — use `download_path` from save metadata (URL-encode spaces/parens). No `content_hash` in SaveSchema — use hybrid timestamp + download-and-hash. `POST /api/saves` upserts by filename. `GET /api/roms/{id}/notes` returns 500 — read `all_user_notes` from ROM detail instead. `device_id` param is accepted but ignored. See `.romm-api-verified.md` for full details.
+- **RomM 4.6.1 Save API**: `GET /api/saves/{id}/content` does not exist — use `download_path` from save metadata (URL-encode spaces/parens). No `content_hash` in SaveSchema — use hybrid timestamp + download-and-hash. `POST /api/saves` upserts by filename. `GET /api/roms/{id}/notes` returns 500 — read `all_user_notes` from ROM detail instead. `device_id` param is accepted but ignored. See wiki Save-File-Sync-Architecture for full details.
 
 ## File Structure
 
@@ -62,14 +62,14 @@ src/utils/collections.ts             # Steam collection management
 src/utils/sessionManager.ts          # Game session detection and playtime tracking
 bin/romm-launcher                    # Bash launcher for RetroDECK
 defaults/config.json                 # 149 platform slug -> RetroDECK system mappings
-tests/test_*.py                      # Per-module backend tests (164 tests)
+tests/test_*.py                      # Per-module backend tests (417 tests)
 tests/test_save_sync.py              # Save sync backend tests
 tests/conftest.py                    # Mock decky module for test isolation
 ```
 
 ## Current State
 
-**Latest release**: v0.2.1 on main
+**Latest release**: v0.6.0 on main
 
 Working:
 - Full sync engine (fetch ROMs, create shortcuts, apply cover art)
