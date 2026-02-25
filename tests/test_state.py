@@ -279,6 +279,29 @@ class TestInsecureSslSetting:
         assert plugin.settings["romm_allow_insecure_ssl"] is False
 
 
+class TestSettingsFilePermissions:
+    def test_save_settings_creates_file_with_0600(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin.settings = {"romm_url": "http://example.com"}
+        plugin._save_settings_to_disk()
+        settings_path = tmp_path / "settings.json"
+        mode = os.stat(settings_path).st_mode & 0o777
+        assert mode == 0o600
+
+    def test_load_settings_fixes_permissions(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        settings_path = tmp_path / "settings.json"
+        import json as _json
+        with open(settings_path, "w") as f:
+            _json.dump({"romm_url": "http://example.com"}, f)
+        os.chmod(settings_path, 0o644)
+        assert os.stat(settings_path).st_mode & 0o777 == 0o644
+        plugin._load_settings()
+        assert os.stat(settings_path).st_mode & 0o777 == 0o600
+
+
 class TestPruneStaleState:
     def test_prunes_missing_files(self, plugin, tmp_path):
         import decky
