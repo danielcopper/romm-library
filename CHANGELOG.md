@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.6.0...decky-romm-sync-v0.7.0) (2026-02-25)
+
+
+### Features
+
+* frontend logging overhaul — log level system with console.* migration ([#42](https://github.com/danielcopper/decky-romm-sync/issues/42)) ([a90ac50](https://github.com/danielcopper/decky-romm-sync/commit/a90ac507d528a54a8b6d9332e0462dba4b402cae))
+
 ## [0.6.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.5.0...decky-romm-sync-v0.6.0) (2026-02-24)
 
 
