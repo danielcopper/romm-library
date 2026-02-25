@@ -1,6 +1,21 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, OfflineQueueItem, RomLookupResult } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult } from "../types";
 
+export interface CachedGameDetail {
+  found: boolean;
+  rom_id?: number;
+  rom_name?: string;
+  platform_slug?: string;
+  platform_name?: string;
+  installed?: boolean;
+  save_sync_enabled?: boolean;
+  save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
+  pending_conflicts?: Array<{ rom_id: number; filename: string; detected_at: string }>;
+  metadata?: Record<string, unknown> | null;
+  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean } | null;
+}
+
+export const getCachedGameDetail = callable<[number], CachedGameDetail>("get_cached_game_detail");
 export const getSettings = callable<[], PluginSettings>("get_settings");
 export const saveSettings = callable<[string, string, string], { success: boolean; message: string }>("save_settings");
 export const testConnection = callable<[], { success: boolean; message: string }>("test_connection");
@@ -49,6 +64,7 @@ export const saveShortcutIcon = callable<[number, string], { success: boolean }>
 // Save sync callables
 export const ensureDeviceRegistered = callable<[], { success: boolean; device_id: string; device_name: string }>("ensure_device_registered");
 export const getSaveStatus = callable<[number], SaveStatus>("get_save_status");
+export const checkSaveStatusLightweight = callable<[number], SaveStatus>("check_save_status_lightweight");
 export const preLaunchSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: PendingConflict[] }>("pre_launch_sync");
 export const postExitSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[] }>("post_exit_sync");
 export const syncRomSaves = callable<[number], { success: boolean; message: string; synced: number; errors?: string[] }>("sync_rom_saves");
@@ -62,11 +78,6 @@ export const updateSaveSyncSettings = callable<[SaveSyncSettings], { success: bo
 
 // Bulk playtime for plugin-load UI update
 export const getAllPlaytime = callable<[], { playtime: Record<string, { total_seconds: number; session_count: number }> }>("get_all_playtime");
-
-// Offline queue (failed sync retry)
-export const getOfflineQueue = callable<[], { queue: OfflineQueueItem[] }>("get_offline_queue");
-export const retryFailedSync = callable<[number, string], { success: boolean; message: string; synced?: number }>("retry_failed_sync");
-export const clearOfflineQueue = callable<[], { success: boolean }>("clear_offline_queue");
 
 // Delete operations
 export const deleteLocalSaves = callable<[number], { success: boolean; deleted_count: number; message: string }>("delete_local_saves");

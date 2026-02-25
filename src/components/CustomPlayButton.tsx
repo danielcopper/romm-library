@@ -24,15 +24,14 @@ import {
 } from "@decky/ui";
 import { hideNativePlaySection, showNativePlaySection } from "../utils/styleInjector";
 import {
-  getRomBySteamAppId,
-  getInstalledRom,
+  getCachedGameDetail,
   startDownload,
   removeRom,
   debugLog,
   preLaunchSync,
-  getSaveStatus,
   logError,
 } from "../api/backend";
+import { getRommConnectionState } from "../utils/connectionState";
 import { showConflictResolutionModal } from "./ConflictModal";
 import type { DownloadProgressEvent, DownloadCompleteEvent } from "../types";
 
@@ -62,6 +61,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   const [romId, setRomId] = useState<number | null>(null);
   const [romName, setRomName] = useState<string>("");
   const [actionPending, setActionPending] = useState(false);
+  const [isOffline, setIsOffline] = useState(getRommConnectionState() === "offline");
   const romIdRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -72,39 +72,34 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     return () => { showNativePlaySection(); };
   }, []);
 
-  // Initial load: determine ROM status
+  // Initial load: determine ROM status from cache (instant, no network calls)
   useEffect(() => {
     let cancelled = false;
 
     async function init() {
       try {
-        const rom = await getRomBySteamAppId(appId);
-        debugLog(`CustomPlayButton init: appId=${appId} rom=${JSON.stringify(rom)} cancelled=${cancelled}`);
+        const cached = await getCachedGameDetail(appId);
+        debugLog(`CustomPlayButton init: appId=${appId} cached.found=${cached.found} cancelled=${cancelled}`);
         if (cancelled) return;
-        if (!rom) {
-          debugLog(`CustomPlayButton: -> not_romm (no rom found)`);
+        if (!cached.found) {
+          debugLog(`CustomPlayButton: -> not_romm (not in cache)`);
           setState("not_romm");
           return;
         }
 
-        setRomId(rom.rom_id);
-        romIdRef.current = rom.rom_id;
-        if (rom.name) setRomName(rom.name);
+        const rid = cached.rom_id!;
+        setRomId(rid);
+        romIdRef.current = rid;
+        if (cached.rom_name) setRomName(cached.rom_name);
 
-        const installed = await getInstalledRom(rom.rom_id);
-        debugLog(`CustomPlayButton: romId=${rom.rom_id} installed=${!!installed}`);
-        if (cancelled) return;
-
-        if (!installed) {
+        if (!cached.installed) {
           debugLog(`CustomPlayButton: -> download`);
           setState("download");
         } else {
-          // Real-time conflict detection via get_save_status (calls _detect_conflict per file)
-          const saveStatus = await getSaveStatus(rom.rom_id).catch(() => null);
-          if (cancelled) return;
-          const hasConflict = saveStatus?.files?.some((f: { status: string }) => f.status === "conflict") ?? false;
+          // Check for conflicts from cached save status
+          const hasConflict = cached.save_status?.files?.some((f) => f.status === "conflict") ?? false;
           if (hasConflict) {
-            debugLog(`CustomPlayButton: -> conflict (detected)`);
+            debugLog(`CustomPlayButton: -> conflict (from cache)`);
             setState("conflict");
           } else {
             debugLog(`CustomPlayButton: -> play`);
@@ -115,7 +110,6 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         logError(`CustomPlayButton init error: ${e}`);
         if (!cancelled) {
           setState("not_romm");
-          toaster.toast({ title: "RomM Sync", body: "Could not connect to RomM server" });
         }
       }
     }
@@ -154,10 +148,33 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     };
     window.addEventListener("romm_rom_uninstalled", onUninstall);
 
+    // Listen for save sync updates (e.g. lightweight background check found a conflict)
+    const onDataChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.type !== "save_sync") return;
+      if (detail.rom_id && detail.rom_id !== romIdRef.current) return;
+      // Update button state based on conflict info from the event
+      if (detail.has_conflict !== undefined) {
+        setState((prev) => {
+          if (prev === "syncing" || prev === "launching" || prev === "download") return prev;
+          return detail.has_conflict ? "conflict" : "play";
+        });
+      }
+    };
+    window.addEventListener("romm_data_changed", onDataChanged);
+
+    const onConnectionChanged = (e: Event) => {
+      const connState = (e as CustomEvent).detail?.state;
+      setIsOffline(connState === "offline");
+    };
+    window.addEventListener("romm_connection_changed", onConnectionChanged);
+
     return () => {
       removeEventListener("download_progress", progressListener);
       removeEventListener("download_complete", completeListener);
       window.removeEventListener("romm_rom_uninstalled", onUninstall);
+      window.removeEventListener("romm_data_changed", onDataChanged);
+      window.removeEventListener("romm_connection_changed", onConnectionChanged);
     };
   }, []);
 
@@ -183,29 +200,53 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     const gameId = overview?.GetGameID?.() ?? String(appId);
     debugLog(`CustomPlayButton: handlePlay appId=${appId} gameId=${gameId}`);
 
-    // Pre-launch save sync — backend handles settings checks and returns conflicts
+    // Pre-launch save sync
     if (romId) {
-      setState("syncing");
-      try {
-        const result = await Promise.race([
-          preLaunchSync(romId),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000)),
-        ]);
-
-        debugLog(`CustomPlayButton: preLaunchSync result: synced=${result.synced} conflicts=${result.conflicts?.length ?? 0} success=${result.success}`);
-
-        if (result.conflicts && result.conflicts.length > 0) {
-          const resolution = await showConflictResolutionModal(result.conflicts);
-          if (resolution === "cancel") {
-            setState("conflict");
-            return;
-          }
-          // Conflict resolved — notify sibling components to refresh
-          window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+      if (getRommConnectionState() === "offline") {
+        // RomM offline — warn user, skip sync attempt entirely
+        const proceed = await showLaunchConfirmation(
+          "RomM Offline",
+          "Can't sync saves — RomM server is unreachable. Launch with local saves? Saves will sync after exit when the server is back, but may produce conflicts.",
+        );
+        if (!proceed) {
+          setState("play");
+          return;
         }
+      } else {
+        setState("syncing");
+        try {
+          const result = await Promise.race([
+            preLaunchSync(romId),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000)),
+          ]);
 
-        if (!result.success && result.errors && result.errors.length > 0) {
-          debugLog(`CustomPlayButton: pre-launch sync errors: ${result.errors.join(", ")}`);
+          debugLog(`CustomPlayButton: preLaunchSync result: synced=${result.synced} conflicts=${result.conflicts?.length ?? 0} success=${result.success}`);
+
+          if (result.conflicts && result.conflicts.length > 0) {
+            const resolution = await showConflictResolutionModal(result.conflicts);
+            if (resolution === "cancel") {
+              setState("conflict");
+              return;
+            }
+            // Conflict resolved — notify sibling components to refresh
+            window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+          }
+
+          if (!result.success && result.errors && result.errors.length > 0) {
+            debugLog(`CustomPlayButton: pre-launch sync errors: ${result.errors.join(", ")}`);
+            const proceed = await showLaunchConfirmation(
+              "Save Sync Unavailable",
+              "Couldn't sync saves with RomM server. Launch with local saves?",
+            );
+            if (!proceed) {
+              setState("play");
+              return;
+            }
+          } else if (result.synced && result.synced > 0) {
+            toaster.toast({ title: "RomM Save Sync", body: "Saves downloaded from RomM" });
+          }
+        } catch (e) {
+          debugLog(`CustomPlayButton: pre-launch sync failed: ${e}`);
           const proceed = await showLaunchConfirmation(
             "Save Sync Unavailable",
             "Couldn't sync saves with RomM server. Launch with local saves?",
@@ -214,18 +255,6 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
             setState("play");
             return;
           }
-        } else if (result.synced && result.synced > 0) {
-          toaster.toast({ title: "RomM Save Sync", body: "Saves downloaded from RomM" });
-        }
-      } catch (e) {
-        debugLog(`CustomPlayButton: pre-launch sync failed: ${e}`);
-        const proceed = await showLaunchConfirmation(
-          "Save Sync Unavailable",
-          "Couldn't sync saves with RomM server. Launch with local saves?",
-        );
-        if (!proceed) {
-          setState("play");
-          return;
         }
       }
     }
@@ -444,6 +473,12 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   }
 
   // state === "play"
+  const playBg = isOffline
+    ? "linear-gradient(to right, #6b7b6b 0%, #5a6a5a 60%)"
+    : "linear-gradient(to right, #70d61d 0%, #01a75b 60%)";
+  const dropdownBg = isOffline
+    ? "linear-gradient(to right, #5a6a5a, #4d5d4d)"
+    : "linear-gradient(to right, #4da636, #3f8a2b)";
   return (
     <Focusable
       ref={containerRef}
@@ -455,7 +490,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         style={{
           ...mainBtnStyle,
           borderRadius: "2px 0 0 2px",
-          background: "linear-gradient(to right, #70d61d 0%, #01a75b 60%)",
+          background: playBg,
           backgroundPosition: "25%",
           backgroundSize: "330% 100%",
         }}
@@ -467,7 +502,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         className="romm-btn-dropdown"
         style={{
           ...dropdownArrowStyle,
-          background: "linear-gradient(to right, #4da636, #3f8a2b)",
+          background: dropdownBg,
         }}
         onClick={showDropdownMenu}
       >

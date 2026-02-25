@@ -107,6 +107,13 @@ export function hideNativePlaySection(playSectionClass: string) {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+@keyframes romm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.romm-status-dot-pulse {
+  animation: romm-pulse 1.5s ease-in-out infinite;
 }`;
     sp.window.document.head.appendChild(infoStyle);
   }

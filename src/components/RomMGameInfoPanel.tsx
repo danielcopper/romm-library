@@ -20,17 +20,16 @@ import { DialogButton } from "@decky/ui";
 // wrappers around non-interactive content, which don't register in this injection
 // context). Style as content sections, not buttons.
 import {
-  getRomBySteamAppId,
+  getCachedGameDetail,
   getRomMetadata,
   getInstalledRom,
   checkPlatformBios,
-  getSaveSyncSettings,
   getSaveStatus,
   getPendingConflicts,
   getArtworkBase64,
   debugLog,
 } from "../api/backend";
-import type { RomMetadata, InstalledRom, BiosStatus, SaveSyncSettings, SaveStatus, PendingConflict } from "../types";
+import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict } from "../types";
 
 interface RomMGameInfoPanelProps {
   appId: number;
@@ -100,54 +99,125 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     async function loadData() {
       try {
-        const rom = await getRomBySteamAppId(appId);
-        if (cancelled || !rom) {
-          if (!cancelled) setState((prev) => ({ ...prev, loading: false, error: !rom }));
+        // Phase 1: Cache-first — render instantly from cached data
+        const cached = await getCachedGameDetail(appId);
+        if (cancelled) return;
+        if (!cached.found) {
+          setState((prev) => ({ ...prev, loading: false, error: true }));
           return;
         }
 
-        const romId: number = rom.rom_id;
-        const romName: string = rom.name || "";
-        const platformName: string = rom.platform_name || "";
-        const platformSlug: string = rom.platform_slug || "";
+        const romId = cached.rom_id!;
+        const romName = cached.rom_name || "";
+        const platformName = cached.platform_name || "";
+        const platformSlug = cached.platform_slug || "";
 
         romIdRef.current = romId;
 
-        // Fetch metadata, installed status, BIOS, save sync in parallel
-        const [metadata, installedRom, coverResult, biosResult, saveSyncSettings, saveStatus, conflictsResult] = await Promise.all([
-          getRomMetadata(romId).catch((): RomMetadata | null => null),
-          getInstalledRom(romId).catch((): InstalledRom | null => null),
-          getArtworkBase64(romId).catch((): { base64: string | null } => ({ base64: null })),
-          checkPlatformBios(platformSlug).catch((): BiosStatus => ({ needs_bios: false })),
-          getSaveSyncSettings().catch((): SaveSyncSettings => ({
-            save_sync_enabled: false,
-            conflict_mode: "newest_wins",
-            sync_before_launch: false,
-            sync_after_exit: false,
-            clock_skew_tolerance_sec: 60,
-          })),
-          getSaveStatus(romId).catch((): SaveStatus | null => null),
-          getPendingConflicts().catch((): { conflicts: PendingConflict[] } => ({ conflicts: [] })),
-        ]);
+        // Build initial BIOS status from cache
+        let biosStatus: BiosStatus | null = null;
+        if (cached.bios_status) {
+          biosStatus = {
+            needs_bios: true,
+            server_count: cached.bios_status.total,
+            local_count: cached.bios_status.downloaded,
+            all_downloaded: cached.bios_status.all_downloaded,
+          };
+        }
 
-        if (cancelled) return;
+        // Build initial save status from cache
+        let saveStatus: SaveStatus | null = null;
+        if (cached.save_status) {
+          saveStatus = {
+            rom_id: romId,
+            files: cached.save_status.files.map((f) => ({
+              filename: f.filename,
+              status: f.status as "skip" | "download" | "upload" | "conflict",
+              local_path: null,
+              local_hash: null,
+              local_mtime: null,
+              local_size: null,
+              server_save_id: null,
+              server_updated_at: null,
+              server_size: null,
+              last_sync_at: f.last_sync_at ?? null,
+            })),
+            playtime: { total_seconds: 0, session_count: 0, last_session_start: null, last_session_duration_sec: null },
+            device_id: "",
+            last_sync_check_at: cached.save_status.last_sync_check_at ?? null,
+          };
+        }
 
+        // Build pending conflicts from cache
+        const conflicts = (cached.pending_conflicts ?? [])
+          .filter((c) => c.rom_id === romId)
+          .map((c) => ({
+            rom_id: c.rom_id,
+            filename: c.filename,
+            local_path: null,
+            local_hash: null,
+            local_mtime: null,
+            local_size: null,
+            server_save_id: 0,
+            server_updated_at: "",
+            server_size: null,
+            created_at: c.detected_at,
+          })) as PendingConflict[];
+
+        // Render immediately with cached data (metadata may be null — that's OK)
         setState({
           loading: false,
           romId,
           romName,
           platformName,
           platformSlug,
-          installed: !!installedRom,
-          installedRom,
-          metadata,
-          coverBase64: coverResult.base64 ?? null,
-          biosStatus: biosResult.needs_bios ? biosResult : null,
-          saveSyncEnabled: saveSyncSettings.save_sync_enabled,
+          installed: cached.installed ?? false,
+          installedRom: null, // Will be filled by background fetch if installed
+          metadata: cached.metadata as RomMetadata | null,
+          coverBase64: null, // Will be filled by background fetch
+          biosStatus,
+          saveSyncEnabled: cached.save_sync_enabled ?? false,
           saveStatus,
-          conflicts: conflictsResult.conflicts.filter((c) => c.rom_id === romId),
+          conflicts,
           error: false,
         });
+
+        // Phase 2: Background fetch for data not available in cache
+        // (installed ROM details, cover art, full save/BIOS detail, metadata if missing)
+        const bgPromises: Promise<void>[] = [];
+
+        // Installed ROM details (for filename display)
+        if (cached.installed) {
+          bgPromises.push(
+            getInstalledRom(romId).then((installed) => {
+              if (!cancelled && installed) {
+                setState((prev) => ({ ...prev, installedRom: installed }));
+              }
+            }).catch(() => {}),
+          );
+        }
+
+        // Cover art
+        bgPromises.push(
+          getArtworkBase64(romId).then((result) => {
+            if (!cancelled && result.base64) {
+              setState((prev) => ({ ...prev, coverBase64: result.base64 }));
+            }
+          }).catch(() => {}),
+        );
+
+        // Metadata (only if cache didn't have it)
+        if (!cached.metadata) {
+          bgPromises.push(
+            getRomMetadata(romId).then((meta) => {
+              if (!cancelled && meta) {
+                setState((prev) => ({ ...prev, metadata: meta }));
+              }
+            }).catch(() => {}),
+          );
+        }
+
+        await Promise.all(bgPromises);
       } catch (e) {
         debugLog(`RomMGameInfoPanel: loadData error: ${e}`);
         if (!cancelled) setState((prev) => ({ ...prev, loading: false, error: true }));

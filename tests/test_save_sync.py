@@ -109,7 +109,6 @@ class TestInitSaveSyncState:
         assert s["saves"] == {}
         assert s["playtime"] == {}
         assert s["pending_conflicts"] == []
-        assert s["offline_queue"] == []
         assert s["settings"]["conflict_mode"] == "ask_me"
         assert s["settings"]["sync_before_launch"] is True
         assert s["settings"]["sync_after_exit"] is True
@@ -145,7 +144,6 @@ class TestSaveSyncStatePersistence:
             "saves": {"10": {"files": {}, "emulator": "retroarch", "system": "n64"}},
             "playtime": {"10": {"total_seconds": 3600}},
             "pending_conflicts": [],
-            "offline_queue": [],
             "settings": {"conflict_mode": "always_upload", "sync_before_launch": False},
         }
         (tmp_path / "save_sync_state.json").write_text(json.dumps(state_data))
@@ -864,6 +862,42 @@ class TestPostExitSync:
 
         assert len(plugin._save_sync_state["pending_conflicts"]) >= 1
 
+    @pytest.mark.asyncio
+    async def test_downloads_server_newer_save_bidirectional(self, plugin, tmp_path):
+        """Post-exit sync downloads server-newer save (bidirectional, no direction filter)."""
+        _install_rom(plugin, tmp_path)
+        save_content = b"\x05" * 1024
+        _create_save(tmp_path, content=save_content)
+        current_hash = hashlib.md5(save_content).hexdigest()
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["saves"]["42"] = {
+            "files": {
+                "pokemon.srm": {
+                    "last_sync_hash": current_hash,
+                    "last_sync_at": "2026-02-17T08:00:00Z",
+                    "last_sync_server_updated_at": "2026-02-17T06:00:00Z",
+                    "last_sync_server_size": 1024,
+                }
+            },
+            "emulator": "retroarch",
+            "system": "gba",
+        }
+
+        # Server has newer save (updated_at changed, slow path detects change)
+        server = _server_save(updated_at="2026-02-17T14:00:00Z")
+
+        def fake_download(save_id, dest):
+            with open(dest, "wb") as f:
+                f.write(b"\xaa" * 1024)
+
+        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
+             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+            result = await plugin.post_exit_sync(42)
+
+        # Post-exit is bidirectional — server-newer save should be downloaded
+        assert result["synced"] >= 1
+
 
 # ============================================================================
 # Playtime Tracking
@@ -1562,7 +1596,7 @@ class TestSyncRomSaves:
 
     @pytest.mark.asyncio
     async def test_uploads_local_save_no_server(self, plugin, tmp_path):
-        """Uploads local save when server has none (direction=both)."""
+        """Uploads local save when server has none."""
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path)
         plugin._save_sync_state["device_id"] = "dev-1"
@@ -2328,108 +2362,8 @@ class TestEdgeCases:
         assert entry["last_sync_server_save_id"] == 200
 
 
-# ── Offline Queue Tests ──────────────────────────────────────────────
-
-
-class TestOfflineQueue:
-    """Tests for offline queue management (failed sync retry)."""
-
-    @pytest.mark.asyncio
-    async def test_get_offline_queue_empty(self, plugin):
-        """Returns empty queue by default."""
-        result = await plugin.get_offline_queue()
-        assert result["queue"] == []
-
-    @pytest.mark.asyncio
-    async def test_add_to_offline_queue(self, plugin):
-        """_add_to_offline_queue adds a failed operation."""
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "pokemon.srm: HTTP 500")
-        result = await plugin.get_offline_queue()
-        assert len(result["queue"]) == 1
-        item = result["queue"][0]
-        assert item["rom_id"] == 42
-        assert item["filename"] == "pokemon.srm"
-        assert item["direction"] == "upload"
-        assert item["error"] == "pokemon.srm: HTTP 500"
-        assert item["retry_count"] == 1
-
-    @pytest.mark.asyncio
-    async def test_add_to_offline_queue_no_duplicates(self, plugin):
-        """_add_to_offline_queue updates existing entry instead of duplicating."""
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "HTTP 500")
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "HTTP 503")
-        result = await plugin.get_offline_queue()
-        assert len(result["queue"]) == 1
-        assert result["queue"][0]["error"] == "HTTP 503"
-        assert result["queue"][0]["retry_count"] == 2
-
-    @pytest.mark.asyncio
-    async def test_add_to_offline_queue_different_files(self, plugin):
-        """Different filenames create separate queue entries."""
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "err1")
-        plugin._add_to_offline_queue(42, "pokemon.rtc", "upload", "err2")
-        result = await plugin.get_offline_queue()
-        assert len(result["queue"]) == 2
-
-    @pytest.mark.asyncio
-    async def test_clear_offline_queue(self, plugin):
-        """clear_offline_queue empties the queue."""
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "error")
-        plugin._add_to_offline_queue(43, "zelda.srm", "download", "error")
-        result = await plugin.clear_offline_queue()
-        assert result["success"] is True
-        queue = await plugin.get_offline_queue()
-        assert queue["queue"] == []
-
-    @pytest.mark.asyncio
-    async def test_retry_failed_sync_not_found(self, plugin):
-        """retry_failed_sync returns failure when item not in queue."""
-        result = await plugin.retry_failed_sync(99, "nonexistent.srm")
-        assert result["success"] is False
-        assert "not found" in result["message"].lower()
-
-    @pytest.mark.asyncio
-    async def test_retry_failed_sync_success(self, plugin, tmp_path):
-        """retry_failed_sync removes item from queue and re-syncs."""
-        _install_rom(plugin, tmp_path)
-        _create_save(tmp_path)
-        plugin._save_sync_state["device_id"] = "test-device"
-
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "HTTP 500")
-        assert len(plugin._save_sync_state["offline_queue"]) == 1
-
-        server_response = {"id": 100, "updated_at": "2026-01-01T00:00:00Z"}
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=server_response):
-            result = await plugin.retry_failed_sync(42, "pokemon.srm")
-
-        assert result["success"] is True
-        # Item should be removed from queue
-        queue = await plugin.get_offline_queue()
-        assert len(queue["queue"]) == 0
-
-    @pytest.mark.asyncio
-    async def test_sync_populates_offline_queue_on_error(self, plugin, tmp_path):
-        """_sync_rom_saves populates offline queue when errors occur."""
-        _install_rom(plugin, tmp_path)
-        _create_save(tmp_path)
-        plugin._save_sync_state["device_id"] = "test-device"
-
-        # Mock server to return a save that needs upload, then fail the upload
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", side_effect=Exception("Connection refused")):
-            synced, errors = plugin._sync_rom_saves(42, direction="upload")
-
-        assert synced == 0
-        assert len(errors) == 1
-        # Should be added to offline queue
-        queue = plugin._save_sync_state["offline_queue"]
-        assert len(queue) == 1
-        assert queue[0]["filename"] == "pokemon.srm"
-
-
 # ============================================================================
-# Edge Case: Conflict Detection — False Alarm / Slow Path
+# Edge Case: Conflict Detection -- False Alarm / Slow Path
 # ============================================================================
 
 
@@ -2553,16 +2487,16 @@ class TestConflictDetectionFalseAlarm:
 
 
 # ============================================================================
-# Edge Case: First Sync — Force Ask Behavior
+# Edge Case: First Sync — Conflict Mode Respected
 # ============================================================================
 
 
-class TestFirstSyncForceAsk:
-    """First sync (no last_sync_hash) forces ask regardless of conflict mode."""
+class TestFirstSyncConflictResolution:
+    """First sync (no last_sync_hash) respects configured conflict_mode."""
 
     @pytest.mark.asyncio
-    async def test_first_sync_different_content_forces_ask_despite_always_upload(self, plugin, tmp_path):
-        """First sync: different content forces 'ask' even with always_upload mode."""
+    async def test_first_sync_different_content_always_upload_uploads(self, plugin, tmp_path):
+        """First sync: different content with always_upload mode auto-uploads."""
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path, content=b"local save data")
 
@@ -2571,25 +2505,47 @@ class TestFirstSyncForceAsk:
         # No saves state → first sync
 
         server = _server_save()
+        upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
         with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"):
+             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
+             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
             result = await plugin.sync_rom_saves(42)
 
-        # Should be queued as conflict, not auto-uploaded
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
-        conflict = plugin._save_sync_state["pending_conflicts"][0]
-        assert conflict["rom_id"] == 42
-        assert conflict["filename"] == "pokemon.srm"
+        # Should auto-upload, not queue conflict
+        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert result["synced"] == 1
 
     @pytest.mark.asyncio
-    async def test_first_sync_different_content_forces_ask_despite_newest_wins(self, plugin, tmp_path):
-        """First sync: different content forces 'ask' even with newest_wins mode."""
+    async def test_first_sync_different_content_newest_wins_resolves_by_timestamp(self, plugin, tmp_path):
+        """First sync: different content with newest_wins mode resolves by timestamp."""
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path, content=b"local save data")
 
         plugin._save_sync_state["device_id"] = "dev-1"
         plugin._save_sync_state["settings"]["conflict_mode"] = "newest_wins"
+
+        # Server save is old (2026-02-17T06:00:00Z), local file will be newer
+        server = _server_save()
+        upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
+
+        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
+             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
+             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+            result = await plugin.sync_rom_saves(42)
+
+        # Local is newer → should auto-upload, not queue conflict
+        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert result["synced"] == 1
+
+    @pytest.mark.asyncio
+    async def test_first_sync_different_content_ask_me_queues_conflict(self, plugin, tmp_path):
+        """First sync: different content with ask_me mode queues conflict."""
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path, content=b"local save data")
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
 
         server = _server_save()
 
@@ -2598,6 +2554,58 @@ class TestFirstSyncForceAsk:
             result = await plugin.sync_rom_saves(42)
 
         assert len(plugin._save_sync_state["pending_conflicts"]) == 1
+        conflict = plugin._save_sync_state["pending_conflicts"][0]
+        assert conflict["rom_id"] == 42
+        assert conflict["filename"] == "pokemon.srm"
+
+    @pytest.mark.asyncio
+    async def test_first_sync_different_content_always_download_downloads(self, plugin, tmp_path):
+        """First sync: different content with always_download mode auto-downloads."""
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path, content=b"local save data")
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "always_download"
+
+        server = _server_save()
+
+        def fake_download(save_id, dest):
+            with open(dest, "wb") as f:
+                f.write(b"server save data")
+
+        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
+             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
+             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+            result = await plugin.sync_rom_saves(42)
+
+        # Should auto-download, not queue conflict
+        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert result["synced"] == 1
+
+    @pytest.mark.asyncio
+    async def test_first_sync_newest_wins_server_newer_downloads(self, plugin, tmp_path):
+        """First sync: newest_wins with server newer than local → downloads."""
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path, content=b"local save data")
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "newest_wins"
+
+        # Server is very recent, local file mtime will be older
+        server = _server_save(updated_at="2099-01-01T00:00:00Z")
+
+        def fake_download(save_id, dest):
+            with open(dest, "wb") as f:
+                f.write(b"server save data")
+
+        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
+             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
+             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+            result = await plugin.sync_rom_saves(42)
+
+        # Server is newer → should auto-download
+        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert result["synced"] == 1
 
     @pytest.mark.asyncio
     async def test_first_sync_identical_content_auto_resolves(self, plugin, tmp_path):
@@ -2865,7 +2873,7 @@ class TestDownloadFailureHandling:
         with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
              patch.object(plugin, "_romm_download_save", side_effect=Exception("download failed")), \
              patch("time.sleep"):
-            synced, errors = plugin._sync_rom_saves(42, direction="download")
+            synced, errors = plugin._sync_rom_saves(42)
 
         assert len(errors) >= 1
         assert not tmp_file.exists()
@@ -3043,8 +3051,8 @@ class TestStateRecovery:
     """Tests for recovery after save_sync_state.json loss."""
 
     @pytest.mark.asyncio
-    async def test_complete_state_loss_different_content_forces_ask(self, plugin, tmp_path):
-        """State file lost, both local and server exist with different content → conflict queued."""
+    async def test_complete_state_loss_different_content_newest_wins_resolves(self, plugin, tmp_path):
+        """State file lost, both exist with different content, newest_wins → auto-resolves."""
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path, content=b"local content")
 
@@ -3052,11 +3060,33 @@ class TestStateRecovery:
         plugin._save_sync_state["settings"]["conflict_mode"] = "newest_wins"
         # No saves state — state was completely lost
 
+        # Server is old, local file is newer → should upload
+        server = _server_save()
+        upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
+
+        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
+             patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"), \
+             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+            synced, errors = plugin._sync_rom_saves(42)
+
+        assert synced == 1
+        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_complete_state_loss_different_content_ask_me_queues_conflict(self, plugin, tmp_path):
+        """State file lost, both exist with different content, ask_me → conflict queued."""
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path, content=b"local content")
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
+        # No saves state — state was completely lost
+
         server = _server_save()
 
         with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
              patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"):
-            synced, errors = plugin._sync_rom_saves(42, direction="both")
+            synced, errors = plugin._sync_rom_saves(42)
 
         assert synced == 0
         assert len(plugin._save_sync_state["pending_conflicts"]) == 1
@@ -3078,7 +3108,7 @@ class TestStateRecovery:
 
         with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
              patch.object(plugin, "_get_server_save_hash", return_value=local_hash):
-            synced, errors = plugin._sync_rom_saves(42, direction="both")
+            synced, errors = plugin._sync_rom_saves(42)
 
         assert synced == 0
         assert len(plugin._save_sync_state["pending_conflicts"]) == 0
@@ -3123,15 +3153,15 @@ class TestStateRecovery:
             result = await plugin.sync_all_saves()
 
         # ROM 42: unchanged on both sides → skip
-        # ROM 43: first sync, different content → conflict (force ask)
+        # ROM 43: first sync, different content, default ask_me → conflict queued
         conflicts = plugin._save_sync_state["pending_conflicts"]
         assert any(c["rom_id"] == 43 and c["filename"] == "zelda.srm" for c in conflicts)
         # ROM 42 should NOT be in conflicts
         assert not any(c["rom_id"] == 42 for c in conflicts)
 
     @pytest.mark.asyncio
-    async def test_state_loss_server_hash_unavailable_forces_ask(self, plugin, tmp_path):
-        """State lost, can't download server save for hash comparison → conflict."""
+    async def test_state_loss_server_hash_unavailable_queues_conflict(self, plugin, tmp_path):
+        """State lost, can't download server save for hash comparison → conflict queued (default ask_me)."""
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path, content=b"local content")
 
@@ -3141,107 +3171,14 @@ class TestStateRecovery:
 
         with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
              patch.object(plugin, "_get_server_save_hash", return_value=None):
-            synced, errors = plugin._sync_rom_saves(42, direction="both")
+            synced, errors = plugin._sync_rom_saves(42)
 
         # Can't verify → conflict
         assert len(plugin._save_sync_state["pending_conflicts"]) == 1
 
 
 # ============================================================================
-# Edge Case: Offline Queue — Retry Goes Through Full Conflict Detection
-# ============================================================================
-
-
-class TestOfflineQueueRetry:
-    """Tests that offline queue retry uses full conflict detection."""
-
-    @pytest.mark.asyncio
-    async def test_retry_calls_full_sync_not_blind_upload(self, plugin, tmp_path):
-        """Retry invokes _sync_rom_saves (full conflict detection), not blind upload."""
-        _install_rom(plugin, tmp_path)
-        _create_save(tmp_path)
-        plugin._save_sync_state["device_id"] = "dev-1"
-
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "HTTP 500")
-
-        with patch.object(plugin, "_sync_rom_saves", return_value=(1, [])) as mock_sync:
-            result = await plugin.retry_failed_sync(42, "pokemon.srm")
-
-        mock_sync.assert_called_once_with(42, direction="upload")
-        assert result["success"] is True
-
-    @pytest.mark.asyncio
-    async def test_retry_detects_conflict_when_server_changed(self, plugin, tmp_path):
-        """Retry detects that server changed during offline period → conflict."""
-        _install_rom(plugin, tmp_path)
-        _create_save(tmp_path, content=b"\x01" * 1024)
-
-        plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
-        plugin._save_sync_state["saves"]["42"] = {
-            "files": {
-                "pokemon.srm": {
-                    "last_sync_hash": "old_snapshot",
-                    "last_sync_at": "2026-02-17T08:00:00Z",
-                    "last_sync_server_updated_at": "2026-02-17T06:00:00Z",
-                    "last_sync_server_size": 1024,
-                }
-            },
-            "emulator": "retroarch",
-            "system": "gba",
-        }
-
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "HTTP 500")
-
-        # Server has also changed since the failure
-        server = _server_save(updated_at="2026-02-17T14:00:00Z")
-
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="new_server_hash"):
-            result = await plugin.retry_failed_sync(42, "pokemon.srm")
-
-        # Both changed + ask_me mode → should queue conflict
-        assert len(plugin._save_sync_state["pending_conflicts"]) >= 1
-
-    @pytest.mark.asyncio
-    async def test_retry_removes_from_queue_before_sync(self, plugin, tmp_path):
-        """Item is removed from offline queue even if retry fails with new errors."""
-        _install_rom(plugin, tmp_path)
-        _create_save(tmp_path)
-        plugin._save_sync_state["device_id"] = "dev-1"
-
-        plugin._add_to_offline_queue(42, "pokemon.srm", "upload", "HTTP 500")
-        assert len(plugin._save_sync_state["offline_queue"]) == 1
-
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", side_effect=ConnectionError("still failing")):
-            result = await plugin.retry_failed_sync(42, "pokemon.srm")
-
-        # Original queue item removed (but may be re-added by new failure)
-        # The queue should have the new error, not the old "HTTP 500"
-        queue = plugin._save_sync_state["offline_queue"]
-        if queue:
-            assert queue[0]["error"] != "HTTP 500"
-
-    @pytest.mark.asyncio
-    async def test_retry_preserves_direction(self, plugin, tmp_path):
-        """Retry uses the stored direction from the offline queue item."""
-        _install_rom(plugin, tmp_path)
-        saves_dir = tmp_path / "retrodeck" / "saves" / "gba"
-        saves_dir.mkdir(parents=True, exist_ok=True)
-        plugin._save_sync_state["device_id"] = "dev-1"
-
-        # Queue a download failure
-        plugin._add_to_offline_queue(42, "pokemon.srm", "download", "Connection refused")
-
-        with patch.object(plugin, "_sync_rom_saves", return_value=(0, [])) as mock_sync:
-            await plugin.retry_failed_sync(42, "pokemon.srm")
-
-        mock_sync.assert_called_once_with(42, direction="download")
-
-
-# ============================================================================
-# Edge Case: Sync All — Correct Counts and Mixed States
+# Edge Case: Sync All -- Correct Counts and Mixed States
 # ============================================================================
 
 
@@ -3300,42 +3237,47 @@ class TestSyncAllEdgeCases:
 
 
 # ============================================================================
-# Edge Case: Direction Filtering
+# Edge Case: Bidirectional Sync (always both directions)
 # ============================================================================
 
 
-class TestDirectionFiltering:
-    """Tests that sync direction correctly filters operations."""
+class TestBidirectionalSync:
+    """Tests that sync is always bidirectional — uploads and downloads in one pass."""
 
-    def test_download_direction_skips_upload(self, plugin, tmp_path):
-        """direction='download' skips local-only saves that would need upload."""
+    def test_uploads_local_only_save(self, plugin, tmp_path):
+        """Local-only save is uploaded (no direction filtering)."""
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path)
         plugin._save_sync_state["device_id"] = "dev-1"
 
-        # No server saves → action would be "upload"
-        with patch.object(plugin, "_romm_list_saves", return_value=[]):
-            synced, errors = plugin._sync_rom_saves(42, direction="download")
+        upload_response = {"id": 300, "updated_at": "2026-02-17T15:00:00Z"}
+        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
+             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+            synced, errors = plugin._sync_rom_saves(42)
 
-        assert synced == 0
+        assert synced == 1
 
-    def test_upload_direction_skips_download(self, plugin, tmp_path):
-        """direction='upload' skips server-only saves that would need download."""
+    def test_downloads_server_only_save(self, plugin, tmp_path):
+        """Server-only save is downloaded (no direction filtering)."""
         _install_rom(plugin, tmp_path)
         saves_dir = tmp_path / "retrodeck" / "saves" / "gba"
         saves_dir.mkdir(parents=True, exist_ok=True)
-        # No local save
 
         plugin._save_sync_state["device_id"] = "dev-1"
         server = _server_save()
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]):
-            synced, errors = plugin._sync_rom_saves(42, direction="upload")
+        def fake_download(save_id, dest):
+            with open(dest, "wb") as f:
+                f.write(b"\xff" * 512)
 
-        assert synced == 0
+        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
+             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+            synced, errors = plugin._sync_rom_saves(42)
 
-    def test_both_direction_handles_upload_and_download(self, plugin, tmp_path):
-        """direction='both' handles both uploads and downloads."""
+        assert synced == 1
+
+    def test_handles_upload_and_download_in_one_pass(self, plugin, tmp_path):
+        """Both uploads and downloads happen in a single sync call."""
         _install_rom(plugin, tmp_path, rom_id=42, file_name="pokemon.gba")
         _create_save(tmp_path, rom_name="pokemon")
 
@@ -3352,7 +3294,7 @@ class TestDirectionFiltering:
         with patch.object(plugin, "_romm_list_saves", return_value=[server_zelda]), \
              patch.object(plugin, "_romm_upload_save", return_value=upload_response), \
              patch.object(plugin, "_romm_download_save", side_effect=fake_download):
-            synced, errors = plugin._sync_rom_saves(42, direction="both")
+            synced, errors = plugin._sync_rom_saves(42)
 
         # pokemon.srm uploaded + zelda.srm downloaded
         assert synced == 2
