@@ -1158,6 +1158,44 @@ Investigate whether we can hook into Steam's In-Home Streaming / Remote Play pro
 - [x] Delete BIOS files: per-platform in DangerZone with confirmation.
 - [x] Live update fixes: post-exit sync, DangerZone, and Sync All Saves now dispatch `romm_data_changed` events. Fixed stale closure (romIdRef) and server-only file status logic in PlaySection listener.
 - [x] Investigate excessive re-renders on game detail page — **no fix needed** (see findings below)
+- [ ] Game detail page: instant load from cache + RomM connection status indicator
+
+#### Game detail page slow loading — cache-first with connection indicator
+
+**Problem**: When opening a RomM game's detail page, the PlaySection and GameInfoPanel take several seconds to load — especially when RomM is unavailable (e.g. server off, network issue). During this time the user sees a loading spinner or empty section with no feedback about what's happening.
+
+**Root cause**: Both `CustomPlayButton` and `RomMGameInfoPanel` fetch data from RomM on every mount (save status, metadata, BIOS status, artwork). These are all async callables that go through the backend to RomM's API. If RomM is unreachable, each call hangs until timeout.
+
+**Proposed solution — cache-first, then refresh**:
+
+1. **Immediate render from cached/local data**: On mount, immediately populate the UI from data already available locally:
+   - `installed_roms` state file → installed status, file path (determines Play vs Download button)
+   - `metadata_cache.json` → game summary, genres, companies, release date, rating
+   - `shortcut_registry` → ROM ID, platform info
+   - `save_sync_state.json` → playtime, last sync check, baseline hashes
+   - `artwork/` cache dir → hero, logo, grid, icon (already cached from SGDB)
+   - BIOS status can default to last-known state or "unknown"
+
+2. **Connection status indicator**: Add an info item to the PlaySection showing RomM connection state:
+   - "Connecting to RomM..." (spinner/pulsing) while first backend call is in flight
+   - "Connected" (green) once any RomM API call succeeds → then refresh live data
+   - "Offline" (dimmed) if connection fails → keep showing cached data, hide sync-dependent actions
+   - This gives the user immediate feedback instead of a mysterious loading delay
+
+3. **Background refresh**: Once RomM connection is confirmed, silently refresh save status, BIOS status, and conflict detection in the background. Update UI reactively as fresh data arrives — user sees cached data instantly, then it updates if anything changed.
+
+**Benefits**:
+- Game detail page loads instantly (sub-100ms) from local state
+- User gets clear feedback about RomM availability
+- Offline use works naturally — cached data is always shown
+- No more multi-second blank loading state
+
+**Files to modify**:
+- `src/components/CustomPlayButton.tsx` — split init into sync (cache) + async (RomM) phases
+- `src/components/RomMPlaySection.tsx` — add connection status info item, cache-first data loading
+- `src/components/RomMGameInfoPanel.tsx` — cache-first metadata/save/BIOS loading
+- `src/api/backend.ts` — possibly add `get_cached_save_status` or `get_local_game_state` callable that returns everything from local files without hitting RomM
+- `main.py` / `lib/` — new callable that bundles all locally-cached data for a ROM in one call
 
 #### Game detail page re-render investigation — RESOLVED
 
