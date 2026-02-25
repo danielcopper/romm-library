@@ -1,6 +1,6 @@
 import { addEventListener } from "@decky/api";
 import type { SyncApplyData } from "../types";
-import { getArtworkBase64, reportSyncResults, logInfo, logError } from "../api/backend";
+import { getArtworkBase64, reportSyncResults, syncHeartbeat, logInfo, logError } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
 import { createOrUpdateCollections, clearPlatformCollection } from "./collections";
 import { updateSyncProgress } from "./syncProgress";
@@ -24,6 +24,8 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
 
     _cancelRequested = false;
     let cancelled = false;
+    let lastHeartbeat = Date.now();
+    const HEARTBEAT_INTERVAL_MS = 10_000;
 
     const existing = await getExistingRomMShortcuts();
     const romIdToAppId: Record<string, number> = {};
@@ -75,6 +77,12 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       }
       // Small delay between operations to avoid overwhelming Steam
       await delay(50);
+
+      // Keep backend safety timeout alive during long application loops
+      if (Date.now() - lastHeartbeat > HEARTBEAT_INTERVAL_MS) {
+        syncHeartbeat().catch(() => {});
+        lastHeartbeat = Date.now();
+      }
 
       if (_cancelRequested) {
         logInfo(`Cancel requested after processing ${i + 1}/${total} shortcuts`);

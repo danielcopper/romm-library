@@ -148,8 +148,8 @@ export default definePlugin(() => {
       updateDownload({
         rom_id: data.rom_id,
         rom_name: data.rom_name,
-        platform_name: "",
-        file_name: "",
+        platform_name: data.platform_name ?? "",
+        file_name: data.file_name ?? "",
         status: data.status as "queued" | "downloading" | "completed" | "failed" | "cancelled",
         progress: data.progress,
         bytes_downloaded: data.bytes_downloaded,

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         _sync_running: bool
         _sync_cancel: bool
         _sync_progress: dict
+        _sync_last_heartbeat: float
         _pending_sync: dict
         _metadata_cache: dict
         loop: asyncio.AbstractEventLoop
@@ -90,6 +91,7 @@ class SyncMixin:
             return {"success": False, "message": "Sync already in progress"}
         self._sync_running = True
         self._sync_cancel = False
+        self._sync_last_heartbeat = time.monotonic()
         self.loop.create_task(self._do_sync())
         return {"success": True, "message": "Sync started"}
 
@@ -99,6 +101,11 @@ class SyncMixin:
 
     async def get_sync_progress(self):
         return self._sync_progress
+
+    async def sync_heartbeat(self):
+        """Called by frontend during shortcut application to keep safety timeout alive."""
+        self._sync_last_heartbeat = time.monotonic()
+        return {"success": True}
 
     async def _emit_progress(self, phase, current=0, total=0, message="", running=True):
         """Update _sync_progress and emit sync_progress event to frontend."""
@@ -297,16 +304,27 @@ class SyncMixin:
             if self._sync_progress.get("phase") == "error":
                 pass  # Already handled by except block
             elif self._sync_progress.get("running"):
-                # Normal completion — frontend is processing. Set a 60s safety timeout.
+                # Normal completion — frontend is processing.
+                # Use heartbeat-based timeout: check every 10s if frontend is still alive.
+                # Frontend calls sync_heartbeat() periodically during shortcut application.
+                self._sync_last_heartbeat = time.monotonic()
+                heartbeat_timeout_sec = 30  # dead if no heartbeat for 30s
+
                 async def _safety_timeout():
-                    await asyncio.sleep(60)
-                    if self._sync_progress.get("running"):
-                        stats = self._state.get("sync_stats", {})
-                        await self._emit_progress("done",
-                            current=stats.get("roms", 0),
-                            total=stats.get("roms", 0),
-                            message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
-                            running=False)
+                    while self._sync_progress.get("running"):
+                        await asyncio.sleep(10)
+                        elapsed = time.monotonic() - self._sync_last_heartbeat
+                        if elapsed > heartbeat_timeout_sec:
+                            decky.logger.warning(
+                                f"Sync safety timeout: no heartbeat for {elapsed:.0f}s"
+                            )
+                            stats = self._state.get("sync_stats", {})
+                            await self._emit_progress("done",
+                                current=stats.get("roms", 0),
+                                total=stats.get("roms", 0),
+                                message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
+                                running=False)
+                            return
                 self.loop.create_task(_safety_timeout())
 
     async def _finish_sync(self, message):

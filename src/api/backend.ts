@@ -35,6 +35,7 @@ export const saveSettings = callable<[string, string, string], { success: boolea
 export const testConnection = callable<[], { success: boolean; message: string }>("test_connection");
 export const startSync = callable<[], { success: boolean; message: string }>("start_sync");
 export const cancelSync = callable<[], { success: boolean; message: string }>("cancel_sync");
+export const syncHeartbeat = callable<[], { success: boolean }>("sync_heartbeat");
 export const getSyncStats = callable<[], SyncStats>("get_sync_stats");
 export const startDownload = callable<[number], { success: boolean; message: string }>("start_download");
 export const cancelDownload = callable<[number], { success: boolean; message: string }>("cancel_download");
