@@ -37,6 +37,32 @@ import type { DownloadProgressEvent, DownloadCompleteEvent } from "../types";
 
 type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "syncing" | "play" | "launching";
 
+interface DownloadProgress {
+  bytesDownloaded: number;
+  totalBytes: number;
+}
+
+function lerpColor(a: [number, number, number], b: [number, number, number], t: number): string {
+  const r = Math.round(a[0] + (b[0] - a[0]) * t);
+  const g = Math.round(a[1] + (b[1] - a[1]) * t);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * t);
+  return `rgb(${r}, ${g}, ${bl})`;
+}
+
+// Download button blue gradient stops
+const BLUE_LEFT: [number, number, number] = [26, 159, 255];   // #1a9fff
+const BLUE_RIGHT: [number, number, number] = [0, 120, 212];   // #0078d4
+// Play button visible green (computed from gradient + backgroundSize 330% + backgroundPosition 25%)
+const GREEN_LEFT: [number, number, number] = [80, 200, 47];   // #50c82f
+const GREEN_RIGHT: [number, number, number] = [24, 177, 78];  // #18b14e
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 interface CustomPlayButtonProps {
   appId: number;
 }
@@ -61,6 +87,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   const [romId, setRomId] = useState<number | null>(null);
   const [romName, setRomName] = useState<string>("");
   const [actionPending, setActionPending] = useState(false);
+  const [dlProgress, setDlProgress] = useState<DownloadProgress | null>(null);
   const [isOffline, setIsOffline] = useState(getRommConnectionState() === "offline");
   const romIdRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -127,6 +154,9 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         if (evt.status === "failed" || evt.status === "cancelled") {
           setState("download");
           setActionPending(false);
+          setDlProgress(null);
+        } else {
+          setDlProgress({ bytesDownloaded: evt.bytes_downloaded, totalBytes: evt.total_bytes });
         }
       },
     );
@@ -137,6 +167,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         if (evt.rom_id !== romIdRef.current) return;
         setState("play");
         setActionPending(false);
+        setDlProgress(null);
       },
     );
 
@@ -372,6 +403,22 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   };
 
   if (state === "download") {
+    const t = dlProgress && dlProgress.totalBytes > 0
+      ? dlProgress.bytesDownloaded / dlProgress.totalBytes
+      : 0;
+    const downloading = actionPending && dlProgress;
+
+    // Gradually shift the entire button color from blue to green
+    const dlBackground = downloading
+      ? `linear-gradient(to right, ${lerpColor(BLUE_LEFT, GREEN_LEFT, t)}, ${lerpColor(BLUE_RIGHT, GREEN_RIGHT, t)})`
+      : "linear-gradient(to right, #1a9fff, #0078d4)";
+
+    const dlLabel = downloading
+      ? `${formatBytes(dlProgress.bytesDownloaded)} / ${formatBytes(dlProgress.totalBytes)}`
+      : actionPending
+        ? "Starting..."
+        : "Download";
+
     return (
       <Focusable
         ref={containerRef}
@@ -383,12 +430,12 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           style={{
             ...mainBtnStyle,
             borderRadius: "2px",
-            background: "linear-gradient(to right, #1a9fff, #0078d4)",
+            background: dlBackground,
           }}
           onClick={handleDownload}
           disabled={actionPending}
         >
-          {actionPending ? "Downloading..." : "Download"}
+          {dlLabel}
         </DialogButton>
       </Focusable>
     );
