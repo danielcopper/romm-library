@@ -1,7 +1,7 @@
 # decky-romm-sync — Implementation Plan
 
 Forward-looking roadmap. Completed phases are summarized at the bottom.
-Reference material (API tables, architecture, environment) lives in CLAUDE.md and docs/.
+Reference material (API tables, architecture, environment) lives in CLAUDE.md.
 
 ---
 
@@ -12,8 +12,8 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md an
 ### Bug 4: State Consistency / Startup Pruning ✅
 Startup state healing implemented and tested — atomic settings, orphan cleanup, tmp pruning.
 
-### Bug 5: SSL Certificate Verification — CRITICAL for Plugin Store
-SSL verification disabled everywhere (4+ locations). Fix: proper verification for public APIs (SteamGridDB) via `certifi` or system CA bundle. User toggle for self-signed certs on RomM (LAN). Consolidate SSL context creation into shared helper.
+### Bug 5: SSL Certificate Verification ✅
+SSL verification enabled for all requests. SteamGridDB always verifies via `certifi` CA bundle. RomM verifies by default with user toggle for self-signed certs. HTTP client consolidated (EXT-4).
 
 ### Bug 6: Secrets Stored in Plain Text
 `settings.json` stores credentials in plain text. Investigate: OS keyring, `chmod 600`, other Decky plugin patterns.
@@ -91,14 +91,14 @@ Items from a full code review of `main` and `feat/phase-5-save-sync` branches. N
 ### EXT-1: Platform Map Caching
 `_load_platform_map()` reads `config.json` from disk on every `_resolve_system()` call. Cache once on init.
 
-### EXT-2: Atomic Writes for Settings
-`_save_state()` and `_save_save_sync_state()` use atomic writes correctly. `_save_settings_to_disk()` does not — apply same `.tmp` + `os.replace()` pattern.
+### EXT-2: Atomic Writes for Settings ✅
+All state/settings writes use atomic `.tmp` + `os.replace()` pattern.
 
 ### EXT-3: Download Queue Memory Growth
 `_download_queue` grows indefinitely. Prune completed/failed entries after N days or max queue size.
 
-### EXT-4: HTTP Client Code Duplication
-Four places independently build SSL contexts + Basic Auth headers. Extract shared `_get_ssl_context()` + `_get_auth_header()` helpers in `romm_client.py`. Critical for SSL fix (Bug 5) and future OAuth2 support.
+### EXT-4: HTTP Client Code Duplication ✅
+Consolidated into `_romm_ssl_context()` + `_romm_auth_header()` helpers in `romm_client.py`. Moved RomM HTTP methods from `save_sync.py` to `romm_client.py`.
 
 ### EXT-5: Blocking I/O in Async Callables — PARTIALLY FIXED
 `save_sync.py` wrapped in `run_in_executor` (`_sync_rom_saves`, `_with_retry`, `_sync_playtime_to_romm`, `_resolve_conflict_io`). Same pattern likely exists in other modules — tracked in Future Improvements async/blocking audit.

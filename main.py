@@ -148,7 +148,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         }
 
     async def get_cached_game_detail(self, app_id):
-        """Return all locally-cached data for a game. No network calls."""
+        """Return cached + lightweight data for a game."""
         app_id = int(app_id)
 
         # Reverse lookup: find rom_id by app_id in shortcut_registry
@@ -200,16 +200,32 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         # Metadata from cache
         metadata = self._metadata_cache.get(rom_id_str)
 
+        # BIOS status
+        platform_slug = entry.get("platform_slug", "")
+        bios_status = None
+        if platform_slug:
+            try:
+                bios = await self.check_platform_bios(platform_slug)
+                if bios.get("needs_bios"):
+                    bios_status = {
+                        "platform_slug": platform_slug,
+                        "total": bios.get("server_count", 0),
+                        "downloaded": bios.get("local_count", 0),
+                        "all_downloaded": bios.get("all_downloaded", False),
+                    }
+            except Exception as e:
+                decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
+
         return {
             "found": True,
             "rom_id": rom_id,
             "rom_name": entry.get("name", ""),
-            "platform_slug": entry.get("platform_slug", ""),
+            "platform_slug": platform_slug,
             "platform_name": entry.get("platform_name", ""),
             "installed": installed,
             "save_sync_enabled": save_sync_enabled,
             "save_status": save_status,
             "pending_conflicts": pending_conflicts,
             "metadata": metadata,
-            "bios_status": None,
+            "bios_status": bios_status,
         }
