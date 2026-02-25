@@ -31,7 +31,7 @@ export function getCachedGameDetail(appId: number): Promise<CachedGameDetail> {
   return promise;
 }
 export const getSettings = callable<[], PluginSettings>("get_settings");
-export const saveSettings = callable<[string, string, string], { success: boolean; message: string }>("save_settings");
+export const saveSettings = callable<[string, string, string, boolean], { success: boolean; message: string }>("save_settings");
 export const testConnection = callable<[], { success: boolean; message: string }>("test_connection");
 export const startSync = callable<[], { success: boolean; message: string }>("start_sync");
 export const cancelSync = callable<[], { success: boolean; message: string }>("cancel_sync");

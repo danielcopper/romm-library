@@ -21,6 +21,49 @@ def plugin():
     return p
 
 
+class TestSgdbSslVerification:
+    def test_sgdb_request_verifies_ssl(self, plugin):
+        """SGDB requests should always verify SSL certificates."""
+        from unittest.mock import MagicMock, patch
+        import ssl
+        import json as _json
+
+        plugin.settings["steamgriddb_api_key"] = "test-key"
+
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = _json.dumps({"success": True}).encode()
+        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+        fake_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
+            plugin._sgdb_request("/test")
+
+        ctx = mock_open.call_args[1].get("context") or mock_open.call_args[0][1] if len(mock_open.call_args[0]) > 1 else mock_open.call_args[1]["context"]
+        assert ctx.check_hostname is True
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
+
+    def test_sgdb_ignores_romm_insecure_setting(self, plugin):
+        """SGDB should verify SSL even when romm_allow_insecure_ssl is True."""
+        from unittest.mock import MagicMock, patch
+        import ssl
+        import json as _json
+
+        plugin.settings["steamgriddb_api_key"] = "test-key"
+        plugin.settings["romm_allow_insecure_ssl"] = True
+
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = _json.dumps({"success": True}).encode()
+        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+        fake_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
+            plugin._sgdb_request("/test")
+
+        ctx = mock_open.call_args[1].get("context") or mock_open.call_args[0][1] if len(mock_open.call_args[0]) > 1 else mock_open.call_args[1]["context"]
+        assert ctx.check_hostname is True
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
+
+
 class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_valid_api_key(self, plugin):

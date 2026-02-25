@@ -43,8 +43,6 @@ class SgdbMixin:
         req.add_header("Authorization", f"Bearer {api_key}")
         req.add_header("User-Agent", "decky-romm-sync/0.1")
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
             return json.loads(resp.read().decode())
 
@@ -85,8 +83,6 @@ class SgdbMixin:
             req = urllib.request.Request(image_url, method="GET")
             req.add_header("User-Agent", "decky-romm-sync/0.1")
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
             tmp_path = cached + ".tmp"
             with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
                 with open(tmp_path, "wb") as f:
@@ -203,8 +199,6 @@ class SgdbMixin:
             req.add_header("Authorization", f"Bearer {api_key}")
             req.add_header("User-Agent", "decky-romm-sync/0.1")
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
             resp = await self.loop.run_in_executor(
                 None, lambda: urllib.request.urlopen(req, context=ctx, timeout=30)
             )

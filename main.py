@@ -87,13 +87,15 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             return {"success": False, "message": f"Authentication failed: {e}"}
         return {"success": True, "message": "Connected to RomM"}
 
-    async def save_settings(self, romm_url, romm_user, romm_pass):
+    async def save_settings(self, romm_url, romm_user, romm_pass, allow_insecure_ssl=None):
         try:
             self.settings["romm_url"] = romm_url
             self.settings["romm_user"] = romm_user
             # Only update password if user entered a new one (not the masked placeholder)
             if romm_pass and romm_pass != "••••":
                 self.settings["romm_pass"] = romm_pass
+            if allow_insecure_ssl is not None:
+                self.settings["romm_allow_insecure_ssl"] = bool(allow_insecure_ssl)
             self._save_settings_to_disk()
             return {"success": True, "message": "Settings saved"}
         except Exception as e:
@@ -142,6 +144,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "sgdb_api_key_masked": "••••" if self.settings.get("steamgriddb_api_key") else "",
             "retroarch_input_check": self._check_retroarch_input_driver(),
             "log_level": self.settings.get("log_level", "warn"),
+            "romm_allow_insecure_ssl": self.settings.get("romm_allow_insecure_ssl", False),
         }
 
     async def get_cached_game_detail(self, app_id):
