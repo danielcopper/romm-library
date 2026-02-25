@@ -51,7 +51,13 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._load_metadata_cache()
         self._init_save_sync_state()
         self._load_save_sync_state()
-        self._prune_stale_state()
+        # ── Startup state healing ──
+        self._prune_stale_installed_roms()      # lib/state.py
+        self._prune_stale_registry()             # lib/state.py
+        self._prune_orphaned_save_sync_state()   # lib/save_sync.py
+        self._prune_orphaned_artwork_cache()     # lib/sgdb.py
+        self._prune_orphaned_staging_artwork()   # lib/sync.py
+        self._cleanup_leftover_tmp_files()       # lib/downloads.py
         self.loop.create_task(self._poll_download_requests())
         decky.logger.info("RomM Sync plugin loaded")
 

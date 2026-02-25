@@ -81,6 +81,34 @@ class SaveSyncMixin:
             json.dump(self._save_sync_state, f, indent=2)
         os.replace(tmp, path)
 
+    def _prune_orphaned_save_sync_state(self):
+        """Remove save sync state entries for rom_ids no longer in shortcut registry."""
+        registry = self._state.get("shortcut_registry", {})
+        changed = False
+
+        for section in ("saves", "playtime"):
+            data = self._save_sync_state.get(section, {})
+            stale = [rid for rid in data if rid not in registry]
+            for rid in stale:
+                del data[rid]
+                decky.logger.info(f"Pruned orphaned save sync state: {section}[{rid}]")
+            if stale:
+                changed = True
+
+        # pending_conflicts is a list of dicts with "rom_id" (int); registry keys are strings
+        conflicts = self._save_sync_state.get("pending_conflicts", [])
+        before = len(conflicts)
+        self._save_sync_state["pending_conflicts"] = [
+            c for c in conflicts if str(c.get("rom_id", "")) in registry
+        ]
+        pruned_count = before - len(self._save_sync_state["pending_conflicts"])
+        if pruned_count:
+            decky.logger.info(f"Pruned {pruned_count} orphaned pending conflict(s)")
+            changed = True
+
+        if changed:
+            self._save_save_sync_state()
+
     def _get_retrodeck_saves_path(self):
         """Read the saves path from RetroDECK's retrodeck.json config.
 

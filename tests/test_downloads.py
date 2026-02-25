@@ -2,6 +2,7 @@ import pytest
 import json
 import os
 import asyncio
+from unittest.mock import patch, MagicMock
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -991,3 +992,150 @@ class TestUrlEncodedFilenameRename:
         assert (extract_dir / "disc1.bin").exists()
         assert (extract_dir / "disc2.cue").exists()
         assert (extract_dir / "disc2.bin").exists()
+
+
+class TestCleanupLeftoverTmpFiles:
+    def test_removes_tmp_file(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        system_dir = tmp_path / "retrodeck" / "roms" / "n64"
+        system_dir.mkdir(parents=True)
+        tmp_file = system_dir / "zelda.z64.tmp"
+        tmp_file.write_text("partial download")
+
+        plugin._cleanup_leftover_tmp_files()
+        assert not tmp_file.exists()
+
+    def test_removes_zip_tmp_file(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        system_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        system_dir.mkdir(parents=True)
+        tmp_file = system_dir / "game.zip.tmp"
+        tmp_file.write_text("partial zip")
+
+        plugin._cleanup_leftover_tmp_files()
+        assert not tmp_file.exists()
+
+    def test_keeps_real_rom_files(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        system_dir = tmp_path / "retrodeck" / "roms" / "n64"
+        system_dir.mkdir(parents=True)
+        real_rom = system_dir / "zelda.z64"
+        real_rom.write_text("real rom")
+        bin_file = system_dir / "game.bin"
+        bin_file.write_text("real bin")
+        cue_file = system_dir / "game.cue"
+        cue_file.write_text("real cue")
+
+        plugin._cleanup_leftover_tmp_files()
+        assert real_rom.exists()
+        assert bin_file.exists()
+        assert cue_file.exists()
+
+    def test_removes_bios_tmp(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
+        bios_dir.mkdir(parents=True)
+        tmp_file = bios_dir / "dc_boot.bin.tmp"
+        tmp_file.write_text("partial bios")
+
+        plugin._cleanup_leftover_tmp_files()
+        assert not tmp_file.exists()
+
+    def test_no_roms_dir_no_crash(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        # No retrodeck/roms directory exists — should not crash
+        plugin._cleanup_leftover_tmp_files()
+
+    def test_handles_permission_error(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        system_dir = tmp_path / "retrodeck" / "roms" / "n64"
+        system_dir.mkdir(parents=True)
+        tmp_file = system_dir / "zelda.z64.tmp"
+        tmp_file.write_text("partial")
+
+        with patch("os.remove", side_effect=OSError("Permission denied")):
+            # Should not raise
+            plugin._cleanup_leftover_tmp_files()
+        # File still exists since os.remove was mocked to fail
+        assert tmp_file.exists()
+
+
+class TestRemoveRomCleansSaveSyncState:
+    @pytest.mark.asyncio
+    async def test_remove_rom_cleans_save_sync_state(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        rom_file = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
+        rom_file.parent.mkdir(parents=True)
+        rom_file.write_text("fake rom data")
+
+        plugin._state["installed_roms"]["42"] = {
+            "rom_id": 42, "file_path": str(rom_file), "system": "n64",
+        }
+        plugin._save_sync_state = {
+            "saves": {"42": {"last_sync": "2024-01-01"}, "99": {"last_sync": "2024-02-01"}},
+            "playtime": {"42": {"total_seconds": 3600}, "99": {"total_seconds": 7200}},
+            "pending_conflicts": {},
+            "settings": {"save_sync_enabled": False},
+        }
+        save_calls = []
+        plugin._save_save_sync_state = lambda: save_calls.append(1)
+
+        result = await plugin.remove_rom(42)
+        assert result["success"] is True
+        # Save sync state for ROM 42 should be cleaned
+        assert "42" not in plugin._save_sync_state["saves"]
+        assert "42" not in plugin._save_sync_state["playtime"]
+        # Other ROM's state should be untouched
+        assert "99" in plugin._save_sync_state["saves"]
+        assert "99" in plugin._save_sync_state["playtime"]
+        # _save_save_sync_state should have been called
+        assert len(save_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_uninstall_all_cleans_save_sync_state(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
+        roms_dir.mkdir(parents=True)
+        file_a = roms_dir / "game_a.z64"
+        file_b = roms_dir / "game_b.z64"
+        file_a.write_text("data a")
+        file_b.write_text("data b")
+
+        plugin._state["installed_roms"] = {
+            "1": {"rom_id": 1, "file_path": str(file_a), "system": "n64"},
+            "2": {"rom_id": 2, "file_path": str(file_b), "system": "n64"},
+        }
+        plugin._save_sync_state = {
+            "saves": {"1": {"last_sync": "2024-01-01"}, "2": {"last_sync": "2024-02-01"}},
+            "playtime": {"1": {"total_seconds": 100}, "2": {"total_seconds": 200}},
+            "pending_conflicts": {},
+            "settings": {"save_sync_enabled": False},
+        }
+        save_calls = []
+        plugin._save_save_sync_state = lambda: save_calls.append(1)
+
+        result = await plugin.uninstall_all_roms()
+        assert result["success"] is True
+        assert result["removed_count"] == 2
+        # All save sync state should be cleaned
+        assert plugin._save_sync_state["saves"] == {}
+        assert plugin._save_sync_state["playtime"] == {}
+        # _save_save_sync_state should have been called
+        assert len(save_calls) == 1

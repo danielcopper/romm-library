@@ -68,7 +68,7 @@ Arrow direction: depends-on (A → B means A calls methods from B).
 ```python
 Provides: settings, _state, _metadata_cache,
           _load_settings(), _save_settings_to_disk(), _log_debug(),
-          _load_state(), _save_state(), _prune_stale_state(),
+          _load_state(), _save_state(), _prune_stale_installed_roms(),
           _load_metadata_cache(), _save_metadata_cache()
 ```
 

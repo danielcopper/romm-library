@@ -241,7 +241,7 @@ class TestPruneStaleState:
             "1": {"rom_id": 1, "file_path": "/nonexistent/game.z64", "system": "n64"},
         }
 
-        plugin._prune_stale_state()
+        plugin._prune_stale_installed_roms()
         assert "1" not in plugin._state["installed_roms"]
 
     def test_keeps_existing_files(self, plugin, tmp_path):
@@ -255,7 +255,7 @@ class TestPruneStaleState:
             "1": {"rom_id": 1, "file_path": str(rom_file), "system": "n64"},
         }
 
-        plugin._prune_stale_state()
+        plugin._prune_stale_installed_roms()
         assert "1" in plugin._state["installed_roms"]
 
     def test_keeps_existing_rom_dir(self, plugin, tmp_path):
@@ -274,7 +274,7 @@ class TestPruneStaleState:
             },
         }
 
-        plugin._prune_stale_state()
+        plugin._prune_stale_installed_roms()
         assert "1" in plugin._state["installed_roms"]
 
     def test_saves_state_only_when_pruned(self, plugin, tmp_path):
@@ -290,7 +290,7 @@ class TestPruneStaleState:
 
         # No pruning needed — state file should NOT be written
         state_path = tmp_path / "state.json"
-        plugin._prune_stale_state()
+        plugin._prune_stale_installed_roms()
         assert not state_path.exists()
 
     def test_prunes_mixed(self, plugin, tmp_path):
@@ -305,20 +305,20 @@ class TestPruneStaleState:
             "2": {"rom_id": 2, "file_path": "/gone/game.z64", "system": "snes"},
         }
 
-        plugin._prune_stale_state()
+        plugin._prune_stale_installed_roms()
         assert "1" in plugin._state["installed_roms"]
         assert "2" not in plugin._state["installed_roms"]
 
 
 class TestPruneStaleStateEdgeCases:
-    """Edge case tests for _prune_stale_state."""
+    """Edge case tests for _prune_stale_installed_roms."""
 
     def test_empty_installed_roms_no_crash(self, plugin, tmp_path):
         import decky
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["installed_roms"] = {}
-        plugin._prune_stale_state()
+        plugin._prune_stale_installed_roms()
         # Should not crash, _save_state should NOT be called
         state_path = tmp_path / "state.json"
         assert not state_path.exists()
@@ -333,8 +333,118 @@ class TestPruneStaleStateEdgeCases:
             "3": {"rom_id": 3, "file_path": "/gone/c.z64", "system": "gb"},
         }
 
-        plugin._prune_stale_state()
+        plugin._prune_stale_installed_roms()
         assert plugin._state["installed_roms"] == {}
         # _save_state should have been called (state.json written)
         state_path = tmp_path / "state.json"
         assert state_path.exists()
+
+
+class TestAtomicSettingsWrite:
+    def test_settings_written_atomically(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+
+        plugin.settings = {"romm_url": "http://example.com", "romm_user": "user"}
+        plugin._save_settings_to_disk()
+
+        settings_path = tmp_path / "settings.json"
+        with open(settings_path, "r") as f:
+            data = json.load(f)
+        assert data["romm_url"] == "http://example.com"
+        assert data["romm_user"] == "user"
+
+    def test_settings_no_tmp_left_after_write(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+
+        plugin.settings = {"romm_url": "http://example.com"}
+        plugin._save_settings_to_disk()
+
+        tmp_file = tmp_path / "settings.json.tmp"
+        assert not tmp_file.exists()
+
+    def test_settings_crash_preserves_original(self, plugin, tmp_path):
+        from unittest.mock import patch
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+
+        # Write initial settings
+        plugin.settings = {"romm_url": "http://original.com"}
+        plugin._save_settings_to_disk()
+
+        # Now simulate a crash during json.dump
+        plugin.settings = {"romm_url": "http://corrupted.com"}
+        with patch("json.dump", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                plugin._save_settings_to_disk()
+
+        # Original file should still be intact
+        settings_path = tmp_path / "settings.json"
+        with open(settings_path, "r") as f:
+            data = json.load(f)
+        assert data["romm_url"] == "http://original.com"
+
+
+class TestPruneStaleRegistry:
+    def test_prunes_missing_app_id(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"name": "Game A"},
+        }
+        plugin._prune_stale_registry()
+        assert "1" not in plugin._state["shortcut_registry"]
+
+    def test_prunes_zero_app_id(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 0, "name": "Game A"},
+        }
+        plugin._prune_stale_registry()
+        assert "1" not in plugin._state["shortcut_registry"]
+
+    def test_prunes_non_int_app_id(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": "abc", "name": "Game A"},
+        }
+        plugin._prune_stale_registry()
+        assert "1" not in plugin._state["shortcut_registry"]
+
+    def test_keeps_valid_entry(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 12345678, "name": "Game A"},
+        }
+        plugin._prune_stale_registry()
+        assert "1" in plugin._state["shortcut_registry"]
+
+    def test_saves_only_when_pruned(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 12345678, "name": "Game A"},
+        }
+        plugin._prune_stale_registry()
+        # No pruning needed — state file should NOT be written
+        state_path = tmp_path / "state.json"
+        assert not state_path.exists()
+
+    def test_empty_registry_no_crash(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {}
+        plugin._prune_stale_registry()
+        # Should not crash, state file should NOT be written
+        state_path = tmp_path / "state.json"
+        assert not state_path.exists()

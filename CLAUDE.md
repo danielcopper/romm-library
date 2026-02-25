@@ -69,7 +69,7 @@ tests/conftest.py                    # Mock decky module for test isolation
 
 ## Current State
 
-**Latest release**: v0.6.0 on main
+**Latest release**: v0.7.0 on main
 
 Working:
 - Full sync engine (fetch ROMs, create shortcuts, apply cover art)

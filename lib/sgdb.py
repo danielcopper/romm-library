@@ -227,6 +227,37 @@ class SgdbMixin:
             self._save_settings_to_disk()
         return {"success": True, "message": "SteamGridDB API key saved"}
 
+    def _prune_orphaned_artwork_cache(self):
+        """Remove SGDB artwork cache files for rom_ids not in the shortcut registry."""
+        art_dir = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "artwork")
+        if not os.path.isdir(art_dir):
+            return
+        registry = self._state.get("shortcut_registry", {})
+        pruned = 0
+        for filename in os.listdir(art_dir):
+            # Always remove leftover .tmp files
+            if filename.endswith(".tmp"):
+                try:
+                    os.remove(os.path.join(art_dir, filename))
+                    pruned += 1
+                    decky.logger.info(f"Removed leftover artwork tmp: {filename}")
+                except OSError as e:
+                    decky.logger.warning(f"Failed to remove artwork tmp {filename}: {e}")
+                continue
+            # Expected format: {rom_id}_{type}.png
+            parts = filename.split("_", 1)
+            if not parts:
+                continue
+            rom_id = parts[0]
+            if rom_id not in registry:
+                try:
+                    os.remove(os.path.join(art_dir, filename))
+                    pruned += 1
+                except OSError as e:
+                    decky.logger.warning(f"Failed to remove orphaned artwork {filename}: {e}")
+        if pruned:
+            decky.logger.info(f"Pruned {pruned} orphaned SGDB artwork cache file(s)")
+
     def _save_icon_to_grid(self, app_id, icon_bytes):
         """Write icon PNG to Steam's grid dir and update shortcuts.vdf icon field."""
         grid_dir = self._grid_dir()
