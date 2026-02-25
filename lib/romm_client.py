@@ -11,6 +11,14 @@ from typing import TYPE_CHECKING
 
 import decky
 
+try:
+    import certifi
+    def _ca_bundle():
+        return certifi.where()
+except ImportError:
+    def _ca_bundle():
+        return None
+
 if TYPE_CHECKING:
     from typing import Protocol
 
@@ -35,7 +43,7 @@ class RommClientMixin:
 
     def _romm_ssl_context(self):
         """SSL context for RomM connections. Respects user insecure toggle."""
-        ctx = ssl.create_default_context()
+        ctx = ssl.create_default_context(cafile=_ca_bundle())
         if self.settings.get("romm_allow_insecure_ssl", False):
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE

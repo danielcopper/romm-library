@@ -10,6 +10,14 @@ from typing import TYPE_CHECKING, Any
 
 import decky
 
+try:
+    import certifi
+    def _ca_bundle():
+        return certifi.where()
+except ImportError:
+    def _ca_bundle():
+        return None
+
 if TYPE_CHECKING:
     import asyncio
     from typing import Optional, Protocol
@@ -42,7 +50,7 @@ class SgdbMixin:
         req = urllib.request.Request(url, method="GET")
         req.add_header("Authorization", f"Bearer {api_key}")
         req.add_header("User-Agent", "decky-romm-sync/0.1")
-        ctx = ssl.create_default_context()
+        ctx = ssl.create_default_context(cafile=_ca_bundle())
         with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
             return json.loads(resp.read().decode())
 
@@ -82,7 +90,7 @@ class SgdbMixin:
             image_url = result["data"][0]["url"]
             req = urllib.request.Request(image_url, method="GET")
             req.add_header("User-Agent", "decky-romm-sync/0.1")
-            ctx = ssl.create_default_context()
+            ctx = ssl.create_default_context(cafile=_ca_bundle())
             tmp_path = cached + ".tmp"
             with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
                 with open(tmp_path, "wb") as f:
@@ -198,7 +206,7 @@ class SgdbMixin:
             req = urllib.request.Request(url, method="GET")
             req.add_header("Authorization", f"Bearer {api_key}")
             req.add_header("User-Agent", "decky-romm-sync/0.1")
-            ctx = ssl.create_default_context()
+            ctx = ssl.create_default_context(cafile=_ca_bundle())
             resp = await self.loop.run_in_executor(
                 None, lambda: urllib.request.urlopen(req, context=ctx, timeout=30)
             )
