@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.0...decky-romm-sync-v0.8.1) (2026-02-25)
+
+
+### Bug Fixes
+
+* remove install status badge, move platform to game info section ([#50](https://github.com/danielcopper/decky-romm-sync/issues/50)) ([36f09b7](https://github.com/danielcopper/decky-romm-sync/commit/36f09b7da8036b2fbdaf4a4a36e9695dbc1d93c0))
+* startup state healing — atomic settings, orphan cleanup, tmp pruning ([#48](https://github.com/danielcopper/decky-romm-sync/issues/48)) ([5b635be](https://github.com/danielcopper/decky-romm-sync/commit/5b635be50c3bd0ffde58f82d6d1fbb91670f3b9c))
+
 ## [0.8.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.7.0...decky-romm-sync-v0.8.0) (2026-02-25)
 
 
