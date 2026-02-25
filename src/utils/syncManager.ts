@@ -150,7 +150,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
 
     // Report results to backend — always call this so partial progress is saved
     try {
-      await reportSyncResults(romIdToAppId, removedRomIds);
+      await reportSyncResults(romIdToAppId, removedRomIds, cancelled);
     } catch (e) {
       logError(`Failed to report sync results: ${e}`);
     }

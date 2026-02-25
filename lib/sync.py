@@ -341,7 +341,7 @@ class SyncMixin:
         self._sync_running = False
         decky.logger.info(message)
 
-    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids):
+    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
         """Called by frontend after applying shortcuts via SteamClient."""
         grid = self._grid_dir()
 
@@ -402,15 +402,27 @@ class SyncMixin:
             platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
 
         total = len(self._state["shortcut_registry"])
-        await decky.emit("sync_complete", {
-            "platform_app_ids": platform_app_ids,
-            "total_games": total,
-        })
+        processed = len(rom_id_to_app_id)
 
-        await self._emit_progress("done", current=total, total=total,
-            message=f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
-            running=False)
-        decky.logger.info(f"Sync results reported: {total} games")
+        if cancelled:
+            await decky.emit("sync_complete", {
+                "platform_app_ids": platform_app_ids,
+                "total_games": processed,
+                "cancelled": True,
+            })
+            await self._emit_progress("done", current=processed, total=total,
+                message=f"Sync cancelled: {processed} of {total} games processed",
+                running=False)
+            decky.logger.info(f"Sync cancelled: {processed}/{total} games processed")
+        else:
+            await decky.emit("sync_complete", {
+                "platform_app_ids": platform_app_ids,
+                "total_games": total,
+            })
+            await self._emit_progress("done", current=total, total=total,
+                message=f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
+                running=False)
+            decky.logger.info(f"Sync results reported: {total} games")
         return {"success": True}
 
     # Deprecated: VDF-based shortcut creation (replaced by frontend SteamClient API)

@@ -17,6 +17,7 @@ import {
   fixRetroarchInputDriver,
 } from "../api/backend";
 import { getSyncProgress } from "../utils/syncProgress";
+import { requestSyncCancel } from "../utils/syncManager";
 import type { SyncProgress, SyncStats } from "../types";
 
 type Page = "connection" | "platforms" | "danger" | "downloads" | "bios" | "savesync";
@@ -106,6 +107,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
 
   const handleCancel = async () => {
     try {
+      requestSyncCancel();
       const result = await cancelSync();
       setStatus(result.message);
     } catch {
