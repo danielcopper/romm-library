@@ -107,7 +107,7 @@ class SyncMixin:
         self._sync_last_heartbeat = time.monotonic()
         return {"success": True}
 
-    async def _emit_progress(self, phase, current=0, total=0, message="", running=True):
+    async def _emit_progress(self, phase, current=0, total=0, message="", running=True, step=0, total_steps=6):
         """Update _sync_progress and emit sync_progress event to frontend."""
         self._sync_progress = {
             "running": running,
@@ -115,13 +115,15 @@ class SyncMixin:
             "current": current,
             "total": total,
             "message": message,
+            "step": step,
+            "totalSteps": total_steps,
         }
         await decky.emit("sync_progress", self._sync_progress)
 
     async def _do_sync(self):
         try:
             # Phase 1: Fetch platforms
-            await self._emit_progress("platforms", message="Fetching platforms...")
+            await self._emit_progress("platforms", message="Fetching platforms...", step=1)
 
             try:
                 platforms = await self.loop.run_in_executor(
@@ -150,7 +152,7 @@ class SyncMixin:
             decky.logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
 
             # Phase 2: Fetch ROMs per platform
-            await self._emit_progress("roms", message="Fetching ROMs...")
+            await self._emit_progress("roms", message="Fetching ROMs...", step=2)
 
             all_roms = []
             for platform in platforms:
@@ -191,7 +193,7 @@ class SyncMixin:
                         rom["platform_slug"] = platform.get("slug", "")
 
                     all_roms.extend(rom_list)
-                    await self._emit_progress("roms", current=len(all_roms), message=f"Fetching ROMs... ({len(all_roms)} found)")
+                    await self._emit_progress("roms", current=len(all_roms), message=f"Fetching ROMs... {len(all_roms)} found", step=2)
 
                     if len(rom_list) < limit:
                         break
@@ -206,7 +208,7 @@ class SyncMixin:
             )
 
             # Phase 3: Prepare shortcut data
-            await self._emit_progress("shortcuts", total=len(all_roms), message="Preparing shortcut data...")
+            await self._emit_progress("shortcuts", total=len(all_roms), message="Preparing shortcuts...", step=3)
 
             exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
             start_dir = os.path.join(decky.DECKY_PLUGIN_DIR, "bin")
@@ -239,7 +241,7 @@ class SyncMixin:
             self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
             # Phase 4: Download artwork
-            await self._emit_progress("artwork", total=len(all_roms), message="Downloading artwork...")
+            await self._emit_progress("artwork", total=len(all_roms), message="Downloading artwork...", step=4)
 
             cover_paths = await self._download_artwork(all_roms)
 
@@ -259,7 +261,7 @@ class SyncMixin:
             ]
 
             # Phase 5: Emit sync_apply for frontend to process via SteamClient
-            await self._emit_progress("applying", total=len(shortcuts_data), message="Applying shortcuts...")
+            await self._emit_progress("applying", total=len(shortcuts_data), message="Applying shortcuts...", step=5)
 
             # Save sync stats (registry updated by report_sync_results)
             self._state["sync_stats"] = {
@@ -511,7 +513,7 @@ class SyncMixin:
             if self._sync_cancel:
                 return cover_paths
 
-            await self._emit_progress("artwork", current=i + 1, total=total, message=f"Downloading artwork... ({i + 1}/{total})")
+            await self._emit_progress("artwork", current=i + 1, total=total, message=f"Downloading artwork... {i + 1}/{total}", step=4)
 
             # Determine cover URL from ROM data
             cover_url = rom.get("path_cover_large") or rom.get("path_cover_small")

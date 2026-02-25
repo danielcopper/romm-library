@@ -33,11 +33,11 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
 
     // Process additions/updates with small delays to avoid corrupting Steam state
     const total = data.shortcuts.length;
-    updateSyncProgress({ running: true, phase: "applying", current: 0, total, message: "Applying shortcuts..." });
+    updateSyncProgress({ running: true, phase: "applying", current: 0, total, message: "Applying shortcuts...", step: 5, totalSteps: 6 });
     for (let i = 0; i < data.shortcuts.length; i++) {
       const item = data.shortcuts[i];
       try {
-        updateSyncProgress({ current: i + 1, message: `Applying ${i + 1}/${total}: ${item.name}` });
+        updateSyncProgress({ current: i + 1, message: `Applying shortcuts... ${i + 1}/${total}` });
         let appId: number | undefined;
         const existingAppId = existing.get(item.rom_id);
         if (existingAppId) {
@@ -122,9 +122,9 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
     }
     if (!cancelled && Object.keys(platformAppIds).length > 0) {
       const numCollections = Object.keys(platformAppIds).length;
-      updateSyncProgress({ phase: "collections", current: 0, total: numCollections, message: "Creating collections..." });
-      await createOrUpdateCollections(platformAppIds, (cur, colTotal, name) => {
-        updateSyncProgress({ current: cur, total: colTotal, message: `Collection ${cur}/${colTotal}: ${name}` });
+      updateSyncProgress({ phase: "collections", current: 0, total: numCollections, message: "Creating collections...", step: 6, totalSteps: 6 });
+      await createOrUpdateCollections(platformAppIds, (cur, colTotal, _name) => {
+        updateSyncProgress({ current: cur, total: colTotal, message: `Creating collections... ${cur}/${colTotal}` });
       });
     }
 

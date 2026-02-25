@@ -74,6 +74,8 @@ export interface SyncProgress {
   current?: number;
   total?: number;
   message?: string;
+  step?: number;
+  totalSteps?: number;
 }
 
 export interface SyncStats {
