@@ -14,3 +14,4 @@ modules =
     lib.sgdb
     lib.downloads
     lib.sync
+    lib.save_sync
