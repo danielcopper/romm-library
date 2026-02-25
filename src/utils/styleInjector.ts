@@ -38,6 +38,10 @@ export function hideNativePlaySection(playSectionClass: string) {
   background: linear-gradient(to right, #80e62a, #01b866) !important;
   filter: brightness(1.2);
 }
+.romm-btn-play.romm-offline:hover, .romm-btn-play.romm-offline.gpfocus {
+  background: linear-gradient(to right, #7a8b7a, #6b7b6b) !important;
+  filter: brightness(1.1);
+}
 .romm-btn-conflict:hover, .romm-btn-conflict.gpfocus {
   background: linear-gradient(to right, #c49a28, #a6851b) !important;
   filter: brightness(1.2);

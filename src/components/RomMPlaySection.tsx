@@ -277,8 +277,11 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           applyArtwork(romId, appId).catch((e) => debugLog(`Auto-artwork error: ${e}`));
         }
 
-        // Background: fetch metadata if missing from cache
-        if (!cached.metadata && romId) {
+        // Background: fetch metadata if missing or stale (>7 days)
+        const METADATA_TTL_SEC = 7 * 24 * 3600;
+        const metaCachedAt = (cached.metadata as Record<string, unknown> | null)?.cached_at as number | undefined;
+        const metaStale = !metaCachedAt || (Date.now() / 1000 - metaCachedAt) > METADATA_TTL_SEC;
+        if (romId && (!cached.metadata || metaStale)) {
           getRomMetadata(romId).catch((e) => debugLog(`Background metadata fetch error: ${e}`));
         }
       } catch (e) {

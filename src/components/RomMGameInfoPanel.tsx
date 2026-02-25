@@ -206,8 +206,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           }).catch(() => {}),
         );
 
-        // Metadata (only if cache didn't have it)
-        if (!cached.metadata) {
+        // Metadata (if missing or stale >7 days)
+        const METADATA_TTL_SEC = 7 * 24 * 3600;
+        const metaCachedAt = (cached.metadata as Record<string, unknown> | null)?.cached_at as number | undefined;
+        const metaStale = !metaCachedAt || (Date.now() / 1000 - metaCachedAt) > METADATA_TTL_SEC;
+        if (!cached.metadata || metaStale) {
           bgPromises.push(
             getRomMetadata(romId).then((meta) => {
               if (!cancelled && meta) {

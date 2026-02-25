@@ -609,6 +609,7 @@ class SaveSyncMixin:
         The 8-scenario conflict detection table handles all cases.
         Returns (synced_count, errors_list).
         """
+        t_total = time.time()
         rom_id = int(rom_id)
         rom_id_str = str(rom_id)
 
@@ -619,12 +620,15 @@ class SaveSyncMixin:
         system, rom_name, saves_dir = info
 
         # Fetch server saves (with retry)
+        t0 = time.time()
         try:
             server_saves = self._with_retry(self._romm_list_saves, rom_id)
         except Exception as e:
             decky.logger.error(f"_sync_rom_saves({rom_id}): failed to list saves: {e}")
             return 0, [f"Failed to fetch saves: {e}"]
+        self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): list_saves {time.time()-t0:.3f}s")
 
+        t0 = time.time()
         local_files = self._find_save_files(rom_id)
         local_by_name = {lf["filename"]: lf for lf in local_files}
         self._log_debug(
@@ -632,6 +636,7 @@ class SaveSyncMixin:
             f"local_files={len(local_files)}, server_saves={len(server_saves)}, "
             f"saves_dir={saves_dir}"
         )
+        self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): find_local {time.time()-t0:.3f}s")
         server_by_name = {}
         for ss in server_saves:
             fn = ss.get("file_name", "")
@@ -643,6 +648,7 @@ class SaveSyncMixin:
         errors = []
 
         for filename in sorted(all_filenames):
+            t_file = time.time()
             local = local_by_name.get(filename)
             server = server_by_name.get(filename)
 
@@ -655,6 +661,8 @@ class SaveSyncMixin:
                 action = "download"
             else:
                 continue
+
+            self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): detect {filename} -> {action} {time.time()-t_file:.3f}s")
 
             if action == "skip":
                 continue
@@ -670,6 +678,7 @@ class SaveSyncMixin:
                     continue
                 action = resolution
 
+            t_action = time.time()
             try:
                 if action == "download":
                     self._do_download_save(
@@ -682,6 +691,7 @@ class SaveSyncMixin:
                         system, server
                     )
                     synced += 1
+                self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time()-t_action:.3f}s")
             except urllib.error.HTTPError as e:
                 if e.code == 409 and local and server:
                     # Server has newer save — queue as conflict
@@ -701,6 +711,7 @@ class SaveSyncMixin:
         save_entry = self._save_sync_state["saves"].setdefault(rom_id_str, {})
         save_entry["last_sync_check_at"] = datetime.now(timezone.utc).isoformat()
 
+        self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): TOTAL {time.time()-t_total:.3f}s synced={synced} errors={len(errors)}")
         return synced, errors
 
     # ── Callables ─────────────────────────────────────────────────

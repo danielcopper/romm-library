@@ -15,7 +15,21 @@ export interface CachedGameDetail {
   bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean } | null;
 }
 
-export const getCachedGameDetail = callable<[number], CachedGameDetail>("get_cached_game_detail");
+const _cachedGameDetailRaw = callable<[number], CachedGameDetail>("get_cached_game_detail");
+const _cachedGameDetailCache: Record<number, { promise: Promise<CachedGameDetail>; ts: number }> = {};
+const CACHE_TTL_MS = 3000; // reuse result for 3 seconds
+
+export function getCachedGameDetail(appId: number): Promise<CachedGameDetail> {
+  const now = Date.now();
+  const entry = _cachedGameDetailCache[appId];
+  if (entry && now - entry.ts < CACHE_TTL_MS) return entry.promise;
+  const promise = _cachedGameDetailRaw(appId);
+  _cachedGameDetailCache[appId] = { promise, ts: now };
+  promise.finally(() => {
+    setTimeout(() => { delete _cachedGameDetailCache[appId]; }, CACHE_TTL_MS);
+  });
+  return promise;
+}
 export const getSettings = callable<[], PluginSettings>("get_settings");
 export const saveSettings = callable<[string, string, string], { success: boolean; message: string }>("save_settings");
 export const testConnection = callable<[], { success: boolean; message: string }>("test_connection");

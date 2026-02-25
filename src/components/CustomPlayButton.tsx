@@ -401,7 +401,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         style={btnContainerStyle}
       >
         <DialogButton
-          className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-play", isOffline && "romm-offline"].filter(Boolean).join(" ")}
           style={{
             ...mainBtnStyle,
             borderRadius: "2px",
@@ -429,7 +429,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         style={btnContainerStyle}
       >
         <DialogButton
-          className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-play", isOffline && "romm-offline"].filter(Boolean).join(" ")}
           style={{
             ...mainBtnStyle,
             borderRadius: "2px",
@@ -482,11 +482,11 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   return (
     <Focusable
       ref={containerRef}
-      className={[appActionButtonClasses?.PlayButtonContainer, appActionButtonClasses?.Green].filter(Boolean).join(" ")}
+      className={[appActionButtonClasses?.PlayButtonContainer, !isOffline && appActionButtonClasses?.Green].filter(Boolean).join(" ")}
       style={btnContainerStyle}
     >
       <DialogButton
-        className={[appActionButtonClasses?.PlayButton, "romm-btn-play"].filter(Boolean).join(" ")}
+        className={[appActionButtonClasses?.PlayButton, "romm-btn-play", isOffline && "romm-offline"].filter(Boolean).join(" ")}
         style={{
           ...mainBtnStyle,
           borderRadius: "2px 0 0 2px",
