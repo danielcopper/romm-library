@@ -136,3 +136,70 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "retroarch_input_check": self._check_retroarch_input_driver(),
             "log_level": self.settings.get("log_level", "warn"),
         }
+
+    async def get_cached_game_detail(self, app_id):
+        """Return all locally-cached data for a game. No network calls."""
+        app_id = int(app_id)
+
+        # Reverse lookup: find rom_id by app_id in shortcut_registry
+        rom_id = None
+        entry = None
+        for rid, reg in self._state["shortcut_registry"].items():
+            if reg.get("app_id") == app_id:
+                rom_id = int(rid)
+                entry = reg
+                break
+
+        if rom_id is None:
+            return {"found": False}
+
+        rom_id_str = str(rom_id)
+
+        # Installed status
+        installed = rom_id_str in self._state["installed_roms"]
+
+        # Save sync
+        save_sync_enabled = self._save_sync_state.get("settings", {}).get(
+            "save_sync_enabled", False
+        )
+        raw_save = self._save_sync_state.get("saves", {}).get(rom_id_str)
+        save_status = None
+        if raw_save:
+            # Normalize files from dict {filename: {...}} to array [{filename, ...}]
+            raw_files = raw_save.get("files", {})
+            if isinstance(raw_files, dict):
+                files_list = [
+                    {"filename": fn,
+                     "status": "synced" if fdata.get("last_sync_hash") else "unknown",
+                     "last_sync_at": fdata.get("last_sync_at")}
+                    for fn, fdata in raw_files.items()
+                ]
+            else:
+                files_list = raw_files
+            save_status = {
+                "files": files_list,
+                "last_sync_check_at": raw_save.get("last_sync_check_at"),
+            }
+
+        # Pending conflicts for this rom
+        pending_conflicts = [
+            c for c in self._save_sync_state.get("pending_conflicts", [])
+            if c.get("rom_id") == rom_id
+        ]
+
+        # Metadata from cache
+        metadata = self._metadata_cache.get(rom_id_str)
+
+        return {
+            "found": True,
+            "rom_id": rom_id,
+            "rom_name": entry.get("name", ""),
+            "platform_slug": entry.get("platform_slug", ""),
+            "platform_name": entry.get("platform_name", ""),
+            "installed": installed,
+            "save_sync_enabled": save_sync_enabled,
+            "save_status": save_status,
+            "pending_conflicts": pending_conflicts,
+            "metadata": metadata,
+            "bios_status": None,
+        }

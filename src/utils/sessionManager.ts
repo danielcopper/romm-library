@@ -9,6 +9,7 @@
 import { toaster } from "@decky/api";
 import {
   postExitSync,
+  testConnection,
   recordSessionStart,
   recordSessionEnd,
   getAppIdRomIdMap,
@@ -17,6 +18,7 @@ import {
   logInfo,
   logError,
 } from "../api/backend";
+import { getRommConnectionState, setRommConnectionState } from "./connectionState";
 import { updatePlaytimeDisplay } from "../patches/metadataPatches";
 
 declare var Router: {
@@ -102,10 +104,31 @@ async function handleGameStop(): Promise<void> {
     logError(`Failed to record session end: ${e}`);
   }
 
-  // Post-exit save sync (if enabled)
+  // Post-exit save sync (if enabled) — quick healthcheck first to avoid wasting retries
   try {
     const settings = await getSaveSyncSettings();
     if (settings.save_sync_enabled && settings.sync_after_exit) {
+      // Quick connection check before attempting sync
+      let serverOnline = getRommConnectionState() === "connected";
+      if (!serverOnline) {
+        try {
+          const conn = await Promise.race([
+            testConnection(),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
+          ]);
+          serverOnline = conn.success;
+        } catch {
+          serverOnline = false;
+        }
+        setRommConnectionState(serverOnline ? "connected" : "offline");
+      }
+
+      if (!serverOnline) {
+        toaster.toast({ title: "RomM Save Sync", body: "Server offline — saves will sync next time" });
+        window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+        return;
+      }
+
       const result = await postExitSync(romId);
       if (result.success) {
         if (result.synced && result.synced > 0) {

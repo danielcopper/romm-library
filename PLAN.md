@@ -34,21 +34,14 @@ Standalone emulator saves (PCSX2, DuckStation, Dolphin, PPSSPP, melonDS, etc.) d
 
 ### Remaining work
 
-#### 1. Backend retry logic with exponential backoff
-`lib/save_sync.py` has no retry on failed uploads/downloads — single failure goes to offline queue. Add retry with exponential backoff (3 attempts: 1s, 3s, 9s) for:
-- `_romm_upload_save()`, `_romm_download_save()`, `_romm_list_saves()`
-- Any RomM API call in `pre_launch_sync` and `post_exit_sync`
-
-#### 2. Custom Play button — remaining items
+#### 1. Custom Play button — remaining items
 Core flow implemented: `handlePlay` does pre-launch sync → conflict modal → launch. Default conflict mode is `ask_me`.
 
 **Not yet done**:
-- **Part B — Global launch interceptor**: Safety net via `SteamClient.Apps.RegisterForGameActionStart` for launches from context menus/search (outside game detail page). Cancels launch if ROM not downloaded or save conflict exists, shows toast directing user to game page.
 - **Pre-launch toast notifications**: success ("Saves downloaded from RomM"), failure ("Failed to sync saves"), conflict queued
-- **Part C — Proactive sync check on page open**: Currently sync only runs when Play is clicked. Should run in background when RomMPlaySection mounts.
 
-#### 6. RomM shared account warning
-Warning in ConnectionSettings when username looks like a shared account ("admin", "romm", "user", "guest"). Non-blocking informational orange warning.
+#### ~~6. RomM shared account warning~~ — DONE
+Warning in ConnectionSettings when username looks like a shared account. Orange non-blocking warning below username field.
 
 ### Verification (unchecked items remaining)
 - [ ] Save file uploaded to RomM after play session ends
@@ -97,7 +90,12 @@ Warning in ConnectionSettings when username looks like a shared account ("admin"
 **Proposed solution — cache-first, then refresh**:
 1. **Immediate render from cached data**: On mount, populate UI from local state files (`installed_roms`, `metadata_cache.json`, `shortcut_registry`, `save_sync_state.json`, artwork cache). BIOS defaults to last-known state.
 2. **Connection status indicator**: Info item in PlaySection showing "Connecting..." (spinner) → "Connected" (green, refresh live data) → "Offline" (dimmed, cached data only).
-3. **Background refresh**: Once connected, silently refresh save/BIOS status and conflict detection. Update UI reactively.
+3. **Background refresh**: Once connected, silently refresh save/BIOS status and conflict detection. Update UI reactively. This subsumes the "proactive sync check on page open" idea — rather than a separate pre-launch sync on mount, the background refresh handles it. Save status and conflicts are surfaced immediately from cache, then updated live when the server responds.
+
+**Open questions**:
+- Should the background refresh do a full `_sync_rom_saves(direction="download")` or just a lightweight status check (list server saves, compare timestamps, detect conflicts without downloading)?
+- If a conflict is detected during background refresh, should it show the conflict modal immediately or just update the Play button to "Resolve Conflict" state and let the user initiate resolution?
+- How aggressive should the refresh be — every page visit, or only if last check was >N minutes ago?
 
 **Files to modify**: `CustomPlayButton.tsx`, `RomMPlaySection.tsx`, `RomMGameInfoPanel.tsx`, `backend.ts`, `main.py`/`lib/`
 
@@ -243,6 +241,15 @@ Rapid sequential requests during batch sync. Add configurable delay for remote/s
 - **UI settings page**: Machine-scoped collections toggle, device labels toggle, custom device name
 - **Per-game sync selection**: Select/deselect individual games within a platform
 - **Translations / i18n**: Adapt to user's Steam language (reference: Unifideck `src/i18n/`)
+- **Global launch interceptor**: Safety net via `SteamClient.Apps.RegisterForGameActionStart` for launches from context menus/search/recent games (outside game detail page). Currently save sync and conflict checks only run when launching from the game detail page.
+- **Async/blocking audit**: Systematic review of all `callable()` handlers for blocking I/O that runs directly on the async event loop instead of in `run_in_executor`. Decky's `callable()` dispatches on the main asyncio loop — any synchronous HTTP call, file I/O, or `time.sleep()` blocks all other callables until it returns. `save_sync.py` was partially fixed (wrapped `_sync_rom_saves`, `_with_retry`, `_sync_playtime_to_romm` in `run_in_executor`), but the same pattern likely exists in `romm_client.py`, `downloads.py`, `sync.py`, `firmware.py`, `metadata.py`, and `sgdb.py`. Audit every `async def` callable for blocking calls and wrap them.
+- **Save sync conflict architecture refactor**: Remove `pending_conflicts` persistence from `save_sync_state.json` in favor of fully live conflict detection. Currently conflicts are detected live (hash + timestamp) but then stored to disk and looked up later during resolution — this creates stale state risks and unnecessary complexity. Proposed changes:
+  1. **Drop `pending_conflicts` from state file.** Every entry point (pre-launch, post-exit, manual sync, lightweight check) already does live detection. No need to persist between detections.
+  2. **Derive `server_save_id` at resolution time.** Instead of storing it at detection time, `resolve_conflict()` should list saves for the ROM via API and match by filename. Eliminates the main reason for persistence.
+  3. **Lightweight check should show "Possible Conflict"** instead of "Conflict" — it only compares timestamps/sizes, not hashes. Full confirmation happens on Play click. Avoids false positives scaring users.
+  4. **Gear menu "Sync Saves" should show conflict modal.** Currently `syncRomSaves()` silently queues conflicts without user notification. Should behave like pre-launch sync: detect conflict → show modal → resolve or skip. Same for "Sync Saves" in SaveSyncSettings QAM page.
+  5. **Pass conflict data through frontend round-trip.** `preLaunchSync()` already returns full conflict details (sizes, timestamps, server_save_id). Frontend shows modal, user picks resolution, frontend passes details back to `resolve_conflict()`. No backend state lookup needed.
+- **Multi-save-file support**: Current logic assumes one `.srm` per ROM (RetroArch pattern). RomM's API supports multiple saves per ROM (different slots, emulators, devices). Locally, standalone emulators like PCSX2/Dolphin use shared memory cards or per-slot saves. Filename matching works for 1:1 but breaks with multiple files. Needs: enumerate all local + server saves per ROM, match by filename, detect conflicts per file, resolve individually or batch. Ties into Phase 7 standalone emulator save sync.
 
 ---
 

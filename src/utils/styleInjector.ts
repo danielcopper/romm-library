@@ -38,6 +38,10 @@ export function hideNativePlaySection(playSectionClass: string) {
   background: linear-gradient(to right, #80e62a, #01b866) !important;
   filter: brightness(1.2);
 }
+.romm-btn-play.romm-offline:hover, .romm-btn-play.romm-offline.gpfocus {
+  background: linear-gradient(to right, #7a8b7a, #6b7b6b) !important;
+  filter: brightness(1.1);
+}
 .romm-btn-conflict:hover, .romm-btn-conflict.gpfocus {
   background: linear-gradient(to right, #c49a28, #a6851b) !important;
   filter: brightness(1.2);
@@ -107,6 +111,13 @@ export function hideNativePlaySection(playSectionClass: string) {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+@keyframes romm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.romm-status-dot-pulse {
+  animation: romm-pulse 1.5s ease-in-out infinite;
 }`;
     sp.window.document.head.appendChild(infoStyle);
   }

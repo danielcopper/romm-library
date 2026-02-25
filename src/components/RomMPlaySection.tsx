@@ -26,8 +26,9 @@ import {
 import { FaGamepad, FaCog } from "react-icons/fa";
 import { CustomPlayButton } from "./CustomPlayButton";
 import {
-  getRomBySteamAppId,
-  getSaveSyncSettings,
+  getCachedGameDetail,
+  testConnection,
+  checkSaveStatusLightweight,
   getSaveStatus,
   checkPlatformBios,
   getSgdbArtworkBase64,
@@ -39,7 +40,7 @@ import {
   saveShortcutIcon,
   debugLog,
 } from "../api/backend";
-import type { BiosStatus, SaveSyncSettings, SaveStatus } from "../types";
+import type { BiosStatus, SaveStatus } from "../types";
 
 /** Track which appIds have had auto-artwork applied this session */
 const artworkApplied = new Set<number>();
@@ -84,6 +85,8 @@ async function applyArtwork(romId: number, appId: number): Promise<number> {
 interface RomMPlaySectionProps {
   appId: number;
 }
+
+type ConnectionState = "checking" | "connected" | "offline";
 
 interface InfoState {
   romId: number | null;
@@ -149,7 +152,7 @@ function computeSaveSyncDisplay(saveStatus: SaveStatus | null): { status: "synce
   const hasConflict = saveStatus?.files?.some((f) => f.status === "conflict") ?? false;
   if (hasConflict) return { status: "conflict", label: "Conflict" };
 
-  const hasLocalFiles = saveStatus?.files?.some((f) => f.local_path) ?? false;
+  const hasLocalFiles = saveStatus?.files?.some((f) => f.local_path || f.status === "synced" || f.status === "upload") ?? false;
   if (hasLocalFiles) {
     const lastCheck = saveStatus?.last_sync_check_at;
     if (lastCheck) {
@@ -168,6 +171,8 @@ function computeSaveSyncDisplay(saveStatus: SaveStatus | null): { status: "synce
   if (saveStatus && saveStatus.files.length > 0) return { status: "none", label: "No local saves" };
   return { status: "none", label: "No saves" };
 }
+
+import { setRommConnectionState } from "../utils/connectionState";
 
 export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   // Read playtime from Steam's own overview synchronously (already written by metadataPatches)
@@ -189,73 +194,76 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     biosStatus: null,
     biosLabel: "",
   });
+  const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [actionPending, setActionPending] = useState<string | null>(null);
   const romIdRef = useRef<number | null>(null);
 
-  // Load async info (save sync, BIOS) — play button and playtime render immediately
+  // Cache-first load: render instantly from cached data, then check connection in background
   useEffect(() => {
     let cancelled = false;
 
-    async function loadInfo() {
+    async function loadCached() {
       try {
+        const cached = await getCachedGameDetail(appId);
+        if (cancelled || !cached.found) return;
 
-        // Get ROM info for platform slug and rom ID
-        const rom = await getRomBySteamAppId(appId);
-        if (cancelled || !rom) return;
-
-        const romId: number = rom.rom_id;
+        const romId = cached.rom_id!;
         romIdRef.current = romId;
-        const platformSlug: string = rom.platform_slug;
 
-        // Fetch save sync settings, save status, and BIOS in parallel
-        const [saveSyncSettings, saveStatus, biosResult] = await Promise.all([
-          getSaveSyncSettings().catch((): SaveSyncSettings => ({
-            save_sync_enabled: false,
-            conflict_mode: "newest_wins",
-            sync_before_launch: false,
-            sync_after_exit: false,
-            clock_skew_tolerance_sec: 60,
-          })),
-          getSaveStatus(romId).catch((): SaveStatus | null => null),
-          checkPlatformBios(platformSlug).catch((): BiosStatus => ({ needs_bios: false })),
-        ]);
-
-        if (cancelled) return;
-
-        // Process save sync info
+        // Process save sync from cached data
         let saveSyncStatus: "synced" | "conflict" | "none" | null = null;
         let saveSyncLabel = "";
-        if (saveSyncSettings.save_sync_enabled) {
-          const display = computeSaveSyncDisplay(saveStatus);
+        if (cached.save_sync_enabled && cached.save_status) {
+          // Build a minimal SaveStatus-compatible object for computeSaveSyncDisplay
+          const pseudoStatus: SaveStatus = {
+            rom_id: romId,
+            files: cached.save_status.files.map((f) => ({
+              filename: f.filename,
+              status: f.status as "skip" | "download" | "upload" | "conflict",
+              local_path: null,
+              local_hash: null,
+              local_mtime: null,
+              local_size: null,
+              server_save_id: null,
+              server_updated_at: null,
+              server_size: null,
+              last_sync_at: f.last_sync_at ?? null,
+            })),
+            playtime: { total_seconds: 0, session_count: 0, last_session_start: null, last_session_duration_sec: null },
+            device_id: "",
+            last_sync_check_at: cached.save_status.last_sync_check_at ?? null,
+          };
+          const display = computeSaveSyncDisplay(pseudoStatus);
           saveSyncStatus = display.status;
           saveSyncLabel = display.label;
         }
 
-        // Process BIOS info
+        // Process BIOS from cached data
         let biosNeeded = false;
         let biosStatus: "ok" | "partial" | "missing" | null = null;
         let biosLabel = "";
-        if (biosResult.needs_bios) {
+        if (cached.bios_status) {
           biosNeeded = true;
-          biosStatus = getBiosLevel(biosResult);
-          biosLabel = formatBiosLabel(biosResult);
-        }
-
-        // Update playtime from RomM save sync data (more accurate than Steam's native tracking)
-        let playtime = "";
-        if (saveStatus?.playtime?.total_seconds && saveStatus.playtime.total_seconds > 0) {
-          playtime = formatPlaytime(Math.floor(saveStatus.playtime.total_seconds / 60));
+          const b = cached.bios_status;
+          if (b.all_downloaded) {
+            biosStatus = "ok";
+            biosLabel = "OK";
+          } else if (b.downloaded > 0) {
+            biosStatus = "partial";
+            biosLabel = `${b.downloaded}/${b.total}`;
+          } else {
+            biosStatus = "missing";
+            biosLabel = "Missing";
+          }
         }
 
         if (cancelled) return;
         setInfo((prev) => ({
           ...prev,
           romId,
-          romName: rom.name || "",
-          platformSlug,
-          // Override playtime if RomM has tracked data
-          ...(playtime ? { playtime } : {}),
-          saveSyncEnabled: saveSyncSettings.save_sync_enabled,
+          romName: cached.rom_name || "",
+          platformSlug: cached.platform_slug || "",
+          saveSyncEnabled: cached.save_sync_enabled ?? false,
           saveSyncStatus,
           saveSyncLabel,
           biosNeeded,
@@ -268,12 +276,20 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           artworkApplied.add(appId);
           applyArtwork(romId, appId).catch((e) => debugLog(`Auto-artwork error: ${e}`));
         }
+
+        // Background: fetch metadata if missing or stale (>7 days)
+        const METADATA_TTL_SEC = 7 * 24 * 3600;
+        const metaCachedAt = (cached.metadata as Record<string, unknown> | null)?.cached_at as number | undefined;
+        const metaStale = !metaCachedAt || (Date.now() / 1000 - metaCachedAt) > METADATA_TTL_SEC;
+        if (romId && (!cached.metadata || metaStale)) {
+          getRomMetadata(romId).catch((e) => debugLog(`Background metadata fetch error: ${e}`));
+        }
       } catch (e) {
-        debugLog(`RomMPlaySection: loadInfo error: ${e}`);
+        debugLog(`RomMPlaySection: loadCached error: ${e}`);
       }
     }
 
-    loadInfo();
+    loadCached();
 
     // Listen for conflict resolution / save sync changes from sibling components
     const onDataChanged = async (e: Event) => {
@@ -313,6 +329,53 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       window.removeEventListener("romm_data_changed", onDataChanged);
     };
   }, [appId]);
+
+  // Background connection check — runs after initial cached render
+  // If connected + installed + save sync enabled, also runs lightweight save status check
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const result = await Promise.race([
+          testConnection(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+        ]);
+        if (cancelled) return;
+        const connected = result.success;
+        const connState = connected ? "connected" : "offline";
+        setRommConnectionState(connState);
+        setConnectionState(connState);
+        window.dispatchEvent(new CustomEvent("romm_connection_changed", { detail: { state: connState } }));
+
+        // If connected, do lightweight save status check to detect new conflicts
+        const romId = romIdRef.current;
+        if (connected && romId && info.saveSyncEnabled) {
+          try {
+            const saveStatus = await checkSaveStatusLightweight(romId);
+            if (cancelled) return;
+            const hasConflict = saveStatus?.files?.some((f: { status: string }) => f.status === "conflict") ?? false;
+            // Always notify CustomPlayButton with fresh conflict status
+            window.dispatchEvent(new CustomEvent("romm_data_changed", {
+              detail: { type: "save_sync", rom_id: romId, has_conflict: hasConflict },
+            }));
+            // Update save sync display in PlaySection info items
+            const { status: ss, label: sl } = computeSaveSyncDisplay(saveStatus);
+            setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl }));
+          } catch (e) {
+            debugLog(`RomMPlaySection: lightweight save check error: ${e}`);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setRommConnectionState("offline");
+          setConnectionState("offline");
+          window.dispatchEvent(new CustomEvent("romm_connection_changed", { detail: { state: "offline" } }));
+        }
+      }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [info.saveSyncEnabled]);
 
   // Helper: create an info item with header and value (Steam's two-line pattern)
   const infoItem = (key: string, header: string, value: string, extraClass?: string) =>
@@ -540,6 +603,33 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           : "#d94126";
     infoItems.push(statusInfoItem("bios", "BIOS", info.biosLabel, biosColor));
   }
+
+  // RomM connection status
+  const connColor = connectionState === "connected" ? "#5ba32b"
+    : connectionState === "offline" ? "#8f98a0"
+      : "#1a9fff";
+  const connLabel = connectionState === "connected" ? "Online"
+    : connectionState === "offline" ? "Offline"
+      : "Checking...";
+  const connExtraClass = connectionState === "checking" ? "romm-info-checking" : "";
+  infoItems.push(
+    createElement("div", {
+      key: "romm-status",
+      className: `romm-info-item ${connExtraClass}`.trim(),
+    },
+      createElement("div", { className: "romm-info-header" }, "RomM"),
+      createElement("div", {
+        className: "romm-info-value",
+        style: { display: "flex", alignItems: "center", gap: "6px" },
+      },
+        createElement("span", {
+          className: `romm-status-dot ${connectionState === "checking" ? "romm-status-dot-pulse" : ""}`.trim(),
+          style: { backgroundColor: connColor },
+        }),
+        connLabel,
+      ),
+    ),
+  );
 
   return createElement(Focusable, {
     "data-romm": "true",

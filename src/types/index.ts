@@ -184,15 +184,6 @@ export interface PendingConflict {
   created_at: string;
 }
 
-export interface OfflineQueueItem {
-  rom_id: number;
-  filename: string;
-  direction: string;
-  error: string;
-  failed_at: string;
-  retry_count: number;
-}
-
 export interface SaveFileStatus {
   filename: string;
   local_path: string | null;
@@ -203,7 +194,7 @@ export interface SaveFileStatus {
   server_updated_at: string | null;
   server_size: number | null;
   last_sync_at: string | null;
-  status: "skip" | "download" | "upload" | "conflict";
+  status: "skip" | "download" | "upload" | "conflict" | "synced" | "unknown";
 }
 
 export interface PlaytimeEntry {
