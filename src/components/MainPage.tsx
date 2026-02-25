@@ -17,6 +17,7 @@ import {
   fixRetroarchInputDriver,
 } from "../api/backend";
 import { getSyncProgress } from "../utils/syncProgress";
+import { requestSyncCancel } from "../utils/syncManager";
 import type { SyncProgress, SyncStats } from "../types";
 
 type Page = "connection" | "platforms" | "danger" | "downloads" | "bios" | "savesync";
@@ -106,6 +107,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
 
   const handleCancel = async () => {
     try {
+      requestSyncCancel();
       const result = await cancelSync();
       setStatus(result.message);
     } catch {
@@ -113,9 +115,22 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     }
   };
 
+  // Steam's ProgressBarWithInfo nProgress uses percentage (0-100), not fraction (0-1)
   const progressFraction = syncProgress?.total
-    ? (syncProgress.current ?? 0) / syncProgress.total
+    ? ((syncProgress.current ?? 0) / syncProgress.total) * 100
     : undefined;
+
+  const formatProgressText = (progress: SyncProgress | null): string => {
+    if (!progress) return "Syncing...";
+    const step = progress.step && progress.totalSteps
+      ? `[${progress.step}/${progress.totalSteps}] `
+      : "";
+    const msg = progress.message || "Syncing...";
+    // Truncate to ~40 chars to prevent multi-line jumping in the QAM panel
+    const maxLen = 40 - step.length;
+    const truncated = msg.length > maxLen ? msg.slice(0, maxLen - 1) + "\u2026" : msg;
+    return step + truncated;
+  };
 
   const formatLastSync = (iso: string | null): string => {
     if (!iso) return "Never";
@@ -196,12 +211,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                 <ProgressBarWithInfo
                   indeterminate={progressFraction === undefined}
                   nProgress={progressFraction}
-                  sOperationText={syncProgress.message || "Syncing..."}
-                  sTimeRemaining={
-                    syncProgress.total
-                      ? `${syncProgress.current ?? 0} / ${syncProgress.total}`
-                      : undefined
-                  }
+                  sOperationText={formatProgressText(syncProgress)}
                 />
               </PanelSectionRow>
             )}

@@ -1,6 +1,6 @@
 import { addEventListener } from "@decky/api";
 import type { SyncApplyData } from "../types";
-import { getArtworkBase64, reportSyncResults, logInfo, logError } from "../api/backend";
+import { getArtworkBase64, reportSyncResults, syncHeartbeat, logInfo, logError } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
 import { createOrUpdateCollections, clearPlatformCollection } from "./collections";
 import { updateSyncProgress } from "./syncProgress";
@@ -24,6 +24,8 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
 
     _cancelRequested = false;
     let cancelled = false;
+    let lastHeartbeat = Date.now();
+    const HEARTBEAT_INTERVAL_MS = 10_000;
 
     const existing = await getExistingRomMShortcuts();
     const romIdToAppId: Record<string, number> = {};
@@ -31,11 +33,11 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
 
     // Process additions/updates with small delays to avoid corrupting Steam state
     const total = data.shortcuts.length;
-    updateSyncProgress({ running: true, phase: "applying", current: 0, total, message: "Applying shortcuts..." });
+    updateSyncProgress({ running: true, phase: "applying", current: 0, total, message: "Applying shortcuts...", step: 5, totalSteps: 6 });
     for (let i = 0; i < data.shortcuts.length; i++) {
       const item = data.shortcuts[i];
       try {
-        updateSyncProgress({ current: i + 1, message: `Applying ${i + 1}/${total}: ${item.name}` });
+        updateSyncProgress({ current: i + 1, message: `Applying shortcuts... ${i + 1}/${total}` });
         let appId: number | undefined;
         const existingAppId = existing.get(item.rom_id);
         if (existingAppId) {
@@ -76,6 +78,12 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       // Small delay between operations to avoid overwhelming Steam
       await delay(50);
 
+      // Keep backend safety timeout alive during long application loops
+      if (Date.now() - lastHeartbeat > HEARTBEAT_INTERVAL_MS) {
+        syncHeartbeat().catch(() => {});
+        lastHeartbeat = Date.now();
+      }
+
       if (_cancelRequested) {
         logInfo(`Cancel requested after processing ${i + 1}/${total} shortcuts`);
         cancelled = true;
@@ -114,9 +122,9 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
     }
     if (!cancelled && Object.keys(platformAppIds).length > 0) {
       const numCollections = Object.keys(platformAppIds).length;
-      updateSyncProgress({ phase: "collections", current: 0, total: numCollections, message: "Creating collections..." });
-      await createOrUpdateCollections(platformAppIds, (cur, colTotal, name) => {
-        updateSyncProgress({ current: cur, total: colTotal, message: `Collection ${cur}/${colTotal}: ${name}` });
+      updateSyncProgress({ phase: "collections", current: 0, total: numCollections, message: "Creating collections...", step: 6, totalSteps: 6 });
+      await createOrUpdateCollections(platformAppIds, (cur, colTotal, _name) => {
+        updateSyncProgress({ current: cur, total: colTotal, message: `Creating collections... ${cur}/${colTotal}` });
       });
     }
 
@@ -142,7 +150,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
 
     // Report results to backend — always call this so partial progress is saved
     try {
-      await reportSyncResults(romIdToAppId, removedRomIds);
+      await reportSyncResults(romIdToAppId, removedRomIds, cancelled);
     } catch (e) {
       logError(`Failed to report sync results: ${e}`);
     }

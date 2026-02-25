@@ -100,11 +100,14 @@ export default definePlugin(() => {
   const onSyncComplete = (data: {
     platform_app_ids: Record<string, number[]>;
     total_games: number;
+    cancelled?: boolean;
   }) => {
-    logInfo(`sync_complete received: ${data.total_games} games`);
+    logInfo(`sync_complete received: ${data.total_games} games, cancelled=${data.cancelled ?? false}`);
     toaster.toast({
       title: "RomM Sync",
-      body: `Sync complete! ${data.total_games} games added.`,
+      body: data.cancelled
+        ? `Sync cancelled. ${data.total_games} games processed.`
+        : `Sync complete! ${data.total_games} games added.`,
     });
 
     // Update RomM app ID set with newly synced shortcuts
@@ -148,8 +151,8 @@ export default definePlugin(() => {
       updateDownload({
         rom_id: data.rom_id,
         rom_name: data.rom_name,
-        platform_name: "",
-        file_name: "",
+        platform_name: data.platform_name ?? "",
+        file_name: data.file_name ?? "",
         status: data.status as "queued" | "downloading" | "completed" | "failed" | "cancelled",
         progress: data.progress,
         bytes_downloaded: data.bytes_downloaded,

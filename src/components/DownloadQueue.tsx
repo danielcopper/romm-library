@@ -110,7 +110,7 @@ export const DownloadQueue: FC<DownloadQueueProps> = ({ onBack }) => {
                 <ProgressBarWithInfo
                   nProgress={
                     item.total_bytes > 0
-                      ? item.bytes_downloaded / item.total_bytes
+                      ? (item.bytes_downloaded / item.total_bytes) * 100
                       : undefined
                   }
                   indeterminate={item.total_bytes === 0}

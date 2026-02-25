@@ -135,6 +135,8 @@ class DownloadMixin:
                 decky.emit("download_progress", {
                     "rom_id": rom_id,
                     "rom_name": rom_name,
+                    "platform_name": platform_name,
+                    "file_name": file_name,
                     "status": "downloading",
                     "progress": progress,
                     "bytes_downloaded": downloaded,

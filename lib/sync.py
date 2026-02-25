@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         _sync_running: bool
         _sync_cancel: bool
         _sync_progress: dict
+        _sync_last_heartbeat: float
         _pending_sync: dict
         _metadata_cache: dict
         loop: asyncio.AbstractEventLoop
@@ -90,6 +91,7 @@ class SyncMixin:
             return {"success": False, "message": "Sync already in progress"}
         self._sync_running = True
         self._sync_cancel = False
+        self._sync_last_heartbeat = time.monotonic()
         self.loop.create_task(self._do_sync())
         return {"success": True, "message": "Sync started"}
 
@@ -100,7 +102,12 @@ class SyncMixin:
     async def get_sync_progress(self):
         return self._sync_progress
 
-    async def _emit_progress(self, phase, current=0, total=0, message="", running=True):
+    async def sync_heartbeat(self):
+        """Called by frontend during shortcut application to keep safety timeout alive."""
+        self._sync_last_heartbeat = time.monotonic()
+        return {"success": True}
+
+    async def _emit_progress(self, phase, current=0, total=0, message="", running=True, step=0, total_steps=6):
         """Update _sync_progress and emit sync_progress event to frontend."""
         self._sync_progress = {
             "running": running,
@@ -108,13 +115,15 @@ class SyncMixin:
             "current": current,
             "total": total,
             "message": message,
+            "step": step,
+            "totalSteps": total_steps,
         }
         await decky.emit("sync_progress", self._sync_progress)
 
     async def _do_sync(self):
         try:
             # Phase 1: Fetch platforms
-            await self._emit_progress("platforms", message="Fetching platforms...")
+            await self._emit_progress("platforms", message="Fetching platforms...", step=1)
 
             try:
                 platforms = await self.loop.run_in_executor(
@@ -143,7 +152,7 @@ class SyncMixin:
             decky.logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
 
             # Phase 2: Fetch ROMs per platform
-            await self._emit_progress("roms", message="Fetching ROMs...")
+            await self._emit_progress("roms", message="Fetching ROMs...", step=2)
 
             all_roms = []
             for platform in platforms:
@@ -184,7 +193,7 @@ class SyncMixin:
                         rom["platform_slug"] = platform.get("slug", "")
 
                     all_roms.extend(rom_list)
-                    await self._emit_progress("roms", current=len(all_roms), message=f"Fetching ROMs... ({len(all_roms)} found)")
+                    await self._emit_progress("roms", current=len(all_roms), message=f"Fetching ROMs... {len(all_roms)} found", step=2)
 
                     if len(rom_list) < limit:
                         break
@@ -199,7 +208,7 @@ class SyncMixin:
             )
 
             # Phase 3: Prepare shortcut data
-            await self._emit_progress("shortcuts", total=len(all_roms), message="Preparing shortcut data...")
+            await self._emit_progress("shortcuts", total=len(all_roms), message="Preparing shortcuts...", step=3)
 
             exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
             start_dir = os.path.join(decky.DECKY_PLUGIN_DIR, "bin")
@@ -232,7 +241,7 @@ class SyncMixin:
             self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
             # Phase 4: Download artwork
-            await self._emit_progress("artwork", total=len(all_roms), message="Downloading artwork...")
+            await self._emit_progress("artwork", total=len(all_roms), message="Downloading artwork...", step=4)
 
             cover_paths = await self._download_artwork(all_roms)
 
@@ -252,7 +261,7 @@ class SyncMixin:
             ]
 
             # Phase 5: Emit sync_apply for frontend to process via SteamClient
-            await self._emit_progress("applying", total=len(shortcuts_data), message="Applying shortcuts...")
+            await self._emit_progress("applying", total=len(shortcuts_data), message="Applying shortcuts...", step=5)
 
             # Save sync stats (registry updated by report_sync_results)
             self._state["sync_stats"] = {
@@ -297,16 +306,27 @@ class SyncMixin:
             if self._sync_progress.get("phase") == "error":
                 pass  # Already handled by except block
             elif self._sync_progress.get("running"):
-                # Normal completion — frontend is processing. Set a 60s safety timeout.
+                # Normal completion — frontend is processing.
+                # Use heartbeat-based timeout: check every 10s if frontend is still alive.
+                # Frontend calls sync_heartbeat() periodically during shortcut application.
+                self._sync_last_heartbeat = time.monotonic()
+                heartbeat_timeout_sec = 30  # dead if no heartbeat for 30s
+
                 async def _safety_timeout():
-                    await asyncio.sleep(60)
-                    if self._sync_progress.get("running"):
-                        stats = self._state.get("sync_stats", {})
-                        await self._emit_progress("done",
-                            current=stats.get("roms", 0),
-                            total=stats.get("roms", 0),
-                            message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
-                            running=False)
+                    while self._sync_progress.get("running"):
+                        await asyncio.sleep(10)
+                        elapsed = time.monotonic() - self._sync_last_heartbeat
+                        if elapsed > heartbeat_timeout_sec:
+                            decky.logger.warning(
+                                f"Sync safety timeout: no heartbeat for {elapsed:.0f}s"
+                            )
+                            stats = self._state.get("sync_stats", {})
+                            await self._emit_progress("done",
+                                current=stats.get("roms", 0),
+                                total=stats.get("roms", 0),
+                                message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
+                                running=False)
+                            return
                 self.loop.create_task(_safety_timeout())
 
     async def _finish_sync(self, message):
@@ -321,7 +341,7 @@ class SyncMixin:
         self._sync_running = False
         decky.logger.info(message)
 
-    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids):
+    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
         """Called by frontend after applying shortcuts via SteamClient."""
         grid = self._grid_dir()
 
@@ -382,15 +402,27 @@ class SyncMixin:
             platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
 
         total = len(self._state["shortcut_registry"])
-        await decky.emit("sync_complete", {
-            "platform_app_ids": platform_app_ids,
-            "total_games": total,
-        })
+        processed = len(rom_id_to_app_id)
 
-        await self._emit_progress("done", current=total, total=total,
-            message=f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
-            running=False)
-        decky.logger.info(f"Sync results reported: {total} games")
+        if cancelled:
+            await decky.emit("sync_complete", {
+                "platform_app_ids": platform_app_ids,
+                "total_games": processed,
+                "cancelled": True,
+            })
+            await self._emit_progress("done", current=processed, total=total,
+                message=f"Sync cancelled: {processed} of {total} games processed",
+                running=False)
+            decky.logger.info(f"Sync cancelled: {processed}/{total} games processed")
+        else:
+            await decky.emit("sync_complete", {
+                "platform_app_ids": platform_app_ids,
+                "total_games": total,
+            })
+            await self._emit_progress("done", current=total, total=total,
+                message=f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
+                running=False)
+            decky.logger.info(f"Sync results reported: {total} games")
         return {"success": True}
 
     # Deprecated: VDF-based shortcut creation (replaced by frontend SteamClient API)
@@ -493,7 +525,7 @@ class SyncMixin:
             if self._sync_cancel:
                 return cover_paths
 
-            await self._emit_progress("artwork", current=i + 1, total=total, message=f"Downloading artwork... ({i + 1}/{total})")
+            await self._emit_progress("artwork", current=i + 1, total=total, message=f"Downloading artwork... {i + 1}/{total}", step=4)
 
             # Determine cover URL from ROM data
             cover_url = rom.get("path_cover_large") or rom.get("path_cover_small")

@@ -74,6 +74,8 @@ export interface SyncProgress {
   current?: number;
   total?: number;
   message?: string;
+  step?: number;
+  totalSteps?: number;
 }
 
 export interface SyncStats {
@@ -223,6 +225,8 @@ export interface RomLookupResult {
 export interface DownloadProgressEvent {
   rom_id: number;
   rom_name: string;
+  platform_name: string;
+  file_name: string;
   status: string;
   progress: number;
   bytes_downloaded: number;

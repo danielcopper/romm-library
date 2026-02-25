@@ -28,6 +28,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._load_settings()
         self._sync_running = False
         self._sync_cancel = False
+        self._sync_last_heartbeat = 0.0
         self._sync_progress = {
             "running": False,
             "phase": "",
