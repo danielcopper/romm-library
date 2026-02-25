@@ -113,6 +113,9 @@ export interface FirmwareFile {
   size: number;
   md5: string;
   downloaded: boolean;
+  required: boolean;
+  description: string;
+  hash_valid: boolean | null;
 }
 
 export interface FirmwarePlatform {
@@ -135,6 +138,8 @@ export interface BiosFileStatus {
   file_name: string;
   downloaded: boolean;
   local_path: string;
+  required: boolean;
+  description: string;
 }
 
 export interface BiosStatus {
@@ -142,6 +147,8 @@ export interface BiosStatus {
   server_count?: number;
   local_count?: number;
   all_downloaded?: boolean;
+  required_count?: number;
+  required_downloaded?: number;
   files?: BiosFileStatus[];
 }
 

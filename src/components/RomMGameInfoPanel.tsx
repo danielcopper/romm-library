@@ -121,6 +121,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             server_count: cached.bios_status.total,
             local_count: cached.bios_status.downloaded,
             all_downloaded: cached.bios_status.all_downloaded,
+            required_count: cached.bios_status.required_count,
+            required_downloaded: cached.bios_status.required_downloaded,
           };
         }
 
@@ -443,10 +445,22 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     const bios = state.biosStatus;
     const localCount = bios.local_count ?? 0;
     const serverCount = bios.server_count ?? 0;
-    const biosColor = bios.all_downloaded ? "#5ba32b" : localCount > 0 ? "#d4a72c" : "#d94126";
-    const biosLabel = bios.all_downloaded
-      ? `All ready (${localCount}/${serverCount})`
-      : `${localCount}/${serverCount} files ready`;
+    const reqCount = bios.required_count;
+    const reqDone = bios.required_downloaded;
+
+    let biosColor: string;
+    let biosLabel: string;
+    if (reqCount != null && reqDone != null) {
+      biosColor = reqDone >= reqCount ? "#5ba32b" : reqDone > 0 ? "#d4a72c" : "#d94126";
+      biosLabel = reqDone >= reqCount
+        ? `All required ready (${localCount}/${serverCount})`
+        : `${reqDone}/${reqCount} required files ready`;
+    } else {
+      biosColor = bios.all_downloaded ? "#5ba32b" : localCount > 0 ? "#d4a72c" : "#d94126";
+      biosLabel = bios.all_downloaded
+        ? `All ready (${localCount}/${serverCount})`
+        : `${localCount}/${serverCount} files ready`;
+    }
 
     const biosChildren: (ReturnType<typeof createElement> | null)[] = [];
 
@@ -474,8 +488,10 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
                 className: "romm-status-dot",
                 style: { backgroundColor: f.downloaded ? "#5ba32b" : "#d94126" },
               }),
-              createElement("span", { className: "romm-panel-file-name" }, f.file_name),
-              createElement("span", { className: "romm-panel-file-path" }, f.local_path),
+              createElement("span", { className: "romm-panel-file-name" },
+                `${f.description || f.file_name} (${f.required ? "required" : "optional"})`,
+              ),
+              createElement("span", { className: "romm-panel-file-path" }, f.file_name !== (f.description || f.file_name) ? f.file_name : f.local_path),
             ),
           ),
         ),

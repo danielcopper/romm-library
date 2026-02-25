@@ -19,6 +19,7 @@ def plugin():
     p._download_queue = {}
     p._download_in_progress = set()
     p._metadata_cache = {}
+    p._bios_registry = {}
     return p
 
 
@@ -270,3 +271,337 @@ class TestDeletePlatformBios:
         result = await plugin.delete_platform_bios("psx")
         assert result["success"] is True
         assert result["deleted_count"] == 0
+
+
+class TestBiosRegistry:
+    def test_load_bios_registry(self, plugin, tmp_path):
+        """Loads registry JSON and verifies structure."""
+        import json
+
+        registry_data = {
+            "_meta": {"version": "1.0", "description": "Test registry"},
+            "files": {
+                "bios.bin": {
+                    "description": "Main BIOS",
+                    "required": True,
+                    "md5": "abc123",
+                    "sha1": "def456",
+                    "size": 2048,
+                },
+                "optional.bin": {
+                    "description": "Optional firmware",
+                    "required": False,
+                    "md5": "789abc",
+                    "sha1": "012def",
+                    "size": 1024,
+                },
+            },
+        }
+
+        defaults_dir = tmp_path / "defaults"
+        defaults_dir.mkdir()
+        registry_file = defaults_dir / "bios_registry.json"
+        registry_file.write_text(json.dumps(registry_data))
+
+        from unittest.mock import patch
+        # _load_bios_registry uses __file__ to locate bios_registry.json relative to lib/
+        # We patch os.path.dirname to redirect to our tmp_path
+        fake_lib_dir = str(tmp_path / "lib")
+        with patch("lib.firmware.os.path.dirname", side_effect=[fake_lib_dir, str(tmp_path)]):
+            plugin._load_bios_registry()
+
+        assert "_meta" in plugin._bios_registry
+        assert "files" in plugin._bios_registry
+        assert "bios.bin" in plugin._bios_registry["files"]
+        assert plugin._bios_registry["files"]["bios.bin"]["required"] is True
+        assert plugin._bios_registry["files"]["optional.bin"]["required"] is False
+
+    def test_load_bios_registry_missing_file(self, plugin):
+        """When registry file doesn't exist, returns empty dict."""
+        from unittest.mock import patch
+
+        with patch("lib.firmware.os.path.dirname", side_effect=["/nonexistent/lib", "/nonexistent"]):
+            plugin._load_bios_registry()
+
+        assert plugin._bios_registry == {}
+
+    def test_enrich_firmware_required(self, plugin):
+        """File in registry marked required=True."""
+        plugin._bios_registry = {
+            "files": {
+                "scph5501.bin": {
+                    "description": "PS1 BIOS (USA)",
+                    "required": True,
+                    "md5": "abc123",
+                },
+            },
+        }
+        file_dict = {"file_name": "scph5501.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["required"] is True
+        assert result["description"] == "PS1 BIOS (USA)"
+
+    def test_enrich_firmware_optional(self, plugin):
+        """File in registry marked required=False."""
+        plugin._bios_registry = {
+            "files": {
+                "optional_fw.bin": {
+                    "description": "Optional debug firmware",
+                    "required": False,
+                    "md5": "",
+                },
+            },
+        }
+        file_dict = {"file_name": "optional_fw.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["required"] is False
+        assert result["description"] == "Optional debug firmware"
+
+    def test_enrich_firmware_unknown_defaults_required(self, plugin):
+        """File NOT in registry defaults to required=True."""
+        plugin._bios_registry = {"files": {}}
+        file_dict = {"file_name": "unknown_bios.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["required"] is True
+        assert result["description"] == "unknown_bios.bin"
+
+    def test_hash_validation_match(self, plugin):
+        """RomM md5 matches registry md5."""
+        plugin._bios_registry = {
+            "files": {
+                "bios.bin": {
+                    "description": "Test BIOS",
+                    "required": True,
+                    "md5": "abc123def456",
+                },
+            },
+        }
+        file_dict = {"file_name": "bios.bin", "md5": "abc123def456"}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["hash_valid"] is True
+
+    def test_hash_validation_mismatch(self, plugin):
+        """RomM md5 differs from registry md5."""
+        plugin._bios_registry = {
+            "files": {
+                "bios.bin": {
+                    "description": "Test BIOS",
+                    "required": True,
+                    "md5": "abc123def456",
+                },
+            },
+        }
+        file_dict = {"file_name": "bios.bin", "md5": "000000000000"}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["hash_valid"] is False
+
+    def test_hash_validation_null(self, plugin):
+        """No hash from either source results in hash_valid=None."""
+        plugin._bios_registry = {
+            "files": {
+                "bios.bin": {
+                    "description": "Test BIOS",
+                    "required": True,
+                    "md5": "",
+                },
+            },
+        }
+        file_dict = {"file_name": "bios.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["hash_valid"] is None
+
+    def test_hash_validation_null_no_registry_entry(self, plugin):
+        """File not in registry and no RomM hash -> hash_valid=None."""
+        plugin._bios_registry = {"files": {}}
+        file_dict = {"file_name": "bios.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["hash_valid"] is None
+
+    def test_hash_validation_case_insensitive(self, plugin):
+        """Hash comparison is case-insensitive."""
+        plugin._bios_registry = {
+            "files": {
+                "bios.bin": {
+                    "description": "Test BIOS",
+                    "required": True,
+                    "md5": "ABC123DEF456",
+                },
+            },
+        }
+        file_dict = {"file_name": "bios.bin", "md5": "abc123def456"}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["hash_valid"] is True
+
+
+class TestCheckPlatformBiosRequired:
+    @pytest.mark.asyncio
+    async def test_required_counts(self, plugin, tmp_path):
+        """check_platform_bios includes required_count/required_downloaded."""
+        from unittest.mock import AsyncMock, MagicMock
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        firmware_list = [
+            {"id": 1, "file_name": "required1.bin", "file_path": "bios/dc/required1.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {"id": 2, "file_name": "required2.bin", "file_path": "bios/dc/required2.bin", "file_size_bytes": 200, "md5_hash": ""},
+            {"id": 3, "file_name": "optional1.bin", "file_path": "bios/dc/optional1.bin", "file_size_bytes": 300, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "files": {
+                "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": ""},
+                "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": ""},
+                "optional1.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+            },
+        }
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
+
+        result = await plugin.check_platform_bios("dc")
+        assert result["needs_bios"] is True
+        assert result["required_count"] == 2
+        assert result["required_downloaded"] == 0
+        assert result["server_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_all_required_downloaded(self, plugin, tmp_path):
+        """When all required files are downloaded, counts reflect this."""
+        from unittest.mock import AsyncMock, MagicMock
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        # Create downloaded required files
+        bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
+        bios_dir.mkdir(parents=True)
+        (bios_dir / "required1.bin").write_bytes(b"\x00" * 100)
+        (bios_dir / "required2.bin").write_bytes(b"\x00" * 200)
+        # Leave optional1.bin not downloaded
+
+        firmware_list = [
+            {"id": 1, "file_name": "required1.bin", "file_path": "bios/dc/required1.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {"id": 2, "file_name": "required2.bin", "file_path": "bios/dc/required2.bin", "file_size_bytes": 200, "md5_hash": ""},
+            {"id": 3, "file_name": "optional1.bin", "file_path": "bios/dc/optional1.bin", "file_size_bytes": 300, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "files": {
+                "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": ""},
+                "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": ""},
+                "optional1.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+            },
+        }
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
+
+        result = await plugin.check_platform_bios("dc")
+        assert result["needs_bios"] is True
+        assert result["required_count"] == 2
+        assert result["required_downloaded"] == 2
+        assert result["local_count"] == 2
+        # all_downloaded is False because optional1.bin is not downloaded
+        assert result["all_downloaded"] is False
+
+    @pytest.mark.asyncio
+    async def test_per_file_required_and_description(self, plugin, tmp_path):
+        """Individual files include required and description from registry."""
+        from unittest.mock import AsyncMock, MagicMock
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        firmware_list = [
+            {"id": 1, "file_name": "bios.bin", "file_path": "bios/dc/bios.bin", "file_size_bytes": 100, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "files": {
+                "bios.bin": {"description": "Dreamcast BIOS", "required": True, "md5": ""},
+            },
+        }
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
+
+        result = await plugin.check_platform_bios("dc")
+        assert result["files"][0]["required"] is True
+        assert result["files"][0]["description"] == "Dreamcast BIOS"
+
+
+class TestDownloadRequiredFirmware:
+    @pytest.mark.asyncio
+    async def test_downloads_required_only(self, plugin, tmp_path):
+        """Only downloads files marked required, skips optional."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        firmware_list = [
+            {"id": 1, "file_name": "required.bin", "file_path": "bios/dc/required.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {"id": 2, "file_name": "optional.bin", "file_path": "bios/dc/optional.bin", "file_size_bytes": 200, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "files": {
+                "required.bin": {"description": "Required BIOS", "required": True, "md5": ""},
+                "optional.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+            },
+        }
+
+        plugin.loop = asyncio.get_event_loop()
+
+        download_called_ids = []
+
+        async def fake_download_firmware(fw_id):
+            download_called_ids.append(fw_id)
+            return {"success": True}
+
+        with patch.object(plugin, "_romm_request", return_value=firmware_list), \
+             patch.object(plugin, "download_firmware", side_effect=fake_download_firmware):
+            result = await plugin.download_required_firmware("dc")
+
+        assert result["success"] is True
+        assert result["downloaded"] == 1
+        assert 1 in download_called_ids
+        assert 2 not in download_called_ids
+
+    @pytest.mark.asyncio
+    async def test_skips_already_downloaded_required(self, plugin, tmp_path):
+        """Skips required files that are already downloaded."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        # Pre-create one required file so it's skipped
+        bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
+        bios_dir.mkdir(parents=True)
+        (bios_dir / "existing.bin").write_bytes(b"\x00" * 100)
+
+        firmware_list = [
+            {"id": 1, "file_name": "existing.bin", "file_path": "bios/dc/existing.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {"id": 2, "file_name": "missing.bin", "file_path": "bios/dc/missing.bin", "file_size_bytes": 200, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "files": {
+                "existing.bin": {"description": "Already downloaded", "required": True, "md5": ""},
+                "missing.bin": {"description": "Not yet downloaded", "required": True, "md5": ""},
+            },
+        }
+
+        plugin.loop = asyncio.get_event_loop()
+
+        download_called_ids = []
+
+        async def fake_download_firmware(fw_id):
+            download_called_ids.append(fw_id)
+            return {"success": True}
+
+        with patch.object(plugin, "_romm_request", return_value=firmware_list), \
+             patch.object(plugin, "download_firmware", side_effect=fake_download_firmware):
+            result = await plugin.download_required_firmware("dc")
+
+        assert result["success"] is True
+        assert result["downloaded"] == 1
+        assert 2 in download_called_ids
+        assert 1 not in download_called_ids

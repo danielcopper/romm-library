@@ -48,6 +48,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._download_in_progress = set()  # rom_ids currently being processed
         self._metadata_cache = {}
         self._load_state()
+        self._load_bios_registry()
         self._load_metadata_cache()
         self._init_save_sync_state()
         self._load_save_sync_state()
@@ -212,6 +213,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                         "total": bios.get("server_count", 0),
                         "downloaded": bios.get("local_count", 0),
                         "all_downloaded": bios.get("all_downloaded", False),
+                        "required_count": bios.get("required_count"),
+                        "required_downloaded": bios.get("required_downloaded"),
                     }
             except Exception as e:
                 decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")

@@ -1,3 +1,4 @@
+import json
 import os
 import hashlib
 import urllib.parse
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
 
     class _FirmwareDeps(Protocol):
         _state: dict
+        _bios_registry: dict
         loop: asyncio.AbstractEventLoop
         def _romm_request(self, path: str) -> Any: ...
         def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
@@ -26,6 +28,33 @@ BIOS_DEST_MAP = {
 
 
 class FirmwareMixin:
+    def _load_bios_registry(self):
+        self._bios_registry = {}
+        registry_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "defaults", "bios_registry.json",
+        )
+        try:
+            with open(registry_path, "r") as f:
+                self._bios_registry = json.load(f)
+        except FileNotFoundError:
+            decky.logger.warning("bios_registry.json not found, registry enrichment disabled")
+        except Exception as e:
+            decky.logger.error(f"Failed to load bios_registry.json: {e}")
+
+    def _enrich_firmware_file(self, file_dict):
+        registry_files = self._bios_registry.get("files", {})
+        entry = registry_files.get(file_dict.get("file_name", ""))
+        file_dict["required"] = entry.get("required", True) if entry else True
+        file_dict["description"] = entry.get("description", file_dict.get("file_name", "")) if entry else file_dict.get("file_name", "")
+        file_md5 = file_dict.get("md5", "")
+        registry_md5 = entry.get("md5", "") if entry else ""
+        if file_md5 and registry_md5:
+            file_dict["hash_valid"] = file_md5.lower() == registry_md5.lower()
+        else:
+            file_dict["hash_valid"] = None
+        return file_dict
+
     def _firmware_slug(self, file_path):
         """Extract firmware slug from file_path (e.g. 'bios/ps' -> 'ps')."""
         parts = file_path.strip("/").split("/")
@@ -79,13 +108,15 @@ class FirmwareMixin:
                 }
 
             dest = self._firmware_dest_path(fw)
-            platforms_map[platform_slug]["files"].append({
+            file_dict = {
                 "id": fw.get("id"),
                 "file_name": fw.get("file_name", ""),
                 "size": fw.get("file_size_bytes", 0),
                 "md5": fw.get("md5_hash", ""),
                 "downloaded": os.path.exists(dest),
-            })
+            }
+            self._enrich_firmware_file(file_dict)
+            platforms_map[platform_slug]["files"].append(file_dict)
 
         # Cross-reference: installed platforms that have firmware on server but not all downloaded
         installed_slugs = set()
@@ -133,15 +164,32 @@ class FirmwareMixin:
         # Verify MD5 if available
         md5_match = None
         expected_md5 = fw.get("md5_hash", "")
+        local_md5 = None
         if expected_md5:
             h = hashlib.md5()
             with open(dest, "rb") as f:
                 for chunk in iter(lambda: f.read(8192), b""):
                     h.update(chunk)
-            md5_match = h.hexdigest() == expected_md5
+            local_md5 = h.hexdigest()
+            md5_match = local_md5 == expected_md5
+
+        # Check against registry hash
+        registry_hash_valid = None
+        registry_files = self._bios_registry.get("files", {})
+        reg_entry = registry_files.get(file_name)
+        if reg_entry:
+            reg_md5 = reg_entry.get("md5", "")
+            if reg_md5:
+                if local_md5 is None:
+                    h = hashlib.md5()
+                    with open(dest, "rb") as f:
+                        for chunk in iter(lambda: f.read(8192), b""):
+                            h.update(chunk)
+                    local_md5 = h.hexdigest()
+                registry_hash_valid = local_md5.lower() == reg_md5.lower()
 
         decky.logger.info(f"Firmware downloaded: {file_name} -> {dest}")
-        return {"success": True, "file_path": dest, "md5_match": md5_match}
+        return {"success": True, "file_path": dest, "md5_match": md5_match, "registry_hash_valid": registry_hash_valid}
 
     async def download_all_firmware(self, platform_slug):
         """Download all firmware for a given platform slug."""
@@ -178,6 +226,45 @@ class FirmwareMixin:
             msg += f" ({len(errors)} failed: {', '.join(errors)})"
         return {"success": True, "message": msg, "downloaded": downloaded}
 
+    async def download_required_firmware(self, platform_slug):
+        """Download only required firmware for a given platform slug."""
+        try:
+            firmware_list = await self.loop.run_in_executor(
+                None, self._romm_request, "/api/firmware"
+            )
+        except Exception as e:
+            decky.logger.error(f"Failed to fetch firmware: {e}")
+            return {"success": False, "message": f"Failed to fetch firmware: {e}", "downloaded": 0}
+
+        fw_slugs = self._platform_to_firmware_slugs(platform_slug)
+        registry_files = self._bios_registry.get("files", {})
+        platform_firmware = []
+        for fw in firmware_list:
+            slug = self._firmware_slug(fw.get("file_path", ""))
+            if slug in fw_slugs:
+                file_name = fw.get("file_name", "")
+                reg_entry = registry_files.get(file_name)
+                is_required = reg_entry.get("required", True) if reg_entry else True
+                if is_required:
+                    platform_firmware.append(fw)
+
+        downloaded = 0
+        errors = []
+        for fw in platform_firmware:
+            dest = self._firmware_dest_path(fw)
+            if os.path.exists(dest):
+                continue
+            result = await self.download_firmware(fw["id"])
+            if result.get("success"):
+                downloaded += 1
+            else:
+                errors.append(fw.get("file_name", str(fw["id"])))
+
+        msg = f"Downloaded {downloaded} required firmware files"
+        if errors:
+            msg += f" ({len(errors)} failed: {', '.join(errors)})"
+        return {"success": True, "message": msg, "downloaded": downloaded}
+
     async def check_platform_bios(self, platform_slug):
         """Check if RomM has firmware for this platform and whether it's downloaded."""
         local_count = 0
@@ -188,6 +275,7 @@ class FirmwareMixin:
             firmware_list = await self.loop.run_in_executor(
                 None, self._romm_request, "/api/firmware"
             )
+            registry_files = self._bios_registry.get("files", {})
             for fw in firmware_list:
                 fw_slug = self._firmware_slug(fw.get("file_path", ""))
                 if not fw_slug:
@@ -198,10 +286,14 @@ class FirmwareMixin:
                     downloaded = os.path.exists(dest)
                     if downloaded:
                         local_count += 1
+                    file_name = fw.get("file_name", "")
+                    reg_entry = registry_files.get(file_name)
                     files.append({
-                        "file_name": fw.get("file_name", ""),
+                        "file_name": file_name,
                         "downloaded": downloaded,
                         "local_path": dest,
+                        "required": reg_entry.get("required", True) if reg_entry else True,
+                        "description": reg_entry.get("description", file_name) if reg_entry else file_name,
                     })
         except Exception:
             pass
@@ -209,11 +301,17 @@ class FirmwareMixin:
         if server_count == 0:
             return {"needs_bios": False}
 
+        required_files = [f for f in files if f["required"]]
+        required_count = len(required_files)
+        required_downloaded = sum(1 for f in required_files if f["downloaded"])
+
         return {
             "needs_bios": True,
             "server_count": server_count,
             "local_count": local_count,
             "all_downloaded": local_count >= server_count,
+            "required_count": required_count,
+            "required_downloaded": required_downloaded,
             "files": files,
         }
 

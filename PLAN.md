@@ -18,8 +18,8 @@ SSL verification enabled for all requests. SteamGridDB always verifies via `cert
 ### Bug 6: Secrets Stored in Plain Text ✅
 `settings.json` enforces `0600` permissions on every write and on startup. OS keyring (D-Bus Secret Service) not viable — PluginLoader runs as root with no session bus. All other Decky plugins use plaintext JSON; `chmod 600` is the standard mitigation.
 
-### Bug 7: BIOS Status Reporting
-No distinction between required and optional BIOS files. Investigate RomM firmware metadata and RetroArch core requirements.
+### Bug 7: BIOS Status Reporting ✅
+Static BIOS registry (`defaults/bios_registry.json`) derived from libretro core-info + System.dat. Backend enriches firmware responses with `required`/`description`/`hash_valid` fields. Frontend distinguishes required vs optional files in BiosManager, PlaySection badge, and GameInfoPanel. "Download Required" button for required-only downloads.
 
 ### Bug 8: VDF-Created Shortcut Icons Not Displaying
 Icon path set but not rendered. Investigate format requirements and compare with other plugins.

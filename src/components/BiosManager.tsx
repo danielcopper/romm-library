@@ -6,7 +6,7 @@ import {
   Field,
   Focusable,
 } from "@decky/ui";
-import { getFirmwareStatus, downloadAllFirmware } from "../api/backend";
+import { getFirmwareStatus, downloadAllFirmware, downloadRequiredFirmware } from "../api/backend";
 import type { FirmwarePlatformExt } from "../types";
 
 interface BiosManagerProps {
@@ -58,6 +58,23 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
     setDownloading(null);
   };
 
+  const handleDownloadRequired = async (platformSlug: string) => {
+    setDownloading(platformSlug);
+    setStatus("");
+    try {
+      const result = await downloadRequiredFirmware(platformSlug);
+      if (result.success) {
+        setStatus(result.message || `Downloaded ${result.downloaded} required files`);
+        await refresh();
+      } else {
+        setStatus(result.message || "Download failed");
+      }
+    } catch (e) {
+      setStatus(`Download failed: ${e}`);
+    }
+    setDownloading(null);
+  };
+
   // Separate platforms with games (show first, more prominent) from others
   const withGames = platforms.filter((p) => p.has_games);
   const withoutGames = platforms.filter((p) => !p.has_games);
@@ -67,8 +84,40 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
     const done = platform.files.filter((f) => f.downloaded).length;
     const allDone = done === total;
     const isDownloading = downloading === platform.platform_slug;
-    const needsAttention = platform.has_games && !allDone;
     const isExpanded = expanded[platform.platform_slug] ?? false;
+
+    const requiredFiles = platform.files.filter((f) => f.required);
+    const optionalFiles = platform.files.filter((f) => !f.required);
+    const requiredCount = requiredFiles.length;
+    const requiredDone = requiredFiles.filter((f) => f.downloaded).length;
+    const allRequiredDone = requiredDone === requiredCount;
+    const optionalDone = optionalFiles.filter((f) => f.downloaded).length;
+    const optionalMissing = optionalFiles.length - optionalDone;
+
+    const needsAttention = platform.has_games && !allRequiredDone;
+
+    let summaryLabel: string;
+    let summaryDescription: string;
+    if (requiredCount > 0) {
+      if (allRequiredDone) {
+        summaryLabel = `${requiredDone} / ${requiredCount} required`;
+        summaryDescription = optionalMissing > 0
+          ? `All required ready (${optionalMissing} optional missing)`
+          : "All required ready";
+      } else {
+        summaryLabel = `${requiredDone} / ${requiredCount} required`;
+        summaryDescription = `${requiredCount - requiredDone} required missing — games may not launch`;
+      }
+    } else {
+      summaryLabel = `${done} / ${total} files`;
+      summaryDescription = allDone ? "All downloaded" : `${total - done} missing`;
+    }
+
+    const hashIndicator = (hv: boolean | null) =>
+      hv === true ? " \u2713" : hv === false ? " \u26A0" : " \u2014";
+
+    const hasRequiredMissing = requiredCount > 0 && !allRequiredDone;
+    const hasOptionalMissing = optionalMissing > 0;
 
     return (
       <PanelSection
@@ -77,14 +126,8 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
       >
         <PanelSectionRow>
           <Field
-            label={`${done} / ${total} files`}
-            description={
-              allDone
-                ? "All downloaded"
-                : needsAttention
-                  ? `${total - done} missing — games may not launch`
-                  : `${total - done} missing`
-            }
+            label={summaryLabel}
+            description={summaryDescription}
           />
         </PanelSectionRow>
         <PanelSectionRow>
@@ -103,14 +146,29 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             {platform.files.map((file) => (
               <PanelSectionRow key={file.id}>
                 <Field
-                  label={file.file_name}
-                  description={file.downloaded ? "\u2713" : "Missing"}
+                  label={`${file.description || file.file_name} (${file.required ? "required" : "optional"})`}
+                  description={
+                    file.downloaded
+                      ? `${file.file_name}${hashIndicator(file.hash_valid)}`
+                      : `${file.file_name} — Missing`
+                  }
                 />
               </PanelSectionRow>
             ))}
           </Focusable>
         )}
-        {!allDone && (
+        {hasRequiredMissing && (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={() => handleDownloadRequired(platform.platform_slug)}
+              disabled={isDownloading}
+            >
+              {isDownloading ? "Downloading..." : "Download Required"}
+            </ButtonItem>
+          </PanelSectionRow>
+        )}
+        {!allDone && (hasOptionalMissing || hasRequiredMissing) && (
           <PanelSectionRow>
             <ButtonItem
               layout="below"

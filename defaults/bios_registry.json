@@ -1,0 +1,604 @@
+{
+  "_meta": {
+    "generated_from": "libretro-core-info + libretro-database System.dat",
+    "version": "1.0.0",
+    "generated_at": "2026-02-25"
+  },
+  "files": {
+    "3do_arcade_saot.bin": {
+      "description": "3DO Arcade SAOT BIOS",
+      "required": false,
+      "md5": "8970fc987ab89a7f64da9f8a8c4333ff",
+      "sha1": "520d3d1b5897800af47f92efd2444a26b7a7dead",
+      "size": 524288
+    },
+    "5200.rom": {
+      "description": "Atari 5200 BIOS",
+      "required": true,
+      "md5": "281f20ea4320404ec820fb7ec0693b38",
+      "sha1": "6ad7a1e8c9fad486fbec9498cb48bf5bc3adc530",
+      "size": 2048
+    },
+    "7800 BIOS (E).rom": {
+      "description": "Atari 7800 BIOS (Europe)",
+      "required": false,
+      "md5": "397bb566584be7b9764e7a68974c4263",
+      "sha1": "5a140136a16d1d83e4ff32a19409ca376a8df874",
+      "size": 16384
+    },
+    "7800 BIOS (U).rom": {
+      "description": "Atari 7800 BIOS (US)",
+      "required": false,
+      "md5": "0763f1ffb006ddbe32e52d497ee848ae",
+      "sha1": "d9d134bb6b36907c615a594cc7688f7bfcef5b43",
+      "size": 4096
+    },
+    "ATARIBAS.ROM": {
+      "description": "Atari BASIC ROM",
+      "required": false,
+      "md5": "0bac0c6a50104045d902df4503a4c30b",
+      "sha1": "3693c9cb9bf3b41bae1150f7a8264992468fc8c0",
+      "size": 8192
+    },
+    "ATARIOSB.ROM": {
+      "description": "Atari 800 OS-B ROM",
+      "required": false,
+      "md5": "a3e8d617c95d08031fe1b20d541434b2",
+      "sha1": "f1f0741b1d34fb4350cf7cb8ab3b6ea11cdd8174",
+      "size": 10240
+    },
+    "ATARIXL.ROM": {
+      "description": "Atari XL/XE OS ROM",
+      "required": false,
+      "md5": "06daac977823773a3eea3422fd26a703",
+      "sha1": "ae4f523ba08b6fd59f3cae515a2b2410bbd98f55",
+      "size": 16384
+    },
+    "CM32L_CONTROL.ROM": {
+      "description": "Roland CM-32L Control ROM",
+      "required": false,
+      "md5": "bfff32b6144c1d706109accb6e6b1113",
+      "sha1": "a439fbb390da38cada95a7cbb1d6ca199cd66ef8",
+      "size": 65536
+    },
+    "CM32L_PCM.ROM": {
+      "description": "Roland CM-32L PCM ROM",
+      "required": false,
+      "md5": "08cdcfa0ed93e9cb16afa76e6ac5f0a4",
+      "sha1": "289cc298ad532b702461bfc738009d9ebe8025ea",
+      "size": 1048576
+    },
+    "MSX.ROM": {
+      "description": "MSX BIOS",
+      "required": true,
+      "md5": "aa95aea2563cd5ec0a0919b44cc17d47",
+      "sha1": "409e82adac40f6bdd18eb6c84e8b2fbdc7fb5498",
+      "size": 32768
+    },
+    "MSX2.ROM": {
+      "description": "MSX2 BIOS",
+      "required": true,
+      "md5": "ec3a01c91f24fbddcbcab0ad301bc9ef",
+      "sha1": "6103b39f1e38d1aa2d84b1c3219c44f1abb5436e",
+      "size": 32768
+    },
+    "MSX2EXT.ROM": {
+      "description": "MSX2 Sub ROM",
+      "required": true,
+      "md5": "2183c2aff17cf4297bdb496de78c2e8a",
+      "sha1": "5c1f9c7fb655e43d38e5dd1fcc6b942b2ff68b02",
+      "size": 16384
+    },
+    "MSX2P.ROM": {
+      "description": "MSX2+ BIOS",
+      "required": true,
+      "md5": "6d8c0ca64e726c82a4b726e9b01cdf1e",
+      "sha1": "e2fbd56e42da637609d23ae9df9efd1b4241b18a",
+      "size": 32768
+    },
+    "MSX2PEXT.ROM": {
+      "description": "MSX2+ Sub ROM",
+      "required": true,
+      "md5": "7c8243c71d8f143b2531f01afa6a05dc",
+      "sha1": "fe0254cbfc11405b79e7c86c7769bd6322b04995",
+      "size": 16384
+    },
+    "MT32_CONTROL.ROM": {
+      "description": "Roland MT-32 Control ROM",
+      "required": false,
+      "md5": "5626206284b22c2734f3e9efefcd2675",
+      "sha1": "b083518fffb7f66b03c23b7eb4f868e62dc5a987",
+      "size": 65536
+    },
+    "MT32_PCM.ROM": {
+      "description": "Roland MT-32 PCM ROM",
+      "required": false,
+      "md5": "89e42e386e82e0cacb4a2704a03706ca",
+      "sha1": "f6b1eebc4b2d200ec6d3d21d51325d5b48c60252",
+      "size": 524288
+    },
+    "bios.gg": {
+      "description": "Game Gear BIOS",
+      "required": false,
+      "md5": "672e104c3be3a238301aceffc3b23fd6",
+      "sha1": "914aa165e3d879f060be77870d345b60cfeb4ede",
+      "size": 1024
+    },
+    "bios.sms": {
+      "description": "Sega Master System BIOS",
+      "required": false,
+      "md5": "840481177270d5642a14ca71ee72844c",
+      "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
+      "size": 8192
+    },
+    "bios7.bin": {
+      "description": "Nintendo DS ARM7 BIOS",
+      "required": true,
+      "md5": "df692a80a5b1bc90728bc3dfc76cd948",
+      "sha1": "24f67bdea115a2c847c8813a262502ee1607b7df",
+      "size": 16384
+    },
+    "bios9.bin": {
+      "description": "Nintendo DS ARM9 BIOS",
+      "required": true,
+      "md5": "a392174eb3e572fed6447e956bde4b25",
+      "sha1": "bfaac75f101c135e32e2aaf541de6b1be4c8c62d",
+      "size": 4096
+    },
+    "bios_CD_E.bin": {
+      "description": "Sega CD BIOS (Europe)",
+      "required": true,
+      "md5": "e66fa1dc5820d254611fdcdba0662372",
+      "sha1": "f891e0ea651e2232af0c5c4cb46a0cae2ee8f356",
+      "size": 131072
+    },
+    "bios_CD_J.bin": {
+      "description": "Sega CD BIOS (Japan)",
+      "required": true,
+      "md5": "278a9397d192149e84e820ac621a8edd",
+      "sha1": "4846f448160059a7da0215a5df12ca160f26dd69",
+      "size": 131072
+    },
+    "bios_CD_U.bin": {
+      "description": "Sega CD BIOS (US)",
+      "required": true,
+      "md5": "2efd74e3232ff260e371b99f84024f7f",
+      "sha1": "f4f315adcef9b8feb0364c21ab7f0eaf5457f3ed",
+      "size": 131072
+    },
+    "bios_E.sms": {
+      "description": "Sega Master System BIOS (Europe)",
+      "required": false,
+      "md5": "840481177270d5642a14ca71ee72844c",
+      "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
+      "size": 8192
+    },
+    "bios_J.sms": {
+      "description": "Sega Master System BIOS (Japan)",
+      "required": false,
+      "md5": "24a519c53f67b00640d0048ef7089105",
+      "sha1": "a8c1b39a2e41137835eda6a5de6d46dd9fadbaf2",
+      "size": 8192
+    },
+    "bios_MD.bin": {
+      "description": "Sega Genesis / Mega Drive TMSS BIOS",
+      "required": false,
+      "md5": "d3293ebaaa7f4eb2a6766b68a0fb4609",
+      "sha1": "3f50b76b0529db7f79c396b5e808cc0786ffc311",
+      "size": 2048
+    },
+    "bios_U.sms": {
+      "description": "Sega Master System BIOS (US)",
+      "required": false,
+      "md5": "840481177270d5642a14ca71ee72844c",
+      "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
+      "size": 8192
+    },
+    "colecovision.rom": {
+      "description": "ColecoVision BIOS",
+      "required": true,
+      "md5": "2c66f5911e5b42b8ebe113403548eee7",
+      "sha1": "45bedc4cbdeac66c7df59e9e599195c778d86a92",
+      "size": 8192
+    },
+    "cpc464.rom": {
+      "description": "Amstrad CPC 464 ROM",
+      "required": false,
+      "md5": "a993f85b88ac4350cf4d41554e87fe4f",
+      "sha1": "56d39c463da60968d93e58b4ba0e675829412a20",
+      "size": 32768
+    },
+    "cpc6128.rom": {
+      "description": "Amstrad CPC 6128 ROM",
+      "required": false,
+      "md5": "b96280dc6c95a48857b4b8eb931533ae",
+      "sha1": "5977adbad3f7c1e0e082cd02fe76a700d9860c30",
+      "size": 32768
+    },
+    "cpc664.rom": {
+      "description": "Amstrad CPC 664 ROM",
+      "required": false,
+      "md5": "5a384a2310f472c7857888371c00ed66",
+      "sha1": "073a7665527b5bd8a148747a3947dbd3328682c8",
+      "size": 32768
+    },
+    "cpc_amsdos.rom": {
+      "description": "Amstrad CPC AMSDOS ROM",
+      "required": false,
+      "md5": "25629dfe870d097469c217b95fdc1c95",
+      "sha1": "39102c8e9cb55fcc0b9b62098780ed4a3cb6a4bb",
+      "size": 16384
+    },
+    "dc_boot.bin": {
+      "description": "Dreamcast BIOS",
+      "required": true,
+      "md5": "e10c53c2f8b90bab96ead2d368858623",
+      "sha1": "8951d1bb219ab2ff8583033d2119c899cc81f18c",
+      "size": 2097152
+    },
+    "dc_flash.bin": {
+      "description": "Dreamcast Flash ROM",
+      "required": true,
+      "md5": "0a93f7940c455905bea6e392dfde92a4",
+      "sha1": "94d44d7f9529ec1642ba3771ed3c5f756d5bc872",
+      "size": 131072
+    },
+    "disksys.rom": {
+      "description": "Famicom Disk System BIOS",
+      "required": true,
+      "md5": "ca30b50f880eb660a320674ed365ef7a",
+      "sha1": "57fe1bdee955bb48d357e463ccbf129496930b62",
+      "size": 8192
+    },
+    "firmware.bin": {
+      "description": "Nintendo DS Firmware",
+      "required": false,
+      "md5": "e45033d9b0fa6b0de071292bba7c9d13",
+      "sha1": "cfe072921ee3fb93f688743f8beef89043c3e9ad",
+      "size": 262144
+    },
+    "gb_bios.bin": {
+      "description": "Game Boy BIOS",
+      "required": false,
+      "md5": "32fbbd84168d3482956eb3c5051637f5",
+      "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
+      "size": 256
+    },
+    "gba_bios.bin": {
+      "description": "Game Boy Advance BIOS",
+      "required": true,
+      "md5": "a860e8c0b6d573d191e4ec7db1b1e4f6",
+      "sha1": "300c20df6731a33952ded8c436f7f186d25d3492",
+      "size": 16384
+    },
+    "gbc_bios.bin": {
+      "description": "Game Boy Color BIOS",
+      "required": false,
+      "md5": "dbfce9db9deaa2567f6a84fde55f9680",
+      "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
+      "size": 2304
+    },
+    "goldstar.bin": {
+      "description": "3DO GoldStar BIOS",
+      "required": false,
+      "md5": "8639fd5e549bd6238cfee79e3e749114",
+      "sha1": "c4a2e5336f77fb5f743de1eea2cda43675ee2de7",
+      "size": 1048576
+    },
+    "hisaturn.bin": {
+      "description": "Sega Hi-Saturn BIOS",
+      "required": false,
+      "md5": "3ea3202e2634cb47cb90f3a05c015010",
+      "sha1": "49d8493008fa715ca0c94d99817a5439d6f2c796",
+      "size": 524288
+    },
+    "kick34005.A500": {
+      "description": "Amiga 500 Kickstart v1.3 r34.5",
+      "required": true,
+      "md5": "82a21c1890cae844b3df741f2762d48d",
+      "sha1": "891e9a547772fe0c6c19b610baf8bc4ea7fcb785",
+      "size": 262144
+    },
+    "kick34005.CDTV": {
+      "description": "Amiga CDTV Extended ROM",
+      "required": false,
+      "md5": "89da1838a24460e4b93f4f0c5d92d48d",
+      "sha1": "7ba40ffa17e500ed9fed041f3424bd81d9c907be",
+      "size": 262144
+    },
+    "kick37175.A500": {
+      "description": "Amiga 500+ Kickstart v2.04",
+      "required": false,
+      "md5": "dc10d7bdd1b6f450773dfb558477c230",
+      "sha1": "c5839f5cb98a7a8947065c3ed2f14f5f42e334a1",
+      "size": 524288
+    },
+    "kick40060.CD32": {
+      "description": "Amiga CD32 Kickstart v3.1",
+      "required": true,
+      "md5": "5f8924d013dd57a89cf349f4cdedc6b1",
+      "sha1": "3525be8887f79b5929e017b42380a79edfee542d",
+      "size": 524288
+    },
+    "kick40060.CD32.ext": {
+      "description": "Amiga CD32 Extended ROM",
+      "required": true,
+      "md5": "bb72565701b1b6faece07d68ea5da639",
+      "sha1": "5bef3d628ce59cc02a66e6e4ae0da48f60e78f7f",
+      "size": 524288
+    },
+    "kick40063.A600": {
+      "description": "Amiga 600 Kickstart v3.1",
+      "required": false,
+      "md5": "e40a5dfb3d017ba8779faba30cbd1c8e",
+      "sha1": "3b7f1493b27e212830f989f26ca76c02049f09ca",
+      "size": 524288
+    },
+    "kick40068.A1200": {
+      "description": "Amiga 1200 Kickstart v3.1",
+      "required": true,
+      "md5": "646773759326fbac3b2311fd8c8793ee",
+      "sha1": "e21545723fe8374e91342617604f1b3d703094f1",
+      "size": 524288
+    },
+    "kick40068.A4000": {
+      "description": "Amiga 4000 Kickstart v3.1",
+      "required": false,
+      "md5": "9bdedde6a4f33555b4a270c8ca53297d",
+      "sha1": "5fe04842d04a489720f0f4bb0e46948199406f49",
+      "size": 524288
+    },
+    "lynxboot.img": {
+      "description": "Atari Lynx Boot ROM",
+      "required": true,
+      "md5": "fcd403db69f54290b51035d82f835e7b",
+      "sha1": "e4ed47fae31693e016b081c6bda48da5b70d7ccb",
+      "size": 512
+    },
+    "mpr-17933.bin": {
+      "description": "Saturn US/EU BIOS",
+      "required": true,
+      "md5": "3240872c70984b6cbfda1586cab68dbe",
+      "sha1": "faa8ea183a6d7bbe5d4e03bb1332519800d3fbc3",
+      "size": 524288
+    },
+    "mpr-18100.bin": {
+      "description": "Saturn Japan BIOS (alt)",
+      "required": false,
+      "md5": "cb2cebc1b6e573b7c44523d037edcd45",
+      "sha1": "8a22710e09ce75f39625894366cafe503ed1942d",
+      "size": 524288
+    },
+    "mpr-18811-mx.ic1": {
+      "description": "Saturn KoF '95 ROM Cartridge",
+      "required": false,
+      "md5": "255113ba943c92a54facd25a10fd780c",
+      "sha1": "a67cd4f550751f8b91de2b8b74528ab4e0c11c77",
+      "size": 2097152
+    },
+    "mpr-19367-mx.ic1": {
+      "description": "Saturn Ultraman ROM Cartridge",
+      "required": false,
+      "md5": "1cd19988d1d72a3e7caa0b73234c96b4",
+      "sha1": "56c1b93da6b660bf393fbf48ca47569000ef4047",
+      "size": 2097152
+    },
+    "neogeo.zip": {
+      "description": "Neo Geo BIOS (AES/MVS)",
+      "required": true,
+      "md5": "00dad01abdbf8ea9e79ad2fe11bdb182",
+      "sha1": "deb62b0074b8cae4f162c257662136733cfc76ad",
+      "size": 1859335
+    },
+    "o2rom.bin": {
+      "description": "Magnavox Odyssey 2 BIOS",
+      "required": true,
+      "md5": "562d5ebf9e030a40d6fabfc2f33139fd",
+      "sha1": "b2e1955d957a475de2411770452eff4ea19f4cee",
+      "size": 1024
+    },
+    "panafz1.bin": {
+      "description": "3DO Panasonic FZ-1 BIOS",
+      "required": false,
+      "md5": "f47264dd47fe30f73ab3c010015c155b",
+      "sha1": "34bf189111295f74d7b7dfc1f304d98b8d36325a",
+      "size": 1048576
+    },
+    "panafz10.bin": {
+      "description": "3DO Panasonic FZ-10 BIOS",
+      "required": false,
+      "md5": "51f2f43ae2f3508a14d9f56597e2d3ce",
+      "sha1": "3c912300775d1ad730dc35757e279c274c0acaad",
+      "size": 1048576
+    },
+    "ps1_rom.bin": {
+      "description": "PS1 Dynarec BIOS",
+      "required": false,
+      "md5": "81bbe60ba7a3d1cea1d48c14cbcc647b",
+      "sha1": "c40146361eb8cf670b19fdc9759190257803cab7",
+      "size": 524288
+    },
+    "psxonpsp660.bin": {
+      "description": "PSP PS1 Emulator BIOS",
+      "required": false,
+      "md5": "c53ca5908936d412331790f4426c6c33",
+      "sha1": "96880d1ca92a016ff054be5159bb06fe03cb4e14",
+      "size": 524288
+    },
+    "saturn_bios.bin": {
+      "description": "Sega Saturn BIOS (generic)",
+      "required": false,
+      "md5": "af5828fdff51384f99b3c4926be27762",
+      "sha1": "2b8cb4f87580683eb4d760e4ed210813d667f0a2",
+      "size": 524288
+    },
+    "scph100.bin": {
+      "description": "PSone BIOS (Japan v4.3)",
+      "required": false,
+      "md5": "8abc1b549a4a80954addc48ef02c4521",
+      "sha1": "339a48f4fcf63e10b5b867b8c93cfd40945faf6c",
+      "size": 524288
+    },
+    "scph1000.bin": {
+      "description": "PS1 BIOS (Japan v1.0)",
+      "required": false,
+      "md5": "239665b1a3dade1b5a52c06338011044",
+      "sha1": "343883a7b555646da8cee54aadd2795b6e7dd070",
+      "size": 524288
+    },
+    "scph1001.bin": {
+      "description": "PS1 BIOS (US v2.2)",
+      "required": false,
+      "md5": "924e392ed05558ffdb115408c263dccf",
+      "sha1": "10155d8d6e6e832d6ea66db9bc098321fb5e8ebf",
+      "size": 524288
+    },
+    "scph1002.bin": {
+      "description": "PS1 BIOS (Europe v2.0)",
+      "required": false,
+      "md5": "54847e693405ffeb0359c6287434cbef",
+      "sha1": "20b98f3d80f11cbf5a7bfd0779b0e63760ecc62c",
+      "size": 524288
+    },
+    "scph101.bin": {
+      "description": "PSone BIOS (US v4.5)",
+      "required": false,
+      "md5": "6e3735ff4c7dc899ee98981385f6f3d0",
+      "sha1": "dcffe16bd90a723499ad46c641424981338d8378",
+      "size": 524288
+    },
+    "scph102A.bin": {
+      "description": "PSone BIOS (Europe v4.4)",
+      "required": false,
+      "md5": "b10f5e0e3d9eb60e5159690680b1e774",
+      "sha1": "beb0ac693c0dc26daf5665b3314db81480fa5c7c",
+      "size": 524288
+    },
+    "scph102B.bin": {
+      "description": "PSone BIOS (Europe v4.5)",
+      "required": false,
+      "md5": "de93caec13d1a141a40a79f5c86168d6",
+      "sha1": "dbc7339e5d85827c095764fc077b41f78fd2ecae",
+      "size": 524288
+    },
+    "scph3000.bin": {
+      "description": "PS1 BIOS (Japan v1.1)",
+      "required": false,
+      "md5": "849515939161e62f6b866f6853006780",
+      "sha1": "b06f4a861f74270be819aa2a07db8d0563a7cc4e",
+      "size": 524288
+    },
+    "scph3500.bin": {
+      "description": "PS1 BIOS (Japan v2.1)",
+      "required": false,
+      "md5": "cba733ceeff5aef5c32254f1d617fa62",
+      "sha1": "e38466a4ba8005fba7e9e3c7b9efeba7205bee3f",
+      "size": 524288
+    },
+    "scph5000.bin": {
+      "description": "PS1 BIOS (Japan v2.2)",
+      "required": false,
+      "md5": "eb201d2d98251a598af467d4347bb62f",
+      "sha1": "e340db2696274dda5fdc25e434a914db71e8b02b",
+      "size": 524288
+    },
+    "scph5500.bin": {
+      "description": "PS1 BIOS (Japan v3.0)",
+      "required": true,
+      "md5": "8dd7d5296a650fac7319bce665a6a53c",
+      "sha1": "b05def971d8ec59f346f2d9ac21fb742e3eb6917",
+      "size": 524288
+    },
+    "scph5501.bin": {
+      "description": "PS1 BIOS (US v3.0)",
+      "required": true,
+      "md5": "490f666e1afb15b7362b406ed1cea246",
+      "sha1": "0555c6fae8906f3f09baf5988f00e55f88e9f30b",
+      "size": 524288
+    },
+    "scph5502.bin": {
+      "description": "PS1 BIOS (Europe v3.0)",
+      "required": true,
+      "md5": "32736f17079d0b2b7024407c39bd3050",
+      "sha1": "f6bc2d1f5eb6593de7d089c425ac681d6fffd3f0",
+      "size": 524288
+    },
+    "scph7001.bin": {
+      "description": "PS1 BIOS (US v4.1)",
+      "required": false,
+      "md5": "1e68c231d0896b7eadcad1d7d8e76129",
+      "sha1": "14df4f6c1e367ce097c11deae21566b4fe5647a9",
+      "size": 524288
+    },
+    "scph7002.bin": {
+      "description": "PS1 BIOS (Europe v4.1)",
+      "required": false,
+      "md5": "b9d9a0286c33dc6b7237bb13cd46fdee",
+      "sha1": "8d5de56a79954f29e9006929ba3fed9b6a418c1d",
+      "size": 524288
+    },
+    "scph7502.bin": {
+      "description": "PS1 BIOS (Europe v4.1 alt)",
+      "required": false,
+      "md5": "b9d9a0286c33dc6b7237bb13cd46fdee",
+      "sha1": "8d5de56a79954f29e9006929ba3fed9b6a418c1d",
+      "size": 524288
+    },
+    "sega_101.bin": {
+      "description": "Saturn Japan BIOS",
+      "required": true,
+      "md5": "85ec9ca47d8f6807718151cbcca8b964",
+      "sha1": "df94c5b4d47eb3cc404d88b33a8fda237eaf4720",
+      "size": 524288
+    },
+    "sgb_bios.bin": {
+      "description": "Super Game Boy BIOS",
+      "required": false,
+      "md5": "d574d4f9c12f305074798f54c091a8b4",
+      "sha1": "aa2f50a77dfb4823da96ba99309085a3c6278515",
+      "size": 256
+    },
+    "sgb2_bios.bin": {
+      "description": "Super Game Boy 2 BIOS",
+      "required": false,
+      "md5": "e0430bca9925fb9882148fd2dc2418c1",
+      "sha1": "93407ea10d2f30ab96a314d8eca44fe160aea734",
+      "size": 256
+    },
+    "syscard1.pce": {
+      "description": "PC Engine CD System Card v1",
+      "required": false,
+      "md5": "2b7ccb3d86baa18f6402c176f3065082",
+      "sha1": "a39a66da7de6ba94ab84d04eef7afeec7d4ee66a",
+      "size": 262144
+    },
+    "syscard2.pce": {
+      "description": "PC Engine CD System Card v2",
+      "required": false,
+      "md5": "3cdd6614a918616bfc41c862e889dd79",
+      "sha1": "88da02e2503f7c32810f5d93a34849d470742b6d",
+      "size": 262144
+    },
+    "syscard3.pce": {
+      "description": "PC Engine CD System Card v3 (Super)",
+      "required": true,
+      "md5": "38179df8f4ac870017db21ebcbf53114",
+      "sha1": "79f5ff55dd10187c7fd7b8daab0b3ffbd1f56a2c",
+      "size": 262144
+    },
+    "tos.img": {
+      "description": "Atari ST TOS ROM",
+      "required": true,
+      "md5": "c1c57ce48e8ee4135885cee9e63a68a2",
+      "sha1": "735793fdba07fe8d5295caa03484f6ef3de931f5",
+      "size": 196608
+    },
+    "vsaturn.bin": {
+      "description": "Sega V-Saturn BIOS",
+      "required": false,
+      "md5": "ac4e4b6522e200c0d23d371a8cecbfd3",
+      "sha1": "4154e11959f3d5639b11d7902b3a393a99fb5776",
+      "size": 524288
+    }
+  }
+}

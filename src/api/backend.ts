@@ -12,7 +12,7 @@ export interface CachedGameDetail {
   save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
   pending_conflicts?: Array<{ rom_id: number; filename: string; detected_at: string }>;
   metadata?: Record<string, unknown> | null;
-  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean } | null;
+  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number } | null;
 }
 
 const _cachedGameDetailRaw = callable<[number], CachedGameDetail>("get_cached_game_detail");
@@ -61,6 +61,7 @@ export const applySteamInputSetting = callable<[], { success: boolean; message: 
 export const getFirmwareStatus = callable<[], FirmwareStatus>("get_firmware_status");
 export const downloadFirmware = callable<[number], FirmwareDownloadResult>("download_firmware");
 export const downloadAllFirmware = callable<[string], FirmwareDownloadResult>("download_all_firmware");
+export const downloadRequiredFirmware = callable<[string], FirmwareDownloadResult>("download_required_firmware");
 export const checkPlatformBios = callable<[string], BiosStatus>("check_platform_bios");
 export const saveLogLevel = callable<[string], { success: boolean }>("save_log_level");
 export const debugLog = callable<[string], void>("debug_log");
