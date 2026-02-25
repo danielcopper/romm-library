@@ -204,7 +204,17 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
         }
 
-        if (result.synced && result.synced > 0) {
+        if (!result.success && result.errors && result.errors.length > 0) {
+          debugLog(`CustomPlayButton: pre-launch sync errors: ${result.errors.join(", ")}`);
+          const proceed = await showLaunchConfirmation(
+            "Save Sync Unavailable",
+            "Couldn't sync saves with RomM server. Launch with local saves?",
+          );
+          if (!proceed) {
+            setState("play");
+            return;
+          }
+        } else if (result.synced && result.synced > 0) {
           toaster.toast({ title: "RomM Save Sync", body: "Saves downloaded from RomM" });
         }
       } catch (e) {
