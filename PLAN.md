@@ -15,8 +15,8 @@ Startup state healing implemented and tested — atomic settings, orphan cleanup
 ### Bug 5: SSL Certificate Verification ✅
 SSL verification enabled for all requests. SteamGridDB always verifies via `certifi` CA bundle. RomM verifies by default with user toggle for self-signed certs. HTTP client consolidated (EXT-4).
 
-### Bug 6: Secrets Stored in Plain Text
-`settings.json` stores credentials in plain text. Investigate: OS keyring, `chmod 600`, other Decky plugin patterns.
+### Bug 6: Secrets Stored in Plain Text ✅
+`settings.json` enforces `0600` permissions on every write and on startup. OS keyring (D-Bus Secret Service) not viable — PluginLoader runs as root with no session bus. All other Decky plugins use plaintext JSON; `chmod 600` is the standard mitigation.
 
 ### Bug 7: BIOS Status Reporting
 No distinction between required and optional BIOS files. Investigate RomM firmware metadata and RetroArch core requirements.
@@ -24,8 +24,8 @@ No distinction between required and optional BIOS files. Investigate RomM firmwa
 ### Bug 8: VDF-Created Shortcut Icons Not Displaying
 Icon path set but not rendered. Investigate format requirements and compare with other plugins.
 
-### Bug 10: BIOS Badge Missing from PlaySection
-BIOS badge in RomMPlaySection is gone. Investigate why it's not rendering — likely a regression from game detail page changes.
+### Bug 10: BIOS Badge Missing from PlaySection ✅
+`bios_status` was hardcoded to `None` in `get_cached_game_detail`. Now populated via `check_platform_bios()`.
 
 ### Testing needed
 - [x] Startup pruning removes orphaned state entries

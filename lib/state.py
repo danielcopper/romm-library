@@ -42,13 +42,19 @@ class StateMixin:
                 self.settings.setdefault("log_level", "debug")
             self._save_settings_to_disk()
         self.settings.setdefault("log_level", "warn")
+        # Enforce 0600 on settings file (migrate from world-readable 0644)
+        if os.path.exists(settings_path):
+            current_mode = os.stat(settings_path).st_mode & 0o777
+            if current_mode != 0o600:
+                os.chmod(settings_path, 0o600)
 
     def _save_settings_to_disk(self):
         settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
         os.makedirs(settings_dir, exist_ok=True)
         settings_path = os.path.join(settings_dir, "settings.json")
         tmp_path = settings_path + ".tmp"
-        with open(tmp_path, "w") as f:
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
             json.dump(self.settings, f, indent=2)
         os.replace(tmp_path, settings_path)
 
