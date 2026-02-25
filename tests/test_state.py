@@ -232,6 +232,53 @@ class TestLogLevel:
             assert any("SGDB artwork" in m for m in logged_msgs)
 
 
+class TestInsecureSslSetting:
+    def test_load_settings_defaults_false(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        settings_path = os.path.join(str(tmp_path), "settings.json")
+        os.makedirs(str(tmp_path), exist_ok=True)
+        with open(settings_path, "w") as f:
+            json.dump({"romm_url": "https://romm.local"}, f)
+        plugin._load_settings()
+        assert plugin.settings["romm_allow_insecure_ssl"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_settings_includes_field(self, plugin):
+        plugin.settings["romm_allow_insecure_ssl"] = True
+        result = await plugin.get_settings()
+        assert result["romm_allow_insecure_ssl"] is True
+
+    @pytest.mark.asyncio
+    async def test_get_settings_defaults_false(self, plugin):
+        plugin.settings.pop("romm_allow_insecure_ssl", None)
+        result = await plugin.get_settings()
+        assert result["romm_allow_insecure_ssl"] is False
+
+    @pytest.mark.asyncio
+    async def test_save_settings_with_insecure_ssl(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        await plugin.save_settings("https://romm.local", "user", "pass", True)
+        assert plugin.settings["romm_allow_insecure_ssl"] is True
+
+    @pytest.mark.asyncio
+    async def test_save_settings_without_param_preserves(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin.settings["romm_allow_insecure_ssl"] = True
+        await plugin.save_settings("https://romm.local", "user", "pass")
+        assert plugin.settings["romm_allow_insecure_ssl"] is True
+
+    @pytest.mark.asyncio
+    async def test_save_settings_explicit_false(self, plugin, tmp_path):
+        import decky
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin.settings["romm_allow_insecure_ssl"] = True
+        await plugin.save_settings("https://romm.local", "user", "pass", False)
+        assert plugin.settings["romm_allow_insecure_ssl"] is False
+
+
 class TestPruneStaleState:
     def test_prunes_missing_files(self, plugin, tmp_path):
         import decky

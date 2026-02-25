@@ -9,6 +9,7 @@ import {
   DialogButton,
   ConfirmModal,
   showModal,
+  ToggleField,
 } from "@decky/ui";
 import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, logError } from "../api/backend";
 
@@ -61,6 +62,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [sgdbApiKey, setSgdbApiKey] = useState("");
   const [sgdbStatus, setSgdbStatus] = useState("");
   const [sgdbVerifying, setSgdbVerifying] = useState(false);
+  const [allowInsecureSsl, setAllowInsecureSsl] = useState(false);
   const [steamInputMode, setSteamInputMode] = useState("default");
   const [steamInputStatus, setSteamInputStatus] = useState("");
   useEffect(() => {
@@ -69,6 +71,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       setUrl(pendingEdits.url ?? s.romm_url);
       setUsername(pendingEdits.username ?? s.romm_user);
       setPassword(pendingEdits.password ?? s.romm_pass_masked);
+      setAllowInsecureSsl(s.romm_allow_insecure_ssl ?? false);
       setSgdbApiKey(s.sgdb_api_key_masked);
       setSteamInputMode(s.steam_input_mode || "default");
     }).catch((e) => {
@@ -81,7 +84,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
     setLoading(true);
     setStatus("");
     try {
-      const result = await saveSettings(url, username, password);
+      const result = await saveSettings(url, username, password, allowInsecureSsl);
       setStatus(result.message);
       // Clear pending edits after successful save
       delete pendingEdits.url;
@@ -150,6 +153,16 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
             </DialogButton>
           </Field>
         </PanelSectionRow>
+        {(url.toLowerCase().startsWith("https")) && (
+          <PanelSectionRow>
+            <ToggleField
+              label="Allow Insecure SSL"
+              description="Skip certificate verification for self-signed certs (LAN only)"
+              checked={allowInsecureSsl}
+              onChange={(val) => setAllowInsecureSsl(val)}
+            />
+          </PanelSectionRow>
+        )}
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleSave} disabled={loading}>
             Save Settings

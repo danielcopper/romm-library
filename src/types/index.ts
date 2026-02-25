@@ -45,6 +45,7 @@ export interface PluginSettings {
   steam_input_mode: "default" | "force_on" | "force_off";
   sgdb_api_key_masked: string;
   log_level: "debug" | "info" | "warn" | "error";
+  romm_allow_insecure_ssl: boolean;
   retroarch_input_check?: RetroArchInputCheck;
 }
 

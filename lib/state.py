@@ -30,6 +30,7 @@ class StateMixin:
         self.settings.setdefault("enabled_platforms", {})
         self.settings.setdefault("steam_input_mode", "default")
         self.settings.setdefault("steamgriddb_api_key", "")
+        self.settings.setdefault("romm_allow_insecure_ssl", False)
         # Migrate old boolean setting
         if "disable_steam_input" in self.settings:
             if self.settings.pop("disable_steam_input"):

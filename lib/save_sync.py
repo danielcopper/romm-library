@@ -4,8 +4,6 @@ import hashlib
 import socket
 import time
 import uuid
-import base64
-import ssl
 import tempfile
 import urllib.parse
 import urllib.request
@@ -26,6 +24,9 @@ if TYPE_CHECKING:
         loop: asyncio.AbstractEventLoop
         def _romm_request(self, path: str) -> Any: ...
         def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
+        def _romm_post_json(self, path: str, data: Any) -> Any: ...
+        def _romm_put_json(self, path: str, data: Any) -> Any: ...
+        def _romm_upload_multipart(self, path: str, file_path: str, method: str = ...) -> Any: ...
         def _resolve_system(self, platform_slug: str, platform_fs_slug: Optional[str] = None) -> str: ...
         def _save_state(self) -> None: ...
         def _log_debug(self, msg: str) -> None: ...
@@ -304,59 +305,6 @@ class SaveSyncMixin:
                 else:
                     raise
         raise last_exc  # pragma: no cover
-
-    def _romm_json_request(self, path, data, method="POST"):
-        """Send a JSON request (POST/PUT) to RomM API, return parsed response."""
-        url = self.settings["romm_url"].rstrip("/") + path
-        body = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(url, data=body, method=method)
-        req.add_header("Content-Type", "application/json")
-        credentials = base64.b64encode(
-            f"{self.settings['romm_user']}:{self.settings['romm_pass']}".encode()
-        ).decode()
-        req.add_header("Authorization", f"Basic {credentials}")
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-
-    def _romm_post_json(self, path, data):
-        """POST JSON to RomM API, return parsed response."""
-        return self._romm_json_request(path, data, method="POST")
-
-    def _romm_put_json(self, path, data):
-        """PUT JSON to RomM API, return parsed response."""
-        return self._romm_json_request(path, data, method="PUT")
-
-    def _romm_upload_multipart(self, path, file_path, method="POST"):
-        """Upload a file via multipart/form-data to RomM API."""
-        boundary = uuid.uuid4().hex
-        filename = os.path.basename(file_path)
-        safe_filename = filename.replace('"', '\\"')
-
-        with open(file_path, "rb") as f:
-            file_data = f.read()
-
-        body = b""
-        body += f"--{boundary}\r\n".encode()
-        body += f'Content-Disposition: form-data; name="saveFile"; filename="{safe_filename}"\r\n'.encode()
-        body += b"Content-Type: application/octet-stream\r\n\r\n"
-        body += file_data
-        body += f"\r\n--{boundary}--\r\n".encode()
-
-        url = self.settings["romm_url"].rstrip("/") + path
-        req = urllib.request.Request(url, data=body, method=method)
-        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
-        credentials = base64.b64encode(
-            f"{self.settings['romm_user']}:{self.settings['romm_pass']}".encode()
-        ).decode()
-        req.add_header("Authorization", f"Basic {credentials}")
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-            return json.loads(resp.read().decode())
 
     def _romm_upload_save(self, rom_id, file_path, emulator="retroarch", save_id=None):
         """Upload or update a save file on RomM.

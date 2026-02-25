@@ -9,8 +9,8 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md an
 
 **Goal**: Fix known bugs and improve reliability before adding more features.
 
-### Bug 4: State Consistency / Startup Pruning
-`state.json` can drift from reality after crashes. Solution: startup state healing — prune `installed_roms` entries where file is missing, prune `shortcut_registry` for dead shortcuts, add `.tmp` atomicity for single-file downloads.
+### Bug 4: State Consistency / Startup Pruning ✅
+Startup state healing implemented and tested — atomic settings, orphan cleanup, tmp pruning.
 
 ### Bug 5: SSL Certificate Verification — CRITICAL for Plugin Store
 SSL verification disabled everywhere (4+ locations). Fix: proper verification for public APIs (SteamGridDB) via `certifi` or system CA bundle. User toggle for self-signed certs on RomM (LAN). Consolidate SSL context creation into shared helper.
@@ -24,9 +24,11 @@ No distinction between required and optional BIOS files. Investigate RomM firmwa
 ### Bug 8: VDF-Created Shortcut Icons Not Displaying
 Icon path set but not rendered. Investigate format requirements and compare with other plugins.
 
+### Bug 10: BIOS Badge Missing from PlaySection
+BIOS badge in RomMPlaySection is gone. Investigate why it's not rendering — likely a regression from game detail page changes.
+
 ### Testing needed
-- [ ] BIOS badge in PlaySection not showing for PSX — verify and fix
-- [ ] Startup pruning removes orphaned state entries
+- [x] Startup pruning removes orphaned state entries
 - [ ] Shortcut icons display correctly in Steam
 
 ---
