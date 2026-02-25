@@ -501,6 +501,99 @@ class TestIconSupport:
         assert "/icons/game/9999" in requested_paths[0]
 
 
+class TestPruneOrphanedArtworkCache:
+    def test_removes_orphan_artwork(self, plugin, tmp_path):
+        """Artwork for rom_id not in registry should be deleted."""
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+        orphan = art_dir / "42_hero.png"
+        orphan.write_bytes(b"orphaned data")
+
+        # Registry has no rom_id "42"
+        plugin._state["shortcut_registry"] = {"99": {"app_id": 1}}
+
+        plugin._prune_orphaned_artwork_cache()
+
+        assert not orphan.exists()
+
+    def test_keeps_artwork_in_registry(self, plugin, tmp_path):
+        """Artwork for rom_id in registry should survive."""
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+        kept = art_dir / "42_hero.png"
+        kept.write_bytes(b"keep me")
+
+        plugin._state["shortcut_registry"] = {"42": {"app_id": 1}}
+
+        plugin._prune_orphaned_artwork_cache()
+
+        assert kept.exists()
+        assert kept.read_bytes() == b"keep me"
+
+    def test_removes_leftover_tmp(self, plugin, tmp_path):
+        """Leftover .tmp files should always be removed regardless of rom_id."""
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+        tmp_file = art_dir / "42_hero.png.tmp"
+        tmp_file.write_bytes(b"tmp data")
+
+        # rom_id "42" IS in registry, but .tmp should still be removed
+        plugin._state["shortcut_registry"] = {"42": {"app_id": 1}}
+
+        plugin._prune_orphaned_artwork_cache()
+
+        assert not tmp_file.exists()
+
+    def test_empty_artwork_dir(self, plugin, tmp_path):
+        """No crash on empty artwork directory."""
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+
+        plugin._prune_orphaned_artwork_cache()
+        # Should complete without error
+
+    def test_no_artwork_dir(self, plugin, tmp_path):
+        """No crash when artwork directory doesn't exist."""
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        # Don't create artwork dir
+        plugin._prune_orphaned_artwork_cache()
+        # Should complete without error
+
+    def test_handles_os_error(self, plugin, tmp_path):
+        """OSError on os.remove should log warning, not crash."""
+        from unittest.mock import patch
+        import decky
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        art_dir = tmp_path / "artwork"
+        art_dir.mkdir()
+        orphan = art_dir / "42_hero.png"
+        orphan.write_bytes(b"orphaned data")
+
+        plugin._state["shortcut_registry"] = {}
+
+        with patch("os.remove", side_effect=OSError("Permission denied")):
+            plugin._prune_orphaned_artwork_cache()
+
+        # File still exists because os.remove was mocked to fail
+        assert orphan.exists()
+        # Warning should have been logged (no crash)
+
+
 class TestSaveShortcutIcon:
     """Tests for VDF-based icon saving (save_shortcut_icon callable)."""
 

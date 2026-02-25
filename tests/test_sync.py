@@ -671,3 +671,97 @@ class TestShortcutDataFormat:
         id_b = plugin._generate_artwork_id(exe, "Game B")
 
         assert id_a != id_b, "Different games should have different artwork IDs"
+
+
+class TestPruneOrphanedStagingArtwork:
+    def test_removes_staging_not_in_registry(self, plugin, tmp_path):
+        """Staging file for a rom_id not in registry should be deleted."""
+        grid_dir = tmp_path / "grid"
+        grid_dir.mkdir()
+        staging = grid_dir / "romm_42_cover.png"
+        staging.write_text("fake")
+
+        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._state["shortcut_registry"] = {}
+
+        plugin._prune_orphaned_staging_artwork()
+        assert not staging.exists()
+
+    def test_removes_redundant_staging_with_final(self, plugin, tmp_path):
+        """Staging file should be removed when final {app_id}p.png exists."""
+        grid_dir = tmp_path / "grid"
+        grid_dir.mkdir()
+        staging = grid_dir / "romm_42_cover.png"
+        staging.write_text("fake staging")
+        final = grid_dir / "1001p.png"
+        final.write_text("fake final")
+
+        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._state["shortcut_registry"] = {
+            "42": {"app_id": 1001, "name": "Game A"},
+        }
+
+        plugin._prune_orphaned_staging_artwork()
+        assert not staging.exists()
+        assert final.exists()  # final artwork untouched
+
+    def test_keeps_staging_when_no_final(self, plugin, tmp_path):
+        """Staging file kept when rom is in registry but final artwork not yet created."""
+        grid_dir = tmp_path / "grid"
+        grid_dir.mkdir()
+        staging = grid_dir / "romm_42_cover.png"
+        staging.write_text("fake staging")
+
+        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._state["shortcut_registry"] = {
+            "42": {"app_id": 1001, "name": "Game A"},
+        }
+
+        plugin._prune_orphaned_staging_artwork()
+        assert staging.exists()
+
+    def test_ignores_non_staging_files(self, plugin, tmp_path):
+        """Non-staging files in grid dir should not be touched."""
+        grid_dir = tmp_path / "grid"
+        grid_dir.mkdir()
+        final = grid_dir / "1001p.png"
+        final.write_text("final art")
+        other = grid_dir / "something_else.png"
+        other.write_text("other")
+
+        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._state["shortcut_registry"] = {}
+
+        plugin._prune_orphaned_staging_artwork()
+        assert final.exists()
+        assert other.exists()
+
+    def test_no_grid_dir_no_crash(self, plugin):
+        """When _grid_dir() returns None, pruning should not crash."""
+        plugin._grid_dir = lambda: None
+        plugin._state["shortcut_registry"] = {}
+
+        # Should not raise
+        plugin._prune_orphaned_staging_artwork()
+
+    def test_handles_os_error(self, plugin, tmp_path, caplog):
+        """OSError during os.remove should log warning and not crash."""
+        from unittest.mock import patch
+        import logging
+
+        grid_dir = tmp_path / "grid"
+        grid_dir.mkdir()
+        staging = grid_dir / "romm_42_cover.png"
+        staging.write_text("fake")
+
+        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._state["shortcut_registry"] = {}
+
+        with caplog.at_level(logging.WARNING):
+            with patch("os.remove", side_effect=OSError("permission denied")):
+                plugin._prune_orphaned_staging_artwork()
+
+        # File still exists (os.remove was mocked to fail)
+        assert staging.exists()
+        # Warning should have been logged
+        assert any("Failed to remove orphaned staging artwork" in r.message for r in caplog.records)

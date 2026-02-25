@@ -3898,3 +3898,87 @@ async def test_delete_platform_saves(plugin, tmp_path):
     assert not srm2.exists()
     assert "10" not in plugin._save_sync_state["saves"]
     assert "20" not in plugin._save_sync_state["saves"]
+
+
+# ============================================================================
+# Prune Orphaned Save Sync State
+# ============================================================================
+
+
+class TestPruneOrphanedSaveSyncState:
+    """Tests for _prune_orphaned_save_sync_state."""
+
+    def test_prunes_orphaned_saves(self, plugin):
+        """Saves entry for rom_id not in registry gets removed."""
+        plugin._save_sync_state["saves"]["42"] = {"files": {"pokemon.srm": {}}}
+        # rom_id 42 is NOT in shortcut_registry
+        plugin._state["shortcut_registry"] = {}
+
+        plugin._prune_orphaned_save_sync_state()
+
+        assert "42" not in plugin._save_sync_state["saves"]
+
+    def test_prunes_orphaned_playtime(self, plugin):
+        """Playtime entry for rom_id not in registry gets removed."""
+        plugin._save_sync_state["playtime"]["42"] = {
+            "total_seconds": 3600,
+            "session_start": None,
+        }
+        plugin._state["shortcut_registry"] = {}
+
+        plugin._prune_orphaned_save_sync_state()
+
+        assert "42" not in plugin._save_sync_state["playtime"]
+
+    def test_prunes_orphaned_conflicts(self, plugin):
+        """Pending conflict for rom_id not in registry gets removed."""
+        plugin._save_sync_state["pending_conflicts"] = [
+            {"rom_id": 42, "filename": "pokemon.srm", "local_path": "/tmp/pokemon.srm"},
+        ]
+        plugin._state["shortcut_registry"] = {}
+
+        plugin._prune_orphaned_save_sync_state()
+
+        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+
+    def test_keeps_entries_in_registry(self, plugin):
+        """Entries for rom_ids that ARE in registry survive pruning."""
+        plugin._state["shortcut_registry"] = {
+            "42": {"app_id": 12345, "name": "Pokemon"},
+        }
+        plugin._save_sync_state["saves"]["42"] = {"files": {"pokemon.srm": {}}}
+        plugin._save_sync_state["playtime"]["42"] = {"total_seconds": 3600}
+        plugin._save_sync_state["pending_conflicts"] = [
+            {"rom_id": 42, "filename": "pokemon.srm", "local_path": "/tmp/pokemon.srm"},
+        ]
+
+        plugin._prune_orphaned_save_sync_state()
+
+        assert "42" in plugin._save_sync_state["saves"]
+        assert "42" in plugin._save_sync_state["playtime"]
+        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
+
+    def test_no_changes_no_save(self, plugin):
+        """Nothing orphaned means _save_save_sync_state is not called."""
+        plugin._state["shortcut_registry"] = {
+            "42": {"app_id": 12345, "name": "Pokemon"},
+        }
+        plugin._save_sync_state["saves"]["42"] = {"files": {"pokemon.srm": {}}}
+
+        with patch.object(plugin, "_save_save_sync_state") as mock_save:
+            plugin._prune_orphaned_save_sync_state()
+
+        mock_save.assert_not_called()
+
+    def test_empty_state_no_crash(self, plugin):
+        """Empty saves/playtime/conflicts dicts cause no errors."""
+        plugin._save_sync_state["saves"] = {}
+        plugin._save_sync_state["playtime"] = {}
+        plugin._save_sync_state["pending_conflicts"] = []
+        plugin._state["shortcut_registry"] = {}
+
+        plugin._prune_orphaned_save_sync_state()  # should not raise
+
+        assert plugin._save_sync_state["saves"] == {}
+        assert plugin._save_sync_state["playtime"] == {}
+        assert plugin._save_sync_state["pending_conflicts"] == []

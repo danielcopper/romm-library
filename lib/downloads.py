@@ -26,6 +26,42 @@ if TYPE_CHECKING:
 
 
 class DownloadMixin:
+    def _cleanup_leftover_tmp_files(self):
+        """Remove leftover .tmp and .zip.tmp files from ROM and BIOS directories on startup."""
+        cleaned = 0
+        # Clean ROM directories
+        roms_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "roms")
+        if os.path.isdir(roms_base):
+            for system_dir in os.listdir(roms_base):
+                system_path = os.path.join(roms_base, system_dir)
+                if not os.path.isdir(system_path):
+                    continue
+                for filename in os.listdir(system_path):
+                    if filename.endswith(".tmp") or filename.endswith(".zip.tmp"):
+                        filepath = os.path.join(system_path, filename)
+                        try:
+                            if os.path.isfile(filepath):
+                                os.remove(filepath)
+                                cleaned += 1
+                                decky.logger.info(f"Removed leftover tmp file: {filepath}")
+                        except OSError as e:
+                            decky.logger.warning(f"Failed to remove tmp file {filepath}: {e}")
+        # Clean BIOS directory
+        bios_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "bios")
+        if os.path.isdir(bios_base):
+            for root, dirs, files in os.walk(bios_base):
+                for filename in files:
+                    if filename.endswith(".tmp"):
+                        filepath = os.path.join(root, filename)
+                        try:
+                            os.remove(filepath)
+                            cleaned += 1
+                            decky.logger.info(f"Removed leftover BIOS tmp: {filepath}")
+                        except OSError as e:
+                            decky.logger.warning(f"Failed to remove BIOS tmp {filepath}: {e}")
+        if cleaned:
+            decky.logger.info(f"Cleaned {cleaned} leftover tmp file(s)")
+
     async def _poll_download_requests(self):
         """Poll for download requests from the launcher script."""
         requests_path = os.path.join(
@@ -367,6 +403,15 @@ class DownloadMixin:
             return {"success": False, "message": "Failed to delete ROM files"}
 
         del self._state["installed_roms"][rom_id_str]
+        # Clean save sync state for removed ROM
+        if hasattr(self, '_save_sync_state'):
+            save_changed = False
+            if self._save_sync_state.get("saves", {}).pop(rom_id_str, None) is not None:
+                save_changed = True
+            if self._save_sync_state.get("playtime", {}).pop(rom_id_str, None) is not None:
+                save_changed = True
+            if save_changed:
+                self._save_save_sync_state()
         self._download_queue.pop(int(rom_id), None)
         self._save_state()
         return {"success": True, "message": "ROM removed"}
@@ -386,6 +431,16 @@ class DownloadMixin:
 
         for rom_id_str in successfully_deleted:
             self._state["installed_roms"].pop(rom_id_str, None)
+        # Clean save sync state for all removed ROMs
+        if hasattr(self, '_save_sync_state'):
+            save_changed = False
+            for rom_id_str in successfully_deleted:
+                if self._save_sync_state.get("saves", {}).pop(rom_id_str, None) is not None:
+                    save_changed = True
+                if self._save_sync_state.get("playtime", {}).pop(rom_id_str, None) is not None:
+                    save_changed = True
+            if save_changed:
+                self._save_save_sync_state()
         self._download_queue.clear()
         self._save_state()
         msg = f"Removed {count} ROMs"

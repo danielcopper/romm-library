@@ -46,8 +46,10 @@ class StateMixin:
         settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
         os.makedirs(settings_dir, exist_ok=True)
         settings_path = os.path.join(settings_dir, "settings.json")
-        with open(settings_path, "w") as f:
+        tmp_path = settings_path + ".tmp"
+        with open(tmp_path, "w") as f:
             json.dump(self.settings, f, indent=2)
+        os.replace(tmp_path, settings_path)
 
     LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
 
@@ -66,7 +68,7 @@ class StateMixin:
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
-    def _prune_stale_state(self):
+    def _prune_stale_installed_roms(self):
         """Remove installed_roms entries whose files no longer exist on disk."""
         pruned = []
         for rom_id, entry in list(self._state["installed_roms"].items()):
@@ -79,6 +81,19 @@ class StateMixin:
             pruned.append(rom_id)
         for rom_id in pruned:
             del self._state["installed_roms"][rom_id]
+        if pruned:
+            self._save_state()
+
+    def _prune_stale_registry(self):
+        """Remove shortcut_registry entries with missing or invalid app_id."""
+        pruned = []
+        for rom_id, entry in list(self._state["shortcut_registry"].items()):
+            app_id = entry.get("app_id")
+            if not app_id or not isinstance(app_id, int):
+                decky.logger.info(f"Pruned stale registry entry: rom_id={rom_id} (invalid app_id={app_id})")
+                pruned.append(rom_id)
+        for rom_id in pruned:
+            del self._state["shortcut_registry"][rom_id]
         if pruned:
             self._save_state()
 

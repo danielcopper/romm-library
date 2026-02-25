@@ -736,3 +736,39 @@ class SyncMixin:
                     "installed": installed,
                 }
         return None
+
+    def _prune_orphaned_staging_artwork(self):
+        """Remove orphaned romm_{rom_id}_cover.png staging files from Steam grid dir."""
+        grid = self._grid_dir()
+        if not grid or not os.path.isdir(grid):
+            return
+        registry = self._state.get("shortcut_registry", {})
+        pruned = []
+        for filename in os.listdir(grid):
+            if not filename.startswith("romm_") or not filename.endswith("_cover.png"):
+                continue
+            # Extract rom_id from "romm_{rom_id}_cover.png"
+            try:
+                rom_id = filename[len("romm_"):-len("_cover.png")]
+                int(rom_id)  # validate it's numeric
+            except (ValueError, IndexError):
+                continue
+            should_remove = False
+            if rom_id not in registry:
+                # ROM no longer synced
+                should_remove = True
+            else:
+                # Check if final artwork exists (staging is redundant leftover)
+                app_id = registry[rom_id].get("app_id")
+                if app_id:
+                    final = os.path.join(grid, f"{app_id}p.png")
+                    if os.path.exists(final):
+                        should_remove = True
+            if should_remove:
+                try:
+                    os.remove(os.path.join(grid, filename))
+                    pruned.append(filename)
+                except OSError as e:
+                    decky.logger.warning(f"Failed to remove orphaned staging artwork {filename}: {e}")
+        if pruned:
+            decky.logger.info(f"Pruned {len(pruned)} orphaned staging artwork file(s)")

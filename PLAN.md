@@ -5,122 +5,9 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md an
 
 ---
 
-## Phase 5: Save File Sync (RetroArch .srm saves) — IN PROGRESS
-
-**Goal**: Bidirectional save file synchronization between RetroDECK and RomM for RetroArch-based systems. Covers per-game `.srm` saves only — standalone emulator saves deferred to Phase 7.
-
-**IMPORTANT**: Save games in RomM are tied to the authenticated user account. Users MUST use their own RomM account so saves are correctly attributed.
-
-### Scope
-
-Systems covered: all RetroArch-core systems (NES, SNES, GB, GBC, GBA, Genesis, N64, PSX, Saturn, Dreamcast, etc.). Save path: `<saves_path>/{system}/{rom_name}.srm` where `saves_path` is read from `retrodeck.json` at runtime.
-
-Standalone emulator saves (PCSX2, DuckStation, Dolphin, PPSSPP, melonDS, etc.) deferred to Phase 7.
-
-### What's implemented
-
-- Three-way conflict detection (local file, last-sync snapshot, server save via hybrid timestamp + download-and-hash)
-- Four conflict resolution modes: ask_me (default), newest_wins, always_upload, always_download
-- Pre-launch and post-exit sync flows (non-blocking)
-- Manual "Sync All Saves Now"
-- Device registration (UUID in `save_sync_state.json`)
-- Session detection via `SteamClient.GameSessions.RegisterForAppLifetimeNotifications`
-- Playtime tracking with suspend/resume pause handling
-- Playtime storage via RomM user notes (`romm-sync:playtime`)
-- Save sync feature flag (off by default, two-step confirmation to enable)
-- Native Steam playtime display via `stateTransaction()` on `SteamAppOverview`
-- Conflict resolution popup with Keep Local / Keep Server / Skip
-- Save sync settings QAM page with master toggle
-
-### Remaining work
-
-#### 1. Custom Play button — remaining items
-Core flow implemented: `handlePlay` does pre-launch sync → conflict modal → launch. Default conflict mode is `ask_me`.
-
-**Not yet done**:
-- **Pre-launch toast notifications**: success ("Saves downloaded from RomM"), failure ("Failed to sync saves"), conflict queued
-
-#### ~~6. RomM shared account warning~~ — DONE
-Warning in ConnectionSettings when username looks like a shared account. Orange non-blocking warning below username field.
-
-### Verification (unchecked items remaining)
-- [ ] Save file uploaded to RomM after play session ends
-- [ ] Save file downloaded from RomM before game launch
-- [ ] "Newest wins" resolves based on timestamp comparison
-- [ ] Manual "Sync All Saves Now" processes all installed ROMs
-- [ ] Playtime tracked accurately (suspend/resume excluded)
-- [ ] Playtime stored in RomM user notes, readable across devices
-- [ ] Device registration persists across plugin restarts
-- [ ] Pre-launch and post-exit sync show toast notifications
-- [ ] Failed uploads retry 3 times before falling to offline queue
-- [ ] Shared account warning shown for generic usernames
-- [ ] Game detail page "Saves & Playtime" section greyed out when disabled
-- [ ] QAM "Save Sync" button hidden or visually disabled when feature is off
-- [ ] Plugin startup skips all save sync initialization when disabled
-- [ ] Playtime displayed in Steam's native UI or prominently in game detail panel
-
----
-
-### Phase 5.6: Unifideck-Style Game Detail Page — IN PROGRESS
-
-> **Design document**: See [`docs/game-detail-ui.md`](docs/game-detail-ui.md) for architecture decisions, React tree findings, and layout design.
-
-**Goal**: Custom game detail page for RomM games. PlaySection with info items mirroring Steam's native layout, plus RomMGameInfoPanel for metadata/actions.
-
-#### What's implemented
-- **RomMPlaySection**: Custom PlaySection mirroring Steam's native horizontal bar layout — play button + info items (Last Played, Playtime, Achievements placeholder, Save Sync, BIOS)
-- **RomMGameInfoPanel**: Metadata panel below PlaySection
-- **CustomPlayButton**: Handles play/download/syncing/conflict/launching states + dropdown menu (Uninstall, BIOS, Sync Saves, Refresh Artwork/Metadata)
-- Auto-select play button on page entry (DOM-based focus, 400ms delay)
-- RomM gear icon menu + Steam gear icon menu (Properties via `OpenAppSettingsDialog`)
-- Cross-component state refresh via `romm_data_changed` events
-- Scrolling via DialogButton sections with `scrollIntoView({ block: "center" })`
-- SGDB artwork restore (hero, logo, wide grid, icon) on first game detail visit
-- Conflict blocking state on CustomPlayButton
-- Live reactivity: save sync toggle changes update game detail page immediately
-- Delete save files (per-game) and BIOS files (per-platform in DangerZone)
-- Live update fixes: post-exit sync, DangerZone, Sync All dispatch `romm_data_changed` events
-
-#### Remaining work
-
-- [ ] **Game detail page: instant load from cache + RomM connection status indicator**
-
-**Problem**: PlaySection and GameInfoPanel take seconds to load, especially when RomM is unavailable.
-
-**Proposed solution — cache-first, then refresh**:
-1. **Immediate render from cached data**: On mount, populate UI from local state files (`installed_roms`, `metadata_cache.json`, `shortcut_registry`, `save_sync_state.json`, artwork cache). BIOS defaults to last-known state.
-2. **Connection status indicator**: Info item in PlaySection showing "Connecting..." (spinner) → "Connected" (green, refresh live data) → "Offline" (dimmed, cached data only).
-3. **Background refresh**: Once connected, silently refresh save/BIOS status and conflict detection. Update UI reactively. This subsumes the "proactive sync check on page open" idea — rather than a separate pre-launch sync on mount, the background refresh handles it. Save status and conflicts are surfaced immediately from cache, then updated live when the server responds.
-
-**Open questions**:
-- Should the background refresh do a full `_sync_rom_saves(direction="download")` or just a lightweight status check (list server saves, compare timestamps, detect conflicts without downloading)?
-- If a conflict is detected during background refresh, should it show the conflict modal immediately or just update the Play button to "Resolve Conflict" state and let the user initiate resolution?
-- How aggressive should the refresh be — every page visit, or only if last check was >N minutes ago?
-
-**Files to modify**: `CustomPlayButton.tsx`, `RomMPlaySection.tsx`, `RomMGameInfoPanel.tsx`, `backend.ts`, `main.py`/`lib/`
-
-#### Future improvements
-
-- **BIOS intelligence**: Distinguish required vs optional BIOS per emulator, emulator-specific requirements, region-specific BIOS. See BIOS intelligence notes in completed Phase 5.6 section.
-- **In-Home Streaming Integration**: Research hooking into Steam's Remote Play protocol for "Stream from [device]" option.
-- **Unifideck coexistence testing**: Verify both plugins work together without double-injection or gamepad nav issues.
-
----
-
-## Phase 6: Bug Fixes & Stability
+## Phase 6: Bug Fixes & Stability — NEXT
 
 **Goal**: Fix known bugs and improve reliability before adding more features.
-
-### Bug 1: Sync Progress Bar Not Updating
-Progress bar appears briefly, then freezes or disappears despite sync completing. Current architecture uses module-level store + 250ms polling from MainPage. Investigation needed to verify event flow end-to-end.
-
-**Related**: Safety timeout (60s) in `_do_sync()` can fire prematurely for large libraries. Consider scaling timeout by ROM count or using heartbeat approach.
-
-### Bug 2: Cancel Sync Not Working
-Frontend `_cancelRequested` flag exists but may not be checked during long `await` calls (e.g. `getArtworkBase64()`). Backend cancel only helps while still fetching ROMs — `sync_apply` event is emitted once with full payload.
-
-### Bug 3: RomM M3U Lists BIN Files Instead of CUE
-Multi-track single-disc games (e.g. Tomb Raider) get bad M3U files listing `.bin` tracks. Fix: validate M3U after extraction — delete if it only contains `.bin` entries (the CUE file is the correct launch target).
 
 ### Bug 4: State Consistency / Startup Pruning
 `state.json` can drift from reality after crashes. Solution: startup state healing — prune `installed_roms` entries where file is missing, prune `shortcut_registry` for dead shortcuts, add `.tmp` atomicity for single-file downloads.
@@ -137,13 +24,8 @@ No distinction between required and optional BIOS files. Investigate RomM firmwa
 ### Bug 8: VDF-Created Shortcut Icons Not Displaying
 Icon path set but not rendered. Investigate format requirements and compare with other plugins.
 
-### Bug 9: Play Button First-Click Failure — FIXED
-Resolved by dropping the BIsModOrShortcut bypass counter entirely in Phase 5.6. Shortcuts now return `BIsModOrShortcut() = true` (natural state). We own the entire game detail UI.
-
-### Verification
-- [ ] Progress bar shows real-time progress during sync
-- [ ] Cancel button stops sync mid-progress
-- [ ] Single-disc multi-track game launches via CUE, not bad M3U
+### Testing needed
+- [ ] BIOS badge in PlaySection not showing for PSX — verify and fix
 - [ ] Startup pruning removes orphaned state entries
 - [ ] Shortcut icons display correctly in Steam
 
@@ -190,7 +72,6 @@ Extends Phase 5 to standalone emulator save formats:
 - **Auto sync interval**: Configurable background re-sync
 - **Library management**: Detect removed/updated ROMs, stale state cleanup
 - **Offline mode**: Cache lists locally, queue operations
-- **Stacked sync progress UI**: Phased checklist instead of single progress bar
 - **Error handling**: Retry with backoff, toast notifications, detailed logging
 - **Connection settings UX**: Remove save button, save on popup confirm
 - **RomM playtime API**: When feature request #1225 ships, plug in delta-based accumulation
@@ -217,8 +98,8 @@ Items from a full code review of `main` and `feat/phase-5-save-sync` branches. N
 ### EXT-4: HTTP Client Code Duplication
 Four places independently build SSL contexts + Basic Auth headers. Extract shared `_get_ssl_context()` + `_get_auth_header()` helpers in `romm_client.py`. Critical for SSL fix (Bug 5) and future OAuth2 support.
 
-### EXT-5: Blocking I/O in Async Callables
-`_sync_rom_saves()` uses `time.sleep()` in `_with_retry()`. Safe because Decky `callable()` runs in thread pool. Document assumption; wrap in `run_in_executor` if threading model changes.
+### EXT-5: Blocking I/O in Async Callables — PARTIALLY FIXED
+`save_sync.py` wrapped in `run_in_executor` (`_sync_rom_saves`, `_with_retry`, `_sync_playtime_to_romm`, `_resolve_conflict_io`). Same pattern likely exists in other modules — tracked in Future Improvements async/blocking audit.
 
 ### EXT-6: Shell Interpolation in Launcher
 `bin/romm-launcher` interpolates `$ROM_ID` into Python strings. Regex-validated (digits only) so safe, but fragile. Consider environment variables instead.
@@ -235,7 +116,7 @@ Rapid sequential requests during batch sync. Add configurable delay for remote/s
 - **Download queue priority/reordering**
 - **Developer vs Publisher distinction**: RomM's `companies` is flat — research IGDB's `involved_companies` relationship for proper split
 - **RetroAchievements integration**: Show/track via RomM's RA data, direct API, or existing Decky plugin
-- **Sync completion notification accuracy**: Track new vs updated vs unchanged shortcuts, show accurate breakdown
+- **Sync completion notification accuracy**: Track new vs updated vs unchanged shortcuts, show accurate breakdown (cancel notifications already show correct count)
 - **Library home playtime display**: Non-Steam shortcuts show "Never Played" despite tracked playtime. Steam doesn't persist `minutes_playtime_forever` for shortcuts. No known solution — all similar plugins have same limitation. Our game detail page shows accurate playtime.
 - **Playtime sync between RomM and Steam**: Bidirectional cross-device playtime merging
 - **UI settings page**: Machine-scoped collections toggle, device labels toggle, custom device name
@@ -250,6 +131,7 @@ Rapid sequential requests during batch sync. Add configurable delay for remote/s
   4. **Gear menu "Sync Saves" should show conflict modal.** Currently `syncRomSaves()` silently queues conflicts without user notification. Should behave like pre-launch sync: detect conflict → show modal → resolve or skip. Same for "Sync Saves" in SaveSyncSettings QAM page.
   5. **Pass conflict data through frontend round-trip.** `preLaunchSync()` already returns full conflict details (sizes, timestamps, server_save_id). Frontend shows modal, user picks resolution, frontend passes details back to `resolve_conflict()`. No backend state lookup needed.
 - **Multi-save-file support**: Current logic assumes one `.srm` per ROM (RetroArch pattern). RomM's API supports multiple saves per ROM (different slots, emulators, devices). Locally, standalone emulators like PCSX2/Dolphin use shared memory cards or per-slot saves. Filename matching works for 1:1 but breaks with multiple files. Needs: enumerate all local + server saves per ROM, match by filename, detect conflicts per file, resolve individually or batch. Ties into Phase 7 standalone emulator save sync.
+- **RomM M3U validation**: RomM bundles M3U files in ZIP archives that may list `.bin` track files (e.g. Tomb Raider lists 57 `.bin` tracks + 1 `.cue`). RetroArch expects M3U to list `.cue` files only. Need to test whether these RomM-bundled M3Us actually break launching. If they do: post-extraction validation to strip `.bin` entries or delete bad M3Us. If they work: drop this item. Our own `_maybe_generate_m3u()` is correct (only writes `.cue`/`.chd`/`.iso` entries).
 
 ---
 
@@ -275,3 +157,14 @@ On-demand ROM downloads with progress tracking. Multi-disc support (M3U handling
 ### Phase 4.5: Bug Fixes + Codebase Restructuring ✅
 **Bug fixes**: Download button on Steam Deck, DangerZone count refresh (modal → inline confirmation), Steam Remote Play phantom shortcuts documented + DangerZone protected.
 **Restructuring**: `main.py` split into `lib/` mixin modules (state, romm_client, sgdb, steam_config, firmware, metadata, downloads, sync, save_sync). Tests split from monolithic `test_main.py` into per-module files.
+
+### Phase 5: Save File Sync ✅
+Bidirectional `.srm` save sync between RetroDECK and RomM. Three-way conflict detection, four resolution modes (ask_me, newest_wins, always_upload, always_download). Pre-launch and post-exit sync, manual "Sync All Saves Now". Device registration, session detection, playtime tracking via RomM user notes. Native Steam playtime display. Conflict resolution popup. Save sync settings QAM page. Pre-launch toast notifications (success/failure). Shared account warning with orange styling. Blocking I/O wrapped in `run_in_executor`.
+
+### Phase 5.6: Game Detail Page ✅
+Custom game detail page for RomM games. RomMPlaySection with info items (Last Played, Playtime, Achievements, Save Sync, BIOS). RomMGameInfoPanel for metadata. CustomPlayButton with play/download/syncing/conflict/launching states + dropdown menu. Cache-first rendering via `get_cached_game_detail` callable. RomM Status badge (green/grey/blue). Lightweight save status check on page visit. Metadata TTL refresh (7-day stale check). SGDB artwork restore. Delete save/BIOS files. Live reactivity via `romm_data_changed` events. Frontend logging overhaul with log level system.
+
+### Bug Fixes (pre-Phase 6) ✅
+**Bug 1**: Sync progress bar — fixed nProgress range (0-100), heartbeat-based timeout, `[X/6]` step indicator, download progress in game detail button.
+**Bug 2**: Cancel sync — wired `requestSyncCancel()` to frontend phases, toast shows correct count.
+**Bug 9**: Play button first-click — dropped BIsModOrShortcut bypass, own entire game detail UI.
