@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.1...decky-romm-sync-v0.8.2) (2026-02-25)
+
+
+### Bug Fixes
+
+* SSL certificate verification + HTTP client consolidation ([#51](https://github.com/danielcopper/decky-romm-sync/issues/51)) ([4a5e4a8](https://github.com/danielcopper/decky-romm-sync/commit/4a5e4a8c96f89bce8f37fdcf1b3818f7025bc70b))
+
 ## [0.8.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.0...decky-romm-sync-v0.8.1) (2026-02-25)
 
 
