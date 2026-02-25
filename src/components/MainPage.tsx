@@ -113,8 +113,9 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     }
   };
 
+  // Steam's ProgressBarWithInfo nProgress uses percentage (0-100), not fraction (0-1)
   const progressFraction = syncProgress?.total
-    ? (syncProgress.current ?? 0) / syncProgress.total
+    ? ((syncProgress.current ?? 0) / syncProgress.total) * 100
     : undefined;
 
   const formatLastSync = (iso: string | null): string => {
