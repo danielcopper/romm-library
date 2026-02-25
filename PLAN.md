@@ -242,6 +242,7 @@ Rapid sequential requests during batch sync. Add configurable delay for remote/s
 - **Per-game sync selection**: Select/deselect individual games within a platform
 - **Translations / i18n**: Adapt to user's Steam language (reference: Unifideck `src/i18n/`)
 - **Global launch interceptor**: Safety net via `SteamClient.Apps.RegisterForGameActionStart` for launches from context menus/search/recent games (outside game detail page). Currently save sync and conflict checks only run when launching from the game detail page.
+- **Async/blocking audit**: Systematic review of all `callable()` handlers for blocking I/O that runs directly on the async event loop instead of in `run_in_executor`. Decky's `callable()` dispatches on the main asyncio loop — any synchronous HTTP call, file I/O, or `time.sleep()` blocks all other callables until it returns. `save_sync.py` was partially fixed (wrapped `_sync_rom_saves`, `_with_retry`, `_sync_playtime_to_romm` in `run_in_executor`), but the same pattern likely exists in `romm_client.py`, `downloads.py`, `sync.py`, `firmware.py`, `metadata.py`, and `sgdb.py`. Audit every `async def` callable for blocking calls and wrap them.
 
 ---
 

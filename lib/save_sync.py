@@ -753,7 +753,9 @@ class SaveSyncMixin:
 
         server_saves = []
         try:
-            server_saves = self._with_retry(self._romm_list_saves, rom_id)
+            server_saves = await self.loop.run_in_executor(
+                None, self._with_retry, self._romm_list_saves, rom_id
+            )
         except Exception as e:
             self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
 
@@ -959,7 +961,9 @@ class SaveSyncMixin:
             if not reg.get("success"):
                 return {"success": False, "message": "Device not registered"}
 
-        synced, errors = self._sync_rom_saves(rom_id)
+        synced, errors = await self.loop.run_in_executor(
+            None, self._sync_rom_saves, rom_id
+        )
         self._save_save_sync_state()
 
         # Return conflicts for this ROM so the frontend doesn't need a separate call
@@ -994,7 +998,9 @@ class SaveSyncMixin:
             if not reg.get("success"):
                 return {"success": False, "message": "Device not registered"}
 
-        synced, errors = self._sync_rom_saves(rom_id)
+        synced, errors = await self.loop.run_in_executor(
+            None, self._sync_rom_saves, rom_id
+        )
         self._save_save_sync_state()
 
         msg = f"Uploaded {synced} save(s)"
@@ -1017,7 +1023,9 @@ class SaveSyncMixin:
             if not reg.get("success"):
                 return {"success": False, "message": "Device not registered"}
 
-        synced, errors = self._sync_rom_saves(int(rom_id))
+        synced, errors = await self.loop.run_in_executor(
+            None, self._sync_rom_saves, int(rom_id)
+        )
         self._save_save_sync_state()
 
         msg = f"Synced {synced} save(s)"
@@ -1050,7 +1058,9 @@ class SaveSyncMixin:
 
         for rom_id_str in sorted(rom_ids):
             rom_count += 1
-            synced, errors = self._sync_rom_saves(int(rom_id_str))
+            synced, errors = await self.loop.run_in_executor(
+                None, self._sync_rom_saves, int(rom_id_str)
+            )
             total_synced += synced
             total_errors.extend(errors)
 
@@ -1095,33 +1105,12 @@ class SaveSyncMixin:
         system, rom_name, saves_dir = info
 
         try:
-            if resolution == "download":
-                server_save_id = conflict.get("server_save_id")
-                if not server_save_id:
-                    return {"success": False, "message": "No server save ID"}
-                server_save = self._with_retry(
-                    self._romm_request, f"/api/saves/{server_save_id}"
-                )
-                self._do_download_save(
-                    server_save, saves_dir, filename, rom_id_str, system
-                )
-            else:  # upload
-                local_path = conflict.get("local_path")
-                if not local_path or not os.path.isfile(local_path):
-                    return {"success": False, "message": "Local file not found"}
-                server_save = None
-                if conflict.get("server_save_id"):
-                    try:
-                        server_save = self._with_retry(
-                            self._romm_request,
-                            f"/api/saves/{conflict['server_save_id']}"
-                        )
-                    except Exception:
-                        pass
-                self._do_upload_save(
-                    rom_id, local_path, filename, rom_id_str,
-                    system, server_save
-                )
+            result = await self.loop.run_in_executor(
+                None, self._resolve_conflict_io,
+                rom_id, rom_id_str, resolution, conflict, saves_dir, filename, system
+            )
+            if result is not None:
+                return result
 
             # Remove from pending only after successful resolution
             self._save_sync_state["pending_conflicts"] = [
@@ -1133,6 +1122,38 @@ class SaveSyncMixin:
         except Exception as e:
             decky.logger.error(f"Conflict resolution failed: {e}")
             return {"success": False, "message": "Conflict resolution failed"}
+
+    def _resolve_conflict_io(self, rom_id, rom_id_str, resolution, conflict,
+                             saves_dir, filename, system):
+        """Sync helper for resolve_conflict — performs blocking I/O in executor."""
+        if resolution == "download":
+            server_save_id = conflict.get("server_save_id")
+            if not server_save_id:
+                return {"success": False, "message": "No server save ID"}
+            server_save = self._with_retry(
+                self._romm_request, f"/api/saves/{server_save_id}"
+            )
+            self._do_download_save(
+                server_save, saves_dir, filename, rom_id_str, system
+            )
+        else:  # upload
+            local_path = conflict.get("local_path")
+            if not local_path or not os.path.isfile(local_path):
+                return {"success": False, "message": "Local file not found"}
+            server_save = None
+            if conflict.get("server_save_id"):
+                try:
+                    server_save = self._with_retry(
+                        self._romm_request,
+                        f"/api/saves/{conflict['server_save_id']}"
+                    )
+                except Exception:
+                    pass
+            self._do_upload_save(
+                rom_id, local_path, filename, rom_id_str,
+                system, server_save
+            )
+        return None  # Success — caller handles state update
 
     async def get_pending_conflicts(self):
         """Return list of unresolved save conflicts."""
@@ -1179,7 +1200,9 @@ class SaveSyncMixin:
 
             # Best-effort sync playtime to RomM server notes
             try:
-                self._sync_playtime_to_romm(int(rom_id), int(duration))
+                await self.loop.run_in_executor(
+                    None, self._sync_playtime_to_romm, int(rom_id), int(duration)
+                )
             except Exception:
                 pass  # Already logged inside _sync_playtime_to_romm
 
@@ -1239,7 +1262,9 @@ class SaveSyncMixin:
 
         server_seconds = 0
         try:
-            note = self._with_retry(self._romm_get_playtime_note, rom_id)
+            note = await self.loop.run_in_executor(
+                None, self._with_retry, self._romm_get_playtime_note, rom_id
+            )
             if note:
                 server_data = self._parse_playtime_note_content(
                     note.get("content", "")
