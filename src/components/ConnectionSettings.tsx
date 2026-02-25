@@ -136,7 +136,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         {isSharedAccount(username) && (
           <PanelSectionRow>
             <Field
-              label="Shared account detected"
+              label={<span style={{ color: "#ff8800" }}>Shared account detected</span>}
               description={`"${username}" looks like a shared account. Save sync requires a personal RomM account per device to avoid overwriting other users' saves.`}
             />
           </PanelSectionRow>
