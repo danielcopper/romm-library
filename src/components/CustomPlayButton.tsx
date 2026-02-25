@@ -203,6 +203,10 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           // Conflict resolved — notify sibling components to refresh
           window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
         }
+
+        if (result.synced && result.synced > 0) {
+          toaster.toast({ title: "RomM Save Sync", body: "Saves downloaded from RomM" });
+        }
       } catch (e) {
         debugLog(`CustomPlayButton: pre-launch sync failed: ${e}`);
         const proceed = await showLaunchConfirmation(
