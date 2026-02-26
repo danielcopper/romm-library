@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 import decky
 
+from lib import retrodeck_config
+
 if TYPE_CHECKING:
     import asyncio
     from typing import Callable, Optional, Protocol
@@ -113,25 +115,9 @@ class SaveSyncMixin:
     def _get_retrodeck_saves_path(self):
         """Read the saves path from RetroDECK's retrodeck.json config.
 
-        Returns the saves base directory. Falls back to ~/retrodeck/saves
-        if the config file is unreadable or missing the path.
-        Not cached — reads fresh every call to handle config changes.
+        Delegates to the centralized retrodeck_config module.
         """
-        fallback = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "saves")
-        config_path = os.path.join(
-            decky.DECKY_USER_HOME,
-            ".var", "app", "net.retrodeck.retrodeck",
-            "config", "retrodeck", "retrodeck.json",
-        )
-        try:
-            with open(config_path, "r") as f:
-                config = json.load(f)
-            saves_path = config.get("paths", {}).get("saves_path", "")
-            if saves_path:
-                return saves_path
-        except (OSError, IOError, json.JSONDecodeError, ValueError):
-            self._log_debug("Could not read retrodeck.json, using fallback saves path")
-        return fallback
+        return retrodeck_config.get_saves_path()
 
     def _get_rom_save_info(self, rom_id):
         """Get save-related info for an installed ROM.

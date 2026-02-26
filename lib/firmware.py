@@ -2,9 +2,12 @@ import json
 import os
 import hashlib
 import urllib.parse
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import decky
+
+from lib import retrodeck_config
 
 if TYPE_CHECKING:
     import asyncio
@@ -16,20 +19,13 @@ if TYPE_CHECKING:
         loop: asyncio.AbstractEventLoop
         def _romm_request(self, path: str) -> Any: ...
         def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
-
-
-# BIOS destination subfolders within ~/retrodeck/bios/
-# Most platforms: files go flat in bios/
-# Exceptions need platform-specific subfolders
-BIOS_DEST_MAP = {
-    "dc": "dc/",            # Dreamcast
-    "ps2": "pcsx2/bios/",   # PS2
-}
+        def _save_state(self) -> None: ...
 
 
 class FirmwareMixin:
     def _load_bios_registry(self):
         self._bios_registry = {}
+        self._bios_files_index = {}
         registry_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
             "defaults", "bios_registry.json",
@@ -37,16 +33,26 @@ class FirmwareMixin:
         try:
             with open(registry_path, "r") as f:
                 self._bios_registry = json.load(f)
+            # Build flat reverse index: {filename: {entry_data + "platform": slug}}
+            for platform, files in self._bios_registry.get("platforms", {}).items():
+                for filename, entry in files.items():
+                    self._bios_files_index[filename] = {**entry, "platform": platform}
         except FileNotFoundError:
             decky.logger.warning("bios_registry.json not found, registry enrichment disabled")
         except Exception as e:
             decky.logger.error(f"Failed to load bios_registry.json: {e}")
 
     def _enrich_firmware_file(self, file_dict):
-        registry_files = self._bios_registry.get("files", {})
-        entry = registry_files.get(file_dict.get("file_name", ""))
-        file_dict["required"] = entry.get("required", True) if entry else True
-        file_dict["description"] = entry.get("description", file_dict.get("file_name", "")) if entry else file_dict.get("file_name", "")
+        entry = self._bios_files_index.get(file_dict.get("file_name", ""))
+        if entry:
+            file_dict["required"] = entry.get("required", True)
+            file_dict["description"] = entry.get("description", file_dict.get("file_name", ""))
+            file_dict["classification"] = "required" if entry.get("required", True) else "optional"
+        else:
+            # Unknown file: not in registry, don't count as required
+            file_dict["required"] = False
+            file_dict["description"] = file_dict.get("file_name", "")
+            file_dict["classification"] = "unknown"
         file_md5 = file_dict.get("md5", "")
         registry_md5 = entry.get("md5", "") if entry else ""
         if file_md5 and registry_md5:
@@ -77,14 +83,18 @@ class FirmwareMixin:
         return mapping.get(platform_slug, [platform_slug])
 
     def _firmware_dest_path(self, firmware):
-        """Determine local destination path for a firmware file."""
-        bios_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "bios")
-        file_name = firmware.get("file_name", "")
-        file_path = firmware.get("file_path", "")
+        """Determine local destination path for a firmware file.
 
-        slug = self._firmware_slug(file_path)
-        subfolder = BIOS_DEST_MAP.get(slug, "")
-        return os.path.join(bios_base, subfolder, file_name)
+        Uses firmware_path from bios_registry.json for correct subdirectory
+        placement (e.g. dc/dc_boot.bin). Falls back to flat in bios root
+        for files not in the registry.
+        """
+        bios_base = retrodeck_config.get_bios_path()
+        file_name = firmware.get("file_name", "")
+        reg_entry = self._bios_files_index.get(file_name)
+        if reg_entry and reg_entry.get("firmware_path"):
+            return os.path.join(bios_base, reg_entry["firmware_path"])
+        return os.path.join(bios_base, file_name)
 
     async def get_firmware_status(self):
         """Return BIOS/firmware status for all platforms on the RomM server."""
@@ -175,8 +185,7 @@ class FirmwareMixin:
 
         # Check against registry hash
         registry_hash_valid = None
-        registry_files = self._bios_registry.get("files", {})
-        reg_entry = registry_files.get(file_name)
+        reg_entry = self._bios_files_index.get(file_name)
         if reg_entry:
             reg_md5 = reg_entry.get("md5", "")
             if reg_md5:
@@ -187,6 +196,15 @@ class FirmwareMixin:
                             h.update(chunk)
                     local_md5 = h.hexdigest()
                 registry_hash_valid = local_md5.lower() == reg_md5.lower()
+
+        # Track in state for migration support
+        self._state["downloaded_bios"][file_name] = {
+            "file_path": dest,
+            "firmware_id": firmware_id,
+            "platform_slug": self._firmware_slug(fw.get("file_path", "")),
+            "downloaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._save_state()
 
         decky.logger.info(f"Firmware downloaded: {file_name} -> {dest}")
         return {"success": True, "file_path": dest, "md5_match": md5_match, "registry_hash_valid": registry_hash_valid}
@@ -237,15 +255,15 @@ class FirmwareMixin:
             return {"success": False, "message": f"Failed to fetch firmware: {e}", "downloaded": 0}
 
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
-        registry_files = self._bios_registry.get("files", {})
         platform_firmware = []
         for fw in firmware_list:
             slug = self._firmware_slug(fw.get("file_path", ""))
             if slug in fw_slugs:
                 file_name = fw.get("file_name", "")
-                reg_entry = registry_files.get(file_name)
-                is_required = reg_entry.get("required", True) if reg_entry else True
-                if is_required:
+                index_entry = self._bios_files_index.get(file_name)
+                # Only download files that are in the index with required=True
+                # Unknown files (not in index) are NOT downloaded
+                if index_entry and index_entry.get("required", True):
                     platform_firmware.append(fw)
 
         downloaded = 0
@@ -271,11 +289,16 @@ class FirmwareMixin:
         server_count = 0
         files = []
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
+
+        # Build combined registry entries for this platform from all mapped slugs
+        registry_platform = {}
+        for slug in fw_slugs:
+            registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
+
         try:
             firmware_list = await self.loop.run_in_executor(
                 None, self._romm_request, "/api/firmware"
             )
-            registry_files = self._bios_registry.get("files", {})
             for fw in firmware_list:
                 fw_slug = self._firmware_slug(fw.get("file_path", ""))
                 if not fw_slug:
@@ -287,13 +310,22 @@ class FirmwareMixin:
                     if downloaded:
                         local_count += 1
                     file_name = fw.get("file_name", "")
-                    reg_entry = registry_files.get(file_name)
+                    reg_entry = registry_platform.get(file_name)
+                    if reg_entry:
+                        classification = "required" if reg_entry.get("required", True) else "optional"
+                        is_required = reg_entry.get("required", True)
+                        description = reg_entry.get("description", file_name)
+                    else:
+                        classification = "unknown"
+                        is_required = False
+                        description = file_name
                     files.append({
                         "file_name": file_name,
                         "downloaded": downloaded,
                         "local_path": dest,
-                        "required": reg_entry.get("required", True) if reg_entry else True,
-                        "description": reg_entry.get("description", file_name) if reg_entry else file_name,
+                        "required": is_required,
+                        "description": description,
+                        "classification": classification,
                     })
         except Exception:
             pass
@@ -301,9 +333,10 @@ class FirmwareMixin:
         if server_count == 0:
             return {"needs_bios": False}
 
-        required_files = [f for f in files if f["required"]]
+        required_files = [f for f in files if f["classification"] == "required"]
         required_count = len(required_files)
         required_downloaded = sum(1 for f in required_files if f["downloaded"])
+        unknown_count = sum(1 for f in files if f["classification"] == "unknown")
 
         return {
             "needs_bios": True,
@@ -312,6 +345,7 @@ class FirmwareMixin:
             "all_downloaded": local_count >= server_count,
             "required_count": required_count,
             "required_downloaded": required_downloaded,
+            "unknown_count": unknown_count,
             "files": files,
         }
 
@@ -329,8 +363,13 @@ class FirmwareMixin:
             try:
                 os.remove(f["local_path"])
                 deleted += 1
+                # Remove from state tracking
+                self._state["downloaded_bios"].pop(f["file_name"], None)
             except Exception as e:
                 errors.append(f"{f['file_name']}: {e}")
+
+        if deleted:
+            self._save_state()
 
         if errors:
             return {"success": False, "deleted_count": deleted, "message": f"Deleted {deleted} file(s), {len(errors)} error(s)"}

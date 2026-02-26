@@ -482,18 +482,28 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     if (bios.files && bios.files.length > 0) {
       biosChildren.push(
         createElement("div", { key: "bios-file-list", className: "romm-panel-file-list" },
-          ...bios.files.map((f) =>
-            createElement("div", { key: f.file_name, className: "romm-panel-file-row" },
+          ...bios.files.map((f) => {
+            let dotColor: string;
+            if (f.classification === "unknown") {
+              dotColor = "#d4a72c";
+            } else if (f.downloaded) {
+              dotColor = "#5ba32b";
+            } else if (f.classification === "required") {
+              dotColor = "#d94126";
+            } else {
+              dotColor = "#8f98a0";
+            }
+            return createElement("div", { key: f.file_name, className: "romm-panel-file-row" },
               createElement("span", {
                 className: "romm-status-dot",
-                style: { backgroundColor: f.downloaded ? "#5ba32b" : "#d94126" },
+                style: { backgroundColor: dotColor },
               }),
               createElement("span", { className: "romm-panel-file-name" },
-                `${f.description || f.file_name} (${f.required ? "required" : "optional"})`,
+                `${f.description || f.file_name} (${f.classification})`,
               ),
               createElement("span", { className: "romm-panel-file-path" }, f.file_name !== (f.description || f.file_name) ? f.file_name : f.local_path),
-            ),
-          ),
+            );
+          }),
         ),
       );
     }

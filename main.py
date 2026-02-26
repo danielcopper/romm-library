@@ -11,12 +11,13 @@ import decky
 from lib.state import StateMixin
 from lib.romm_client import RommClientMixin
 from lib.steam_config import SteamConfigMixin
-from lib.firmware import FirmwareMixin, BIOS_DEST_MAP
+from lib.firmware import FirmwareMixin
 from lib.metadata import MetadataMixin
 from lib.sgdb import SgdbMixin
 from lib.downloads import DownloadMixin
 from lib.sync import SyncMixin
 from lib.save_sync import SaveSyncMixin
+from lib import retrodeck_config
 
 
 class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareMixin, MetadataMixin, DownloadMixin, SyncMixin, SaveSyncMixin):
@@ -41,6 +42,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "installed_roms": {},
             "last_sync": None,
             "sync_stats": {"platforms": 0, "roms": 0},
+            "downloaded_bios": {},
+            "retrodeck_home_path": "",
         }
         self._pending_sync = {}
         self._download_tasks = {}   # rom_id -> asyncio.Task
@@ -59,8 +62,197 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._prune_orphaned_artwork_cache()     # lib/sgdb.py
         self._prune_orphaned_staging_artwork()   # lib/sync.py
         self._cleanup_leftover_tmp_files()       # lib/downloads.py
+        # ── RetroDECK path change detection ──
+        self._detect_retrodeck_path_change()
         self.loop.create_task(self._poll_download_requests())
         decky.logger.info("RomM Sync plugin loaded")
+
+    def _detect_retrodeck_path_change(self):
+        """Check if RetroDECK home path changed since last run."""
+        current_home = retrodeck_config.get_retrodeck_home()
+        stored_home = self._state.get("retrodeck_home_path", "")
+
+        if not current_home:
+            return
+
+        if stored_home == current_home:
+            return
+
+        if stored_home:
+            old_home = stored_home
+        else:
+            # First run — check if files exist at the hardcoded fallback path
+            # that differ from the actual RetroDECK config path
+            fallback_home = os.path.join(decky.DECKY_USER_HOME, "retrodeck")
+            if fallback_home != current_home and os.path.isdir(fallback_home):
+                # Files may have been downloaded to fallback before we read config
+                old_home = fallback_home
+            else:
+                # Genuine first run, no migration needed
+                self._state["retrodeck_home_path"] = current_home
+                self._save_state()
+                return
+
+        # Path changed — store both old and new, emit event
+        self._state["retrodeck_home_path_previous"] = old_home
+        self._state["retrodeck_home_path"] = current_home
+        self._save_state()
+        decky.logger.warning(
+            f"RetroDECK home path changed: {old_home} -> {current_home}"
+        )
+        self.loop.create_task(
+            decky.emit("retrodeck_path_changed", {
+                "old_path": old_home,
+                "new_path": current_home,
+            })
+        )
+
+    async def migrate_retrodeck_files(self):
+        """Move downloaded ROMs and BIOS files from old RetroDECK path to new path."""
+        old_home = self._state.get("retrodeck_home_path_previous", "")
+        new_home = self._state.get("retrodeck_home_path", "")
+
+        if not old_home or not new_home or old_home == new_home:
+            return {"success": False, "message": "No path migration needed"}
+
+        import shutil
+
+        roms_moved = 0
+        bios_moved = 0
+        errors = []
+
+        # Migrate installed ROMs
+        for rom_id, entry in list(self._state["installed_roms"].items()):
+            file_path = entry.get("file_path", "")
+            rom_dir = entry.get("rom_dir", "")
+
+            for key in ("file_path", "rom_dir"):
+                path = entry.get(key, "")
+                if not path or not path.startswith(old_home):
+                    continue
+                new_path = new_home + path[len(old_home):]
+                if os.path.exists(new_path):
+                    decky.logger.warning(f"Migration skip (exists): {new_path}")
+                    errors.append(f"Already exists: {os.path.basename(new_path)}")
+                    continue
+                if not os.path.exists(path):
+                    decky.logger.warning(f"Migration skip (source missing): {path}")
+                    continue
+                try:
+                    os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                    if os.path.isdir(path):
+                        shutil.move(path, new_path)
+                    else:
+                        shutil.move(path, new_path)
+                    entry[key] = new_path
+                    if key == "file_path":
+                        roms_moved += 1
+                except Exception as e:
+                    errors.append(f"{os.path.basename(path)}: {e}")
+                    decky.logger.error(f"Migration failed for {path}: {e}")
+
+        # Migrate downloaded BIOS files
+        for file_name, bios_entry in list(self._state.get("downloaded_bios", {}).items()):
+            file_path = bios_entry.get("file_path", "")
+            if not file_path or not file_path.startswith(old_home):
+                continue
+            new_path = new_home + file_path[len(old_home):]
+            if os.path.exists(new_path):
+                decky.logger.warning(f"BIOS migration skip (exists): {new_path}")
+                errors.append(f"Already exists: {file_name}")
+                continue
+            if not os.path.exists(file_path):
+                decky.logger.warning(f"BIOS migration skip (source missing): {file_path}")
+                continue
+            try:
+                os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                shutil.move(file_path, new_path)
+                bios_entry["file_path"] = new_path
+                bios_moved += 1
+            except Exception as e:
+                errors.append(f"{file_name}: {e}")
+                decky.logger.error(f"BIOS migration failed for {file_path}: {e}")
+
+        # Migrate untracked BIOS files (downloaded before state tracking)
+        old_bios = os.path.join(old_home, "bios")
+        new_bios = retrodeck_config.get_bios_path()
+        if os.path.isdir(old_bios):
+            for file_name, reg_entry in self._bios_files_index.items():
+                # Only move files we recognize from the registry
+                firmware_path = reg_entry.get("firmware_path", file_name)
+                old_file = os.path.join(old_bios, firmware_path)
+                new_file = os.path.join(new_bios, firmware_path)
+                if not os.path.exists(old_file):
+                    continue
+                if os.path.exists(new_file):
+                    continue
+                # Skip if already tracked in downloaded_bios
+                if file_name in self._state.get("downloaded_bios", {}):
+                    continue
+                try:
+                    os.makedirs(os.path.dirname(new_file), exist_ok=True)
+                    shutil.move(old_file, new_file)
+                    bios_moved += 1
+                    decky.logger.info(f"Migrated untracked BIOS: {old_file} -> {new_file}")
+                except Exception as e:
+                    errors.append(f"{file_name}: {e}")
+
+        # Clear previous path marker after successful migration
+        if not errors:
+            self._state.pop("retrodeck_home_path_previous", None)
+        self._save_state()
+
+        msg = f"Migrated {roms_moved} ROM(s) and {bios_moved} BIOS file(s)"
+        if errors:
+            msg += f" ({len(errors)} error(s))"
+        return {
+            "success": len(errors) == 0,
+            "message": msg,
+            "roms_moved": roms_moved,
+            "bios_moved": bios_moved,
+            "errors": errors,
+        }
+
+    async def get_migration_status(self):
+        """Return whether a RetroDECK path migration is pending and file counts."""
+        old_home = self._state.get("retrodeck_home_path_previous", "")
+        new_home = self._state.get("retrodeck_home_path", "")
+
+        if not old_home or not new_home or old_home == new_home:
+            return {"pending": False}
+
+        # Count files that need migration
+        roms_count = 0
+        for entry in self._state.get("installed_roms", {}).values():
+            for key in ("file_path", "rom_dir"):
+                path = entry.get(key, "")
+                if path and path.startswith(old_home) and key == "file_path":
+                    roms_count += 1
+
+        bios_count = 0
+        for bios_entry in self._state.get("downloaded_bios", {}).values():
+            file_path = bios_entry.get("file_path", "")
+            if file_path and file_path.startswith(old_home):
+                bios_count += 1
+
+        # Count untracked BIOS files from registry
+        old_bios = os.path.join(old_home, "bios")
+        if os.path.isdir(old_bios):
+            for file_name, reg_entry in self._bios_files_index.items():
+                if file_name in self._state.get("downloaded_bios", {}):
+                    continue
+                firmware_path = reg_entry.get("firmware_path", file_name)
+                old_file = os.path.join(old_bios, firmware_path)
+                if os.path.exists(old_file):
+                    bios_count += 1
+
+        return {
+            "pending": True,
+            "old_path": old_home,
+            "new_path": new_home,
+            "roms_count": roms_count,
+            "bios_count": bios_count,
+        }
 
     async def _unload(self):
         if self._sync_running:

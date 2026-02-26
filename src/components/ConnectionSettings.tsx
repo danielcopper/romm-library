@@ -11,7 +11,9 @@ import {
   showModal,
   ToggleField,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, logError } from "../api/backend";
+import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, getMigrationStatus, migrateRetroDeckFiles, logError } from "../api/backend";
+import type { MigrationStatus } from "../api/backend";
+import { getMigrationState, setMigrationStatus, clearMigration, onMigrationChange } from "../utils/migrationStore";
 
 // Module-level state survives component remounts (modal close can remount QAM)
 const pendingEdits: { url?: string; username?: string; password?: string } = {};
@@ -65,6 +67,9 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [allowInsecureSsl, setAllowInsecureSsl] = useState(false);
   const [steamInputMode, setSteamInputMode] = useState("default");
   const [steamInputStatus, setSteamInputStatus] = useState("");
+  const [migration, setMigration] = useState<MigrationStatus>(getMigrationState());
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState("");
   useEffect(() => {
     getSettings().then((s) => {
       // Apply any pending edits that survived a remount, fall back to backend values
@@ -78,6 +83,17 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       logError(`Failed to load settings: ${e}`);
       setStatus("Failed to load settings");
     });
+
+    // Load fresh migration status with file counts
+    getMigrationStatus().then((s) => {
+      if (s.pending) {
+        setMigrationStatus(s);
+        setMigration(s);
+      }
+    }).catch(() => {});
+
+    const unsubMigration = onMigrationChange(() => setMigration(getMigrationState()));
+    return () => unsubMigration();
   }, []);
 
   const handleSave = async () => {
@@ -117,6 +133,49 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
+      {migration.pending && (
+        <PanelSection title="Path Migration">
+          <PanelSectionRow>
+            <Field
+              label={"\u26A0\uFE0F RetroDECK location changed"}
+              description={`From: ${migration.old_path ?? "unknown"}\nTo: ${migration.new_path ?? "unknown"}`}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <Field
+              label="Files to migrate"
+              description={`${migration.roms_count ?? 0} ROM(s), ${migration.bios_count ?? 0} BIOS file(s)`}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={migrating}
+              onClick={async () => {
+                setMigrating(true);
+                setMigrateResult("");
+                try {
+                  const result = await migrateRetroDeckFiles();
+                  setMigrateResult(result.message);
+                  if (result.success) {
+                    clearMigration();
+                  }
+                } catch {
+                  setMigrateResult("Migration failed");
+                }
+                setMigrating(false);
+              }}
+            >
+              {migrating ? "Migrating..." : "Migrate Files"}
+            </ButtonItem>
+          </PanelSectionRow>
+          {migrateResult && (
+            <PanelSectionRow>
+              <Field label={migrateResult} />
+            </PanelSectionRow>
+          )}
+        </PanelSection>
+      )}
       <PanelSection title="Connection">
         <PanelSectionRow>
           <Field label="RomM URL" description={url || "(not set)"}>

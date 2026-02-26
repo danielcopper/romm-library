@@ -86,8 +86,9 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
     const isDownloading = downloading === platform.platform_slug;
     const isExpanded = expanded[platform.platform_slug] ?? false;
 
-    const requiredFiles = platform.files.filter((f) => f.required);
-    const optionalFiles = platform.files.filter((f) => !f.required);
+    const requiredFiles = platform.files.filter((f) => f.classification === "required");
+    const optionalFiles = platform.files.filter((f) => f.classification === "optional");
+    const unknownFiles = platform.files.filter((f) => f.classification === "unknown");
     const requiredCount = requiredFiles.length;
     const requiredDone = requiredFiles.filter((f) => f.downloaded).length;
     const allRequiredDone = requiredDone === requiredCount;
@@ -143,18 +144,50 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
         </PanelSectionRow>
         {isExpanded && (
           <Focusable>
-            {platform.files.map((file) => (
-              <PanelSectionRow key={file.id}>
+            {platform.files.map((file) => {
+              let dotColor: string;
+              if (file.classification === "unknown") {
+                dotColor = "#d4a72c";
+              } else if (file.downloaded) {
+                dotColor = "#5ba32b";
+              } else if (file.classification === "required") {
+                dotColor = "#d94126";
+              } else {
+                dotColor = "#8f98a0";
+              }
+              return (
+                <PanelSectionRow key={file.id}>
+                  <Field
+                    label={
+                      <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{
+                          display: "inline-block",
+                          width: "8px",
+                          height: "8px",
+                          borderRadius: "50%",
+                          backgroundColor: dotColor,
+                          flexShrink: 0,
+                        }} />
+                        {`${file.description || file.file_name} (${file.classification})`}
+                      </span>
+                    }
+                    description={
+                      file.downloaded
+                        ? `${file.file_name}${hashIndicator(file.hash_valid)}`
+                        : `${file.file_name} — Missing`
+                    }
+                  />
+                </PanelSectionRow>
+              );
+            })}
+            {unknownFiles.length > 0 && (
+              <PanelSectionRow>
                 <Field
-                  label={`${file.description || file.file_name} (${file.required ? "required" : "optional"})`}
-                  description={
-                    file.downloaded
-                      ? `${file.file_name}${hashIndicator(file.hash_valid)}`
-                      : `${file.file_name} — Missing`
-                  }
+                  label={`${unknownFiles.length} file(s) not recognized`}
+                  description="Report at github.com/danielcopper/decky-romm-sync/issues if needed."
                 />
               </PanelSectionRow>
-            ))}
+            )}
           </Focusable>
         )}
         {hasRequiredMissing && (

@@ -13,50 +13,91 @@ def plugin():
     p._sync_running = False
     p._sync_cancel = False
     p._sync_progress = {"running": False}
-    p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
+    p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}, "downloaded_bios": {}, "retrodeck_home_path": ""}
     p._pending_sync = {}
     p._download_tasks = {}
     p._download_queue = {}
     p._download_in_progress = set()
     p._metadata_cache = {}
     p._bios_registry = {}
+    p._bios_files_index = {}
     return p
 
 
 class TestFirmwareDestPath:
-    """Tests for _firmware_dest_path — BIOS destination mapping."""
+    """Tests for _firmware_dest_path — registry-based BIOS destination mapping."""
 
-    def test_flat_default(self, plugin, tmp_path):
+    def test_flat_default_no_registry(self, plugin, tmp_path):
+        """File not in registry goes flat in bios root."""
+        from unittest.mock import patch
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        fw = {"file_name": "bios.bin", "file_path": "bios/n64/bios.bin"}
-        dest = plugin._firmware_dest_path(fw)
-        assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "bios.bin")
+        with patch("lib.retrodeck_config.get_bios_path",
+                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+            fw = {"file_name": "bios.bin", "file_path": "bios/n64/bios.bin"}
+            dest = plugin._firmware_dest_path(fw)
+            assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "bios.bin")
 
-    def test_dreamcast_subfolder(self, plugin, tmp_path):
+    def test_dreamcast_subfolder_from_registry(self, plugin, tmp_path):
+        """Registry firmware_path with subdirectory places file correctly."""
+        from unittest.mock import patch
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        fw = {"file_name": "dc_boot.bin", "file_path": "bios/dc/dc_boot.bin"}
-        dest = plugin._firmware_dest_path(fw)
-        assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "dc", "dc_boot.bin")
+        plugin._bios_files_index["dc_boot.bin"] = {
+            "description": "Dreamcast BIOS",
+            "required": True,
+            "firmware_path": "dc/dc_boot.bin",
+            "platform": "dc",
+        }
 
-    def test_ps2_subfolder(self, plugin, tmp_path):
+        with patch("lib.retrodeck_config.get_bios_path",
+                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+            fw = {"file_name": "dc_boot.bin", "file_path": "bios/dc/dc_boot.bin"}
+            dest = plugin._firmware_dest_path(fw)
+            assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "dc", "dc_boot.bin")
+
+    def test_psx_flat_from_registry(self, plugin, tmp_path):
+        """Registry firmware_path without subdirectory goes flat."""
+        from unittest.mock import patch
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        fw = {"file_name": "scph10000.bin", "file_path": "bios/ps2/scph10000.bin"}
-        dest = plugin._firmware_dest_path(fw)
-        assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "pcsx2", "bios", "scph10000.bin")
+        plugin._bios_files_index["scph5501.bin"] = {
+            "description": "PS1 US BIOS",
+            "required": True,
+            "firmware_path": "scph5501.bin",
+            "platform": "psx",
+        }
 
-    def test_unknown_platform_flat(self, plugin, tmp_path):
+        with patch("lib.retrodeck_config.get_bios_path",
+                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+            fw = {"file_name": "scph5501.bin", "file_path": "bios/ps/scph5501.bin"}
+            dest = plugin._firmware_dest_path(fw)
+            assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "scph5501.bin")
+
+    def test_uses_dynamic_bios_path(self, plugin, tmp_path):
+        """Uses retrodeck_config.get_bios_path() for the base directory."""
+        from unittest.mock import patch
+
+        sd_bios = "/run/media/deck/Emulation/retrodeck/bios"
+        with patch("lib.retrodeck_config.get_bios_path", return_value=sd_bios):
+            fw = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
+            dest = plugin._firmware_dest_path(fw)
+            assert dest == os.path.join(sd_bios, "fw.bin")
+
+    def test_unknown_file_flat_fallback(self, plugin, tmp_path):
+        """File not in registry falls back to flat in bios root."""
+        from unittest.mock import patch
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        fw = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
-        dest = plugin._firmware_dest_path(fw)
-        assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "fw.bin")
+        with patch("lib.retrodeck_config.get_bios_path",
+                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+            fw = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
+            dest = plugin._firmware_dest_path(fw)
+            assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "fw.bin")
 
 
 class TestGetFirmwareStatus:
@@ -89,7 +130,8 @@ class TestGetFirmwareStatus:
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
+        # File goes flat in bios root (not in registry, no firmware_path)
+        bios_dir = tmp_path / "retrodeck" / "bios"
         bios_dir.mkdir(parents=True)
         (bios_dir / "bios_dc.bin").write_bytes(b"\x00" * 100)
 
@@ -123,6 +165,7 @@ class TestDownloadFirmware:
         import hashlib
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         content = b"firmware data here"
         expected_md5 = hashlib.md5(content).hexdigest()
@@ -148,6 +191,9 @@ class TestDownloadFirmware:
         assert result["success"] is True
         assert result["md5_match"] is True
         assert os.path.exists(result["file_path"])
+        # Verify state tracking
+        assert "bios.bin" in plugin._state["downloaded_bios"]
+        assert plugin._state["downloaded_bios"]["bios.bin"]["firmware_id"] == 10
 
     @pytest.mark.asyncio
     async def test_handles_download_error(self, plugin, tmp_path):
@@ -180,8 +226,8 @@ class TestDownloadAllFirmware:
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        # Pre-create one file so it's skipped
-        bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
+        # Pre-create one file so it's skipped (flat in bios root, not in registry)
+        bios_dir = tmp_path / "retrodeck" / "bios"
         bios_dir.mkdir(parents=True)
         (bios_dir / "existing.bin").write_bytes(b"\x00" * 50)
 
@@ -211,15 +257,23 @@ class TestDownloadAllFirmware:
 class TestDeletePlatformBios:
     @pytest.mark.asyncio
     async def test_delete_platform_bios_happy_path(self, plugin, tmp_path):
-        """Deleting platform BIOS removes downloaded files."""
+        """Deleting platform BIOS removes downloaded files and state entries."""
         from unittest.mock import AsyncMock
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         bios_dir = tmp_path / "retrodeck" / "bios"
         bios_dir.mkdir(parents=True)
         bios_file = bios_dir / "scph5501.bin"
         bios_file.write_bytes(b"\x00" * 512)
+
+        # Pre-populate state tracking
+        plugin._state["downloaded_bios"]["scph5501.bin"] = {
+            "file_path": str(bios_file),
+            "firmware_id": 42,
+            "platform_slug": "psx",
+        }
 
         # Mock check_platform_bios to return our test file
         async def mock_check(slug):
@@ -236,6 +290,8 @@ class TestDeletePlatformBios:
         assert result["success"] is True
         assert result["deleted_count"] == 1
         assert not bios_file.exists()
+        # Verify state entry removed
+        assert "scph5501.bin" not in plugin._state["downloaded_bios"]
 
     @pytest.mark.asyncio
     async def test_delete_platform_bios_no_files(self, plugin):
@@ -275,25 +331,29 @@ class TestDeletePlatformBios:
 
 class TestBiosRegistry:
     def test_load_bios_registry(self, plugin, tmp_path):
-        """Loads registry JSON and verifies structure."""
+        """Loads registry JSON and verifies structure + _bios_files_index."""
         import json
 
         registry_data = {
-            "_meta": {"version": "1.0", "description": "Test registry"},
-            "files": {
-                "bios.bin": {
-                    "description": "Main BIOS",
-                    "required": True,
-                    "md5": "abc123",
-                    "sha1": "def456",
-                    "size": 2048,
+            "_meta": {"version": "2.0.0", "description": "Test registry"},
+            "platforms": {
+                "psx": {
+                    "bios.bin": {
+                        "description": "Main BIOS",
+                        "required": True,
+                        "md5": "abc123",
+                        "sha1": "def456",
+                        "size": 2048,
+                    },
                 },
-                "optional.bin": {
-                    "description": "Optional firmware",
-                    "required": False,
-                    "md5": "789abc",
-                    "sha1": "012def",
-                    "size": 1024,
+                "dc": {
+                    "optional.bin": {
+                        "description": "Optional firmware",
+                        "required": False,
+                        "md5": "789abc",
+                        "sha1": "012def",
+                        "size": 1024,
+                    },
                 },
             },
         }
@@ -311,10 +371,17 @@ class TestBiosRegistry:
             plugin._load_bios_registry()
 
         assert "_meta" in plugin._bios_registry
-        assert "files" in plugin._bios_registry
-        assert "bios.bin" in plugin._bios_registry["files"]
-        assert plugin._bios_registry["files"]["bios.bin"]["required"] is True
-        assert plugin._bios_registry["files"]["optional.bin"]["required"] is False
+        assert "platforms" in plugin._bios_registry
+        assert "psx" in plugin._bios_registry["platforms"]
+        assert "bios.bin" in plugin._bios_registry["platforms"]["psx"]
+        assert plugin._bios_registry["platforms"]["psx"]["bios.bin"]["required"] is True
+        assert "dc" in plugin._bios_registry["platforms"]
+        assert plugin._bios_registry["platforms"]["dc"]["optional.bin"]["required"] is False
+        # Verify _bios_files_index is populated
+        assert "bios.bin" in plugin._bios_files_index
+        assert plugin._bios_files_index["bios.bin"]["platform"] == "psx"
+        assert "optional.bin" in plugin._bios_files_index
+        assert plugin._bios_files_index["optional.bin"]["platform"] == "dc"
 
     def test_load_bios_registry_missing_file(self, plugin):
         """When registry file doesn't exist, returns empty dict."""
@@ -328,12 +395,22 @@ class TestBiosRegistry:
     def test_enrich_firmware_required(self, plugin):
         """File in registry marked required=True."""
         plugin._bios_registry = {
-            "files": {
-                "scph5501.bin": {
-                    "description": "PS1 BIOS (USA)",
-                    "required": True,
-                    "md5": "abc123",
+            "platforms": {
+                "psx": {
+                    "scph5501.bin": {
+                        "description": "PS1 BIOS (USA)",
+                        "required": True,
+                        "md5": "abc123",
+                    },
                 },
+            },
+        }
+        plugin._bios_files_index = {
+            "scph5501.bin": {
+                "description": "PS1 BIOS (USA)",
+                "required": True,
+                "md5": "abc123",
+                "platform": "psx",
             },
         }
         file_dict = {"file_name": "scph5501.bin", "md5": ""}
@@ -344,12 +421,22 @@ class TestBiosRegistry:
     def test_enrich_firmware_optional(self, plugin):
         """File in registry marked required=False."""
         plugin._bios_registry = {
-            "files": {
-                "optional_fw.bin": {
-                    "description": "Optional debug firmware",
-                    "required": False,
-                    "md5": "",
+            "platforms": {
+                "dc": {
+                    "optional_fw.bin": {
+                        "description": "Optional debug firmware",
+                        "required": False,
+                        "md5": "",
+                    },
                 },
+            },
+        }
+        plugin._bios_files_index = {
+            "optional_fw.bin": {
+                "description": "Optional debug firmware",
+                "required": False,
+                "md5": "",
+                "platform": "dc",
             },
         }
         file_dict = {"file_name": "optional_fw.bin", "md5": ""}
@@ -357,23 +444,93 @@ class TestBiosRegistry:
         assert result["required"] is False
         assert result["description"] == "Optional debug firmware"
 
-    def test_enrich_firmware_unknown_defaults_required(self, plugin):
-        """File NOT in registry defaults to required=True."""
-        plugin._bios_registry = {"files": {}}
+    def test_enrich_firmware_unknown_defaults_not_required(self, plugin):
+        """File NOT in registry defaults to required=False (unknown classification)."""
+        plugin._bios_registry = {"platforms": {}}
+        plugin._bios_files_index = {}
         file_dict = {"file_name": "unknown_bios.bin", "md5": ""}
         result = plugin._enrich_firmware_file(file_dict)
-        assert result["required"] is True
+        assert result["required"] is False
+        assert result["classification"] == "unknown"
         assert result["description"] == "unknown_bios.bin"
+
+    def test_enrich_firmware_unknown_classification(self, plugin):
+        """File NOT in registry gets classification 'unknown'."""
+        plugin._bios_registry = {"platforms": {}}
+        plugin._bios_files_index = {}
+        file_dict = {"file_name": "mystery.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["classification"] == "unknown"
+
+    def test_enrich_firmware_required_classification(self, plugin):
+        """File in registry with required=True gets classification 'required'."""
+        plugin._bios_registry = {
+            "platforms": {
+                "psx": {
+                    "scph5501.bin": {
+                        "description": "PS1 BIOS",
+                        "required": True,
+                        "md5": "",
+                    },
+                },
+            },
+        }
+        plugin._bios_files_index = {
+            "scph5501.bin": {
+                "description": "PS1 BIOS",
+                "required": True,
+                "md5": "",
+                "platform": "psx",
+            },
+        }
+        file_dict = {"file_name": "scph5501.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["classification"] == "required"
+
+    def test_enrich_firmware_optional_classification(self, plugin):
+        """File in registry with required=False gets classification 'optional'."""
+        plugin._bios_registry = {
+            "platforms": {
+                "dc": {
+                    "optional_fw.bin": {
+                        "description": "Optional firmware",
+                        "required": False,
+                        "md5": "",
+                    },
+                },
+            },
+        }
+        plugin._bios_files_index = {
+            "optional_fw.bin": {
+                "description": "Optional firmware",
+                "required": False,
+                "md5": "",
+                "platform": "dc",
+            },
+        }
+        file_dict = {"file_name": "optional_fw.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict)
+        assert result["classification"] == "optional"
 
     def test_hash_validation_match(self, plugin):
         """RomM md5 matches registry md5."""
         plugin._bios_registry = {
-            "files": {
-                "bios.bin": {
-                    "description": "Test BIOS",
-                    "required": True,
-                    "md5": "abc123def456",
+            "platforms": {
+                "dc": {
+                    "bios.bin": {
+                        "description": "Test BIOS",
+                        "required": True,
+                        "md5": "abc123def456",
+                    },
                 },
+            },
+        }
+        plugin._bios_files_index = {
+            "bios.bin": {
+                "description": "Test BIOS",
+                "required": True,
+                "md5": "abc123def456",
+                "platform": "dc",
             },
         }
         file_dict = {"file_name": "bios.bin", "md5": "abc123def456"}
@@ -383,12 +540,22 @@ class TestBiosRegistry:
     def test_hash_validation_mismatch(self, plugin):
         """RomM md5 differs from registry md5."""
         plugin._bios_registry = {
-            "files": {
-                "bios.bin": {
-                    "description": "Test BIOS",
-                    "required": True,
-                    "md5": "abc123def456",
+            "platforms": {
+                "dc": {
+                    "bios.bin": {
+                        "description": "Test BIOS",
+                        "required": True,
+                        "md5": "abc123def456",
+                    },
                 },
+            },
+        }
+        plugin._bios_files_index = {
+            "bios.bin": {
+                "description": "Test BIOS",
+                "required": True,
+                "md5": "abc123def456",
+                "platform": "dc",
             },
         }
         file_dict = {"file_name": "bios.bin", "md5": "000000000000"}
@@ -398,12 +565,22 @@ class TestBiosRegistry:
     def test_hash_validation_null(self, plugin):
         """No hash from either source results in hash_valid=None."""
         plugin._bios_registry = {
-            "files": {
-                "bios.bin": {
-                    "description": "Test BIOS",
-                    "required": True,
-                    "md5": "",
+            "platforms": {
+                "dc": {
+                    "bios.bin": {
+                        "description": "Test BIOS",
+                        "required": True,
+                        "md5": "",
+                    },
                 },
+            },
+        }
+        plugin._bios_files_index = {
+            "bios.bin": {
+                "description": "Test BIOS",
+                "required": True,
+                "md5": "",
+                "platform": "dc",
             },
         }
         file_dict = {"file_name": "bios.bin", "md5": ""}
@@ -412,7 +589,8 @@ class TestBiosRegistry:
 
     def test_hash_validation_null_no_registry_entry(self, plugin):
         """File not in registry and no RomM hash -> hash_valid=None."""
-        plugin._bios_registry = {"files": {}}
+        plugin._bios_registry = {"platforms": {}}
+        plugin._bios_files_index = {}
         file_dict = {"file_name": "bios.bin", "md5": ""}
         result = plugin._enrich_firmware_file(file_dict)
         assert result["hash_valid"] is None
@@ -420,12 +598,22 @@ class TestBiosRegistry:
     def test_hash_validation_case_insensitive(self, plugin):
         """Hash comparison is case-insensitive."""
         plugin._bios_registry = {
-            "files": {
-                "bios.bin": {
-                    "description": "Test BIOS",
-                    "required": True,
-                    "md5": "ABC123DEF456",
+            "platforms": {
+                "dc": {
+                    "bios.bin": {
+                        "description": "Test BIOS",
+                        "required": True,
+                        "md5": "ABC123DEF456",
+                    },
                 },
+            },
+        }
+        plugin._bios_files_index = {
+            "bios.bin": {
+                "description": "Test BIOS",
+                "required": True,
+                "md5": "ABC123DEF456",
+                "platform": "dc",
             },
         }
         file_dict = {"file_name": "bios.bin", "md5": "abc123def456"}
@@ -448,11 +636,18 @@ class TestCheckPlatformBiosRequired:
         ]
 
         plugin._bios_registry = {
-            "files": {
-                "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": ""},
-                "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": ""},
-                "optional1.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+            "platforms": {
+                "dc": {
+                    "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": ""},
+                    "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": ""},
+                    "optional1.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+                },
             },
+        }
+        plugin._bios_files_index = {
+            "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": "", "platform": "dc"},
+            "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": "", "platform": "dc"},
+            "optional1.bin": {"description": "Optional firmware", "required": False, "md5": "", "platform": "dc"},
         }
 
         plugin.loop = MagicMock()
@@ -471,8 +666,8 @@ class TestCheckPlatformBiosRequired:
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        # Create downloaded required files
-        bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
+        # Create downloaded required files (flat in bios root, no firmware_path in registry)
+        bios_dir = tmp_path / "retrodeck" / "bios"
         bios_dir.mkdir(parents=True)
         (bios_dir / "required1.bin").write_bytes(b"\x00" * 100)
         (bios_dir / "required2.bin").write_bytes(b"\x00" * 200)
@@ -485,11 +680,18 @@ class TestCheckPlatformBiosRequired:
         ]
 
         plugin._bios_registry = {
-            "files": {
-                "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": ""},
-                "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": ""},
-                "optional1.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+            "platforms": {
+                "dc": {
+                    "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": ""},
+                    "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": ""},
+                    "optional1.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+                },
             },
+        }
+        plugin._bios_files_index = {
+            "required1.bin": {"description": "Required BIOS 1", "required": True, "md5": "", "platform": "dc"},
+            "required2.bin": {"description": "Required BIOS 2", "required": True, "md5": "", "platform": "dc"},
+            "optional1.bin": {"description": "Optional firmware", "required": False, "md5": "", "platform": "dc"},
         }
 
         plugin.loop = MagicMock()
@@ -515,9 +717,14 @@ class TestCheckPlatformBiosRequired:
         ]
 
         plugin._bios_registry = {
-            "files": {
-                "bios.bin": {"description": "Dreamcast BIOS", "required": True, "md5": ""},
+            "platforms": {
+                "dc": {
+                    "bios.bin": {"description": "Dreamcast BIOS", "required": True, "md5": ""},
+                },
             },
+        }
+        plugin._bios_files_index = {
+            "bios.bin": {"description": "Dreamcast BIOS", "required": True, "md5": "", "platform": "dc"},
         }
 
         plugin.loop = MagicMock()
@@ -526,6 +733,43 @@ class TestCheckPlatformBiosRequired:
         result = await plugin.check_platform_bios("dc")
         assert result["files"][0]["required"] is True
         assert result["files"][0]["description"] == "Dreamcast BIOS"
+
+    @pytest.mark.asyncio
+    async def test_check_platform_bios_unknown_count(self, plugin, tmp_path):
+        """RomM has files not in registry -> unknown_count > 0."""
+        from unittest.mock import AsyncMock, MagicMock
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        firmware_list = [
+            {"id": 1, "file_name": "known.bin", "file_path": "bios/dc/known.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {"id": 2, "file_name": "mystery.bin", "file_path": "bios/dc/mystery.bin", "file_size_bytes": 200, "md5_hash": ""},
+            {"id": 3, "file_name": "alien.bin", "file_path": "bios/dc/alien.bin", "file_size_bytes": 300, "md5_hash": ""},
+        ]
+
+        # Only "known.bin" is in the registry
+        plugin._bios_registry = {
+            "platforms": {
+                "dc": {
+                    "known.bin": {"description": "Known BIOS", "required": True, "md5": ""},
+                },
+            },
+        }
+        plugin._bios_files_index = {
+            "known.bin": {"description": "Known BIOS", "required": True, "md5": "", "platform": "dc"},
+        }
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
+
+        result = await plugin.check_platform_bios("dc")
+        assert result["needs_bios"] is True
+        assert result["unknown_count"] == 2
+        # Per-file classification
+        classifications = {f["file_name"]: f["classification"] for f in result["files"]}
+        assert classifications["known.bin"] == "required"
+        assert classifications["mystery.bin"] == "unknown"
+        assert classifications["alien.bin"] == "unknown"
 
 
 class TestDownloadRequiredFirmware:
@@ -542,10 +786,16 @@ class TestDownloadRequiredFirmware:
         ]
 
         plugin._bios_registry = {
-            "files": {
-                "required.bin": {"description": "Required BIOS", "required": True, "md5": ""},
-                "optional.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+            "platforms": {
+                "dc": {
+                    "required.bin": {"description": "Required BIOS", "required": True, "md5": ""},
+                    "optional.bin": {"description": "Optional firmware", "required": False, "md5": ""},
+                },
             },
+        }
+        plugin._bios_files_index = {
+            "required.bin": {"description": "Required BIOS", "required": True, "md5": "", "platform": "dc"},
+            "optional.bin": {"description": "Optional firmware", "required": False, "md5": "", "platform": "dc"},
         }
 
         plugin.loop = asyncio.get_event_loop()
@@ -572,8 +822,8 @@ class TestDownloadRequiredFirmware:
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        # Pre-create one required file so it's skipped
-        bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
+        # Pre-create one required file so it's skipped (flat in bios root)
+        bios_dir = tmp_path / "retrodeck" / "bios"
         bios_dir.mkdir(parents=True)
         (bios_dir / "existing.bin").write_bytes(b"\x00" * 100)
 
@@ -583,10 +833,16 @@ class TestDownloadRequiredFirmware:
         ]
 
         plugin._bios_registry = {
-            "files": {
-                "existing.bin": {"description": "Already downloaded", "required": True, "md5": ""},
-                "missing.bin": {"description": "Not yet downloaded", "required": True, "md5": ""},
+            "platforms": {
+                "dc": {
+                    "existing.bin": {"description": "Already downloaded", "required": True, "md5": ""},
+                    "missing.bin": {"description": "Not yet downloaded", "required": True, "md5": ""},
+                },
             },
+        }
+        plugin._bios_files_index = {
+            "existing.bin": {"description": "Already downloaded", "required": True, "md5": "", "platform": "dc"},
+            "missing.bin": {"description": "Not yet downloaded", "required": True, "md5": "", "platform": "dc"},
         }
 
         plugin.loop = asyncio.get_event_loop()

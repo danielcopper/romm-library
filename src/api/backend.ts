@@ -95,6 +95,26 @@ export const updateSaveSyncSettings = callable<[SaveSyncSettings], { success: bo
 // Bulk playtime for plugin-load UI update
 export const getAllPlaytime = callable<[], { playtime: Record<string, { total_seconds: number; session_count: number }> }>("get_all_playtime");
 
+// RetroDECK path migration
+export interface MigrationStatus {
+  pending: boolean;
+  old_path?: string;
+  new_path?: string;
+  roms_count?: number;
+  bios_count?: number;
+}
+
+export interface MigrationResult {
+  success: boolean;
+  message: string;
+  roms_moved?: number;
+  bios_moved?: number;
+  errors?: string[];
+}
+
+export const getMigrationStatus = callable<[], MigrationStatus>("get_migration_status");
+export const migrateRetroDeckFiles = callable<[], MigrationResult>("migrate_retrodeck_files");
+
 // Delete operations
 export const deleteLocalSaves = callable<[number], { success: boolean; deleted_count: number; message: string }>("delete_local_saves");
 export const deletePlatformSaves = callable<[string], { success: boolean; deleted_count: number; message: string }>("delete_platform_saves");

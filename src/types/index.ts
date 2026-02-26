@@ -116,6 +116,7 @@ export interface FirmwareFile {
   required: boolean;
   description: string;
   hash_valid: boolean | null;
+  classification: "required" | "optional" | "unknown";
 }
 
 export interface FirmwarePlatform {
@@ -140,6 +141,7 @@ export interface BiosFileStatus {
   local_path: string;
   required: boolean;
   description: string;
+  classification: "required" | "optional" | "unknown";
 }
 
 export interface BiosStatus {
@@ -149,6 +151,7 @@ export interface BiosStatus {
   all_downloaded?: boolean;
   required_count?: number;
   required_downloaded?: number;
+  unknown_count?: number;
   files?: BiosFileStatus[];
 }
 
