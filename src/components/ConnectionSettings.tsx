@@ -136,16 +136,20 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       {migration.pending && (
         <PanelSection title="Path Migration">
           <PanelSectionRow>
-            <Field
-              label={"\u26A0\uFE0F RetroDECK location changed"}
-              description={`From: ${migration.old_path ?? "unknown"}\nTo: ${migration.new_path ?? "unknown"}`}
-            />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <Field
-              label="Files to migrate"
-              description={`${migration.roms_count ?? 0} ROM(s), ${migration.bios_count ?? 0} BIOS file(s)`}
-            />
+            <div style={{ padding: "8px 12px", backgroundColor: "rgba(212, 167, 44, 0.15)", borderLeft: "3px solid #d4a72c", borderRadius: "4px" }}>
+              <div style={{ fontSize: "13px", fontWeight: "bold", color: "#d4a72c", marginBottom: "6px" }}>
+                {"\u26A0\uFE0F"} RetroDECK location changed
+              </div>
+              <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)", marginBottom: "4px" }}>
+                From: {migration.old_path ?? "unknown"}
+              </div>
+              <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)", marginBottom: "4px" }}>
+                To: {migration.new_path ?? "unknown"}
+              </div>
+              <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.9)" }}>
+                {migration.roms_count ?? 0} ROM(s), {migration.bios_count ?? 0} BIOS file(s) to migrate
+              </div>
+            </div>
           </PanelSectionRow>
           <PanelSectionRow>
             <ButtonItem

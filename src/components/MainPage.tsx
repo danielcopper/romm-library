@@ -199,10 +199,14 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
         {migration.pending && (
           <>
             <PanelSectionRow>
-              <Field
-                label={"\u26A0\uFE0F RetroDECK location changed"}
-                description={`${(migration.roms_count ?? 0) + (migration.bios_count ?? 0)} file(s) need migration (${migration.roms_count ?? 0} ROMs, ${migration.bios_count ?? 0} BIOS)`}
-              />
+              <div style={{ padding: "8px 12px", backgroundColor: "rgba(212, 167, 44, 0.15)", borderLeft: "3px solid #d4a72c", borderRadius: "4px" }}>
+                <div style={{ fontSize: "13px", fontWeight: "bold", color: "#d4a72c", marginBottom: "4px" }}>
+                  {"\u26A0\uFE0F"} RetroDECK location changed
+                </div>
+                <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)" }}>
+                  {(migration.roms_count ?? 0) + (migration.bios_count ?? 0)} file(s) need migration ({migration.roms_count ?? 0} ROMs, {migration.bios_count ?? 0} BIOS)
+                </div>
+              </div>
             </PanelSectionRow>
             <PanelSectionRow>
               <ButtonItem layout="below" onClick={() => onNavigate("connection")}>

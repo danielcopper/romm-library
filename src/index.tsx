@@ -90,6 +90,10 @@ export default definePlugin(() => {
       const status = await getMigrationStatus();
       if (status.pending) {
         setMigrationStatus(status);
+        toaster.toast({
+          title: "RomM Sync",
+          body: "RetroDECK location changed. Go to Settings to migrate files.",
+        });
       }
     } catch (e) {
       logError(`Failed to check migration status: ${e}`);
