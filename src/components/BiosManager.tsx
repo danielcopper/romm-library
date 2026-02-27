@@ -3,10 +3,11 @@ import {
   PanelSection,
   PanelSectionRow,
   ButtonItem,
+  DropdownItem,
   Field,
   Focusable,
 } from "@decky/ui";
-import { getFirmwareStatus, downloadAllFirmware, downloadRequiredFirmware } from "../api/backend";
+import { getFirmwareStatus, downloadAllFirmware, downloadRequiredFirmware, setSystemCore } from "../api/backend";
 import type { FirmwarePlatformExt } from "../types";
 
 interface BiosManagerProps {
@@ -131,7 +132,29 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             description={summaryDescription}
           />
         </PanelSectionRow>
-        {platform.active_core_label && (
+        {platform.available_cores && platform.available_cores.length > 1 && (
+          <PanelSectionRow>
+            <DropdownItem
+              label="Active Core"
+              rgOptions={[
+                ...platform.available_cores.map((c) => ({
+                  data: c.label,
+                  label: c.is_default ? `${c.label} (default)` : c.label,
+                })),
+              ]}
+              selectedOption={platform.active_core_label || platform.available_cores.find((c) => c.is_default)?.label || ""}
+              onChange={async (option: { data: string }) => {
+                const defaultCore = platform.available_cores?.find((c) => c.is_default);
+                const label = defaultCore && option.data === defaultCore.label ? "" : option.data;
+                const result = await setSystemCore(platform.platform_slug, label);
+                if (result.success) {
+                  await refresh();
+                }
+              }}
+            />
+          </PanelSectionRow>
+        )}
+        {platform.active_core_label && (!platform.available_cores || platform.available_cores.length <= 1) && (
           <PanelSectionRow>
             <Field
               label="Core"

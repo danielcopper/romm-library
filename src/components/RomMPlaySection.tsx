@@ -38,6 +38,7 @@ import {
   syncRomSaves,
   deleteLocalSaves,
   saveShortcutIcon,
+  setGameCore,
   debugLog,
 } from "../api/backend";
 import type { BiosStatus, SaveStatus } from "../types";
@@ -92,6 +93,7 @@ interface InfoState {
   romId: number | null;
   romName: string;
   platformSlug: string;
+  romFile: string;
   lastPlayed: string;
   playtime: string;
   saveSyncEnabled: boolean;
@@ -100,6 +102,9 @@ interface InfoState {
   biosNeeded: boolean;
   biosStatus: "ok" | "partial" | "missing" | null;
   biosLabel: string;
+  activeCoreLabel: string | null;
+  activeCoreIsDefault: boolean;
+  availableCores: Array<{ core_so: string; label: string; is_default: boolean }>;
 }
 
 /** Format a Unix timestamp (seconds) as a human-readable date string */
@@ -199,6 +204,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     romId: null,
     romName: "",
     platformSlug: "",
+    romFile: "",
     lastPlayed: initialLastPlayed,
     playtime: initialPlaytime,
     saveSyncEnabled: false,
@@ -207,6 +213,9 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     biosNeeded: false,
     biosStatus: null,
     biosLabel: "",
+    activeCoreLabel: null,
+    activeCoreIsDefault: true,
+    availableCores: [],
   });
   const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
   const [actionPending, setActionPending] = useState<string | null>(null);
@@ -279,18 +288,28 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           }
         }
 
+        // Resolve core info from cached BIOS status
+        const activeCoreLabel = cached.bios_status?.active_core_label ?? null;
+        const availableCores = cached.bios_status?.available_cores ?? [];
+        const defaultCore = availableCores.find((c) => c.is_default);
+        const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+
         if (cancelled) return;
         setInfo((prev) => ({
           ...prev,
           romId,
           romName: cached.rom_name || "",
           platformSlug: cached.platform_slug || "",
+          romFile: cached.rom_file || "",
           saveSyncEnabled: cached.save_sync_enabled ?? false,
           saveSyncStatus,
           saveSyncLabel,
           biosNeeded,
           biosStatus,
           biosLabel,
+          activeCoreLabel,
+          activeCoreIsDefault,
+          availableCores,
         }));
 
         // Auto-apply SGDB artwork on first visit (fire-and-forget)
@@ -565,13 +584,62 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     );
   };
 
+  const handleChangeGameCore = async (coreLabel: string) => {
+    if (!info.platformSlug || !info.romFile) return;
+    const romPath = `./${info.romFile}`;
+    try {
+      const result = await setGameCore(info.platformSlug, romPath, coreLabel);
+      if (result.success) {
+        toaster.toast({ title: "RomM Sync", body: coreLabel ? `Core set to ${coreLabel}` : "Core reset to platform default" });
+        // Refresh game detail to pick up new core info
+        const cached = await getCachedGameDetail(appId);
+        if (cached.found && cached.bios_status) {
+          const newLabel = cached.bios_status.active_core_label ?? null;
+          const cores = cached.bios_status.available_cores ?? [];
+          const defaultC = cores.find((c) => c.is_default);
+          setInfo((prev) => ({
+            ...prev,
+            activeCoreLabel: newLabel,
+            activeCoreIsDefault: !newLabel || (defaultC != null && newLabel === defaultC.label),
+            availableCores: cores,
+            biosStatus: getBiosLevel({ needs_bios: true, ...cached.bios_status } as BiosStatus),
+            biosLabel: formatBiosLabel({ needs_bios: true, ...cached.bios_status } as BiosStatus),
+          }));
+        }
+      } else {
+        toaster.toast({ title: "RomM Sync", body: result.message || "Failed to set core" });
+      }
+    } catch {
+      toaster.toast({ title: "RomM Sync", body: "Failed to set core" });
+    }
+  };
+
   const showRomMMenu = (e: Event) => {
+    const coreMenuItems = info.availableCores.length > 1 ? [
+      createElement(MenuItem, { key: "change-core" },
+        "Change Core",
+        createElement(Menu, { label: "Select Core" },
+          createElement(MenuItem, {
+            key: "core-default",
+            onClick: () => handleChangeGameCore(""),
+          }, `Platform Default${info.activeCoreLabel && !info.activeCoreIsDefault ? "" : " \u2713"}`),
+          ...info.availableCores.map((c) =>
+            createElement(MenuItem, {
+              key: `core-${c.core_so}`,
+              onClick: () => handleChangeGameCore(c.label),
+            }, `${c.label}${c.is_default ? " (default)" : ""}${info.activeCoreLabel === c.label && !info.activeCoreIsDefault ? " \u2713" : ""}`),
+          ),
+        ),
+      ),
+    ] : [];
+
     showContextMenu(
       createElement(Menu, { label: "RomM Actions" },
         createElement(MenuItem, { key: "refresh-artwork", onClick: handleRefreshArtwork }, "Refresh Artwork"),
         createElement(MenuItem, { key: "refresh-metadata", onClick: handleRefreshMetadata }, "Refresh Metadata"),
         createElement(MenuItem, { key: "sync-saves", onClick: handleSyncSaves }, "Sync Save Files"),
         createElement(MenuItem, { key: "download-bios", onClick: handleDownloadBios }, "Download BIOS"),
+        ...coreMenuItems,
         createElement(MenuSeparator, { key: "sep" }),
         createElement(MenuItem, { key: "delete-saves", tone: "destructive", onClick: handleDeleteSaves }, "Delete Local Saves"),
         createElement(MenuItem, { key: "uninstall", tone: "destructive", onClick: handleUninstall }, "Uninstall"),
@@ -624,6 +692,11 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         : info.biosStatus === "partial" ? "#d4a72c"
           : "#d94126";
     infoItems.push(statusInfoItem("bios", "BIOS", info.biosLabel, biosColor));
+  }
+
+  // Non-default core badge
+  if (info.activeCoreLabel && !info.activeCoreIsDefault) {
+    infoItems.push(infoItem("active-core", "NON-DEFAULT CORE", info.activeCoreLabel));
   }
 
   // RomM connection status

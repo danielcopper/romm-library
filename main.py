@@ -456,6 +456,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             try:
                 bios = await self.check_platform_bios(platform_slug)
                 if bios.get("needs_bios"):
+                    from lib import es_de_config
+                    available_cores = es_de_config.get_available_cores(platform_slug)
                     bios_status = {
                         "platform_slug": platform_slug,
                         "total": bios.get("server_count", 0),
@@ -464,9 +466,18 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                         "required_count": bios.get("required_count"),
                         "required_downloaded": bios.get("required_downloaded"),
                         "files": bios.get("files", []),
+                        "active_core": bios.get("active_core"),
+                        "active_core_label": bios.get("active_core_label"),
+                        "available_cores": available_cores,
                     }
             except Exception as e:
                 decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
+
+        # ROM file name for per-game core overrides
+        rom_file = ""
+        installed_rom = self._state["installed_roms"].get(rom_id_str, {})
+        if installed_rom:
+            rom_file = installed_rom.get("file_name", "")
 
         return {
             "found": True,
@@ -480,4 +491,50 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "pending_conflicts": pending_conflicts,
             "metadata": metadata,
             "bios_status": bios_status,
+            "rom_file": rom_file,
         }
+
+    async def get_available_cores(self, platform_slug):
+        """Return available RetroArch cores for a platform."""
+        from lib import es_de_config
+        cores = es_de_config.get_available_cores(platform_slug)
+        active_core_so, active_core_label = es_de_config.get_active_core(platform_slug)
+        return {
+            "cores": cores,
+            "active_core": active_core_so,
+            "active_core_label": active_core_label,
+        }
+
+    async def set_system_core(self, platform_slug, core_label):
+        """Set system-wide core override. Pass empty string to reset to default."""
+        from lib import es_de_config
+        retrodeck_home = retrodeck_config.get_retrodeck_home()
+        if not retrodeck_home:
+            return {"success": False, "message": "RetroDECK home not found"}
+        try:
+            es_de_config.set_system_override(
+                retrodeck_home, platform_slug, core_label or None
+            )
+            es_de_config._reset_cache()
+            bios = await self.check_platform_bios(platform_slug)
+            return {"success": True, "bios_status": bios}
+        except Exception as e:
+            decky.logger.error(f"Failed to set system core: {e}")
+            return {"success": False, "message": str(e)}
+
+    async def set_game_core(self, platform_slug, rom_path, core_label):
+        """Set per-game core override. Pass empty string to reset to platform default."""
+        from lib import es_de_config
+        retrodeck_home = retrodeck_config.get_retrodeck_home()
+        if not retrodeck_home:
+            return {"success": False, "message": "RetroDECK home not found"}
+        try:
+            es_de_config.set_game_override(
+                retrodeck_home, platform_slug, rom_path, core_label or None
+            )
+            es_de_config._reset_cache()
+            bios = await self.check_platform_bios(platform_slug)
+            return {"success": True, "bios_status": bios}
+        except Exception as e:
+            decky.logger.error(f"Failed to set game core: {e}")
+            return {"success": False, "message": str(e)}

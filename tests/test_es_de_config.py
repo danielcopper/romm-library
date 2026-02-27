@@ -295,3 +295,199 @@ class TestGetActiveCore:
         mock_defaults.return_value = {}
         result = es_de_config.get_active_core("totally_unknown_system")
         assert result == (None, None)
+
+
+class TestGetAvailableCores:
+    def setup_method(self):
+        es_de_config._reset_cache()
+
+    GBA_SYSTEM_INFO = {
+        "gba": {
+            "default_core": "mgba_libretro",
+            "default_label": "mGBA",
+            "cores": {
+                "mgba_libretro": "mGBA",
+                "gpsp_libretro": "gpSP",
+                "vbam_libretro": "VBA-M",
+            },
+            "label_to_core": {
+                "mGBA": "mgba_libretro",
+                "gpSP": "gpsp_libretro",
+                "VBA-M": "vbam_libretro",
+            },
+        }
+    }
+
+    @mock.patch("lib.es_de_config._load_es_systems")
+    def test_returns_cores_from_live_xml(self, mock_load):
+        mock_load.return_value = self.GBA_SYSTEM_INFO
+        result = es_de_config.get_available_cores("gba")
+        assert len(result) == 3
+        labels = [c["label"] for c in result]
+        assert "mGBA" in labels
+        assert "gpSP" in labels
+        assert "VBA-M" in labels
+        # Check is_default
+        default = [c for c in result if c["is_default"]]
+        assert len(default) == 1
+        assert default[0]["core_so"] == "mgba_libretro"
+
+    @mock.patch("lib.es_de_config._load_es_systems")
+    @mock.patch("lib.es_de_config._load_core_defaults")
+    def test_falls_back_to_core_defaults(self, mock_defaults, mock_load):
+        mock_load.return_value = {}
+        mock_defaults.return_value = {
+            "gba": {
+                "default_core": "mgba_libretro",
+                "default_label": "mGBA",
+                "cores": {"mgba_libretro": "mGBA", "gpsp_libretro": "gpSP"},
+            }
+        }
+        result = es_de_config.get_available_cores("gba")
+        assert len(result) == 2
+
+    @mock.patch("lib.es_de_config._load_es_systems")
+    @mock.patch("lib.es_de_config._load_core_defaults")
+    def test_unknown_system_returns_empty(self, mock_defaults, mock_load):
+        mock_load.return_value = {}
+        mock_defaults.return_value = {}
+        result = es_de_config.get_available_cores("unknown_system")
+        assert result == []
+
+
+class TestSetSystemOverride:
+    def setup_method(self):
+        es_de_config._reset_cache()
+
+    def test_creates_new_gamelist(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            es_de_config.set_system_override(tmpdir, "gba", "gpSP")
+            result = es_de_config.get_system_override(tmpdir, "gba")
+            assert result == "gpSP"
+
+    def test_updates_existing_gamelist_preserves_games(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gamelist_dir = os.path.join(tmpdir, "ES-DE", "gamelists", "gba")
+            os.makedirs(gamelist_dir)
+            gamelist_path = os.path.join(gamelist_dir, "gamelist.xml")
+            with open(gamelist_path, "w") as f:
+                f.write(SAMPLE_GAMELIST_NO_OVERRIDE)
+
+            es_de_config.set_system_override(tmpdir, "gba", "gpSP")
+
+            # Override should be set
+            result = es_de_config.get_system_override(tmpdir, "gba")
+            assert result == "gpSP"
+
+            # Game entry should be preserved
+            with open(gamelist_path, "r") as f:
+                content = f.read()
+            assert "some_game.gba" in content
+
+    def test_clears_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # First set an override
+            es_de_config.set_system_override(tmpdir, "gba", "gpSP")
+            assert es_de_config.get_system_override(tmpdir, "gba") == "gpSP"
+
+            # Clear it
+            es_de_config.set_system_override(tmpdir, "gba", None)
+            assert es_de_config.get_system_override(tmpdir, "gba") is None
+
+    def test_replaces_existing_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gamelist_dir = os.path.join(tmpdir, "ES-DE", "gamelists", "gba")
+            os.makedirs(gamelist_dir)
+            gamelist_path = os.path.join(gamelist_dir, "gamelist.xml")
+            with open(gamelist_path, "w") as f:
+                f.write(SAMPLE_GAMELIST_WITH_OVERRIDE)
+
+            es_de_config.set_system_override(tmpdir, "gba", "VBA-M")
+            result = es_de_config.get_system_override(tmpdir, "gba")
+            assert result == "VBA-M"
+
+
+class TestSetGameOverride:
+    def setup_method(self):
+        es_de_config._reset_cache()
+
+    def test_creates_new_game_entry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
+
+            gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
+            with open(gamelist_path, "r") as f:
+                content = f.read()
+            assert "Pokemon.gba" in content
+            assert "gpSP" in content
+            assert "<altemulator>" in content
+
+    def test_updates_existing_game_entry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gamelist_dir = os.path.join(tmpdir, "ES-DE", "gamelists", "gba")
+            os.makedirs(gamelist_dir)
+            gamelist_path = os.path.join(gamelist_dir, "gamelist.xml")
+            with open(gamelist_path, "w") as f:
+                f.write(SAMPLE_GAMELIST_NO_OVERRIDE)
+
+            es_de_config.set_game_override(tmpdir, "gba", "./some_game.gba", "gpSP")
+
+            with open(gamelist_path, "r") as f:
+                content = f.read()
+            assert "gpSP" in content
+            assert "Some Game" in content  # preserved
+
+    def test_clears_game_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Set an override
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
+
+            gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
+            with open(gamelist_path, "r") as f:
+                content = f.read()
+            assert "<altemulator>" in content
+
+            # Clear it
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", None)
+
+            with open(gamelist_path, "r") as f:
+                content = f.read()
+            assert "<altemulator>" not in content
+            assert "Pokemon.gba" in content  # game entry still there
+
+    def test_preserves_system_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Set system override first
+            es_de_config.set_system_override(tmpdir, "gba", "VBA-M")
+
+            # Set per-game override
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
+
+            # System override should still be there
+            result = es_de_config.get_system_override(tmpdir, "gba")
+            assert result == "VBA-M"
+
+            gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
+            with open(gamelist_path, "r") as f:
+                content = f.read()
+            assert "gpSP" in content
+            assert "VBA-M" in content
+
+    def test_round_trip_write_then_read(self):
+        """Write system + game overrides, then read them back."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            es_de_config.set_system_override(tmpdir, "gba", "VBA-M")
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
+            es_de_config.set_game_override(tmpdir, "gba", "./Zelda.gba", "mGBA")
+
+            # Read system override
+            assert es_de_config.get_system_override(tmpdir, "gba") == "VBA-M"
+
+            # Read gamelist — should have both games
+            gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
+            with open(gamelist_path, "r") as f:
+                content = f.read()
+            assert "Pokemon.gba" in content
+            assert "Zelda.gba" in content
+            assert "gpSP" in content
+            assert "mGBA" in content

@@ -143,6 +143,7 @@ class FirmwareMixin:
             core_so, core_label = es_de_config.get_active_core(slug)
             plat["active_core"] = core_so
             plat["active_core_label"] = core_label
+            plat["available_cores"] = es_de_config.get_available_cores(slug)
             for f in plat["files"]:
                 self._enrich_firmware_file(f, core_so=core_so)
 
