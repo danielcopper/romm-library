@@ -60,7 +60,7 @@ Multiple discrepancies:
 
 ## SHOULD FIX before beta
 
-### 6. gameDetailPatch plugin detection is fragile `[manual]`
+### 6. gameDetailPatch plugin detection is fragile `[manual]` -- FIXED
 **File**: `src/patches/gameDetailPatch.tsx`
 
 Hardcoded allowlist of other plugins' prefixes/type names:
@@ -102,7 +102,7 @@ Any unknown plugin shifts the "2nd native child = PlaySection" index. The diagno
 
 ---
 
-### 10. Launcher doesn't exit on "ROM file missing" `[agent]`
+### 10. Launcher doesn't exit on "ROM file missing" `[agent]` -- FIXED
 **File**: `bin/romm-launcher:73-78`
 
 Prints error but exits 0 and falls through to queue a download request. Should either exit non-zero or explicitly enter the download-request path.
@@ -111,7 +111,7 @@ Prints error but exits 0 and falls through to queue a download request. Should e
 
 ---
 
-### 11. Unsafe path concat in migration `[agent]`
+### 11. Unsafe path concat in migration `[agent]` -- FIXED
 **File**: `main.py:125, 142`
 
 Uses `new_home + path[len(old_home):]` instead of `os.path.join(new_home, os.path.relpath(path, old_home))`. Edge case: `old_home="/home/user/retro"` matches `path="/home/user/retrodeck/rom"`.

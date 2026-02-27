@@ -120,9 +120,9 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         for rom_id, entry in list(self._state["installed_roms"].items()):
             for key in ("file_path", "rom_dir"):
                 path = entry.get(key, "")
-                if not path or not path.startswith(old_home):
+                if not path or not path.startswith(old_home + os.sep):
                     continue
-                new_path = new_home + path[len(old_home):]
+                new_path = os.path.join(new_home, os.path.relpath(path, old_home))
                 def make_rom_updater(e, k, np):
                     def update(): e[k] = np
                     return update
@@ -137,9 +137,9 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         # --- BIOS (tracked in downloaded_bios state) ---
         for file_name, bios_entry in list(self._state.get("downloaded_bios", {}).items()):
             file_path = bios_entry.get("file_path", "")
-            if not file_path or not file_path.startswith(old_home):
+            if not file_path or not file_path.startswith(old_home + os.sep):
                 continue
-            new_path = new_home + file_path[len(old_home):]
+            new_path = os.path.join(new_home, os.path.relpath(file_path, old_home))
             def make_bios_updater(be, np):
                 def update(): be["file_path"] = np
                 return update

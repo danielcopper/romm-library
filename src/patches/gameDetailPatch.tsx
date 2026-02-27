@@ -166,26 +166,27 @@ export function registerGameDetailPatch() {
                 (c: any) => c?.key === "romm-play-section",
               );
               if (!alreadyHasPlayBtn) {
-                // Identify the native PlaySection by position. Steam's
-                // InnerContainer native order is [HeaderCapsule, PlaySection, ...].
-                // Skip children injected by other plugins.
-                const PLUGIN_KEY_PREFIXES = ["romm-", "unifideck-", "hltb-", "protondb-"];
-                const PLUGIN_TYPE_NAMES = ["ProtonMedal", "GameStats", "AudioLoaderCompatStateContextProvider"];
+                // Identify the native PlaySection by CSS class match.
+                // Uses basicAppDetailsSectionStylerClasses.PlaySection to positively
+                // find it, regardless of what other plugins inject into the tree.
+                const psClass = basicAppDetailsSectionStylerClasses?.PlaySection;
                 let nativePlayIdx = -1;
-                let nativeCount = 0;
-                for (let i = 0; i < children.length; i++) {
-                  const child = children[i];
-                  const key = child?.key;
-                  const typeName = child?.type?.name || child?.type?.displayName || "";
-                  const isPluginByKey = key && typeof key === "string" &&
-                    PLUGIN_KEY_PREFIXES.some((p) => key.startsWith(p));
-                  const isPluginByType = typeName && PLUGIN_TYPE_NAMES.includes(typeName);
-                  if (isPluginByKey || isPluginByType) continue;
-                  nativeCount++;
-                  if (nativeCount === 2) {
-                    nativePlayIdx = i;
-                    break;
+                if (psClass) {
+                  for (let i = 0; i < children.length; i++) {
+                    const found = findInReactTree(
+                      children[i],
+                      (x: any) => x?.props?.className?.includes?.(psClass),
+                    );
+                    if (found) {
+                      nativePlayIdx = i;
+                      break;
+                    }
                   }
+                }
+                // Fallback: if CSS class not found, use position-based heuristic
+                // (2nd native child = PlaySection)
+                if (nativePlayIdx < 0) {
+                  nativePlayIdx = children.length > 1 ? 1 : -1;
                 }
 
                 const rommPlaySection = createElement(RomMPlaySection, {
