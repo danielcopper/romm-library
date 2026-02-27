@@ -204,7 +204,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                   {"\u26A0\uFE0F"} RetroDECK location changed
                 </div>
                 <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)" }}>
-                  {(migration.roms_count ?? 0) + (migration.bios_count ?? 0)} file(s) need migration ({migration.roms_count ?? 0} ROMs, {migration.bios_count ?? 0} BIOS)
+                  {(migration.roms_count ?? 0) + (migration.bios_count ?? 0) + (migration.saves_count ?? 0)} file(s) need migration ({migration.roms_count ?? 0} ROMs, {migration.bios_count ?? 0} BIOS, {migration.saves_count ?? 0} saves)
                 </div>
               </div>
             </PanelSectionRow>

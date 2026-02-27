@@ -176,7 +176,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
                 To: {migration.new_path ?? "unknown"}
               </div>
               <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.9)" }}>
-                {migration.roms_count ?? 0} ROM(s), {migration.bios_count ?? 0} BIOS file(s) to migrate
+                {migration.roms_count ?? 0} ROM(s), {migration.bios_count ?? 0} BIOS, {migration.saves_count ?? 0} save(s) to migrate
               </div>
             </div>
           </PanelSectionRow>

@@ -337,3 +337,188 @@ class TestMigrateRetroDeckFiles:
         result = await plugin.migrate_retrodeck_files()
         assert result["success"] is True
         assert "retrodeck_home_path_previous" not in plugin._state
+
+
+class TestMigrateSaveFiles:
+    """Tests for save file migration."""
+
+    @pytest.mark.asyncio
+    async def test_migrate_saves(self, plugin, tmp_path):
+        """Save files are moved from old to new saves directory."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_save = os.path.join(old_home, "saves", "gba", "game.srm")
+        new_save = os.path.join(new_home, "saves", "gba", "game.srm")
+
+        os.makedirs(os.path.dirname(old_save))
+        with open(old_save, "w") as f:
+            f.write("save data")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+
+        from unittest.mock import patch
+        with patch("lib.retrodeck_config.get_saves_path",
+                    return_value=os.path.join(new_home, "saves")):
+            result = await plugin.migrate_retrodeck_files()
+
+        assert result["success"] is True
+        assert result["saves_moved"] == 1
+        assert os.path.exists(new_save)
+        assert not os.path.exists(old_save)
+        with open(new_save) as f:
+            assert f.read() == "save data"
+
+    @pytest.mark.asyncio
+    async def test_save_conflict_needs_confirmation(self, plugin, tmp_path):
+        """Save files at both locations trigger conflict confirmation."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_save = os.path.join(old_home, "saves", "gba", "game.srm")
+        new_save = os.path.join(new_home, "saves", "gba", "game.srm")
+
+        os.makedirs(os.path.dirname(old_save))
+        os.makedirs(os.path.dirname(new_save))
+        with open(old_save, "w") as f:
+            f.write("old save")
+        with open(new_save, "w") as f:
+            f.write("new save")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+
+        from unittest.mock import patch
+        with patch("lib.retrodeck_config.get_saves_path",
+                    return_value=os.path.join(new_home, "saves")):
+            result = await plugin.migrate_retrodeck_files()
+
+        assert result["needs_confirmation"] is True
+        assert result["conflict_count"] == 1
+        assert "gba/game.srm" in result["conflicts"]
+
+    @pytest.mark.asyncio
+    async def test_save_conflict_overwrite(self, plugin, tmp_path):
+        """Overwrite strategy replaces destination save with source."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_save = os.path.join(old_home, "saves", "gba", "game.srm")
+        new_save = os.path.join(new_home, "saves", "gba", "game.srm")
+
+        os.makedirs(os.path.dirname(old_save))
+        os.makedirs(os.path.dirname(new_save))
+        with open(old_save, "w") as f:
+            f.write("old save")
+        with open(new_save, "w") as f:
+            f.write("new save")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+
+        from unittest.mock import patch
+        with patch("lib.retrodeck_config.get_saves_path",
+                    return_value=os.path.join(new_home, "saves")):
+            result = await plugin.migrate_retrodeck_files("overwrite")
+
+        assert result["success"] is True
+        assert result["saves_moved"] == 1
+        with open(new_save) as f:
+            assert f.read() == "old save"
+
+    @pytest.mark.asyncio
+    async def test_save_conflict_skip(self, plugin, tmp_path):
+        """Skip strategy keeps destination save file."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_save = os.path.join(old_home, "saves", "gba", "game.srm")
+        new_save = os.path.join(new_home, "saves", "gba", "game.srm")
+
+        os.makedirs(os.path.dirname(old_save))
+        os.makedirs(os.path.dirname(new_save))
+        with open(old_save, "w") as f:
+            f.write("old save")
+        with open(new_save, "w") as f:
+            f.write("new save")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+
+        from unittest.mock import patch
+        with patch("lib.retrodeck_config.get_saves_path",
+                    return_value=os.path.join(new_home, "saves")):
+            result = await plugin.migrate_retrodeck_files("skip")
+
+        assert result["success"] is True
+        assert result["saves_moved"] == 1
+        with open(new_save) as f:
+            assert f.read() == "new save"
+
+    @pytest.mark.asyncio
+    async def test_hidden_dirs_skipped(self, plugin, tmp_path):
+        """Hidden directories like .romm-backup are not migrated."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_save = os.path.join(old_home, "saves", "gba", "game.srm")
+        old_backup = os.path.join(old_home, "saves", "gba", ".romm-backup", "game_old.srm")
+
+        os.makedirs(os.path.dirname(old_save))
+        os.makedirs(os.path.dirname(old_backup))
+        with open(old_save, "w") as f:
+            f.write("save data")
+        with open(old_backup, "w") as f:
+            f.write("backup data")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+
+        from unittest.mock import patch
+        with patch("lib.retrodeck_config.get_saves_path",
+                    return_value=os.path.join(new_home, "saves")):
+            result = await plugin.migrate_retrodeck_files()
+
+        assert result["saves_moved"] == 1  # only the real save, not the backup
+
+    @pytest.mark.asyncio
+    async def test_status_includes_saves_count(self, plugin, tmp_path):
+        """get_migration_status includes saves_count."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_save = os.path.join(old_home, "saves", "gba", "game.srm")
+
+        os.makedirs(os.path.dirname(old_save))
+        with open(old_save, "w") as f:
+            f.write("save data")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+
+        from unittest.mock import patch
+        with patch("lib.retrodeck_config.get_saves_path",
+                    return_value=os.path.join(new_home, "saves")):
+            status = await plugin.get_migration_status()
+
+        assert status["pending"] is True
+        assert status["saves_count"] == 1

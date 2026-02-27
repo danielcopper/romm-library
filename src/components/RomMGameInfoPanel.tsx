@@ -29,6 +29,7 @@ import {
   debugLog,
 } from "../api/backend";
 import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict } from "../types";
+import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 
 interface RomMGameInfoPanelProps {
   appId: number;
@@ -92,6 +93,12 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     error: false,
   });
   const romIdRef = useRef<number | null>(null);
+  const [migrationPending, setMigrationPending] = useState(getMigrationState().pending);
+
+  useEffect(() => {
+    const unsub = onMigrationChange(() => setMigrationPending(getMigrationState().pending));
+    return unsub;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +130,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             all_downloaded: cached.bios_status.all_downloaded,
             required_count: cached.bios_status.required_count,
             required_downloaded: cached.bios_status.required_downloaded,
+            files: cached.bios_status.files as BiosStatus["files"],
           };
         }
 
@@ -646,6 +654,27 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     saveSyncSection = section("save-sync", "Save Sync", ...saveSyncChildren);
   }
 
+  // --- Migration warning (when path change pending) ---
+  const migrationWarning = migrationPending
+    ? createElement("div", {
+        key: "migration-warning",
+        style: {
+          padding: "8px 12px",
+          marginBottom: "12px",
+          backgroundColor: "rgba(212, 167, 44, 0.15)",
+          borderLeft: "3px solid #d4a72c",
+          borderRadius: "4px",
+        },
+      },
+        createElement("div", {
+          style: { fontSize: "13px", fontWeight: "bold", color: "#d4a72c", marginBottom: "4px" },
+        }, "\u26A0\uFE0F RetroDECK location changed"),
+        createElement("div", {
+          style: { fontSize: "12px", color: "rgba(255, 255, 255, 0.7)" },
+        }, "File paths may be incorrect. Go to Settings to migrate files."),
+      )
+    : null;
+
   // --- Assemble panel ---
   // Root is a plain div — DialogButton sections inside are individually focusable.
   return createElement("div", {
@@ -653,6 +682,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     className: "romm-panel-container",
     style: { paddingBottom: "48px" },
   },
+    migrationWarning,
     gameInfoSection,
     romFileSection,
     saveSyncSection,

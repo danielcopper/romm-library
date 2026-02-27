@@ -107,8 +107,81 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             })
         )
 
+    def _collect_migration_items(self, old_home, new_home):
+        """Collect all files that need migration across ROMs, BIOS, and saves.
+
+        Returns list of (label, old_path, new_path, state_update_fn) tuples.
+        state_update_fn is called after a successful move/skip to update state.
+        """
+        import shutil
+        items = []
+
+        # --- ROMs (tracked in installed_roms state) ---
+        for rom_id, entry in list(self._state["installed_roms"].items()):
+            for key in ("file_path", "rom_dir"):
+                path = entry.get(key, "")
+                if not path or not path.startswith(old_home):
+                    continue
+                new_path = new_home + path[len(old_home):]
+                def make_rom_updater(e, k, np):
+                    def update(): e[k] = np
+                    return update
+                items.append((
+                    os.path.basename(path),
+                    path,
+                    new_path,
+                    make_rom_updater(entry, key, new_path),
+                    "rom" if key == "file_path" else "rom_dir",
+                ))
+
+        # --- BIOS (tracked in downloaded_bios state) ---
+        for file_name, bios_entry in list(self._state.get("downloaded_bios", {}).items()):
+            file_path = bios_entry.get("file_path", "")
+            if not file_path or not file_path.startswith(old_home):
+                continue
+            new_path = new_home + file_path[len(old_home):]
+            def make_bios_updater(be, np):
+                def update(): be["file_path"] = np
+                return update
+            items.append((
+                file_name, file_path, new_path,
+                make_bios_updater(bios_entry, new_path),
+                "bios",
+            ))
+
+        # --- BIOS (untracked — downloaded before state tracking) ---
+        old_bios = os.path.join(old_home, "bios")
+        new_bios = retrodeck_config.get_bios_path()
+        if os.path.isdir(old_bios):
+            for file_name, reg_entry in self._bios_files_index.items():
+                if file_name in self._state.get("downloaded_bios", {}):
+                    continue
+                firmware_path = reg_entry.get("firmware_path", file_name)
+                old_file = os.path.join(old_bios, firmware_path)
+                new_file = os.path.join(new_bios, firmware_path)
+                if not os.path.exists(old_file):
+                    continue
+                items.append((file_name, old_file, new_file, lambda: None, "bios"))
+
+        # --- Saves (scan old saves directory) ---
+        old_saves = os.path.join(old_home, "saves")
+        new_saves = retrodeck_config.get_saves_path()
+        if os.path.isdir(old_saves):
+            for dirpath, _dirs, filenames in os.walk(old_saves):
+                # Skip hidden directories like .romm-backup
+                _dirs[:] = [d for d in _dirs if not d.startswith(".")]
+                for fname in filenames:
+                    if fname.startswith("."):
+                        continue
+                    old_file = os.path.join(dirpath, fname)
+                    rel = os.path.relpath(old_file, old_saves)
+                    new_file = os.path.join(new_saves, rel)
+                    items.append((rel, old_file, new_file, lambda: None, "save"))
+
+        return items
+
     async def migrate_retrodeck_files(self, conflict_strategy=None):
-        """Move downloaded ROMs and BIOS files from old RetroDECK path to new path.
+        """Move downloaded ROMs, BIOS, and save files from old RetroDECK path to new.
 
         Args:
             conflict_strategy: None to scan and return conflicts, "overwrite" to
@@ -123,50 +196,13 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
 
         import shutil
 
-        # --- Collect all migration items and detect conflicts ---
-        rom_items = []  # (entry, key, old_path, new_path)
-        for rom_id, entry in list(self._state["installed_roms"].items()):
-            for key in ("file_path", "rom_dir"):
-                path = entry.get(key, "")
-                if not path or not path.startswith(old_home):
-                    continue
-                new_path = new_home + path[len(old_home):]
-                rom_items.append((entry, key, path, new_path))
-
-        bios_items = []  # (bios_entry_or_none, file_name, old_path, new_path)
-        for file_name, bios_entry in list(self._state.get("downloaded_bios", {}).items()):
-            file_path = bios_entry.get("file_path", "")
-            if not file_path or not file_path.startswith(old_home):
-                continue
-            new_path = new_home + file_path[len(old_home):]
-            bios_items.append((bios_entry, file_name, file_path, new_path))
-
-        # Untracked BIOS files (downloaded before state tracking)
-        old_bios = os.path.join(old_home, "bios")
-        new_bios = retrodeck_config.get_bios_path()
-        untracked_bios = []  # (file_name, old_path, new_path)
-        if os.path.isdir(old_bios):
-            for file_name, reg_entry in self._bios_files_index.items():
-                if file_name in self._state.get("downloaded_bios", {}):
-                    continue
-                firmware_path = reg_entry.get("firmware_path", file_name)
-                old_file = os.path.join(old_bios, firmware_path)
-                new_file = os.path.join(new_bios, firmware_path)
-                if not os.path.exists(old_file):
-                    continue
-                untracked_bios.append((file_name, old_file, new_file))
+        items = self._collect_migration_items(old_home, new_home)
 
         # Find conflicts (destination already exists) — deduplicate by name
         conflict_set = set()
-        for entry, key, old_path, new_path in rom_items:
+        for label, old_path, new_path, _updater, _kind in items:
             if os.path.exists(new_path) and os.path.exists(old_path):
-                conflict_set.add(os.path.basename(new_path))
-        for bios_entry, file_name, old_path, new_path in bios_items:
-            if os.path.exists(new_path) and os.path.exists(old_path):
-                conflict_set.add(file_name)
-        for file_name, old_file, new_file in untracked_bios:
-            if os.path.exists(new_file):
-                conflict_set.add(file_name)
+                conflict_set.add(label)
         conflicts = sorted(conflict_set)
 
         # If no strategy given and there are conflicts, return them for user decision
@@ -179,19 +215,21 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                 "message": f"{len(conflicts)} file(s) already exist at destination",
             }
 
-        roms_moved = 0
-        bios_moved = 0
+        counts = {"rom": 0, "bios": 0, "save": 0}
         errors = []
 
-        # --- Migrate ROMs ---
-        for entry, key, old_path, new_path in rom_items:
+        for label, old_path, new_path, state_updater, kind in items:
+            # Skip rom_dir entries for counting (only count file_path)
+            count_key = kind if kind != "rom_dir" else None
+
             if not os.path.exists(old_path):
                 # Source missing but destination exists — just update state
                 if os.path.exists(new_path):
-                    entry[key] = new_path
-                    if key == "file_path":
-                        roms_moved += 1
+                    state_updater()
+                    if count_key:
+                        counts[count_key] = counts.get(count_key, 0) + 1
                 continue
+
             if os.path.exists(new_path):
                 if conflict_strategy == "overwrite":
                     try:
@@ -201,99 +239,52 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                             os.remove(new_path)
                         os.makedirs(os.path.dirname(new_path), exist_ok=True)
                         shutil.move(old_path, new_path)
-                        entry[key] = new_path
-                        if key == "file_path":
-                            roms_moved += 1
+                        state_updater()
+                        if count_key:
+                            counts[count_key] = counts.get(count_key, 0) + 1
                     except Exception as e:
-                        errors.append(f"{os.path.basename(old_path)}: {e}")
-                        decky.logger.error(f"Migration overwrite failed for {old_path}: {e}")
+                        errors.append(f"{label}: {e}")
+                        decky.logger.error(f"Migration overwrite failed: {old_path}: {e}")
                 else:
-                    # skip — keep destination, update state path
-                    entry[key] = new_path
-                    if key == "file_path":
-                        roms_moved += 1
-                    decky.logger.info(f"Migration skip (exists, updating state): {new_path}")
+                    # skip — keep destination, update state
+                    state_updater()
+                    if count_key:
+                        counts[count_key] = counts.get(count_key, 0) + 1
+                    decky.logger.info(f"Migration skip (exists): {new_path}")
                 continue
+
             try:
                 os.makedirs(os.path.dirname(new_path), exist_ok=True)
                 shutil.move(old_path, new_path)
-                entry[key] = new_path
-                if key == "file_path":
-                    roms_moved += 1
+                state_updater()
+                if count_key:
+                    counts[count_key] = counts.get(count_key, 0) + 1
+                decky.logger.info(f"Migrated {kind}: {old_path} -> {new_path}")
             except Exception as e:
-                errors.append(f"{os.path.basename(old_path)}: {e}")
-                decky.logger.error(f"Migration failed for {old_path}: {e}")
-
-        # --- Migrate tracked BIOS ---
-        for bios_entry, file_name, old_path, new_path in bios_items:
-            if not os.path.exists(old_path):
-                if os.path.exists(new_path):
-                    bios_entry["file_path"] = new_path
-                    bios_moved += 1
-                continue
-            if os.path.exists(new_path):
-                if conflict_strategy == "overwrite":
-                    try:
-                        os.remove(new_path)
-                        os.makedirs(os.path.dirname(new_path), exist_ok=True)
-                        shutil.move(old_path, new_path)
-                        bios_entry["file_path"] = new_path
-                        bios_moved += 1
-                    except Exception as e:
-                        errors.append(f"{file_name}: {e}")
-                        decky.logger.error(f"BIOS migration overwrite failed for {old_path}: {e}")
-                else:
-                    bios_entry["file_path"] = new_path
-                    bios_moved += 1
-                    decky.logger.info(f"BIOS migration skip (exists, updating state): {new_path}")
-                continue
-            try:
-                os.makedirs(os.path.dirname(new_path), exist_ok=True)
-                shutil.move(old_path, new_path)
-                bios_entry["file_path"] = new_path
-                bios_moved += 1
-            except Exception as e:
-                errors.append(f"{file_name}: {e}")
-                decky.logger.error(f"BIOS migration failed for {old_path}: {e}")
-
-        # --- Migrate untracked BIOS ---
-        for file_name, old_file, new_file in untracked_bios:
-            if os.path.exists(new_file):
-                if conflict_strategy == "overwrite":
-                    try:
-                        os.remove(new_file)
-                        os.makedirs(os.path.dirname(new_file), exist_ok=True)
-                        shutil.move(old_file, new_file)
-                        bios_moved += 1
-                        decky.logger.info(f"Migrated untracked BIOS (overwrite): {old_file} -> {new_file}")
-                    except Exception as e:
-                        errors.append(f"{file_name}: {e}")
-                else:
-                    # skip — destination already has the file
-                    bios_moved += 1
-                    decky.logger.info(f"Untracked BIOS skip (exists): {new_file}")
-                continue
-            try:
-                os.makedirs(os.path.dirname(new_file), exist_ok=True)
-                shutil.move(old_file, new_file)
-                bios_moved += 1
-                decky.logger.info(f"Migrated untracked BIOS: {old_file} -> {new_file}")
-            except Exception as e:
-                errors.append(f"{file_name}: {e}")
+                errors.append(f"{label}: {e}")
+                decky.logger.error(f"Migration failed: {old_path}: {e}")
 
         # Clear previous path marker after migration
         if not errors:
             self._state.pop("retrodeck_home_path_previous", None)
         self._save_state()
 
-        msg = f"Migrated {roms_moved} ROM(s) and {bios_moved} BIOS file(s)"
+        parts = []
+        if counts["rom"]:
+            parts.append(f"{counts['rom']} ROM(s)")
+        if counts["bios"]:
+            parts.append(f"{counts['bios']} BIOS")
+        if counts["save"]:
+            parts.append(f"{counts['save']} save(s)")
+        msg = f"Migrated {', '.join(parts)}" if parts else "No files to migrate"
         if errors:
             msg += f" ({len(errors)} error(s))"
         return {
             "success": len(errors) == 0,
             "message": msg,
-            "roms_moved": roms_moved,
-            "bios_moved": bios_moved,
+            "roms_moved": counts["rom"],
+            "bios_moved": counts["bios"],
+            "saves_moved": counts["save"],
             "errors": errors,
         }
 
@@ -305,30 +296,10 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         if not old_home or not new_home or old_home == new_home:
             return {"pending": False}
 
-        # Count files that need migration
-        roms_count = 0
-        for entry in self._state.get("installed_roms", {}).values():
-            for key in ("file_path", "rom_dir"):
-                path = entry.get(key, "")
-                if path and path.startswith(old_home) and key == "file_path":
-                    roms_count += 1
-
-        bios_count = 0
-        for bios_entry in self._state.get("downloaded_bios", {}).values():
-            file_path = bios_entry.get("file_path", "")
-            if file_path and file_path.startswith(old_home):
-                bios_count += 1
-
-        # Count untracked BIOS files from registry
-        old_bios = os.path.join(old_home, "bios")
-        if os.path.isdir(old_bios):
-            for file_name, reg_entry in self._bios_files_index.items():
-                if file_name in self._state.get("downloaded_bios", {}):
-                    continue
-                firmware_path = reg_entry.get("firmware_path", file_name)
-                old_file = os.path.join(old_bios, firmware_path)
-                if os.path.exists(old_file):
-                    bios_count += 1
+        items = self._collect_migration_items(old_home, new_home)
+        roms_count = sum(1 for _, _, _, _, kind in items if kind == "rom")
+        bios_count = sum(1 for _, _, _, _, kind in items if kind == "bios")
+        saves_count = sum(1 for _, _, _, _, kind in items if kind == "save")
 
         return {
             "pending": True,
@@ -336,6 +307,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "new_path": new_home,
             "roms_count": roms_count,
             "bios_count": bios_count,
+            "saves_count": saves_count,
         }
 
     async def _unload(self):
@@ -491,6 +463,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                         "all_downloaded": bios.get("all_downloaded", False),
                         "required_count": bios.get("required_count"),
                         "required_downloaded": bios.get("required_downloaded"),
+                        "files": bios.get("files", []),
                     }
             except Exception as e:
                 decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
