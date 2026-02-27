@@ -102,39 +102,65 @@ class FirmwareMixin:
         return os.path.join(bios_base, file_name)
 
     async def get_firmware_status(self):
-        """Return BIOS/firmware status for all platforms on the RomM server."""
+        """Return BIOS/firmware status for all platforms on the RomM server.
+
+        When the server is unreachable, falls back to registry-based status
+        for installed platforms so core switching remains available offline.
+        """
+        server_offline = False
         try:
             firmware_list = await self.loop.run_in_executor(
                 None, self._romm_request, "/api/firmware"
             )
         except Exception as e:
-            decky.logger.error(f"Failed to fetch firmware: {e}")
-            if "Connection refused" in str(e) or "urlopen error" in str(e):
-                msg = "RomM server is unreachable. Check your connection settings."
-            else:
-                msg = f"Failed to fetch firmware: {e}"
-            return {"success": False, "message": msg, "platforms": []}
+            decky.logger.warning(f"Failed to fetch firmware from server: {e}")
+            server_offline = True
+            firmware_list = None
 
         # Group firmware by platform
         platforms_map = {}
-        for fw in firmware_list:
-            platform_slug = self._firmware_slug(fw.get("file_path", "")) or "unknown"
 
-            if platform_slug not in platforms_map:
-                platforms_map[platform_slug] = {
-                    "platform_slug": platform_slug,
-                    "files": [],
+        if firmware_list is not None:
+            for fw in firmware_list:
+                platform_slug = self._firmware_slug(fw.get("file_path", "")) or "unknown"
+
+                if platform_slug not in platforms_map:
+                    platforms_map[platform_slug] = {
+                        "platform_slug": platform_slug,
+                        "files": [],
+                    }
+
+                dest = self._firmware_dest_path(fw)
+                file_dict = {
+                    "id": fw.get("id"),
+                    "file_name": fw.get("file_name", ""),
+                    "size": fw.get("file_size_bytes", 0),
+                    "md5": fw.get("md5_hash", ""),
+                    "downloaded": os.path.exists(dest),
                 }
-
-            dest = self._firmware_dest_path(fw)
-            file_dict = {
-                "id": fw.get("id"),
-                "file_name": fw.get("file_name", ""),
-                "size": fw.get("file_size_bytes", 0),
-                "md5": fw.get("md5_hash", ""),
-                "downloaded": os.path.exists(dest),
-            }
-            platforms_map[platform_slug]["files"].append(file_dict)
+                platforms_map[platform_slug]["files"].append(file_dict)
+        elif server_offline:
+            # Offline fallback: build platform entries from bios registry
+            # for installed platforms so core switching remains available
+            bios_base = retrodeck_config.get_bios_path()
+            registry_platforms = self._bios_registry.get("platforms", {})
+            for reg_slug, reg_files in registry_platforms.items():
+                if reg_slug not in platforms_map:
+                    platforms_map[reg_slug] = {
+                        "platform_slug": reg_slug,
+                        "files": [],
+                    }
+                for file_name, reg_entry in reg_files.items():
+                    firmware_path = reg_entry.get("firmware_path", file_name)
+                    dest = os.path.join(bios_base, firmware_path)
+                    file_dict = {
+                        "id": None,
+                        "file_name": file_name,
+                        "size": 0,
+                        "md5": reg_entry.get("md5", ""),
+                        "downloaded": os.path.exists(dest),
+                    }
+                    platforms_map[reg_slug]["files"].append(file_dict)
 
         # Resolve active core per platform and enrich files with core-specific required values
         from lib import es_de_config
@@ -143,6 +169,7 @@ class FirmwareMixin:
             core_so, core_label = es_de_config.get_active_core(slug)
             plat["active_core"] = core_so
             plat["active_core_label"] = core_label
+            plat["available_cores"] = es_de_config.get_available_cores(slug)
             for f in plat["files"]:
                 self._enrich_firmware_file(f, core_so=core_so)
 
@@ -159,7 +186,7 @@ class FirmwareMixin:
             plat["all_downloaded"] = all(f["downloaded"] for f in plat["files"])
 
         platforms = sorted(platforms_map.values(), key=lambda p: p["platform_slug"])
-        return {"success": True, "platforms": platforms}
+        return {"success": True, "server_offline": server_offline, "platforms": platforms}
 
     async def download_firmware(self, firmware_id):
         """Download a single firmware file from RomM."""
@@ -311,7 +338,7 @@ class FirmwareMixin:
             msg += f" ({len(errors)} failed: {', '.join(errors)})"
         return {"success": True, "message": msg, "downloaded": downloaded}
 
-    async def check_platform_bios(self, platform_slug):
+    async def check_platform_bios(self, platform_slug, rom_filename=None):
         """Check if RomM has firmware for this platform and whether it's downloaded."""
         local_count = 0
         server_count = 0
@@ -320,7 +347,7 @@ class FirmwareMixin:
 
         # Resolve active core for per-core filtering
         from lib import es_de_config
-        active_core_so, active_core_label = es_de_config.get_active_core(platform_slug)
+        active_core_so, active_core_label = es_de_config.get_active_core(platform_slug, rom_filename=rom_filename)
 
         # Build combined registry entries for this platform from all mapped slugs
         registry_platform = {}

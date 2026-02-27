@@ -218,6 +218,7 @@ class SyncMixin:
                 shortcuts_data.append({
                     "rom_id": rom["id"],
                     "name": rom["name"],
+                    "fs_name": rom.get("fs_name", ""),
                     "exe": exe,
                     "start_dir": start_dir,
                     "launch_options": f"romm:{rom['id']}",
@@ -367,6 +368,7 @@ class SyncMixin:
             registry_entry = {
                 "app_id": app_id,
                 "name": pending.get("name", ""),
+                "fs_name": pending.get("fs_name", ""),
                 "platform_name": pending.get("platform_name", ""),
                 "platform_slug": pending.get("platform_slug", ""),
                 "cover_path": cover_path,

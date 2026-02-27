@@ -3,10 +3,11 @@ import {
   PanelSection,
   PanelSectionRow,
   ButtonItem,
+  DropdownItem,
   Field,
   Focusable,
 } from "@decky/ui";
-import { getFirmwareStatus, downloadAllFirmware, downloadRequiredFirmware } from "../api/backend";
+import { getFirmwareStatus, downloadAllFirmware, downloadRequiredFirmware, setSystemCore } from "../api/backend";
 import type { FirmwarePlatformExt } from "../types";
 
 interface BiosManagerProps {
@@ -17,6 +18,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
   const [platforms, setPlatforms] = useState<FirmwarePlatformExt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [serverOffline, setServerOffline] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -28,6 +30,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
       const result = await getFirmwareStatus();
       if (result.success) {
         setPlatforms(result.platforms);
+        setServerOffline(result.server_offline ?? false);
       } else {
         setError(result.message || "Failed to fetch firmware status");
       }
@@ -131,7 +134,30 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             description={summaryDescription}
           />
         </PanelSectionRow>
-        {platform.active_core_label && (
+        {platform.available_cores && platform.available_cores.length > 1 && (
+          <PanelSectionRow>
+            <DropdownItem
+              label="Active Core"
+              rgOptions={[
+                ...platform.available_cores.map((c) => ({
+                  data: c.label,
+                  label: c.is_default ? `${c.label} (default)` : c.label,
+                })),
+              ]}
+              selectedOption={platform.active_core_label || platform.available_cores.find((c) => c.is_default)?.label || ""}
+              onChange={async (option: { data: string }) => {
+                const defaultCore = platform.available_cores?.find((c) => c.is_default);
+                const label = defaultCore && option.data === defaultCore.label ? "" : option.data;
+                const result = await setSystemCore(platform.platform_slug, label);
+                if (result.success) {
+                  await refresh();
+                  window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "core_changed", platform_slug: platform.platform_slug } }));
+                }
+              }}
+            />
+          </PanelSectionRow>
+        )}
+        {platform.active_core_label && (!platform.available_cores || platform.available_cores.length <= 1) && (
           <PanelSectionRow>
             <Field
               label="Core"
@@ -198,7 +224,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             )}
           </Focusable>
         )}
-        {hasRequiredMissing && (
+        {hasRequiredMissing && !serverOffline && (
           <PanelSectionRow>
             <ButtonItem
               layout="below"
@@ -209,7 +235,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             </ButtonItem>
           </PanelSectionRow>
         )}
-        {!allDone && (hasOptionalMissing || hasRequiredMissing) && (
+        {!allDone && (hasOptionalMissing || hasRequiredMissing) && !serverOffline && (
           <PanelSectionRow>
             <ButtonItem
               layout="below"
@@ -245,9 +271,18 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
           </PanelSectionRow>
         )}
 
+        {serverOffline && (
+          <PanelSectionRow>
+            <Field
+              label="Server offline"
+              description="RomM server is unreachable. Downloads unavailable, but core switching still works."
+            />
+          </PanelSectionRow>
+        )}
+
         {!loading && !error && platforms.length === 0 && (
           <PanelSectionRow>
-            <Field label="No firmware files found on server" />
+            <Field label="No firmware files found" />
           </PanelSectionRow>
         )}
 

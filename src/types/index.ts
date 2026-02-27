@@ -124,16 +124,24 @@ export interface FirmwarePlatform {
   files: FirmwareFile[];
 }
 
+export interface AvailableCore {
+  core_so: string;
+  label: string;
+  is_default: boolean;
+}
+
 export interface FirmwarePlatformExt extends FirmwarePlatform {
   has_games?: boolean;
   all_downloaded?: boolean;
   active_core?: string;
   active_core_label?: string;
+  available_cores?: AvailableCore[];
 }
 
 export interface FirmwareStatus {
   success: boolean;
   message?: string;
+  server_offline?: boolean;
   platforms: FirmwarePlatformExt[];
 }
 
@@ -157,6 +165,7 @@ export interface BiosStatus {
   files?: BiosFileStatus[];
   active_core?: string;
   active_core_label?: string;
+  available_cores?: AvailableCore[];
 }
 
 export interface FirmwareDownloadResult {
