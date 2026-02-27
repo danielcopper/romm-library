@@ -21,7 +21,7 @@ run = "python -m pytest tests/ -q"
 
 [tasks.lint]
 description = "Check mixin import independence"
-run = "lint-imports"
+run = "PYTHONPATH=py_modules lint-imports"
 
 [tasks.deploy]
 description = "Deploy plugin files to Decky plugin directory"
@@ -32,12 +32,11 @@ DEST="$HOME/homebrew/plugins/decky-romm-sync"
 if [ -d "$DEST" ] && [ "$(stat -c '%U' "$DEST")" != "$USER" ]; then
   sudo chown -R "$USER:$USER" "$DEST"
 fi
-mkdir -p "$DEST/dist" "$DEST/bin" "$DEST/defaults" "$DEST/py_modules" "$DEST/lib"
+mkdir -p "$DEST/dist" "$DEST/bin" "$DEST/defaults" "$DEST/py_modules"
 rsync -a --delete dist/ "$DEST/dist/"
 rsync -a --delete bin/ "$DEST/bin/"
 rsync -a --delete defaults/ "$DEST/defaults/"
 rsync -a --delete py_modules/ "$DEST/py_modules/"
-rsync -a --delete lib/ "$DEST/lib/"
 cp -f main.py plugin.json package.json "$DEST/"
 """
 
