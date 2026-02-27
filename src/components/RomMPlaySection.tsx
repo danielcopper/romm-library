@@ -23,10 +23,11 @@ import {
   showContextMenu,
   showModal,
 } from "@decky/ui";
-import { FaGamepad, FaCog } from "react-icons/fa";
+import { FaGamepad, FaCog, FaMicrochip } from "react-icons/fa";
 import { CustomPlayButton } from "./CustomPlayButton";
 import {
   getCachedGameDetail,
+  _cachedGameDetailCache,
   testConnection,
   checkSaveStatusLightweight,
   getSaveStatus,
@@ -41,7 +42,7 @@ import {
   setGameCore,
   debugLog,
 } from "../api/backend";
-import type { BiosStatus, SaveStatus } from "../types";
+import type { AvailableCore, BiosStatus, SaveStatus } from "../types";
 
 /** Track which appIds have had auto-artwork applied this session */
 const artworkApplied = new Set<number>();
@@ -354,6 +355,27 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         return;
       }
 
+      // Handle core changed (from QAM BiosManager or other source)
+      if (detail?.type === "core_changed") {
+        // Invalidate cache and re-fetch
+        delete (_cachedGameDetailCache as Record<number, unknown>)[appId];
+        const cached = await getCachedGameDetail(appId);
+        if (cancelled || !cached.found) return;
+        const activeCoreLabel = cached.bios_status?.active_core_label ?? null;
+        const availableCores = cached.bios_status?.available_cores ?? [];
+        const defaultCore = availableCores.find((c) => c.is_default);
+        const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+        setInfo((prev) => ({
+          ...prev,
+          activeCoreLabel,
+          activeCoreIsDefault,
+          availableCores,
+          biosStatus: cached.bios_status ? getBiosLevel(cached.bios_status as BiosStatus) : prev.biosStatus,
+          biosLabel: cached.bios_status ? formatBiosLabel(cached.bios_status as BiosStatus) : prev.biosLabel,
+        }));
+        return;
+      }
+
       if (detail?.type !== "save_sync") return;
       const romId = romIdRef.current ?? detail.rom_id;
       if (!romId) return;
@@ -591,21 +613,24 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       const result = await setGameCore(info.platformSlug, romPath, coreLabel);
       if (result.success) {
         toaster.toast({ title: "RomM Sync", body: coreLabel ? `Core set to ${coreLabel}` : "Core reset to platform default" });
-        // Refresh game detail to pick up new core info
-        const cached = await getCachedGameDetail(appId);
-        if (cached.found && cached.bios_status) {
-          const newLabel = cached.bios_status.active_core_label ?? null;
-          const cores = cached.bios_status.available_cores ?? [];
-          const defaultC = cores.find((c) => c.is_default);
+        // Use bios_status from the set_game_core response directly (avoids cache staleness)
+        const bios = result.bios_status;
+        if (bios) {
+          const newLabel = bios.active_core_label ?? null;
+          const cores = bios.available_cores ?? info.availableCores;
+          const defaultC = cores.find((c: AvailableCore) => c.is_default);
           setInfo((prev) => ({
             ...prev,
             activeCoreLabel: newLabel,
             activeCoreIsDefault: !newLabel || (defaultC != null && newLabel === defaultC.label),
             availableCores: cores,
-            biosStatus: getBiosLevel({ needs_bios: true, ...cached.bios_status } as BiosStatus),
-            biosLabel: formatBiosLabel({ needs_bios: true, ...cached.bios_status } as BiosStatus),
+            biosStatus: getBiosLevel(bios as BiosStatus),
+            biosLabel: formatBiosLabel(bios as BiosStatus),
           }));
         }
+        // Invalidate the frontend cache and notify other components (e.g. GameInfoPanel)
+        delete (_cachedGameDetailCache as Record<number, unknown>)[appId];
+        window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "core_changed", platform_slug: info.platformSlug } }));
       } else {
         toaster.toast({ title: "RomM Sync", body: result.message || "Failed to set core" });
       }
@@ -614,32 +639,29 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     }
   };
 
-  const showRomMMenu = (e: Event) => {
-    const coreMenuItems = info.availableCores.length > 1 ? [
-      createElement(MenuItem, { key: "change-core" },
-        "Change Core",
-        createElement(Menu, { label: "Select Core" },
-          createElement(MenuItem, {
-            key: "core-default",
-            onClick: () => handleChangeGameCore(""),
-          }, `Platform Default${info.activeCoreLabel && !info.activeCoreIsDefault ? "" : " \u2713"}`),
-          ...info.availableCores.map((c) =>
-            createElement(MenuItem, {
-              key: `core-${c.core_so}`,
-              onClick: () => handleChangeGameCore(c.label),
-            }, `${c.label}${c.is_default ? " (default)" : ""}${info.activeCoreLabel === c.label && !info.activeCoreIsDefault ? " \u2713" : ""}`),
-          ),
-        ),
+  const showCoreMenu = (e: Event) => {
+    showContextMenu(
+      createElement(Menu, { label: "Emulator Core" },
+        ...info.availableCores.map((c) => {
+          // Selecting the default core clears any per-game override
+          const coreLabel = c.is_default ? "" : c.label;
+          return createElement(MenuItem, {
+            key: `core-${c.core_so}`,
+            onClick: () => handleChangeGameCore(coreLabel),
+          }, `${c.label}${c.is_default ? " (default)" : ""}${info.activeCoreLabel === c.label ? " \u2713" : ""}`);
+        }),
       ),
-    ] : [];
+      (e.currentTarget ?? e.target) as HTMLElement,
+    );
+  };
 
+  const showRomMMenu = (e: Event) => {
     showContextMenu(
       createElement(Menu, { label: "RomM Actions" },
         createElement(MenuItem, { key: "refresh-artwork", onClick: handleRefreshArtwork }, "Refresh Artwork"),
         createElement(MenuItem, { key: "refresh-metadata", onClick: handleRefreshMetadata }, "Refresh Metadata"),
         createElement(MenuItem, { key: "sync-saves", onClick: handleSyncSaves }, "Sync Save Files"),
         createElement(MenuItem, { key: "download-bios", onClick: handleDownloadBios }, "Download BIOS"),
-        ...coreMenuItems,
         createElement(MenuSeparator, { key: "sep" }),
         createElement(MenuItem, { key: "delete-saves", tone: "destructive", onClick: handleDeleteSaves }, "Delete Local Saves"),
         createElement(MenuItem, { key: "uninstall", tone: "destructive", onClick: handleUninstall }, "Uninstall"),
@@ -772,6 +794,17 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       } as any,
         createElement(FaGamepad, { size: 18, color: "#553e98" }),
       ),
+      // Core selection button (only when multiple cores available)
+      ...(info.availableCores.length > 1 ? [
+        createElement(DialogButton, {
+          key: "core-btn",
+          className: "romm-gear-btn",
+          onClick: showCoreMenu,
+          title: "Emulator Core",
+        } as any,
+          createElement(FaMicrochip, { size: 18, color: info.activeCoreIsDefault ? "#8f98a0" : "#d4a72c" }),
+        ),
+      ] : []),
       // Steam properties button
       createElement(DialogButton, {
         className: "romm-gear-btn",

@@ -20,6 +20,7 @@ import { DialogButton } from "@decky/ui";
 // context). Style as content sections, not buttons.
 import {
   getCachedGameDetail,
+  _cachedGameDetailCache,
   getRomMetadata,
   getInstalledRom,
   checkPlatformBios,
@@ -285,6 +286,26 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       } else if (detail?.type === "bios" && detail.platform_slug) {
         const updated = await checkPlatformBios(detail.platform_slug).catch((): BiosStatus => ({ needs_bios: false }));
         setState((prev) => ({ ...prev, biosStatus: updated.needs_bios ? updated : null }));
+      } else if (detail?.type === "core_changed") {
+        // Re-fetch cached game detail to pick up new core info
+        delete (_cachedGameDetailCache as Record<number, unknown>)[appId];
+        const cached = await getCachedGameDetail(appId);
+        if (cancelled || !cached.found) return;
+        let biosStatus: BiosStatus | null = null;
+        if (cached.bios_status) {
+          biosStatus = {
+            needs_bios: true,
+            server_count: cached.bios_status.total,
+            local_count: cached.bios_status.downloaded,
+            all_downloaded: cached.bios_status.all_downloaded,
+            required_count: cached.bios_status.required_count,
+            required_downloaded: cached.bios_status.required_downloaded,
+            files: cached.bios_status.files as BiosStatus["files"],
+            active_core: cached.bios_status.active_core,
+            active_core_label: cached.bios_status.active_core_label,
+          };
+        }
+        setState((prev) => ({ ...prev, biosStatus }));
       } else if (detail?.type === "metadata" && detail.rom_id === romIdRef.current) {
         const meta = await getRomMetadata(romIdRef.current).catch((): RomMetadata | null => null);
         setState((prev) => ({ ...prev, metadata: meta }));
@@ -449,7 +470,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       )
     : null;
 
-  // --- BIOS section (only when platform needs BIOS) ---
+  // --- BIOS & Core section (two-column layout when platform needs BIOS) ---
   let biosSection: ReturnType<typeof createElement> | null = null;
   if (state.biosStatus) {
     const bios = state.biosStatus;
@@ -472,10 +493,14 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         : `${localCount}/${serverCount} files ready`;
     }
 
-    const biosChildren: (ReturnType<typeof createElement> | null)[] = [];
+    // Left column: BIOS status + file list
+    const biosColumn: (ReturnType<typeof createElement> | null)[] = [];
 
-    // Summary count
-    biosChildren.push(
+    biosColumn.push(
+      createElement("div", { key: "bios-title", className: "romm-panel-section-title", style: { marginBottom: "8px" } }, "BIOS"),
+    );
+
+    biosColumn.push(
       createElement("div", {
         key: "bios-row",
         className: "romm-panel-status-inline",
@@ -488,16 +513,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       ),
     );
 
-    // Active core label
-    if (bios.active_core_label) {
-      biosChildren.push(
-        infoRow("core", "Core", bios.active_core_label)
-      );
-    }
-
-    // Individual file rows
     if (bios.files && bios.files.length > 0) {
-      biosChildren.push(
+      biosColumn.push(
         createElement("div", { key: "bios-file-list", className: "romm-panel-file-list" },
           ...bios.files.map((f) => {
             let dotColor: string;
@@ -525,7 +542,28 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       );
     }
 
-    biosSection = section("bios", "BIOS", ...biosChildren);
+    // Right column: Core info
+    const coreColumn: (ReturnType<typeof createElement> | null)[] = [];
+
+    coreColumn.push(
+      createElement("div", { key: "core-title", className: "romm-panel-section-title", style: { marginBottom: "8px" } }, "Emulator"),
+    );
+
+    if (bios.active_core_label) {
+      coreColumn.push(infoRow("core", "Active Core", bios.active_core_label));
+    } else {
+      coreColumn.push(infoRow("core", "Active Core", "Default"));
+    }
+
+    biosSection = section("bios-core", null,
+      createElement("div", {
+        key: "bios-core-columns",
+        style: { display: "flex", gap: "24px" },
+      },
+        createElement("div", { key: "bios-col", style: { flex: 1, minWidth: 0 } }, ...biosColumn.filter(Boolean)),
+        createElement("div", { key: "core-col", style: { flexShrink: 0, minWidth: "120px" } }, ...coreColumn.filter(Boolean)),
+      ),
+    );
   }
 
   // --- Save Sync section (only when save sync enabled) ---

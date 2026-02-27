@@ -18,6 +18,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
   const [platforms, setPlatforms] = useState<FirmwarePlatformExt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [serverOffline, setServerOffline] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -29,6 +30,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
       const result = await getFirmwareStatus();
       if (result.success) {
         setPlatforms(result.platforms);
+        setServerOffline(result.server_offline ?? false);
       } else {
         setError(result.message || "Failed to fetch firmware status");
       }
@@ -149,6 +151,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
                 const result = await setSystemCore(platform.platform_slug, label);
                 if (result.success) {
                   await refresh();
+                  window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "core_changed", platform_slug: platform.platform_slug } }));
                 }
               }}
             />
@@ -221,7 +224,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             )}
           </Focusable>
         )}
-        {hasRequiredMissing && (
+        {hasRequiredMissing && !serverOffline && (
           <PanelSectionRow>
             <ButtonItem
               layout="below"
@@ -232,7 +235,7 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             </ButtonItem>
           </PanelSectionRow>
         )}
-        {!allDone && (hasOptionalMissing || hasRequiredMissing) && (
+        {!allDone && (hasOptionalMissing || hasRequiredMissing) && !serverOffline && (
           <PanelSectionRow>
             <ButtonItem
               layout="below"
@@ -268,9 +271,18 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
           </PanelSectionRow>
         )}
 
+        {serverOffline && (
+          <PanelSectionRow>
+            <Field
+              label="Server offline"
+              description="RomM server is unreachable. Downloads unavailable, but core switching still works."
+            />
+          </PanelSectionRow>
+        )}
+
         {!loading && !error && platforms.length === 0 && (
           <PanelSectionRow>
-            <Field label="No firmware files found on server" />
+            <Field label="No firmware files found" />
           </PanelSectionRow>
         )}
 

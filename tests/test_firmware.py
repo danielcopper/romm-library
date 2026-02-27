@@ -147,15 +147,16 @@ class TestGetFirmwareStatus:
         assert result["platforms"][0]["files"][0]["downloaded"] is True
 
     @pytest.mark.asyncio
-    async def test_handles_api_error(self, plugin):
+    async def test_handles_api_error_with_offline_fallback(self, plugin):
         from unittest.mock import AsyncMock, MagicMock
 
         plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("404 Not Found"))
+        plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("Connection refused"))
 
         result = await plugin.get_firmware_status()
-        assert result["success"] is False
-        assert "Failed" in result["message"]
+        assert result["success"] is True
+        assert result["server_offline"] is True
+        assert "platforms" in result
 
 
 class TestDownloadFirmware:

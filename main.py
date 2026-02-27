@@ -449,12 +449,21 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         # Metadata from cache
         metadata = self._metadata_cache.get(rom_id_str)
 
-        # BIOS status
+        # ROM file name for per-game core overrides
+        # Prefer installed_roms (set during download), fall back to registry (set during sync)
+        rom_file = ""
+        installed_rom = self._state["installed_roms"].get(rom_id_str, {})
+        if installed_rom:
+            rom_file = installed_rom.get("file_name", "")
+        if not rom_file:
+            rom_file = entry.get("fs_name", "")
+
+        # BIOS status (pass rom_file for per-game core override detection)
         platform_slug = entry.get("platform_slug", "")
         bios_status = None
         if platform_slug:
             try:
-                bios = await self.check_platform_bios(platform_slug)
+                bios = await self.check_platform_bios(platform_slug, rom_filename=rom_file or None)
                 if bios.get("needs_bios"):
                     from lib import es_de_config
                     available_cores = es_de_config.get_available_cores(platform_slug)
@@ -472,12 +481,6 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                     }
             except Exception as e:
                 decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
-
-        # ROM file name for per-game core overrides
-        rom_file = ""
-        installed_rom = self._state["installed_roms"].get(rom_id_str, {})
-        if installed_rom:
-            rom_file = installed_rom.get("file_name", "")
 
         return {
             "found": True,
@@ -517,6 +520,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             )
             es_de_config._reset_cache()
             bios = await self.check_platform_bios(platform_slug)
+            bios["available_cores"] = es_de_config.get_available_cores(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set system core: {e}")
@@ -533,7 +537,10 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                 retrodeck_home, platform_slug, rom_path, core_label or None
             )
             es_de_config._reset_cache()
-            bios = await self.check_platform_bios(platform_slug)
+            # Extract rom filename from path for per-game core detection
+            rom_filename = rom_path.lstrip("./") if rom_path else None
+            bios = await self.check_platform_bios(platform_slug, rom_filename=rom_filename)
+            bios["available_cores"] = es_de_config.get_available_cores(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set game core: {e}")

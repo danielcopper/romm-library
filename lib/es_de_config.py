@@ -241,39 +241,87 @@ def get_system_override(retrodeck_home, system_name):
     return result["label"]
 
 
+def get_game_override(retrodeck_home, system_name, rom_filename):
+    """Check for per-game alternative emulator override in gamelist.xml.
+
+    Reads {retrodeck_home}/ES-DE/gamelists/{system}/gamelist.xml
+    looking for <game> entries with matching <path> and <altemulator>.
+
+    Returns the altemulator label string or None.
+    """
+    gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, "gamelist.xml")
+    if not os.path.exists(gamelist_path):
+        return None
+
+    raw = _read_gamelist_raw(gamelist_path)
+    if not raw:
+        return None
+
+    parsed = _parse_gamelist_preserving(raw)
+    if not parsed:
+        return None
+
+    # Match rom_filename against game paths
+    # rom_filename could be "Pokemon.gba" and path could be "./Pokemon.gba"
+    for game in parsed["games"]:
+        game_path = game.get("path", "")
+        # Normalize: strip leading "./" for comparison
+        normalized = game_path.lstrip("./") if game_path else ""
+        if normalized == rom_filename or game_path == rom_filename or game_path == f"./{rom_filename}":
+            if game.get("altemulator"):
+                return game["altemulator"]
+
+    return None
+
+
 def get_active_core(system_name, rom_filename=None):
-    """Resolve the active core for a system.
+    """Resolve the active core for a system (or specific game).
 
     Resolution chain:
-    1. Per-system override (gamelist.xml alternativeEmulator)
-    2. Live es_systems.xml default
-    3. Static core_defaults.json fallback
-    4. (None, None) if all fail
+    1. Per-game override (gamelist.xml altemulator) — if rom_filename provided
+    2. Per-system override (gamelist.xml alternativeEmulator)
+    3. Live es_systems.xml default
+    4. Static core_defaults.json fallback
+    5. (None, None) if all fail
 
     Returns: (core_so_name, label) or (None, None).
     """
     es_systems = _load_es_systems()
     system_info = es_systems.get(system_name)
 
-    # Try per-system override
+    def _resolve_label(override_label):
+        """Resolve a core label to (core_so, label) tuple."""
+        if system_info and override_label in system_info.get("label_to_core", {}):
+            core_so = system_info["label_to_core"][override_label]
+            return (core_so, override_label)
+        # Try core_defaults fallback for label resolution
+        defaults = _load_core_defaults()
+        default_info = defaults.get(system_name, {})
+        default_cores = default_info.get("cores", {})
+        for core_so, label in default_cores.items():
+            if label == override_label:
+                return (core_so, override_label)
+        return None
+
     try:
         from lib import retrodeck_config
         retrodeck_home = retrodeck_config.get_retrodeck_home()
         if retrodeck_home:
+            # Try per-game override first (if rom_filename provided)
+            if rom_filename:
+                game_label = get_game_override(retrodeck_home, system_name, rom_filename)
+                if game_label:
+                    resolved = _resolve_label(game_label)
+                    if resolved:
+                        decky.logger.debug("es_de_config: per-game override for %s/%s -> %s", system_name, rom_filename, game_label)
+                        return resolved
+
+            # Try per-system override
             override_label = get_system_override(retrodeck_home, system_name)
             if override_label:
-                # Resolve label to core_so using live es_systems data
-                if system_info and override_label in system_info.get("label_to_core", {}):
-                    core_so = system_info["label_to_core"][override_label]
-                    return (core_so, override_label)
-                # Try core_defaults fallback for label resolution
-                defaults = _load_core_defaults()
-                default_info = defaults.get(system_name, {})
-                default_cores = default_info.get("cores", {})
-                # cores is {core_so: label}, need reverse lookup
-                for core_so, label in default_cores.items():
-                    if label == override_label:
-                        return (core_so, override_label)
+                resolved = _resolve_label(override_label)
+                if resolved:
+                    return resolved
     except Exception:
         pass
 

@@ -12,12 +12,12 @@ export interface CachedGameDetail {
   save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
   pending_conflicts?: Array<{ rom_id: number; filename: string; detected_at: string }>;
   metadata?: Record<string, unknown> | null;
-  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string }> } | null;
+  bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string }> } | null;
   rom_file?: string;
 }
 
 const _cachedGameDetailRaw = callable<[number], CachedGameDetail>("get_cached_game_detail");
-const _cachedGameDetailCache: Record<number, { promise: Promise<CachedGameDetail>; ts: number }> = {};
+export const _cachedGameDetailCache: Record<number, { promise: Promise<CachedGameDetail>; ts: number }> = {};
 const CACHE_TTL_MS = 3000; // reuse result for 3 seconds
 
 export function getCachedGameDetail(appId: number): Promise<CachedGameDetail> {

@@ -483,6 +483,10 @@ class TestSetGameOverride:
             # Read system override
             assert es_de_config.get_system_override(tmpdir, "gba") == "VBA-M"
 
+            # Read per-game overrides
+            assert es_de_config.get_game_override(tmpdir, "gba", "Pokemon.gba") == "gpSP"
+            assert es_de_config.get_game_override(tmpdir, "gba", "Zelda.gba") == "mGBA"
+
             # Read gamelist — should have both games
             gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
             with open(gamelist_path, "r") as f:
@@ -491,3 +495,91 @@ class TestSetGameOverride:
             assert "Zelda.gba" in content
             assert "gpSP" in content
             assert "mGBA" in content
+
+
+class TestGetGameOverride:
+    def setup_method(self):
+        es_de_config._reset_cache()
+
+    def test_returns_none_when_no_gamelist(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = es_de_config.get_game_override(tmpdir, "gba", "Pokemon.gba")
+            assert result is None
+
+    def test_returns_none_when_no_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gamelist_dir = os.path.join(tmpdir, "ES-DE", "gamelists", "gba")
+            os.makedirs(gamelist_dir)
+            with open(os.path.join(gamelist_dir, "gamelist.xml"), "w") as f:
+                f.write(SAMPLE_GAMELIST_NO_OVERRIDE)
+            result = es_de_config.get_game_override(tmpdir, "gba", "some_game.gba")
+            assert result is None
+
+    def test_reads_per_game_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
+            result = es_de_config.get_game_override(tmpdir, "gba", "Pokemon.gba")
+            assert result == "gpSP"
+
+    def test_matches_with_dot_slash_prefix(self):
+        """ROM filename without ./ prefix should match path with ./ prefix."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
+            # Should match even without "./" prefix
+            result = es_de_config.get_game_override(tmpdir, "gba", "Pokemon.gba")
+            assert result == "gpSP"
+
+
+class TestGetActiveCoreWithGameOverride:
+    """Test that get_active_core reads per-game overrides when rom_filename is provided."""
+
+    def setup_method(self):
+        es_de_config._reset_cache()
+
+    GBA_SYSTEM_INFO = {
+        "gba": {
+            "default_core": "mgba_libretro",
+            "default_label": "mGBA",
+            "cores": {
+                "mgba_libretro": "mGBA",
+                "gpsp_libretro": "gpSP",
+                "vbam_libretro": "VBA-M",
+            },
+            "label_to_core": {
+                "mGBA": "mgba_libretro",
+                "gpSP": "gpsp_libretro",
+                "VBA-M": "vbam_libretro",
+            },
+        }
+    }
+
+    @mock.patch("lib.es_de_config._load_es_systems")
+    @mock.patch("lib.retrodeck_config.get_retrodeck_home")
+    def test_per_game_override_takes_precedence(self, mock_home, mock_load):
+        mock_load.return_value = self.GBA_SYSTEM_INFO
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_home.return_value = tmpdir
+            # Set system override to VBA-M
+            es_de_config.set_system_override(tmpdir, "gba", "VBA-M")
+            # Set per-game override to gpSP
+            es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
+
+            # Without rom_filename: system override wins
+            result = es_de_config.get_active_core("gba")
+            assert result == ("vbam_libretro", "VBA-M")
+
+            # With rom_filename: per-game override wins
+            result = es_de_config.get_active_core("gba", rom_filename="Pokemon.gba")
+            assert result == ("gpsp_libretro", "gpSP")
+
+    @mock.patch("lib.es_de_config._load_es_systems")
+    @mock.patch("lib.retrodeck_config.get_retrodeck_home")
+    def test_falls_through_to_system_when_no_game_override(self, mock_home, mock_load):
+        mock_load.return_value = self.GBA_SYSTEM_INFO
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_home.return_value = tmpdir
+            es_de_config.set_system_override(tmpdir, "gba", "VBA-M")
+
+            # rom_filename provided but no per-game override: system override wins
+            result = es_de_config.get_active_core("gba", rom_filename="Pokemon.gba")
+            assert result == ("vbam_libretro", "VBA-M")

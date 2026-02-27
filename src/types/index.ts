@@ -141,6 +141,7 @@ export interface FirmwarePlatformExt extends FirmwarePlatform {
 export interface FirmwareStatus {
   success: boolean;
   message?: string;
+  server_offline?: boolean;
   platforms: FirmwarePlatformExt[];
 }
 
