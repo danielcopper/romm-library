@@ -19,7 +19,8 @@ import { updateDownload } from "./utils/downloadStore";
 import { registerGameDetailPatch, unregisterGameDetailPatch, registerRomMAppId } from "./patches/gameDetailPatch";
 import { registerMetadataPatches, unregisterMetadataPatches, applyAllPlaytime } from "./patches/metadataPatches";
 import { registerLaunchInterceptor, unregisterLaunchInterceptor } from "./utils/launchInterceptor";
-import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveSyncSettings, getAllPlaytime, logError, logInfo } from "./api/backend";
+import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveSyncSettings, getAllPlaytime, getMigrationStatus, logError, logInfo } from "./api/backend";
+import { setMigrationStatus } from "./utils/migrationStore";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
@@ -80,6 +81,22 @@ export default definePlugin(() => {
       }
     } catch (e) {
       logError(`Failed to load metadata cache: ${e}`);
+    }
+  })();
+
+  // Check for pending RetroDECK path migration on startup
+  (async () => {
+    try {
+      const status = await getMigrationStatus();
+      if (status.pending) {
+        setMigrationStatus(status);
+        toaster.toast({
+          title: "RomM Sync",
+          body: "RetroDECK location changed. Go to Settings to migrate files.",
+        });
+      }
+    } catch (e) {
+      logError(`Failed to check migration status: ${e}`);
     }
   })();
 
@@ -181,6 +198,20 @@ export default definePlugin(() => {
     }
   );
 
+  const pathChangedListener = addEventListener<
+    [{ old_path: string; new_path: string }]
+  >("retrodeck_path_changed", (data) => {
+    setMigrationStatus({
+      pending: true,
+      old_path: data.old_path,
+      new_path: data.new_path,
+    });
+    toaster.toast({
+      title: "RomM Sync",
+      body: "RetroDECK location changed. Go to Settings to migrate files.",
+    });
+  });
+
   return {
     name: "RomM Sync",
     icon: <FaGamepad />,
@@ -196,6 +227,7 @@ export default definePlugin(() => {
       removeEventListener("sync_progress", syncProgressListener);
       removeEventListener("download_progress", downloadProgressListener);
       removeEventListener("download_complete", downloadCompleteListener);
+      removeEventListener("retrodeck_path_changed", pathChangedListener);
     },
   };
 });

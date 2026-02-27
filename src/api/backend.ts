@@ -12,7 +12,7 @@ export interface CachedGameDetail {
   save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
   pending_conflicts?: Array<{ rom_id: number; filename: string; detected_at: string }>;
   metadata?: Record<string, unknown> | null;
-  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean } | null;
+  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string }> } | null;
 }
 
 const _cachedGameDetailRaw = callable<[number], CachedGameDetail>("get_cached_game_detail");
@@ -61,6 +61,7 @@ export const applySteamInputSetting = callable<[], { success: boolean; message: 
 export const getFirmwareStatus = callable<[], FirmwareStatus>("get_firmware_status");
 export const downloadFirmware = callable<[number], FirmwareDownloadResult>("download_firmware");
 export const downloadAllFirmware = callable<[string], FirmwareDownloadResult>("download_all_firmware");
+export const downloadRequiredFirmware = callable<[string], FirmwareDownloadResult>("download_required_firmware");
 export const checkPlatformBios = callable<[string], BiosStatus>("check_platform_bios");
 export const saveLogLevel = callable<[string], { success: boolean }>("save_log_level");
 export const debugLog = callable<[string], void>("debug_log");
@@ -93,6 +94,31 @@ export const updateSaveSyncSettings = callable<[SaveSyncSettings], { success: bo
 
 // Bulk playtime for plugin-load UI update
 export const getAllPlaytime = callable<[], { playtime: Record<string, { total_seconds: number; session_count: number }> }>("get_all_playtime");
+
+// RetroDECK path migration
+export interface MigrationStatus {
+  pending: boolean;
+  old_path?: string;
+  new_path?: string;
+  roms_count?: number;
+  bios_count?: number;
+  saves_count?: number;
+}
+
+export interface MigrationResult {
+  success: boolean;
+  message: string;
+  needs_confirmation?: boolean;
+  conflict_count?: number;
+  conflicts?: string[];
+  roms_moved?: number;
+  bios_moved?: number;
+  saves_moved?: number;
+  errors?: string[];
+}
+
+export const getMigrationStatus = callable<[], MigrationStatus>("get_migration_status");
+export const migrateRetroDeckFiles = callable<[string | null], MigrationResult>("migrate_retrodeck_files");
 
 // Delete operations
 export const deleteLocalSaves = callable<[number], { success: boolean; deleted_count: number; message: string }>("delete_local_saves");

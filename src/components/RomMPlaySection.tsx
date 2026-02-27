@@ -135,6 +135,13 @@ function formatPlaytime(minutes: number): string {
 
 /** Format BIOS status counts into a label */
 function formatBiosLabel(bios: BiosStatus): string {
+  const reqCount = bios.required_count;
+  const reqDone = bios.required_downloaded;
+  if (reqCount != null && reqDone != null) {
+    if (reqDone >= reqCount) return "OK";
+    if (reqDone > 0) return `${reqDone}/${reqCount} required`;
+    return "Missing";
+  }
   if (bios.all_downloaded) return "OK";
   if ((bios.local_count ?? 0) > 0) return `${bios.local_count}/${bios.server_count}`;
   return "Missing";
@@ -142,6 +149,13 @@ function formatBiosLabel(bios: BiosStatus): string {
 
 /** Determine BIOS status level */
 function getBiosLevel(bios: BiosStatus): "ok" | "partial" | "missing" {
+  const reqCount = bios.required_count;
+  const reqDone = bios.required_downloaded;
+  if (reqCount != null && reqDone != null) {
+    if (reqDone >= reqCount) return "ok";
+    if (reqDone > 0) return "partial";
+    return "missing";
+  }
   if (bios.all_downloaded) return "ok";
   if ((bios.local_count ?? 0) > 0) return "partial";
   return "missing";
@@ -245,15 +259,23 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         if (cached.bios_status) {
           biosNeeded = true;
           const b = cached.bios_status;
-          if (b.all_downloaded) {
-            biosStatus = "ok";
-            biosLabel = "OK";
-          } else if (b.downloaded > 0) {
-            biosStatus = "partial";
-            biosLabel = `${b.downloaded}/${b.total}`;
+          const reqCount = b.required_count;
+          const reqDone = b.required_downloaded;
+          if (reqCount != null && reqDone != null) {
+            if (reqDone >= reqCount) { biosStatus = "ok"; biosLabel = "OK"; }
+            else if (reqDone > 0) { biosStatus = "partial"; biosLabel = `${reqDone}/${reqCount} required`; }
+            else { biosStatus = "missing"; biosLabel = "Missing"; }
           } else {
-            biosStatus = "missing";
-            biosLabel = "Missing";
+            if (b.all_downloaded) {
+              biosStatus = "ok";
+              biosLabel = "OK";
+            } else if (b.downloaded > 0) {
+              biosStatus = "partial";
+              biosLabel = `${b.downloaded}/${b.total}`;
+            } else {
+              biosStatus = "missing";
+              biosLabel = "Missing";
+            }
           }
         }
 

@@ -18,8 +18,8 @@ SSL verification enabled for all requests. SteamGridDB always verifies via `cert
 ### Bug 6: Secrets Stored in Plain Text ✅
 `settings.json` enforces `0600` permissions on every write and on startup. OS keyring (D-Bus Secret Service) not viable — PluginLoader runs as root with no session bus. All other Decky plugins use plaintext JSON; `chmod 600` is the standard mitigation.
 
-### Bug 7: BIOS Status Reporting
-No distinction between required and optional BIOS files. Investigate RomM firmware metadata and RetroArch core requirements.
+### Bug 7: BIOS Status Reporting ✅
+Static BIOS registry (`defaults/bios_registry.json`) derived from libretro core-info + System.dat (553 entries, 51 platforms, v3.0.0). Backend enriches firmware responses with `required`/`description`/`hash_valid`/`classification` fields. Frontend distinguishes required vs optional vs unknown files in BiosManager, PlaySection badge, and GameInfoPanel. "Download Required" button for required-only downloads. Unknown files shown in orange with GitHub issue prompt. Platform-grouped registry with `firmware_path` field for correct subfolder placement.
 
 ### Bug 8: VDF-Created Shortcut Icons Not Displaying
 Icon path set but not rendered. Investigate format requirements and compare with other plugins.
@@ -27,9 +27,34 @@ Icon path set but not rendered. Investigate format requirements and compare with
 ### Bug 10: BIOS Badge Missing from PlaySection ✅
 `bios_status` was hardcoded to `None` in `get_cached_game_detail`. Now populated via `check_platform_bios()`.
 
+### Bug 11: RetroDECK Path Resolution ✅
+All file downloads (ROMs, BIOS) hardcoded to `~/retrodeck/` — breaks SD card installs. Now reads paths from `retrodeck.json` via centralized `lib/retrodeck_config.py`. BIOS subfolder placement from registry `firmware_path` (eliminates manual `BIOS_DEST_MAP`). BIOS download tracking in `state.json`. Path change detection on startup with migration UI (MainPage warning banner + ConnectionSettings migration panel). Untracked BIOS files matched by registry for migration.
+
+### Bug 12: BIOS Required/Optional Per Active Core
+Currently OR-logic across all cores — if ANY core marks a file required, it shows as required. This causes false warnings (e.g. GBA BIOS shown required because gpSP needs it, even though RetroDECK defaults to mGBA which doesn't). Need to determine the active core per platform and show BIOS requirements based on that specific core.
+
+**Research findings:**
+- RetroDECK uses ES-DE's `es_systems.xml` for core defaults (first `<command>` = default). Baked into flatpak at `/app/retrodeck/components/ES-DE/resources/systems/linux/es_systems.xml`, source at [RetroDECK/ES-DE](https://github.com/RetroDECK/ES-DE/blob/retrodeck-main/resources/systems/linux/es_systems.xml).
+- Users can override per-system via ES-DE menu (Other Settings > Alternative Emulators) — stored in `{roms_path}/../ES-DE/gamelists/{system}/gamelist.xml` as `<alternativeEmulator><label>...</label></alternativeEmulator>`.
+- Users can override per-game via metadata editor — stored as `<altemulator>...</altemulator>` in game entry.
+- Resolution chain: per-game override → per-system override → es_systems.xml default.
+- Known defaults: GBA=mGBA, GB/GBC=Gambatte, NES=Mesen, N64=Mupen64Plus-Next, NDS=DeSmuME, DC=Flycast, Genesis=Genesis Plus GX, Neo Geo=FBNeo.
+
+**Approach:**
+1. Ship `defaults/core_defaults.json` mapping system slug → default core `.so` name (derived from RetroDECK's es_systems.xml).
+2. Update `generate_bios_registry.py` to store per-core firmware requirements (which cores need each file and whether required/optional for that core).
+3. At runtime: read gamelist.xml for per-system override → fall back to core_defaults.json → look up active core's firmware requirements.
+4. `required` flag becomes dynamic based on active core config, not static OR across all cores.
+
+**Optional — Per-system core selector in QAM:**
+Currently core selection is only possible through ES-DE's menu (Start > Other Settings > Alternative Emulators). We could expose this in our plugin's QAM settings — show available cores per platform, let the user pick, and write the `<alternativeEmulator>` entry to the system's `gamelist.xml`. This would let users change cores without leaving Game Mode. Ties into Phase 7 multi-emulator support.
+
 ### Testing needed
 - [x] Startup pruning removes orphaned state entries
 - [ ] Shortcut icons display correctly in Steam
+- [ ] BIOS files download to correct SD card path
+- [ ] Migration moves files from internal to SD card
+- [ ] BIOS required/optional matches active core (Bug 12)
 
 ---
 

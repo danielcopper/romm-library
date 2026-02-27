@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 import decky
 
+from lib import retrodeck_config
+
 if TYPE_CHECKING:
     from typing import Callable, Optional, Protocol
 
@@ -30,7 +32,7 @@ class DownloadMixin:
         """Remove leftover .tmp and .zip.tmp files from ROM and BIOS directories on startup."""
         cleaned = 0
         # Clean ROM directories
-        roms_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "roms")
+        roms_base = retrodeck_config.get_roms_path()
         if os.path.isdir(roms_base):
             for system_dir in os.listdir(roms_base):
                 system_path = os.path.join(roms_base, system_dir)
@@ -47,7 +49,7 @@ class DownloadMixin:
                         except OSError as e:
                             decky.logger.warning(f"Failed to remove tmp file {filepath}: {e}")
         # Clean BIOS directory
-        bios_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "bios")
+        bios_base = retrodeck_config.get_bios_path()
         if os.path.isdir(bios_base):
             for root, dirs, files in os.walk(bios_base):
                 for filename in files:
@@ -107,7 +109,7 @@ class DownloadMixin:
         platform_fs_slug = rom_detail.get("platform_fs_slug")
         system = self._resolve_system(platform_slug, platform_fs_slug)
 
-        roms_dir = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "roms", system)
+        roms_dir = os.path.join(retrodeck_config.get_roms_path(), system)
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
         # Fix 1: Sanitize fs_name to prevent path traversal
         safe_name = os.path.basename(file_name)
@@ -194,7 +196,7 @@ class DownloadMixin:
                 extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
                 os.makedirs(extract_dir, exist_ok=True)
                 # Fix 4: Validate extract_dir is within roms_dir
-                roms_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "roms")
+                roms_base = retrodeck_config.get_roms_path()
                 if not os.path.realpath(extract_dir).startswith(os.path.realpath(roms_base) + os.sep):
                     raise ValueError(f"Extract directory would be outside roms directory: {extract_dir}")
                 with zipfile.ZipFile(tmp_zip, "r") as zf:
@@ -359,7 +361,7 @@ class DownloadMixin:
 
     def _is_safe_rom_path(self, path):
         """Check that a path is safely contained within the roms base directory."""
-        roms_base = os.path.join(decky.DECKY_USER_HOME, "retrodeck", "roms")
+        roms_base = retrodeck_config.get_roms_path()
         resolved = os.path.realpath(path)
         real_base = os.path.realpath(roms_base)
         if not resolved.startswith(real_base + os.sep):

@@ -8,13 +8,44 @@ import {
   DropdownItem,
   DialogButton,
   ConfirmModal,
+  ModalRoot,
   showModal,
   ToggleField,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, logError } from "../api/backend";
+import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, getMigrationStatus, migrateRetroDeckFiles, logError } from "../api/backend";
+import type { MigrationStatus } from "../api/backend";
+import { getMigrationState, setMigrationStatus, clearMigration, onMigrationChange } from "../utils/migrationStore";
 
 // Module-level state survives component remounts (modal close can remount QAM)
 const pendingEdits: { url?: string; username?: string; password?: string } = {};
+
+const MigrationConflictModal: FC<{
+  conflictCount: number;
+  closeModal?: () => void;
+  onChoice: (strategy: "overwrite" | "skip") => void;
+}> = ({ conflictCount, closeModal, onChoice }) => (
+  <ModalRoot closeModal={closeModal}>
+    <div style={{ padding: "16px", minWidth: "320px" }}>
+      <div style={{ fontSize: "16px", fontWeight: "bold", color: "#fff", marginBottom: "8px" }}>
+        Files Already Exist
+      </div>
+      <div style={{ fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", marginBottom: "16px" }}>
+        {conflictCount} file(s) already exist at the destination.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <DialogButton onClick={() => { closeModal?.(); onChoice("overwrite"); }}>
+          Overwrite
+        </DialogButton>
+        <DialogButton onClick={() => { closeModal?.(); onChoice("skip"); }}>
+          Skip
+        </DialogButton>
+        <DialogButton onClick={() => closeModal?.()} style={{ opacity: 0.5 }}>
+          Cancel
+        </DialogButton>
+      </div>
+    </div>
+  </ModalRoot>
+);
 
 const SHARED_ACCOUNT_NAMES = ["admin", "romm", "user", "guest", "root"];
 
@@ -65,6 +96,9 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [allowInsecureSsl, setAllowInsecureSsl] = useState(false);
   const [steamInputMode, setSteamInputMode] = useState("default");
   const [steamInputStatus, setSteamInputStatus] = useState("");
+  const [migration, setMigration] = useState<MigrationStatus>(getMigrationState());
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState("");
   useEffect(() => {
     getSettings().then((s) => {
       // Apply any pending edits that survived a remount, fall back to backend values
@@ -78,6 +112,17 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       logError(`Failed to load settings: ${e}`);
       setStatus("Failed to load settings");
     });
+
+    // Load fresh migration status with file counts
+    getMigrationStatus().then((s) => {
+      if (s.pending) {
+        setMigrationStatus(s);
+        setMigration(s);
+      }
+    }).catch(() => {});
+
+    const unsubMigration = onMigrationChange(() => setMigration(getMigrationState()));
+    return () => unsubMigration();
   }, []);
 
   const handleSave = async () => {
@@ -117,6 +162,71 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
+      {migration.pending && (
+        <PanelSection title="Path Migration">
+          <PanelSectionRow>
+            <div style={{ padding: "8px 12px", backgroundColor: "rgba(212, 167, 44, 0.15)", borderLeft: "3px solid #d4a72c", borderRadius: "4px" }}>
+              <div style={{ fontSize: "13px", fontWeight: "bold", color: "#d4a72c", marginBottom: "6px" }}>
+                {"\u26A0\uFE0F"} RetroDECK location changed
+              </div>
+              <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)", marginBottom: "4px" }}>
+                From: {migration.old_path ?? "unknown"}
+              </div>
+              <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)", marginBottom: "4px" }}>
+                To: {migration.new_path ?? "unknown"}
+              </div>
+              <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.9)" }}>
+                {migration.roms_count ?? 0} ROM(s), {migration.bios_count ?? 0} BIOS, {migration.saves_count ?? 0} save(s) to migrate
+              </div>
+            </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={migrating}
+              onClick={async () => {
+                setMigrating(true);
+                setMigrateResult("");
+                try {
+                  const result = await migrateRetroDeckFiles(null);
+                  if (result.needs_confirmation) {
+                    setMigrating(false);
+                    showModal(
+                      <MigrationConflictModal
+                        conflictCount={result.conflict_count ?? 0}
+                        onChoice={async (strategy) => {
+                          setMigrating(true);
+                          try {
+                            const r = await migrateRetroDeckFiles(strategy);
+                            setMigrateResult(r.message);
+                            if (r.success) clearMigration();
+                          } catch { setMigrateResult("Migration failed"); }
+                          setMigrating(false);
+                        }}
+                      />
+                    );
+                    return;
+                  }
+                  setMigrateResult(result.message);
+                  if (result.success) {
+                    clearMigration();
+                  }
+                } catch {
+                  setMigrateResult("Migration failed");
+                }
+                setMigrating(false);
+              }}
+            >
+              {migrating ? "Migrating..." : "Migrate Files"}
+            </ButtonItem>
+          </PanelSectionRow>
+          {migrateResult && (
+            <PanelSectionRow>
+              <Field label={migrateResult} />
+            </PanelSectionRow>
+          )}
+        </PanelSection>
+      )}
       <PanelSection title="Connection">
         <PanelSectionRow>
           <Field label="RomM URL" description={url || "(not set)"}>

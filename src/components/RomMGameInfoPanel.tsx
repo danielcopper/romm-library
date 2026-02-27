@@ -29,6 +29,7 @@ import {
   debugLog,
 } from "../api/backend";
 import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict } from "../types";
+import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 
 interface RomMGameInfoPanelProps {
   appId: number;
@@ -92,6 +93,12 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     error: false,
   });
   const romIdRef = useRef<number | null>(null);
+  const [migrationPending, setMigrationPending] = useState(getMigrationState().pending);
+
+  useEffect(() => {
+    const unsub = onMigrationChange(() => setMigrationPending(getMigrationState().pending));
+    return unsub;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +128,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             server_count: cached.bios_status.total,
             local_count: cached.bios_status.downloaded,
             all_downloaded: cached.bios_status.all_downloaded,
+            required_count: cached.bios_status.required_count,
+            required_downloaded: cached.bios_status.required_downloaded,
+            files: cached.bios_status.files as BiosStatus["files"],
           };
         }
 
@@ -443,10 +453,22 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     const bios = state.biosStatus;
     const localCount = bios.local_count ?? 0;
     const serverCount = bios.server_count ?? 0;
-    const biosColor = bios.all_downloaded ? "#5ba32b" : localCount > 0 ? "#d4a72c" : "#d94126";
-    const biosLabel = bios.all_downloaded
-      ? `All ready (${localCount}/${serverCount})`
-      : `${localCount}/${serverCount} files ready`;
+    const reqCount = bios.required_count;
+    const reqDone = bios.required_downloaded;
+
+    let biosColor: string;
+    let biosLabel: string;
+    if (reqCount != null && reqDone != null) {
+      biosColor = reqDone >= reqCount ? "#5ba32b" : reqDone > 0 ? "#d4a72c" : "#d94126";
+      biosLabel = reqDone >= reqCount
+        ? `All required ready (${localCount}/${serverCount})`
+        : `${reqDone}/${reqCount} required files ready`;
+    } else {
+      biosColor = bios.all_downloaded ? "#5ba32b" : localCount > 0 ? "#d4a72c" : "#d94126";
+      biosLabel = bios.all_downloaded
+        ? `All ready (${localCount}/${serverCount})`
+        : `${localCount}/${serverCount} files ready`;
+    }
 
     const biosChildren: (ReturnType<typeof createElement> | null)[] = [];
 
@@ -468,16 +490,28 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     if (bios.files && bios.files.length > 0) {
       biosChildren.push(
         createElement("div", { key: "bios-file-list", className: "romm-panel-file-list" },
-          ...bios.files.map((f) =>
-            createElement("div", { key: f.file_name, className: "romm-panel-file-row" },
+          ...bios.files.map((f) => {
+            let dotColor: string;
+            if (f.classification === "unknown") {
+              dotColor = "#d4a72c";
+            } else if (f.downloaded) {
+              dotColor = "#5ba32b";
+            } else if (f.classification === "required") {
+              dotColor = "#d94126";
+            } else {
+              dotColor = "#8f98a0";
+            }
+            return createElement("div", { key: f.file_name, className: "romm-panel-file-row" },
               createElement("span", {
                 className: "romm-status-dot",
-                style: { backgroundColor: f.downloaded ? "#5ba32b" : "#d94126" },
+                style: { backgroundColor: dotColor },
               }),
-              createElement("span", { className: "romm-panel-file-name" }, f.file_name),
-              createElement("span", { className: "romm-panel-file-path" }, f.local_path),
-            ),
-          ),
+              createElement("span", { className: "romm-panel-file-name" },
+                `${f.description || f.file_name} (${f.classification})`,
+              ),
+              createElement("span", { className: "romm-panel-file-path" }, f.file_name !== (f.description || f.file_name) ? f.file_name : f.local_path),
+            );
+          }),
         ),
       );
     }
@@ -620,6 +654,27 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     saveSyncSection = section("save-sync", "Save Sync", ...saveSyncChildren);
   }
 
+  // --- Migration warning (when path change pending) ---
+  const migrationWarning = migrationPending
+    ? createElement("div", {
+        key: "migration-warning",
+        style: {
+          padding: "8px 12px",
+          marginBottom: "12px",
+          backgroundColor: "rgba(212, 167, 44, 0.15)",
+          borderLeft: "3px solid #d4a72c",
+          borderRadius: "4px",
+        },
+      },
+        createElement("div", {
+          style: { fontSize: "13px", fontWeight: "bold", color: "#d4a72c", marginBottom: "4px" },
+        }, "\u26A0\uFE0F RetroDECK location changed"),
+        createElement("div", {
+          style: { fontSize: "12px", color: "rgba(255, 255, 255, 0.7)" },
+        }, "File paths may be incorrect. Go to Settings to migrate files."),
+      )
+    : null;
+
   // --- Assemble panel ---
   // Root is a plain div — DialogButton sections inside are individually focusable.
   return createElement("div", {
@@ -627,6 +682,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     className: "romm-panel-container",
     style: { paddingBottom: "48px" },
   },
+    migrationWarning,
     gameInfoSection,
     romFileSection,
     saveSyncSection,

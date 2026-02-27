@@ -17,8 +17,10 @@ import {
   fixRetroarchInputDriver,
 } from "../api/backend";
 import { getSyncProgress } from "../utils/syncProgress";
+import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 import { requestSyncCancel } from "../utils/syncManager";
 import type { SyncProgress, SyncStats } from "../types";
+import type { MigrationStatus } from "../api/backend";
 
 type Page = "connection" | "platforms" | "danger" | "downloads" | "bios" | "savesync";
 
@@ -36,6 +38,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
   const [logLevel, setLogLevel] = useState("warn");
   const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string } | null>(null);
   const [retroarchFixStatus, setRetroarchFixStatus] = useState("");
+  const [migration, setMigration] = useState<MigrationStatus>(getMigrationState());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -84,8 +87,10 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
       startPolling();
     }
 
+    const unsubMigration = onMigrationChange(() => setMigration(getMigrationState()));
     return () => {
       stopPolling();
+      unsubMigration();
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
     };
   }, []);
@@ -190,6 +195,25 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
               description={`Using "${retroarchWarning.current}" — controllers may not work in menus. See Warning section below.`}
             />
           </PanelSectionRow>
+        )}
+        {migration.pending && (
+          <>
+            <PanelSectionRow>
+              <div style={{ padding: "8px 12px", backgroundColor: "rgba(212, 167, 44, 0.15)", borderLeft: "3px solid #d4a72c", borderRadius: "4px" }}>
+                <div style={{ fontSize: "13px", fontWeight: "bold", color: "#d4a72c", marginBottom: "4px" }}>
+                  {"\u26A0\uFE0F"} RetroDECK location changed
+                </div>
+                <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)" }}>
+                  {(migration.roms_count ?? 0) + (migration.bios_count ?? 0) + (migration.saves_count ?? 0)} file(s) need migration ({migration.roms_count ?? 0} ROMs, {migration.bios_count ?? 0} BIOS, {migration.saves_count ?? 0} saves)
+                </div>
+              </div>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ButtonItem layout="below" onClick={() => onNavigate("connection")}>
+                Go to Settings
+              </ButtonItem>
+            </PanelSectionRow>
+          </>
         )}
       </PanelSection>
 

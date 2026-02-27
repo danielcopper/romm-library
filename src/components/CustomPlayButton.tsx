@@ -409,9 +409,11 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     const downloading = actionPending && dlProgress;
 
     // Gradually shift the entire button color from blue to green
-    const dlBackground = downloading
-      ? `linear-gradient(to right, ${lerpColor(BLUE_LEFT, GREEN_LEFT, t)}, ${lerpColor(BLUE_RIGHT, GREEN_RIGHT, t)})`
-      : "linear-gradient(to right, #1a9fff, #0078d4)";
+    const dlBackground = isOffline
+      ? "linear-gradient(to right, #6b7b8b, #5a6a7a)"
+      : downloading
+        ? `linear-gradient(to right, ${lerpColor(BLUE_LEFT, GREEN_LEFT, t)}, ${lerpColor(BLUE_RIGHT, GREEN_RIGHT, t)})`
+        : "linear-gradient(to right, #1a9fff, #0078d4)";
 
     const dlLabel = downloading
       ? `${formatBytes(dlProgress.bytesDownloaded)} / ${formatBytes(dlProgress.totalBytes)}`
@@ -433,7 +435,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
             background: dlBackground,
           }}
           onClick={handleDownload}
-          disabled={actionPending}
+          disabled={actionPending || isOffline}
         >
           {dlLabel}
         </DialogButton>
