@@ -152,6 +152,8 @@ export interface BiosFileStatus {
   required: boolean;
   description: string;
   classification: "required" | "optional" | "unknown";
+  cores?: Record<string, { required: boolean }>;
+  used_by_active?: boolean;
 }
 
 export interface BiosStatus {

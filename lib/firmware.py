@@ -366,12 +366,15 @@ class FirmwareMixin:
                     file_name = fw.get("file_name", "")
                     reg_entry = registry_platform.get(file_name)
 
-                    # Filter by active core: skip files the active core doesn't use
+                    # Determine classification based on active core
                     if active_core_so and reg_entry and "cores" in reg_entry:
-                        if active_core_so not in reg_entry["cores"]:
-                            continue
-                        is_required = reg_entry["cores"][active_core_so]["required"]
-                        classification = "required" if is_required else "optional"
+                        if active_core_so in reg_entry["cores"]:
+                            is_required = reg_entry["cores"][active_core_so]["required"]
+                            classification = "required" if is_required else "optional"
+                        else:
+                            # Active core doesn't use this file
+                            is_required = False
+                            classification = "optional"
                         description = reg_entry.get("description", file_name)
                     elif reg_entry:
                         classification = "required" if reg_entry.get("required", True) else "optional"
@@ -381,6 +384,19 @@ class FirmwareMixin:
                         classification = "unknown"
                         is_required = False
                         description = file_name
+
+                    # Build per-core info for frontend display
+                    cores_info = {}
+                    if reg_entry and "cores" in reg_entry:
+                        for core_so_key, core_data in reg_entry["cores"].items():
+                            cores_info[core_so_key] = {
+                                "required": core_data.get("required", True),
+                            }
+
+                    # Is this file used by the active core?
+                    used_by_active = True
+                    if active_core_so and reg_entry and "cores" in reg_entry:
+                        used_by_active = active_core_so in reg_entry["cores"]
 
                     server_count += 1
                     dest = self._firmware_dest_path(fw)
@@ -394,6 +410,8 @@ class FirmwareMixin:
                         "required": is_required,
                         "description": description,
                         "classification": classification,
+                        "cores": cores_info,
+                        "used_by_active": used_by_active,
                     })
         except Exception:
             # Server unreachable — fall back to registry-based check
@@ -401,13 +419,26 @@ class FirmwareMixin:
                 return {"needs_bios": False}
             bios_base = retrodeck_config.get_bios_path()
             for file_name, reg_entry in registry_platform.items():
-                # Filter by active core: skip files the active core doesn't use
+                # Determine classification based on active core
                 if active_core_so and "cores" in reg_entry:
-                    if active_core_so not in reg_entry["cores"]:
-                        continue
-                    is_required = reg_entry["cores"][active_core_so]["required"]
+                    if active_core_so in reg_entry["cores"]:
+                        is_required = reg_entry["cores"][active_core_so]["required"]
+                    else:
+                        is_required = False
                 else:
                     is_required = reg_entry.get("required", True)
+
+                cores_info = {}
+                if "cores" in reg_entry:
+                    for core_so_key, core_data in reg_entry["cores"].items():
+                        cores_info[core_so_key] = {
+                            "required": core_data.get("required", True),
+                        }
+
+                used_by_active = True
+                if active_core_so and "cores" in reg_entry:
+                    used_by_active = active_core_so in reg_entry["cores"]
+
                 firmware_path = reg_entry.get("firmware_path", file_name)
                 dest = os.path.join(bios_base, firmware_path)
                 downloaded = os.path.exists(dest)
@@ -421,15 +452,21 @@ class FirmwareMixin:
                     "required": is_required,
                     "description": reg_entry.get("description", file_name),
                     "classification": "required" if is_required else "optional",
+                    "cores": cores_info,
+                    "used_by_active": used_by_active,
                 })
 
         if server_count == 0:
             return {"needs_bios": False}
 
-        required_files = [f for f in files if f["classification"] == "required"]
+        # required_count/required_downloaded: only files used by the active core (for badge)
+        active_files = [f for f in files if f.get("used_by_active", True)]
+        required_files = [f for f in active_files if f["classification"] == "required"]
         required_count = len(required_files)
         required_downloaded = sum(1 for f in required_files if f["downloaded"])
         unknown_count = sum(1 for f in files if f["classification"] == "unknown")
+
+        available_cores = es_de_config.get_available_cores(platform_slug)
 
         return {
             "needs_bios": True,
@@ -442,6 +479,7 @@ class FirmwareMixin:
             "files": files,
             "active_core": active_core_so,
             "active_core_label": active_core_label,
+            "available_cores": available_cores,
         }
 
     async def delete_platform_bios(self, platform_slug):

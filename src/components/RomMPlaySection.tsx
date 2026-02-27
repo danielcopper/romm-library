@@ -612,7 +612,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     try {
       const result = await setGameCore(info.platformSlug, romPath, coreLabel);
       if (result.success) {
-        toaster.toast({ title: "RomM Sync", body: coreLabel ? `Core set to ${coreLabel}` : "Core reset to platform default" });
+        toaster.toast({ title: "RomM Sync", body: `Core set to ${coreLabel}` });
         // Use bios_status from the set_game_core response directly (avoids cache staleness)
         const bios = result.bios_status;
         if (bios) {
@@ -643,11 +643,12 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     showContextMenu(
       createElement(Menu, { label: "Emulator Core" },
         ...info.availableCores.map((c) => {
-          // Selecting the default core clears any per-game override
-          const coreLabel = c.is_default ? "" : c.label;
+          // Always send the core label — even for the default core.
+          // Clearing the override (empty string) would fall back to the platform
+          // override, not the ES-DE default, which is confusing.
           return createElement(MenuItem, {
             key: `core-${c.core_so}`,
-            onClick: () => handleChangeGameCore(coreLabel),
+            onClick: () => handleChangeGameCore(c.label),
           }, `${c.label}${c.is_default ? " (default)" : ""}${info.activeCoreLabel === c.label ? " \u2713" : ""}`);
         }),
       ),
