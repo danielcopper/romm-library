@@ -66,24 +66,26 @@ class TestFindEsSystemsXml:
     def setup_method(self):
         es_de_config._reset_cache()
 
-    @mock.patch("lib.es_de_config.glob.glob")
-    def test_finds_xml_in_flatpak_path(self, mock_glob):
-        mock_glob.return_value = ["/var/lib/flatpak/app/net.retrodeck.retrodeck/x86_64/stable/abc123/files/retrodeck/components/es-de/share/es-de/resources/systems/linux/es_systems.xml"]
+    @mock.patch("lib.es_de_config.os.path.exists")
+    def test_finds_xml_in_linux_path(self, mock_exists):
+        mock_exists.return_value = True
         result = es_de_config.find_es_systems_xml()
-        assert result == mock_glob.return_value[0]
-        mock_glob.assert_called_once_with(es_de_config._FLATPAK_GLOB)
+        assert result == es_de_config._ES_SYSTEMS_CANDIDATES[0]
+        assert "linux" in result
 
-    @mock.patch("lib.es_de_config.glob.glob")
-    def test_returns_none_when_not_found(self, mock_glob):
-        mock_glob.return_value = []
+    @mock.patch("lib.es_de_config.os.path.exists")
+    def test_falls_back_to_unix_path(self, mock_exists):
+        # linux/ doesn't exist, unix/ does
+        mock_exists.side_effect = [False, True]
+        result = es_de_config.find_es_systems_xml()
+        assert result == es_de_config._ES_SYSTEMS_CANDIDATES[1]
+        assert "unix" in result
+
+    @mock.patch("lib.es_de_config.os.path.exists")
+    def test_returns_none_when_not_found(self, mock_exists):
+        mock_exists.return_value = False
         result = es_de_config.find_es_systems_xml()
         assert result is None
-
-    @mock.patch("lib.es_de_config.glob.glob")
-    def test_takes_first_of_multiple_matches(self, mock_glob):
-        mock_glob.return_value = ["/path/first/es_systems.xml", "/path/second/es_systems.xml"]
-        result = es_de_config.find_es_systems_xml()
-        assert result == "/path/first/es_systems.xml"
 
 
 class TestParseEsSystems:

@@ -1,6 +1,5 @@
 """ES-DE configuration parser for active core resolution."""
 
-import glob
 import json
 import os
 import re
@@ -14,7 +13,13 @@ _core_defaults_cache = None  # dict or None
 
 _CORE_SO_RE = re.compile(r"%CORE_RETROARCH%/([\w-]+_libretro)\.so")
 
-_FLATPAK_GLOB = "/var/lib/flatpak/app/net.retrodeck.retrodeck/*/files/retrodeck/components/es-de/share/es-de/resources/systems/linux/es_systems.xml"
+_FLATPAK_SYSTEMS_DIR = "/var/lib/flatpak/app/net.retrodeck.retrodeck/current/active/files/retrodeck/components/es-de/share/es-de/resources/systems"
+
+# Prefer linux/ (RetroDECK-customized, more complete), then unix/ as fallback.
+_ES_SYSTEMS_CANDIDATES = [
+    _FLATPAK_SYSTEMS_DIR + "/linux/es_systems.xml",
+    _FLATPAK_SYSTEMS_DIR + "/unix/es_systems.xml",
+]
 
 
 def _reset_cache():
@@ -27,10 +32,16 @@ def _reset_cache():
 def find_es_systems_xml():
     """Locate es_systems.xml inside the RetroDECK flatpak installation.
 
+    Uses the flatpak 'active' symlink to find the current version.
+    Searches linux/ first (RetroDECK-customized), then unix/ as fallback.
+    Works on SteamOS, Bazzite, and other Linux distros with flatpak.
+
     Returns the path or None.
     """
-    matches = glob.glob(_FLATPAK_GLOB)
-    return matches[0] if matches else None
+    for path in _ES_SYSTEMS_CANDIDATES:
+        if os.path.exists(path):
+            return path
+    return None
 
 
 def parse_es_systems(xml_path):

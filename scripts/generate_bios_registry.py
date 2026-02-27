@@ -132,6 +132,34 @@ SYSTEMNAME_TO_SLUG = {
 }
 
 
+# Per-filename platform overrides for multi-system cores.
+# When a core covers multiple systems (e.g. mGBA: GB/GBC/GBA), the core's
+# systemname maps to a single slug but its firmware files belong to different
+# platforms. This table assigns each file to its correct platform.
+FIRMWARE_PLATFORM_OVERRIDE = {
+    # Game Boy family (from mGBA, VBA-M, Mesen-S, Gambatte, etc.)
+    "gb_bios.bin": "gb",
+    "dmg_boot.bin": "gb",
+    "gbc_bios.bin": "gbc",
+    "cgb_boot.bin": "gbc",
+    "sgb_bios.bin": "snes",
+    "sgb_boot.bin": "snes",
+    "sgb2_boot.bin": "snes",
+    "SGB1.sfc": "snes",
+    "SGB2.sfc": "snes",
+    # Sega CD (from Genesis Plus GX, PicoDrive)
+    "bios_CD_E.bin": "segacd",
+    "bios_CD_U.bin": "segacd",
+    "bios_CD_J.bin": "segacd",
+    # Master System (from Genesis Plus GX)
+    "bios_E.sms": "sms",
+    "bios_U.sms": "sms",
+    "bios_J.sms": "sms",
+    # Game Gear (from Genesis Plus GX)
+    "bios.gg": "gg",
+}
+
+
 def systemname_to_slug(systemname):
     """Convert a libretro systemname to a platform slug.
 
@@ -328,13 +356,17 @@ def merge_registry(firmware, hashes):
             entry["sha1"] = hashes[filename]["sha1"]
             entry["size"] = hashes[filename]["size"]
 
-        systems = info.get("systems", set())
-        if systems:
-            for systemname in systems:
-                slug = systemname_to_slug(systemname)
-                add_to_platform(slug, filename, dict(entry))
+        # Use per-filename override if available, otherwise derive from systemname
+        if filename in FIRMWARE_PLATFORM_OVERRIDE:
+            add_to_platform(FIRMWARE_PLATFORM_OVERRIDE[filename], filename, entry)
         else:
-            add_to_platform("_unknown", filename, entry)
+            systems = info.get("systems", set())
+            if systems:
+                for systemname in systems:
+                    slug = systemname_to_slug(systemname)
+                    add_to_platform(slug, filename, dict(entry))
+            else:
+                add_to_platform("_unknown", filename, entry)
 
     # Also include System.dat entries not in any .info file (informational)
     for filename, hash_info in sorted(hashes.items()):

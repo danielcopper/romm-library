@@ -109,7 +109,11 @@ class FirmwareMixin:
             )
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
-            return {"success": False, "message": f"Failed to fetch firmware: {e}", "platforms": []}
+            if "Connection refused" in str(e) or "urlopen error" in str(e):
+                msg = "RomM server is unreachable. Check your connection settings."
+            else:
+                msg = f"Failed to fetch firmware: {e}"
+            return {"success": False, "message": msg, "platforms": []}
 
         # Group firmware by platform
         platforms_map = {}

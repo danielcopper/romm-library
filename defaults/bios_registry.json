@@ -3845,28 +3845,6 @@
       }
     },
     "gb": {
-      "cgb_boot.bin": {
-        "description": "cgb_boot.bin (Game Boy Color boot ROM)",
-        "required": false,
-        "firmware_path": "cgb_boot.bin",
-        "cores": {
-          "gearboy_libretro": {
-            "required": false
-          },
-          "mesen-s_libretro": {
-            "required": false
-          },
-          "skyemu_libretro": {
-            "required": false
-          },
-          "sameboy_libretro": {
-            "required": false
-          }
-        },
-        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
-        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
-        "size": 2304
-      },
       "dmg_boot.bin": {
         "description": "dmg_boot.bin (Game Boy boot ROM)",
         "required": true,
@@ -3907,53 +3885,9 @@
         "md5": "32fbbd84168d3482956eb3c5051637f5",
         "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
         "size": 256
-      },
-      "gbc_bios.bin": {
-        "description": "gbc_bios.bin (Game Boy Color BIOS)",
-        "required": false,
-        "firmware_path": "gbc_bios.bin",
-        "cores": {
-          "fixgb_libretro": {
-            "required": false
-          },
-          "gambatte_libretro": {
-            "required": false
-          },
-          "skyemu_libretro": {
-            "required": false
-          },
-          "mgba_libretro": {
-            "required": false
-          },
-          "vbam_libretro": {
-            "required": false
-          }
-        },
-        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
-        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
-        "size": 2304
       }
     },
     "gba": {
-      "gb_bios.bin": {
-        "description": "gb_bios.bin (Game Boy BIOS)",
-        "required": false,
-        "firmware_path": "gb_bios.bin",
-        "cores": {
-          "gambatte_libretro": {
-            "required": false
-          },
-          "mgba_libretro": {
-            "required": false
-          },
-          "vbam_libretro": {
-            "required": false
-          }
-        },
-        "md5": "32fbbd84168d3482956eb3c5051637f5",
-        "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
-        "size": 256
-      },
       "gba_bios.bin": {
         "description": "gba_bios.bin (Game Boy Advance BIOS)",
         "required": true,
@@ -3987,6 +3921,30 @@
         "md5": "a860e8c0b6d573d191e4ec7db1b1e4f6",
         "sha1": "300c20df6731a33952ded8c436f7f186d25d3492",
         "size": 16384
+      }
+    },
+    "gbc": {
+      "cgb_boot.bin": {
+        "description": "cgb_boot.bin (Game Boy Color boot ROM)",
+        "required": false,
+        "firmware_path": "cgb_boot.bin",
+        "cores": {
+          "gearboy_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "skyemu_libretro": {
+            "required": false
+          },
+          "sameboy_libretro": {
+            "required": false
+          }
+        },
+        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
+        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
+        "size": 2304
       },
       "gbc_bios.bin": {
         "description": "gbc_bios.bin (Game Boy Color BIOS)",
@@ -4012,19 +3970,6 @@
         "md5": "dbfce9db9deaa2567f6a84fde55f9680",
         "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
         "size": 2304
-      },
-      "sgb_bios.bin": {
-        "description": "sgb_bios.bin (Super Game Boy BIOS)",
-        "required": false,
-        "firmware_path": "sgb_bios.bin",
-        "cores": {
-          "mgba_libretro": {
-            "required": false
-          }
-        },
-        "md5": "d574d4f9c12f305074798f54c091a8b4",
-        "sha1": "aa2f50a77dfb4823da96ba99309085a3c6278515",
-        "size": 256
       }
     },
     "gc": {
@@ -4066,114 +4011,6 @@
         "sha1": "1e0f246826be4ebc7b99bb3f9de7f1de347122e5",
         "size": 32768
       },
-      "bios.gg": {
-        "description": "bios.gg (Game Gear BIOS)",
-        "required": false,
-        "firmware_path": "bios.gg",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "gearsystem_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "672e104c3be3a238301aceffc3b23fd6",
-        "sha1": "914aa165e3d879f060be77870d345b60cfeb4ede",
-        "size": 1024
-      },
-      "bios_CD_E.bin": {
-        "description": "bios_CD_E.bin (MegaCD EU BIOS)",
-        "required": false,
-        "firmware_path": "bios_CD_E.bin",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "picodrive_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "e66fa1dc5820d254611fdcdba0662372",
-        "sha1": "f891e0ea651e2232af0c5c4cb46a0cae2ee8f356",
-        "size": 131072
-      },
-      "bios_CD_J.bin": {
-        "description": "bios_CD_J.bin (MegaCD JP BIOS)",
-        "required": false,
-        "firmware_path": "bios_CD_J.bin",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "picodrive_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "278a9397d192149e84e820ac621a8edd",
-        "sha1": "4846f448160059a7da0215a5df12ca160f26dd69",
-        "size": 131072
-      },
-      "bios_CD_U.bin": {
-        "description": "bios_CD_U.bin (SegaCD US BIOS)",
-        "required": false,
-        "firmware_path": "bios_CD_U.bin",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "picodrive_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "2efd74e3232ff260e371b99f84024f7f",
-        "sha1": "f4f315adcef9b8feb0364c21ab7f0eaf5457f3ed",
-        "size": 131072
-      },
-      "bios_E.sms": {
-        "description": "bios_E.sms (MasterSystem EU BIOS)",
-        "required": false,
-        "firmware_path": "bios_E.sms",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "840481177270d5642a14ca71ee72844c",
-        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
-        "size": 8192
-      },
-      "bios_J.sms": {
-        "description": "bios_J.sms (MasterSystem JP BIOS)",
-        "required": false,
-        "firmware_path": "bios_J.sms",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "24a519c53f67b00640d0048ef7089105",
-        "sha1": "a8c1b39a2e41137835eda6a5de6d46dd9fadbaf2",
-        "size": 8192
-      },
       "bios_MD.bin": {
         "description": "bios_MD.bin (Mega Drive startup ROM)",
         "required": false,
@@ -4189,22 +4026,6 @@
         "md5": "d3293ebaaa7f4eb2a6766b68a0fb4609",
         "sha1": "3f50b76b0529db7f79c396b5e808cc0786ffc311",
         "size": 2048
-      },
-      "bios_U.sms": {
-        "description": "bios_U.sms (MasterSystem US BIOS)",
-        "required": false,
-        "firmware_path": "bios_U.sms",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "840481177270d5642a14ca71ee72844c",
-        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
-        "size": 8192
       },
       "ggenie.bin": {
         "description": "ggenie.bin (Game Genie ROM)",
@@ -4266,6 +4087,27 @@
         "md5": "b4e76e416b887f4e7413ba76fa735f16",
         "sha1": "70429f1d80503a0632f603bf762fe0bbaa881d22",
         "size": 262144
+      }
+    },
+    "gg": {
+      "bios.gg": {
+        "description": "bios.gg (Game Gear BIOS)",
+        "required": false,
+        "firmware_path": "bios.gg",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "gearsystem_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "672e104c3be3a238301aceffc3b23fd6",
+        "sha1": "914aa165e3d879f060be77870d345b60cfeb4ede",
+        "size": 1024
       }
     },
     "intellivision": {
@@ -5808,6 +5650,65 @@
         "size": 4096
       }
     },
+    "segacd": {
+      "bios_CD_E.bin": {
+        "description": "bios_CD_E.bin (MegaCD EU BIOS)",
+        "required": false,
+        "firmware_path": "bios_CD_E.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "picodrive_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "e66fa1dc5820d254611fdcdba0662372",
+        "sha1": "f891e0ea651e2232af0c5c4cb46a0cae2ee8f356",
+        "size": 131072
+      },
+      "bios_CD_J.bin": {
+        "description": "bios_CD_J.bin (MegaCD JP BIOS)",
+        "required": false,
+        "firmware_path": "bios_CD_J.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "picodrive_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "278a9397d192149e84e820ac621a8edd",
+        "sha1": "4846f448160059a7da0215a5df12ca160f26dd69",
+        "size": 131072
+      },
+      "bios_CD_U.bin": {
+        "description": "bios_CD_U.bin (SegaCD US BIOS)",
+        "required": false,
+        "firmware_path": "bios_CD_U.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "picodrive_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "2efd74e3232ff260e371b99f84024f7f",
+        "sha1": "f4f315adcef9b8feb0364c21ab7f0eaf5457f3ed",
+        "size": 131072
+      }
+    },
     "sms": {
       "BIOS.col": {
         "description": "BIOS.col (Colecovision BIOS)",
@@ -5818,25 +5719,6 @@
             "required": false
           }
         }
-      },
-      "bios.gg": {
-        "description": "bios.gg (Game Gear BIOS)",
-        "required": false,
-        "firmware_path": "bios.gg",
-        "cores": {
-          "genesis_plus_gx_libretro": {
-            "required": false
-          },
-          "gearsystem_libretro": {
-            "required": false
-          },
-          "genesis_plus_gx_wide_libretro": {
-            "required": false
-          }
-        },
-        "md5": "672e104c3be3a238301aceffc3b23fd6",
-        "sha1": "914aa165e3d879f060be77870d345b60cfeb4ede",
-        "size": 1024
       },
       "bios.sms": {
         "description": "bios.sms (Master System BIOS)",
@@ -5850,6 +5732,54 @@
             "required": false
           },
           "smsplus_libretro": {
+            "required": false
+          }
+        },
+        "md5": "840481177270d5642a14ca71ee72844c",
+        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
+        "size": 8192
+      },
+      "bios_E.sms": {
+        "description": "bios_E.sms (MasterSystem EU BIOS)",
+        "required": false,
+        "firmware_path": "bios_E.sms",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "840481177270d5642a14ca71ee72844c",
+        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
+        "size": 8192
+      },
+      "bios_J.sms": {
+        "description": "bios_J.sms (MasterSystem JP BIOS)",
+        "required": false,
+        "firmware_path": "bios_J.sms",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "24a519c53f67b00640d0048ef7089105",
+        "sha1": "a8c1b39a2e41137835eda6a5de6d46dd9fadbaf2",
+        "size": 8192
+      },
+      "bios_U.sms": {
+        "description": "bios_U.sms (MasterSystem US BIOS)",
+        "required": false,
+        "firmware_path": "bios_U.sms",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
             "required": false
           }
         },
@@ -5929,28 +5859,6 @@
         "sha1": "ef86ea192eed03d5c413fdbbfd46043be1d7a127",
         "size": 262144
       },
-      "cgb_boot.bin": {
-        "description": "cgb_boot.bin (Game Boy Color boot ROM)",
-        "required": false,
-        "firmware_path": "cgb_boot.bin",
-        "cores": {
-          "gearboy_libretro": {
-            "required": false
-          },
-          "mesen-s_libretro": {
-            "required": false
-          },
-          "skyemu_libretro": {
-            "required": false
-          },
-          "sameboy_libretro": {
-            "required": false
-          }
-        },
-        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
-        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
-        "size": 2304
-      },
       "cx4.data.rom": {
         "description": "cx4.data.rom",
         "required": false,
@@ -5984,28 +5892,6 @@
         "md5": "037ac4296b6b6a5c47c440188d3c72e3",
         "sha1": "a002f4efba42775a31185d443f3ed1790b0e949a",
         "size": 3072
-      },
-      "dmg_boot.bin": {
-        "description": "dmg_boot.bin (Game Boy boot ROM)",
-        "required": true,
-        "firmware_path": "dmg_boot.bin",
-        "cores": {
-          "gearboy_libretro": {
-            "required": false
-          },
-          "mesen-s_libretro": {
-            "required": false
-          },
-          "emux_gb_libretro": {
-            "required": true
-          },
-          "sameboy_libretro": {
-            "required": false
-          }
-        },
-        "md5": "32fbbd84168d3482956eb3c5051637f5",
-        "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
-        "size": 256
       },
       "dsp1.data.rom": {
         "description": "dsp1.data.rom",
@@ -6546,6 +6432,19 @@
             "required": false
           }
         }
+      },
+      "sgb_bios.bin": {
+        "description": "sgb_bios.bin (Super Game Boy BIOS)",
+        "required": false,
+        "firmware_path": "sgb_bios.bin",
+        "cores": {
+          "mgba_libretro": {
+            "required": false
+          }
+        },
+        "md5": "d574d4f9c12f305074798f54c091a8b4",
+        "sha1": "aa2f50a77dfb4823da96ba99309085a3c6278515",
+        "size": 256
       },
       "sgb_boot.bin": {
         "description": "sgb_boot.bin (SGB Boot Image)",
