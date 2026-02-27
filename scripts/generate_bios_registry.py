@@ -156,9 +156,10 @@ def parse_info_files(core_info_dir):
         firmware0_desc = "PS1 US BIOS"
         firmware0_opt  = "true"
 
-    Returns dict: {filename: {"description": str, "required": bool, "firmware_path": str, "systems": set}}
+    Returns dict: {filename: {"description": str, "required": bool, "firmware_path": str, "systems": set, "cores": dict}}
     If multiple cores reference the same file, required wins (OR logic).
     The systems set tracks all system names that reference this file.
+    The cores dict maps core .so names to {"required": bool} for per-core status.
     The firmware_path preserves the full relative path from the .info file
     (e.g. "dc/dc_boot.bin" for Dreamcast, "scph5501.bin" for PSX).
     When multiple cores reference the same file with different paths,
@@ -169,6 +170,7 @@ def parse_info_files(core_info_dir):
     for fname in os.listdir(core_info_dir):
         if not fname.endswith(".info"):
             continue
+        core_so = fname[:-5]  # "mgba_libretro.info" -> "mgba_libretro"
         filepath = os.path.join(core_info_dir, fname)
         try:
             with open(filepath, "r", encoding="utf-8", errors="replace") as f:
@@ -231,12 +233,15 @@ def parse_info_files(core_info_dir):
                 # Track all systems that reference this file
                 if systemname:
                     firmware[filename]["systems"].add(systemname)
+                # Track per-core required status
+                firmware[filename]["cores"][core_so] = {"required": is_required}
             else:
                 firmware[filename] = {
                     "description": desc,
                     "required": is_required,
                     "firmware_path": firmware_path,
                     "systems": {systemname} if systemname else set(),
+                    "cores": {core_so: {"required": is_required}},
                 }
 
     return firmware
@@ -302,6 +307,10 @@ def merge_registry(firmware, hashes):
                 platforms[slug][filename]["required"] = True
             if len(entry.get("description", "")) > len(platforms[slug][filename].get("description", "")):
                 platforms[slug][filename]["description"] = entry["description"]
+            # Merge per-core data
+            existing_cores = platforms[slug][filename].get("cores", {})
+            existing_cores.update(entry.get("cores", {}))
+            platforms[slug][filename]["cores"] = existing_cores
         else:
             platforms[slug][filename] = entry
 
@@ -312,6 +321,7 @@ def merge_registry(firmware, hashes):
             "required": info.get("required", False),
             "firmware_path": info.get("firmware_path", filename),
         }
+        entry["cores"] = {k: v for k, v in info.get("cores", {}).items()}
         # Merge hash data if available
         if filename in hashes:
             entry["md5"] = hashes[filename]["md5"]
@@ -361,7 +371,7 @@ def build_registry(core_info_dir, database_dir):
     return {
         "_meta": {
             "generated_from": "libretro-core-info + libretro-database System.dat",
-            "version": "3.0.0",
+            "version": "4.0.0",
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         },
         "platforms": platforms,

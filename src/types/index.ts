@@ -127,6 +127,8 @@ export interface FirmwarePlatform {
 export interface FirmwarePlatformExt extends FirmwarePlatform {
   has_games?: boolean;
   all_downloaded?: boolean;
+  active_core?: string;
+  active_core_label?: string;
 }
 
 export interface FirmwareStatus {
@@ -153,6 +155,8 @@ export interface BiosStatus {
   required_downloaded?: number;
   unknown_count?: number;
   files?: BiosFileStatus[];
+  active_core?: string;
+  active_core_label?: string;
 }
 
 export interface FirmwareDownloadResult {
