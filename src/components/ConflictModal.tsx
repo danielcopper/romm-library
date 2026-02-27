@@ -57,12 +57,14 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
         await resolveConflict(conflict.rom_id, conflict.filename, "upload");
       } catch (e) {
         logError(`Failed to resolve conflict (upload): ${e}`);
+        return;
       }
     } else if (resolution === "use_server") {
       try {
         await resolveConflict(conflict.rom_id, conflict.filename, "download");
       } catch (e) {
         logError(`Failed to resolve conflict (download): ${e}`);
+        return;
       }
     }
     // "launch_anyway" leaves the conflict unresolved

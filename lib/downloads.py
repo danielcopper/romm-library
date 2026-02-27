@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import fcntl
 import shutil
 import time
 import zipfile
@@ -72,15 +73,20 @@ class DownloadMixin:
         while True:
             try:
                 await asyncio.sleep(2)
-                if not os.path.exists(requests_path):
+                try:
+                    with open(requests_path, "r+") as f:
+                        fcntl.flock(f, fcntl.LOCK_EX)
+                        try:
+                            requests = json.load(f)
+                        except json.JSONDecodeError:
+                            requests = []
+                        if not requests:
+                            continue
+                        f.seek(0)
+                        f.truncate()
+                        json.dump([], f)
+                except FileNotFoundError:
                     continue
-                with open(requests_path, "r") as f:
-                    requests = json.load(f)
-                if not requests:
-                    continue
-                # Clear the file immediately
-                with open(requests_path, "w") as f:
-                    json.dump([], f)
                 for req in requests:
                     rom_id = req.get("rom_id")
                     if rom_id:
