@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.2...decky-romm-sync-v0.9.3) (2026-02-27)
+
+
+### Bug Fixes
+
+* move lib/ into py_modules/ for Decky CLI packaging ([#65](https://github.com/danielcopper/decky-romm-sync/issues/65)) ([9e89e5e](https://github.com/danielcopper/decky-romm-sync/commit/9e89e5e8874c2b1b19d4ecf3b577ad9772123af4))
+
 ## [0.9.2](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.1...decky-romm-sync-v0.9.2) (2026-02-27)
 
 
