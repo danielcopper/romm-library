@@ -4,7 +4,6 @@ import glob
 import json
 import os
 import re
-import xml.etree.ElementTree as ET
 
 import decky  # for DECKY_USER_HOME and logging
 
@@ -46,6 +45,12 @@ def parse_es_systems(xml_path):
 
     Returns empty dict if file can't be parsed or fails structural validation.
     """
+    try:
+        import xml.etree.ElementTree as ET
+    except ImportError:
+        decky.logger.warning("es_de_config: xml.etree not available, using core_defaults.json fallback")
+        return {}
+
     try:
         tree = ET.parse(xml_path)
     except (ET.ParseError, OSError) as e:
@@ -139,6 +144,7 @@ def get_system_override(retrodeck_home, system_name):
         return None
 
     try:
+        import xml.etree.ElementTree as ET
         tree = ET.parse(gamelist_path)
         root = tree.getroot()
         alt_emu = root.find("alternativeEmulator")
@@ -146,7 +152,7 @@ def get_system_override(retrodeck_home, system_name):
             label_el = alt_emu.find("label")
             if label_el is not None and label_el.text:
                 return label_el.text.strip()
-    except (ET.ParseError, OSError):
+    except (ImportError, Exception):
         pass
 
     return None
