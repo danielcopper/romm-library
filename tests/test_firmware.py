@@ -1057,7 +1057,7 @@ class TestPerCoreFiltering:
 
     @pytest.mark.asyncio
     async def test_check_platform_bios_filters_by_core(self, plugin, tmp_path):
-        """check_platform_bios skips files not used by active core."""
+        """check_platform_bios returns all files but marks used_by_active correctly."""
         from unittest.mock import AsyncMock, MagicMock, patch
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
@@ -1095,22 +1095,31 @@ class TestPerCoreFiltering:
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
-        # gpSP only uses gba_bios.bin — should filter out gb_bios and sgb_bios
-        with patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")):
+        # gpSP only uses gba_bios.bin — all files returned but gb/sgb marked as not used by active
+        with patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")), \
+             patch("lib.es_de_config.get_available_cores", return_value=[]):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
         file_names = [f["file_name"] for f in result["files"]]
         assert "gba_bios.bin" in file_names
-        assert "gb_bios.bin" not in file_names
-        assert "sgb_bios.bin" not in file_names
-        assert result["server_count"] == 1
+        assert "gb_bios.bin" in file_names  # present but not used by active
+        assert "sgb_bios.bin" in file_names  # present but not used by active
+        assert result["server_count"] == 3
         assert result["active_core"] == "gpsp_libretro"
         assert result["active_core_label"] == "gpSP"
         # gpSP requires gba_bios.bin
         gba_file = [f for f in result["files"] if f["file_name"] == "gba_bios.bin"][0]
         assert gba_file["required"] is True
         assert gba_file["classification"] == "required"
+        assert gba_file["used_by_active"] is True
+        # gb_bios not used by gpSP
+        gb_file = [f for f in result["files"] if f["file_name"] == "gb_bios.bin"][0]
+        assert gb_file["used_by_active"] is False
+        assert gb_file["cores"] == {"gambatte_libretro": {"required": False}, "mgba_libretro": {"required": False}}
+        # required_count should only count files used by active core
+        assert result["required_count"] == 1
+        assert result["required_downloaded"] == 0
 
     @pytest.mark.asyncio
     async def test_check_platform_bios_mgba_all_optional(self, plugin, tmp_path):
@@ -1153,7 +1162,8 @@ class TestPerCoreFiltering:
         plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
         # mGBA uses all 3 files, all optional
-        with patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro", "mGBA")):
+        with patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro", "mGBA")), \
+             patch("lib.es_de_config.get_available_cores", return_value=[]):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
@@ -1161,6 +1171,7 @@ class TestPerCoreFiltering:
         assert result["required_count"] == 0  # all optional for mGBA
         for f in result["files"]:
             assert f["classification"] == "optional"
+            assert f["used_by_active"] is True
 
     @pytest.mark.asyncio
     async def test_check_platform_bios_no_core_shows_all(self, plugin, tmp_path):
@@ -1191,7 +1202,8 @@ class TestPerCoreFiltering:
         plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
         # Core resolution fails
-        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+        with patch("lib.es_de_config.get_active_core", return_value=(None, None)), \
+             patch("lib.es_de_config.get_available_cores", return_value=[]):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
@@ -1201,8 +1213,8 @@ class TestPerCoreFiltering:
         assert result["files"][0]["required"] is True
 
     @pytest.mark.asyncio
-    async def test_offline_fallback_filters_by_core(self, plugin, tmp_path):
-        """Offline registry fallback also filters by active core."""
+    async def test_offline_fallback_includes_all_with_used_by_active(self, plugin, tmp_path):
+        """Offline registry fallback returns all files with used_by_active flag."""
         from unittest.mock import AsyncMock, MagicMock, patch
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
@@ -1231,10 +1243,16 @@ class TestPerCoreFiltering:
         plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("offline"))
 
         with patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")), \
+             patch("lib.es_de_config.get_available_cores", return_value=[]), \
              patch("lib.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
         file_names = [f["file_name"] for f in result["files"]]
         assert "gba_bios.bin" in file_names
-        assert "gb_bios.bin" not in file_names  # gpSP doesn't use gb_bios
+        assert "gb_bios.bin" in file_names  # present but not used by active
+        # Check used_by_active flags
+        gba_file = [f for f in result["files"] if f["file_name"] == "gba_bios.bin"][0]
+        assert gba_file["used_by_active"] is True
+        gb_file = [f for f in result["files"] if f["file_name"] == "gb_bios.bin"][0]
+        assert gb_file["used_by_active"] is False

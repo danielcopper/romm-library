@@ -42,33 +42,39 @@ All file downloads (ROMs, BIOS) hardcoded to `~/retrodeck/` — breaks SD card i
 - **Friendly error messages**: BiosManager shows "RomM server is unreachable" instead of raw Python urlopen errors.
 - **Frontend**: Active core badge ("Core: mGBA") shown on game detail page and BiosManager.
 
-#### Phase B: Core Switching UI — IN PROGRESS
+#### Phase B: Core Switching UI ✅
 
 **Goal:** Let users change the active core per-platform and per-game from within the plugin, without leaving Game Mode.
 
-1. **Per-game core selector in gear menu (game detail page):**
-   - Dropdown in gear popup showing available cores for the game's platform
-   - Current selection shows per-game override or "Platform default (CoreName)"
-   - Changing writes `<altemulator>CoreName</altemulator>` to game entry in gamelist.xml
+1. **Per-game core selector (CPU button on game detail page):**
+   - Dedicated microchip icon button between RomM and Steam gear buttons
+   - Flat context menu showing available cores with checkmark on active core
+   - Yellow button when non-default core active, gray when default
+   - Always writes explicit `<altemulator>CoreName</altemulator>` per-game override (avoids confusion when platform has non-default override)
 
 2. **Per-platform core selector in BiosManager QAM page:**
    - Dropdown showing available cores (from es_systems.xml) for the platform
    - Current selection shows the active core (per-system override or default)
    - Changing writes `<alternativeEmulator><label>CoreName</label></alternativeEmulator>` to `{retrodeck_home}/ES-DE/gamelists/{system}/gamelist.xml`
-   - Does NOT overwrite existing per-game overrides
+   - BiosManager works offline (core switching available, downloads disabled)
 
-3. **Structural validation gate:** If es_systems.xml fails validation, disable core switching UI entirely. Show "Unsupported ES-DE version" message. Read-only BIOS filtering still works via fallback.
+3. **BIOS detail shows all platform files** with per-core annotations:
+   - All registered files shown regardless of active core
+   - Per-core required/optional on separate lines per emulator
+   - Dot colors: green=downloaded, red=missing+required by active core, orange=missing+required by other core, grey=optional
+   - Unknown files (not in registry) hidden with "+ N other files" note
+   - Two-column layout: BIOS (left) + Emulator (right)
 
-4. **BIOS display updates live** when core is changed — re-run `check_platform_bios()` after core switch.
+4. **Live updates** — BIOS status, core badge, and game info panel update immediately on core change via `core_changed` events.
 
 ### Testing needed
 - [x] Startup pruning removes orphaned state entries
 - [x] Shortcut icons display correctly in Steam
-- [ ] BIOS files download to correct SD card path
+- [x] BIOS files download to correct SD card path
 - [ ] Migration moves files from internal to SD card
 - [x] BIOS required/optional matches active core (Bug 12)
-- [ ] Per-core BIOS filtering with live es_systems.xml
-- [ ] Core switching writes correct gamelist.xml (Phase B)
+- [x] Per-core BIOS filtering with live es_systems.xml
+- [x] Core switching writes correct gamelist.xml (Phase B)
 
 ---
 

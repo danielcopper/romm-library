@@ -134,6 +134,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             files: cached.bios_status.files as BiosStatus["files"],
             active_core: cached.bios_status.active_core,
             active_core_label: cached.bios_status.active_core_label,
+            available_cores: cached.bios_status.available_cores,
           };
         }
 
@@ -303,6 +304,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             files: cached.bios_status.files as BiosStatus["files"],
             active_core: cached.bios_status.active_core,
             active_core_label: cached.bios_status.active_core_label,
+            available_cores: cached.bios_status.available_cores,
           };
         }
         setState((prev) => ({ ...prev, biosStatus }));
@@ -513,31 +515,84 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       ),
     );
 
-    if (bios.files && bios.files.length > 0) {
+    // Build core_so -> label lookup from available_cores
+    const coreLabelMap: Record<string, string> = {};
+    if (bios.available_cores) {
+      for (const c of bios.available_cores) {
+        coreLabelMap[c.core_so] = c.label;
+      }
+    }
+
+    // Filter out unknown files (not in registry) — they're noise from the server
+    const knownFiles = (bios.files ?? []).filter((f) => f.classification !== "unknown");
+    const unknownCount = (bios.files ?? []).length - knownFiles.length;
+
+    if (knownFiles.length > 0) {
+      const fileElements = knownFiles.map((f) => {
+        // Dot color logic:
+        // Green: downloaded
+        // Red: missing + required by current core
+        // Orange: missing + required by another core (not current)
+        // Grey: optional for current core or not used by any known core
+        let dotColor: string;
+        if (f.downloaded) {
+          dotColor = "#5ba32b";
+        } else if (f.used_by_active !== false && f.classification === "required") {
+          dotColor = "#d94126";
+        } else if (!f.used_by_active && f.cores) {
+          const requiredByOther = Object.values(f.cores).some((c) => c.required);
+          dotColor = requiredByOther ? "#d4a72c" : "#8f98a0";
+        } else {
+          dotColor = "#8f98a0";
+        }
+
+        // Build per-core lines
+        const coreLines: ReturnType<typeof createElement>[] = [];
+        if (f.cores) {
+          for (const [coreSo, coreData] of Object.entries(f.cores)) {
+            const label = coreLabelMap[coreSo] || coreSo.replace(/_libretro$/, "");
+            const suffix = coreData.required ? " (required)" : " (optional)";
+            coreLines.push(
+              createElement("div", {
+                key: `core-${coreSo}`,
+                style: { color: "rgba(255, 255, 255, 0.5)", fontSize: "12px" },
+              }, `${label}${suffix}`),
+            );
+          }
+        }
+
+        return createElement("div", { key: f.file_name, className: "romm-panel-file-row" },
+          createElement("span", {
+            key: "dot",
+            className: "romm-status-dot",
+            style: { backgroundColor: dotColor },
+          }),
+          createElement("span", { key: "name", className: "romm-panel-file-name" },
+            f.description || f.file_name,
+          ),
+          coreLines.length > 0
+            ? createElement("div", {
+                key: "cores",
+                style: { flexBasis: "100%", display: "flex", flexDirection: "column" as const, gap: "2px", marginLeft: "18px" },
+              }, ...coreLines)
+            : null,
+        );
+      });
+
+      // Add unknown count note if any
+      if (unknownCount > 0) {
+        fileElements.push(
+          createElement("div", {
+            key: "unknown-note",
+            className: "romm-panel-file-row",
+            style: { color: "rgba(255, 255, 255, 0.4)", fontSize: "12px", marginTop: "8px" },
+          }, `+ ${unknownCount} other file${unknownCount !== 1 ? "s" : ""} on server (not required by any known core)`),
+        );
+      }
+
       biosColumn.push(
         createElement("div", { key: "bios-file-list", className: "romm-panel-file-list" },
-          ...bios.files.map((f) => {
-            let dotColor: string;
-            if (f.classification === "unknown") {
-              dotColor = "#d4a72c";
-            } else if (f.downloaded) {
-              dotColor = "#5ba32b";
-            } else if (f.classification === "required") {
-              dotColor = "#d94126";
-            } else {
-              dotColor = "#8f98a0";
-            }
-            return createElement("div", { key: f.file_name, className: "romm-panel-file-row" },
-              createElement("span", {
-                className: "romm-status-dot",
-                style: { backgroundColor: dotColor },
-              }),
-              createElement("span", { className: "romm-panel-file-name" },
-                `${f.description || f.file_name} (${f.classification})`,
-              ),
-              createElement("span", { className: "romm-panel-file-path" }, f.file_name !== (f.description || f.file_name) ? f.file_name : f.local_path),
-            );
-          }),
+          ...fileElements,
         ),
       );
     }

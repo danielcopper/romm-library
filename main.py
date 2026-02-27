@@ -465,8 +465,6 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             try:
                 bios = await self.check_platform_bios(platform_slug, rom_filename=rom_file or None)
                 if bios.get("needs_bios"):
-                    from lib import es_de_config
-                    available_cores = es_de_config.get_available_cores(platform_slug)
                     bios_status = {
                         "platform_slug": platform_slug,
                         "total": bios.get("server_count", 0),
@@ -477,7 +475,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                         "files": bios.get("files", []),
                         "active_core": bios.get("active_core"),
                         "active_core_label": bios.get("active_core_label"),
-                        "available_cores": available_cores,
+                        "available_cores": bios.get("available_cores", []),
                     }
             except Exception as e:
                 decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
@@ -520,7 +518,6 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             )
             es_de_config._reset_cache()
             bios = await self.check_platform_bios(platform_slug)
-            bios["available_cores"] = es_de_config.get_available_cores(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set system core: {e}")
@@ -540,7 +537,6 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             # Extract rom filename from path for per-game core detection
             rom_filename = rom_path.lstrip("./") if rom_path else None
             bios = await self.check_platform_bios(platform_slug, rom_filename=rom_filename)
-            bios["available_cores"] = es_de_config.get_available_cores(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set game core: {e}")
