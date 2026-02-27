@@ -36,6 +36,9 @@ def find_es_systems_xml():
 def parse_es_systems(xml_path):
     """Parse es_systems.xml and return per-system core info.
 
+    Uses xml.parsers.expat (SAX-style) instead of xml.etree.ElementTree
+    because Decky's PyInstaller-frozen Python does not bundle xml.etree.
+
     Returns: {system_name: {
         "default_core": str | None,
         "default_label": str | None,
@@ -46,53 +49,93 @@ def parse_es_systems(xml_path):
     Returns empty dict if file can't be parsed or fails structural validation.
     """
     try:
-        import xml.etree.ElementTree as ET
+        from xml.parsers import expat
     except ImportError:
-        decky.logger.warning("es_de_config: xml.etree not available, using core_defaults.json fallback")
+        decky.logger.warning("es_de_config: xml.parsers.expat not available")
         return {}
 
     try:
-        tree = ET.parse(xml_path)
-    except (ET.ParseError, OSError) as e:
-        decky.logger.warning("es_de_config: failed to parse %s: %s", xml_path, e)
-        return {}
-
-    root = tree.getroot()
-    if root.tag != "systemList":
-        decky.logger.warning("es_de_config: unexpected root tag '%s' (expected 'systemList')", root.tag)
+        with open(xml_path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        decky.logger.warning("es_de_config: failed to read %s: %s", xml_path, e)
         return {}
 
     systems = {}
-    for system_el in root.findall("system"):
-        name_el = system_el.find("name")
-        if name_el is None or not name_el.text:
-            continue
+    state = {
+        "path": [],       # element name stack
+        "text": "",       # accumulated character data
+        "root_tag": None,
+        "current_system": None,
+        "current_label": "",
+    }
 
-        system_name = name_el.text.strip()
-        cores = {}  # core_so -> label
-        label_to_core = {}  # label -> core_so
-        default_core = None
-        default_label = None
+    def start_element(name, attrs):
+        state["path"].append(name)
+        state["text"] = ""
+        if state["root_tag"] is None:
+            state["root_tag"] = name
+        if name == "system":
+            state["current_system"] = {
+                "name": None,
+                "default_core": None,
+                "default_label": None,
+                "cores": {},
+                "label_to_core": {},
+            }
+        elif name == "command":
+            state["current_label"] = attrs.get("label", "")
 
-        for cmd_el in system_el.findall("command"):
-            label = cmd_el.get("label", "")
-            cmd_text = cmd_el.text or ""
+    def end_element(name):
+        text = state["text"].strip()
+        path = state["path"]
+        sys = state["current_system"]
 
-            match = _CORE_SO_RE.search(cmd_text)
+        if path == ["systemList", "system", "name"] and sys is not None:
+            sys["name"] = text
+        elif path == ["systemList", "system", "command"] and sys is not None:
+            match = _CORE_SO_RE.search(text)
             if match:
                 core_so = match.group(1)
-                cores[core_so] = label
-                label_to_core[label] = core_so
-                if default_core is None:
-                    default_core = core_so
-                    default_label = label
+                label = state["current_label"]
+                sys["cores"][core_so] = label
+                sys["label_to_core"][label] = core_so
+                if sys["default_core"] is None:
+                    sys["default_core"] = core_so
+                    sys["default_label"] = label
+        elif name == "system" and sys is not None:
+            if sys["name"]:
+                systems[sys["name"]] = {
+                    "default_core": sys["default_core"],
+                    "default_label": sys["default_label"],
+                    "cores": sys["cores"],
+                    "label_to_core": sys["label_to_core"],
+                }
+            state["current_system"] = None
 
-        systems[system_name] = {
-            "default_core": default_core,
-            "default_label": default_label,
-            "cores": cores,
-            "label_to_core": label_to_core,
-        }
+        state["path"].pop()
+        state["text"] = ""
+
+    def char_data(data):
+        state["text"] += data
+
+    parser = expat.ParserCreate()
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.CharacterDataHandler = char_data
+
+    try:
+        parser.Parse(data, True)
+    except expat.ExpatError as e:
+        decky.logger.warning("es_de_config: failed to parse %s: %s", xml_path, e)
+        return {}
+
+    if state["root_tag"] != "systemList":
+        decky.logger.warning(
+            "es_de_config: unexpected root tag '%s' (expected 'systemList')",
+            state["root_tag"],
+        )
+        return {}
 
     return systems
 
@@ -144,18 +187,47 @@ def get_system_override(retrodeck_home, system_name):
         return None
 
     try:
-        import xml.etree.ElementTree as ET
-        tree = ET.parse(gamelist_path)
-        root = tree.getroot()
-        alt_emu = root.find("alternativeEmulator")
-        if alt_emu is not None:
-            label_el = alt_emu.find("label")
-            if label_el is not None and label_el.text:
-                return label_el.text.strip()
-    except (ImportError, Exception):
-        pass
+        from xml.parsers import expat
+    except ImportError:
+        return None
 
-    return None
+    try:
+        with open(gamelist_path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+
+    result = {"label": None}
+    state = {"path": [], "text": ""}
+
+    def start_element(name, attrs):
+        state["path"].append(name)
+        state["text"] = ""
+
+    def end_element(name):
+        text = state["text"].strip()
+        if (len(state["path"]) >= 2
+                and state["path"][-1] == "label"
+                and state["path"][-2] == "alternativeEmulator"
+                and text):
+            result["label"] = text
+        state["path"].pop()
+        state["text"] = ""
+
+    def char_data(data):
+        state["text"] += data
+
+    parser = expat.ParserCreate()
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.CharacterDataHandler = char_data
+
+    try:
+        parser.Parse(data, True)
+    except expat.ExpatError:
+        return None
+
+    return result["label"]
 
 
 def get_active_core(system_name, rom_filename=None):

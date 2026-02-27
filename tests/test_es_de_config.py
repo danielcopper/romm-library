@@ -3,7 +3,6 @@
 import json
 import os
 import tempfile
-import xml.etree.ElementTree as ET
 from unittest import mock
 
 import pytest
