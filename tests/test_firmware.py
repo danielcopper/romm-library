@@ -861,3 +861,117 @@ class TestDownloadRequiredFirmware:
         assert result["downloaded"] == 1
         assert 2 in download_called_ids
         assert 1 not in download_called_ids
+
+
+class TestCheckPlatformBiosOffline:
+    """Tests for check_platform_bios registry fallback when RomM is offline."""
+
+    @pytest.mark.asyncio
+    async def test_offline_fallback_with_registry(self, plugin, tmp_path):
+        """API fails but registry has entries — returns registry-based status."""
+        from unittest.mock import patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        bios_dir = tmp_path / "bios"
+        bios_dir.mkdir(parents=True)
+        # Create one file present, one missing
+        (bios_dir / "scph5501.bin").write_bytes(b"\x00" * 512)
+
+        plugin._bios_registry = {
+            "platforms": {
+                "psx": {
+                    "scph5501.bin": {
+                        "description": "PS1 US BIOS",
+                        "required": True,
+                        "firmware_path": "scph5501.bin",
+                    },
+                    "scph5502.bin": {
+                        "description": "PS1 EU BIOS",
+                        "required": True,
+                        "firmware_path": "scph5502.bin",
+                    },
+                    "scph1000.bin": {
+                        "description": "PS1 JP BIOS",
+                        "required": False,
+                        "firmware_path": "scph1000.bin",
+                    },
+                }
+            }
+        }
+        plugin._bios_files_index = {}
+        for plat, files in plugin._bios_registry["platforms"].items():
+            for fname, entry in files.items():
+                plugin._bios_files_index[fname] = {**entry, "platform": plat}
+
+        with patch.object(plugin, "_romm_request", side_effect=Exception("offline")), \
+             patch("lib.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+            result = await plugin.check_platform_bios("psx")
+
+        assert result["needs_bios"] is True
+        assert result["server_count"] == 3
+        assert result["local_count"] == 1
+        assert result["required_count"] == 2
+        assert result["required_downloaded"] == 1
+        assert len(result["files"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_offline_no_registry_entries(self, plugin, tmp_path):
+        """API fails and no registry entries — returns needs_bios False."""
+        from unittest.mock import patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        plugin._bios_registry = {"platforms": {}}
+        plugin._bios_files_index = {}
+
+        with patch.object(plugin, "_romm_request", side_effect=Exception("offline")), \
+             patch("lib.retrodeck_config.get_bios_path", return_value=str(tmp_path / "bios")):
+            result = await plugin.check_platform_bios("n64")
+
+        assert result["needs_bios"] is False
+
+    @pytest.mark.asyncio
+    async def test_offline_all_required_downloaded(self, plugin, tmp_path):
+        """API fails, all required files present — all_downloaded True."""
+        from unittest.mock import patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        bios_dir = tmp_path / "bios"
+        dc_dir = bios_dir / "dc"
+        dc_dir.mkdir(parents=True)
+        (dc_dir / "dc_boot.bin").write_bytes(b"\x00" * 2048)
+
+        plugin._bios_registry = {
+            "platforms": {
+                "dc": {
+                    "dc_boot.bin": {
+                        "description": "Dreamcast BIOS",
+                        "required": True,
+                        "firmware_path": "dc/dc_boot.bin",
+                    },
+                    "dc_flash.bin": {
+                        "description": "Dreamcast Flash",
+                        "required": False,
+                        "firmware_path": "dc/dc_flash.bin",
+                    },
+                }
+            }
+        }
+        plugin._bios_files_index = {}
+        for plat, files in plugin._bios_registry["platforms"].items():
+            for fname, entry in files.items():
+                plugin._bios_files_index[fname] = {**entry, "platform": plat}
+
+        with patch.object(plugin, "_romm_request", side_effect=Exception("offline")), \
+             patch("lib.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+            result = await plugin.check_platform_bios("dc")
+
+        assert result["needs_bios"] is True
+        assert result["server_count"] == 2
+        assert result["local_count"] == 1
+        assert result["required_count"] == 1
+        assert result["required_downloaded"] == 1
+        # all_downloaded is false because optional file is missing
+        assert result["all_downloaded"] is False

@@ -328,7 +328,26 @@ class FirmwareMixin:
                         "classification": classification,
                     })
         except Exception:
-            pass
+            # Server unreachable — fall back to registry-based check
+            if not registry_platform:
+                return {"needs_bios": False}
+            bios_base = retrodeck_config.get_bios_path()
+            for file_name, reg_entry in registry_platform.items():
+                firmware_path = reg_entry.get("firmware_path", file_name)
+                dest = os.path.join(bios_base, firmware_path)
+                downloaded = os.path.exists(dest)
+                is_required = reg_entry.get("required", True)
+                server_count += 1
+                if downloaded:
+                    local_count += 1
+                files.append({
+                    "file_name": file_name,
+                    "downloaded": downloaded,
+                    "local_path": dest,
+                    "required": is_required,
+                    "description": reg_entry.get("description", file_name),
+                    "classification": "required" if is_required else "optional",
+                })
 
         if server_count == 0:
             return {"needs_bios": False}
