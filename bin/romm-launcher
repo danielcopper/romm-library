@@ -74,8 +74,9 @@ if [[ -n "${ROM_INFO:-}" ]]; then
         # Launch with RetroDECK (auto-detects system from roms/{system}/ path)
         exec flatpak run net.retrodeck.retrodeck "$ROM_PATH"
     else
-        echo "ROM file missing: $ROM_PATH" >&2
+        echo "ROM file missing: $ROM_PATH — queueing download" >&2
     fi
+    # Fall through to download request if ROM file is missing
 fi
 
 # ROM not installed — request download

@@ -39,6 +39,8 @@ RomM Server <-HTTP-> Python Backend (main.py)
 main.py                              # Plugin entry point, composes mixin classes from lib/
 lib/                                 # Backend mixin modules (state, sync, downloads, etc.)
 lib/save_sync.py                     # Save sync backend (device registration, upload/download, conflict detection)
+lib/es_de_config.py                  # ES-DE config parser (core resolution, gamelist.xml read/write)
+lib/retrodeck_config.py              # RetroDECK path resolution (roms, saves, BIOS, states)
 src/index.tsx                        # Plugin entry, event listeners, QAM router
 src/components/MainPage.tsx          # Status, sync button, navigation
 src/components/ConnectionSettings.tsx # RomM connection, SGDB API key, controller settings
@@ -48,7 +50,9 @@ src/components/DownloadQueue.tsx     # Active/completed downloads
 src/components/BiosManager.tsx       # Per-platform BIOS file status and downloads
 src/components/CustomPlayButton.tsx  # Custom Play/Download button with dropdown menu
 src/components/RomMPlaySection.tsx   # PlaySection wrapper: CustomPlayButton + info items (last played, playtime, achievements, save sync, BIOS)
+src/components/RomMGameInfoPanel.tsx  # Metadata panel: description, genres, developer, release date
 src/components/SaveSyncSettings.tsx  # Save sync settings QAM page
+src/components/ConflictModal.tsx     # Save conflict resolution modal (keep local/server/launch anyway)
 src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid, injects RomMPlaySection
 src/patches/metadataPatches.ts       # Store patches for metadata display, playtime writes
 src/api/backend.ts                   # callable() wrappers (typed)
@@ -62,33 +66,33 @@ src/utils/collections.ts             # Steam collection management
 src/utils/sessionManager.ts          # Game session detection and playtime tracking
 bin/romm-launcher                    # Bash launcher for RetroDECK
 defaults/config.json                 # 149 platform slug -> RetroDECK system mappings
-tests/test_*.py                      # Per-module backend tests (417 tests)
-tests/test_save_sync.py              # Save sync backend tests
+tests/test_*.py                      # Per-module backend tests (586 tests)
 tests/conftest.py                    # Mock decky module for test isolation
 ```
 
 ## Current State
 
-**Latest release**: v0.7.0 on main
+**Latest release**: v0.9.1 on main
 
-Working:
+Working (Phases 1-6 complete):
 - Full sync engine (fetch ROMs, create shortcuts, apply cover art)
 - On-demand ROM downloads with progress tracking
-- BIOS file management per platform
-- Game detail page injection (download/uninstall, BIOS status, artwork refresh)
+- BIOS file management per platform with per-core annotations
+- Game detail page injection (custom PlaySection, GameInfoPanel, metadata)
 - SteamGridDB artwork (hero, logo, wide grid) — on-demand from game detail page
 - SGDB API key management with verify button
 - Per-platform sync toggles, per-platform removal
 - Steam collections
 - Toast notifications
-
-In progress (Phase 5):
 - Bidirectional save file sync (RetroArch .srm saves)
 - Three-way conflict detection with 4 resolution modes
-- Game session detection and playtime tracking
+- Game session detection and playtime tracking (via RomM notes)
 - Save sync settings QAM page
+- Per-platform and per-game core switching (ES-DE gamelist.xml integration)
+- RetroDECK path migration (internal SSD ↔ SD card)
+- Native Steam metadata display (descriptions, genres, release date, controller support)
 
-See PLAN.md for the full roadmap (Phases 1-4.5 done, Phase 5 in progress, 6-8 planned).
+See PLAN.md for the full roadmap (Phases 1-6 done, 7-8 planned).
 
 ## Development
 

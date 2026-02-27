@@ -34,7 +34,9 @@ class RommClientMixin:
         return config.get("platform_map", {})
 
     def _resolve_system(self, platform_slug, platform_fs_slug=None):
-        platform_map = self._load_platform_map()
+        if not hasattr(self, '_platform_map'):
+            self._platform_map = self._load_platform_map()
+        platform_map = self._platform_map
         if platform_slug in platform_map:
             return platform_map[platform_slug]
         if platform_fs_slug and platform_fs_slug in platform_map:
