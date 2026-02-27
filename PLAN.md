@@ -5,77 +5,6 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md.
 
 ---
 
-## Phase 6: Bug Fixes & Stability — NEXT
-
-**Goal**: Fix known bugs and improve reliability before adding more features.
-
-### Bug 4: State Consistency / Startup Pruning ✅
-Startup state healing implemented and tested — atomic settings, orphan cleanup, tmp pruning.
-
-### Bug 5: SSL Certificate Verification ✅
-SSL verification enabled for all requests. SteamGridDB always verifies via `certifi` CA bundle. RomM verifies by default with user toggle for self-signed certs. HTTP client consolidated (EXT-4).
-
-### Bug 6: Secrets Stored in Plain Text ✅
-`settings.json` enforces `0600` permissions on every write and on startup. OS keyring (D-Bus Secret Service) not viable — PluginLoader runs as root with no session bus. All other Decky plugins use plaintext JSON; `chmod 600` is the standard mitigation.
-
-### Bug 7: BIOS Status Reporting ✅
-Static BIOS registry (`defaults/bios_registry.json`) derived from libretro core-info + System.dat (553 entries, 51 platforms, v3.0.0). Backend enriches firmware responses with `required`/`description`/`hash_valid`/`classification` fields. Frontend distinguishes required vs optional vs unknown files in BiosManager, PlaySection badge, and GameInfoPanel. "Download Required" button for required-only downloads. Unknown files shown in orange with GitHub issue prompt. Platform-grouped registry with `firmware_path` field for correct subfolder placement.
-
-### Bug 8: VDF-Created Shortcut Icons Not Displaying ✅
-Icons display correctly. No issue found.
-
-### Bug 10: BIOS Badge Missing from PlaySection ✅
-`bios_status` was hardcoded to `None` in `get_cached_game_detail`. Now populated via `check_platform_bios()`.
-
-### Bug 11: RetroDECK Path Resolution ✅
-All file downloads (ROMs, BIOS) hardcoded to `~/retrodeck/` — breaks SD card installs. Now reads paths from `retrodeck.json` via centralized `lib/retrodeck_config.py`. BIOS subfolder placement from registry `firmware_path` (eliminates manual `BIOS_DEST_MAP`). BIOS download tracking in `state.json`. Path change detection on startup with migration UI (MainPage warning banner + ConnectionSettings migration panel). Untracked BIOS files matched by registry for migration.
-
-### Bug 12: Per-Core BIOS Filtering ✅
-
-**Problem:** OR-logic across all cores caused false required warnings and showed BIOS files from unrelated systems (e.g. GB/GBC/SGB BIOS on a GBA game page).
-
-**Solution (Phase A — read-only BIOS filtering):**
-- **Per-platform BIOS assignment**: `FIRMWARE_PLATFORM_OVERRIDE` table in `generate_bios_registry.py` assigns multi-system core files to correct platforms (e.g. mGBA's `gb_bios.bin` → `gb`, not `gba`). Fixes Game Boy family, Sega CD/SMS/GG, and Mesen-S cross-system files.
-- **Per-core required/optional**: Registry v4.0.0 tracks `cores` dict per file with per-core `required` status. Active core resolved via `lib/es_de_config.py` (expat-based XML parser for Decky compatibility).
-- **ES-DE config resolution**: `find_es_systems_xml()` uses flatpak `current/active` symlinks (linux/ then unix/ fallback). `get_active_core()` chain: per-system gamelist.xml override → live es_systems.xml default → shipped `core_defaults.json` → (None, None).
-- **Decky Python compatibility**: Uses `xml.parsers.expat` (SAX-style) instead of `xml.etree.ElementTree` which is not bundled in Decky's PyInstaller-frozen Python 3.11.
-- **Friendly error messages**: BiosManager shows "RomM server is unreachable" instead of raw Python urlopen errors.
-- **Frontend**: Active core badge ("Core: mGBA") shown on game detail page and BiosManager.
-
-#### Phase B: Core Switching UI ✅
-
-**Goal:** Let users change the active core per-platform and per-game from within the plugin, without leaving Game Mode.
-
-1. **Per-game core selector (CPU button on game detail page):**
-   - Dedicated microchip icon button between RomM and Steam gear buttons
-   - Flat context menu showing available cores with checkmark on active core
-   - Yellow button when non-default core active, gray when default
-   - Always writes explicit `<altemulator>CoreName</altemulator>` per-game override (avoids confusion when platform has non-default override)
-
-2. **Per-platform core selector in BiosManager QAM page:**
-   - Dropdown showing available cores (from es_systems.xml) for the platform
-   - Current selection shows the active core (per-system override or default)
-   - Changing writes `<alternativeEmulator><label>CoreName</label></alternativeEmulator>` to `{retrodeck_home}/ES-DE/gamelists/{system}/gamelist.xml`
-   - BiosManager works offline (core switching available, downloads disabled)
-
-3. **BIOS detail shows all platform files** with per-core annotations:
-   - All registered files shown regardless of active core
-   - Per-core required/optional on separate lines per emulator
-   - Dot colors: green=downloaded, red=missing+required by active core, orange=missing+required by other core, grey=optional
-   - Unknown files (not in registry) hidden with "+ N other files" note
-   - Two-column layout: BIOS (left) + Emulator (right)
-
-4. **Live updates** — BIOS status, core badge, and game info panel update immediately on core change via `core_changed` events.
-
-### Testing needed
-- [x] Startup pruning removes orphaned state entries
-- [x] Shortcut icons display correctly in Steam
-- [x] BIOS files download to correct SD card path
-- [ ] Migration moves files from internal to SD card
-- [x] BIOS required/optional matches active core (Bug 12)
-- [x] Per-core BIOS filtering with live es_systems.xml
-- [x] Core switching writes correct gamelist.xml (Phase B)
-
 ---
 
 ## Phase 7: Multi-Emulator Support (Deferred)
@@ -215,3 +144,8 @@ Custom game detail page for RomM games. RomMPlaySection with info items (Last Pl
 **Bug 1**: Sync progress bar — fixed nProgress range (0-100), heartbeat-based timeout, `[X/6]` step indicator, download progress in game detail button.
 **Bug 2**: Cancel sync — wired `requestSyncCancel()` to frontend phases, toast shows correct count.
 **Bug 9**: Play button first-click — dropped BIsModOrShortcut bypass, own entire game detail UI.
+
+### Phase 6: Bug Fixes & Stability ✅
+**Bugs 4-8, 10-12** all resolved. State consistency/startup pruning, SSL verification, settings permissions (0600), BIOS status reporting (553-entry registry with required/optional/hash validation), RetroDECK path resolution (SD card support, migration UI), per-core BIOS filtering (expat-based ES-DE config parser, core_defaults.json fallback).
+**Phase A — Per-core BIOS filtering**: Registry v4.0.0 with per-core `required` status. Active core resolution chain: per-game gamelist.xml → per-system gamelist.xml → live es_systems.xml → shipped core_defaults.json. BIOS detail shows all platform files with per-core annotations (one line per emulator). Dot colors: green=downloaded, red=missing+required by active core, orange=required by other core, grey=optional.
+**Phase B — Core switching UI**: Per-game CPU button (microchip icon) + per-platform dropdown in BiosManager. Writes to ES-DE gamelist.xml. Live UI updates via `core_changed` events. BiosManager works offline. Per-game override always writes explicit label (avoids confusion with platform overrides).
