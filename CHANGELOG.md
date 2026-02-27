@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.0...decky-romm-sync-v0.9.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* BIOS detail — all files with per-core annotations ([#60](https://github.com/danielcopper/decky-romm-sync/issues/60)) ([c919348](https://github.com/danielcopper/decky-romm-sync/commit/c9193486cadfa4dc804775b77c194de6b7e13e9d))
+
 ## [0.9.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.3...decky-romm-sync-v0.9.0) (2026-02-27)
 
 
