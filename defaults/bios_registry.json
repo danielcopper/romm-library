@@ -1,8 +1,8 @@
 {
   "_meta": {
     "generated_from": "libretro-core-info + libretro-database System.dat",
-    "version": "3.0.0",
-    "generated_at": "2026-02-26"
+    "version": "4.0.0",
+    "generated_at": "2026-02-27"
   },
   "platforms": {
     "3do": {
@@ -10,6 +10,11 @@
         "description": "3do_arcade_saot.bin (Shootout At Old Tucson BIOS)",
         "required": false,
         "firmware_path": "3do_arcade_saot.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "8970fc987ab89a7f64da9f8a8c4333ff",
         "sha1": "520d3d1b5897800af47f92efd2444a26b7a7dead",
         "size": 524288
@@ -18,6 +23,11 @@
         "description": "goldstar.bin (Goldstar GDO-101M BIOS)",
         "required": false,
         "firmware_path": "goldstar.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "8639fd5e549bd6238cfee79e3e749114",
         "sha1": "c4a2e5336f77fb5f743de1eea2cda43675ee2de7",
         "size": 1048576
@@ -26,6 +36,11 @@
         "description": "panafz1-kanji.bin (Panasonic FZ-1 Kanji Font ROM)",
         "required": false,
         "firmware_path": "panafz1-kanji.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "b8dc97f778a6245c58e064b0312e8281",
         "sha1": "acd39a8fee1b9d2950d5ab447846c11fb31af63e",
         "size": 933636
@@ -34,6 +49,11 @@
         "description": "panafz1.bin (Panasonic FZ-1 BIOS)",
         "required": false,
         "firmware_path": "panafz1.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "f47264dd47fe30f73ab3c010015c155b",
         "sha1": "34bf189111295f74d7b7dfc1f304d98b8d36325a",
         "size": 1048576
@@ -42,6 +62,11 @@
         "description": "panafz10-norsa.bin (Panasonic FZ-10 BIOS [Encryption Check Disabled])",
         "required": false,
         "firmware_path": "panafz10-norsa.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "1477bda80dc33731a65468c1f5bcbee9",
         "sha1": "f05e642322c03694f06a809c0b90fc27ac73c002",
         "size": 1048576
@@ -50,6 +75,11 @@
         "description": "panafz10.bin (Panasonic FZ-10 BIOS)",
         "required": false,
         "firmware_path": "panafz10.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "51f2f43ae2f3508a14d9f56597e2d3ce",
         "sha1": "3c912300775d1ad730dc35757e279c274c0acaad",
         "size": 1048576
@@ -58,6 +88,11 @@
         "description": "panafz10e-anvil-norsa.bin (Panasonic FZ-10E ANVIL BIOS [Encryption Check Disabled])",
         "required": false,
         "firmware_path": "panafz10e-anvil-norsa.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "cf11bbb5a16d7af9875cca9de9a15e09",
         "sha1": "2765c7b4557cc838b32567d2428d088980295159",
         "size": 1048576
@@ -66,6 +101,11 @@
         "description": "panafz10e-anvil.bin (Panasonic FZ-10E ANVIL BIOS)",
         "required": false,
         "firmware_path": "panafz10e-anvil.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "a48e6746bd7edec0f40cff078f0bb19f",
         "sha1": "a900371f0cdcdc03f79557f11d406fd71251a5fd",
         "size": 1048576
@@ -74,6 +114,11 @@
         "description": "panafz10ja-anvil-kanji.bin (Panasonic FZ-10JA Kanji Font ROM)",
         "required": false,
         "firmware_path": "panafz10ja-anvil-kanji.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "428577250f43edc902ea239c50d2240d",
         "sha1": "2e857b957803d0331fd229328df01f3ffab69eee",
         "size": 1048576
@@ -82,6 +127,11 @@
         "description": "panafz1j-kanji.bin (Panasonic FZ-1J Kanji Font ROM)",
         "required": false,
         "firmware_path": "panafz1j-kanji.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "c23fb5d5e6bb1c240d02cf968972be37",
         "sha1": "884515605ee243577ab20767ef8c1a7368e4e407",
         "size": 1048576
@@ -90,6 +140,11 @@
         "description": "panafz1j-norsa.bin (Panasonic FZ-1J BIOS [Encryption Check Disabled])",
         "required": false,
         "firmware_path": "panafz1j-norsa.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "f6c71de7470d16abe4f71b1444883dc8",
         "sha1": "a417587ae3b0b8ef00c830920c21af8bee88e419",
         "size": 1048576
@@ -98,6 +153,11 @@
         "description": "panafz1j.bin (Panasonic FZ-1J BIOS)",
         "required": false,
         "firmware_path": "panafz1j.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "a496cfdded3da562759be3561317b605",
         "sha1": "ec7ec62d60ec0459a14ed56ebc66761ef3c80efc",
         "size": 1048576
@@ -106,6 +166,11 @@
         "description": "sanyotry.bin (Sanyo Try IMP-21J BIOS)",
         "required": false,
         "firmware_path": "sanyotry.bin",
+        "cores": {
+          "opera_libretro": {
+            "required": false
+          }
+        },
         "md5": "35fa1a1ebaaeea286dc5cd15487c13ea",
         "sha1": "b01c53da256dde43ffec4ad3fc3adfa8d635e943",
         "size": 1048576
@@ -116,6 +181,11 @@
         "description": "fbneo/bubsys.zip (Bubble System BIOS)",
         "required": false,
         "firmware_path": "fbneo/bubsys.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "f81298afd68a1a24a49a1a2d9f087964",
         "sha1": "1c0ffcd308b0c8c6dbb74ad8b811a0767200d366",
         "size": 7950
@@ -124,6 +194,11 @@
         "description": "fbneo/cchip.zip (C-Chip Internal ROM)",
         "required": false,
         "firmware_path": "fbneo/cchip.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "df6f8a3d83c028a5cb9f2f2be60773f3",
         "sha1": "364f2302a145a0fd6de767d7f8484badde1d1a6e",
         "size": 2700
@@ -131,17 +206,32 @@
       "channelf.zip": {
         "description": "fbneo/channelf.zip (Fairchild Channel F BIOS)",
         "required": false,
-        "firmware_path": "fbneo/channelf.zip"
+        "firmware_path": "fbneo/channelf.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "coleco.zip": {
         "description": "fbneo/coleco.zip (ColecoVision System BIOS)",
         "required": false,
-        "firmware_path": "fbneo/coleco.zip"
+        "firmware_path": "fbneo/coleco.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "decocass.zip": {
         "description": "fbneo/decocass.zip (DECO Cassette System BIOS)",
         "required": false,
         "firmware_path": "fbneo/decocass.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "b7e1189b341bf6a8e270017c096d21b0",
         "sha1": "30b97b2670b79d0de41cba190324c504846c6fa1",
         "size": 16107
@@ -149,17 +239,38 @@
       "fdsbios.zip": {
         "description": "fbneo/fdsbios.zip (FDS System BIOS)",
         "required": false,
-        "firmware_path": "fbneo/fdsbios.zip"
+        "firmware_path": "fbneo/fdsbios.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "hiscore.dat": {
         "description": "fbneo/hiscore.dat (High Score support database)",
         "required": false,
-        "firmware_path": "fbneo/hiscore.dat"
+        "firmware_path": "fbneo/hiscore.dat",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          },
+          "fbneo_cps12_libretro": {
+            "required": false
+          },
+          "fbneo_neogeo_libretro": {
+            "required": false
+          }
+        }
       },
       "isgsm.zip": {
         "description": "fbneo/isgsm.zip (ISG Selection Master Type 2006 System BIOS)",
         "required": false,
         "firmware_path": "fbneo/isgsm.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "4a56d56e2219c5e2b006b66a4263c01c",
         "sha1": "f590ccf688b4c05fa1da5c5dd92c224545170c3b",
         "size": 10207
@@ -168,6 +279,11 @@
         "description": "fbneo/midssio.zip (Midway SSIO Sound Board Internal ROM)",
         "required": false,
         "firmware_path": "fbneo/midssio.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "5904b0de768d1d506e766aa7e18994c1",
         "sha1": "54275c9833e497f71f76ab239030cc386c863991",
         "size": 163
@@ -175,32 +291,71 @@
       "msx.zip": {
         "description": "fbneo/msx.zip (MSX1 System BIOS)",
         "required": false,
-        "firmware_path": "fbneo/msx.zip"
+        "firmware_path": "fbneo/msx.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "namcoc69.zip": {
         "description": "fbneo/namcoc69.zip (Namco C69 BIOS)",
         "required": false,
-        "firmware_path": "fbneo/namcoc69.zip"
+        "firmware_path": "fbneo/namcoc69.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "namcoc70.zip": {
         "description": "fbneo/namcoc70.zip (Namco C70 BIOS)",
         "required": false,
-        "firmware_path": "fbneo/namcoc70.zip"
+        "firmware_path": "fbneo/namcoc70.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "namcoc75.zip": {
         "description": "fbneo/namcoc75.zip (Namco C75 BIOS)",
         "required": false,
-        "firmware_path": "fbneo/namcoc75.zip"
+        "firmware_path": "fbneo/namcoc75.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "neocdz.zip": {
         "description": "fbneo/neocdz.zip (Neo Geo CDZ System BIOS)",
         "required": false,
-        "firmware_path": "fbneo/neocdz.zip"
+        "firmware_path": "fbneo/neocdz.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          },
+          "fbneo_neogeo_libretro": {
+            "required": false
+          }
+        }
       },
       "neogeo.zip": {
         "description": "neogeo.zip (Neo Geo MVS System ROM)",
         "required": true,
         "firmware_path": "fbneo/neogeo.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          },
+          "geolith_libretro": {
+            "required": true
+          },
+          "fbneo_neogeo_libretro": {
+            "required": false
+          }
+        },
         "md5": "00dad01abdbf8ea9e79ad2fe11bdb182",
         "sha1": "deb62b0074b8cae4f162c257662136733cfc76ad",
         "size": 1859335
@@ -208,12 +363,22 @@
       "ngp.zip": {
         "description": "fbneo/ngp.zip (NeoGeo Pocket BIOS)",
         "required": false,
-        "firmware_path": "fbneo/ngp.zip"
+        "firmware_path": "fbneo/ngp.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "nmk004.zip": {
         "description": "fbneo/nmk004.zip (NMK004 Internal ROM)",
         "required": false,
         "firmware_path": "fbneo/nmk004.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "bfacf1a68792d5348f93cf724d2f1dda",
         "sha1": "489256f5e2001070d2ad94c90d255282c71ed274",
         "size": 3556
@@ -222,6 +387,11 @@
         "description": "fbneo/pgm.zip (PGM System BIOS)",
         "required": false,
         "firmware_path": "fbneo/pgm.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "87cc944eef4c671aa2629a8ba48a08e0",
         "sha1": "c0c001ec80fa860857000f4cfc9844a28498a355",
         "size": 2094636
@@ -230,6 +400,11 @@
         "description": "fbneo/skns.zip (Super Kaneko Nova System BIOS)",
         "required": false,
         "firmware_path": "fbneo/skns.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "3f956c4e7008804cb47cbde49bd5b908",
         "sha1": "4257bd14b541fafbd555cb98ba079a3416a45934",
         "size": 924762
@@ -237,22 +412,42 @@
       "spec128.zip": {
         "description": "fbneo/spec128.zip (ZX Spectrum 128 BIOS)",
         "required": false,
-        "firmware_path": "fbneo/spec128.zip"
+        "firmware_path": "fbneo/spec128.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "spec1282a.zip": {
         "description": "fbneo/spec1282a.zip (ZX Spectrum 128 +2a BIOS)",
         "required": false,
-        "firmware_path": "fbneo/spec1282a.zip"
+        "firmware_path": "fbneo/spec1282a.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "spectrum.zip": {
         "description": "fbneo/spectrum.zip (ZX Spectrum BIOS)",
         "required": false,
-        "firmware_path": "fbneo/spectrum.zip"
+        "firmware_path": "fbneo/spectrum.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        }
       },
       "ym2608.zip": {
         "description": "fbneo/ym2608.zip (YM2608 Internal ROM)",
         "required": false,
         "firmware_path": "fbneo/ym2608.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          }
+        },
         "md5": "79ae0d2bb1901b7e606b6dc339b79a97",
         "sha1": "06fc753d015b43ca1787f4cfd9331b1674202e64",
         "size": 7609
@@ -262,52 +457,102 @@
       "RPGVX": {
         "description": "mkxp-z/RTP/RPGVX/... (RPG Maker VX Run Time Package)",
         "required": false,
-        "firmware_path": "mkxp-z/RTP/RPGVX"
+        "firmware_path": "mkxp-z/RTP/RPGVX",
+        "cores": {
+          "mkxp-z_libretro": {
+            "required": false
+          }
+        }
       },
       "RPGVXAce": {
         "description": "mkxp-z/RTP/RPGVXAce/... (RPG Maker VX Ace Run Time Package)",
         "required": false,
-        "firmware_path": "mkxp-z/RTP/RPGVXAce"
+        "firmware_path": "mkxp-z/RTP/RPGVXAce",
+        "cores": {
+          "mkxp-z_libretro": {
+            "required": false
+          }
+        }
       },
       "Roland_SC-55.sf2": {
         "description": "Roland_SC-55.sf2",
         "required": false,
-        "firmware_path": "scummvm/extra/Roland_SC-55.sf2"
+        "firmware_path": "scummvm/extra/Roland_SC-55.sf2",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "Standard": {
         "description": "mkxp-z/RTP/Standard/... (RPG Maker XP Run Time Package)",
         "required": false,
-        "firmware_path": "mkxp-z/RTP/Standard"
+        "firmware_path": "mkxp-z/RTP/Standard",
+        "cores": {
+          "mkxp-z_libretro": {
+            "required": false
+          }
+        }
       },
       "access.dat": {
         "description": "access.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/access.dat"
+        "firmware_path": "scummvm/extra/access.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "achievements.dat": {
         "description": "achievements.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/achievements.dat"
+        "firmware_path": "scummvm/extra/achievements.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "cryo.dat": {
         "description": "cryo.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/cryo.dat"
+        "firmware_path": "scummvm/extra/cryo.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "cryomni3d.dat": {
         "description": "cryomni3d.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/cryomni3d.dat"
+        "firmware_path": "scummvm/extra/cryomni3d.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "drascula.dat": {
         "description": "drascula.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/drascula.dat"
+        "firmware_path": "scummvm/extra/drascula.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "ecwolf.pk3": {
         "description": "ecwolf.pk3 (ECWolf System File)",
         "required": true,
         "firmware_path": "ecwolf.pk3",
+        "cores": {
+          "ecwolf_libretro": {
+            "required": true
+          }
+        },
         "md5": "c011b428819eea4a80b455c245a5a04d",
         "sha1": "9259b87edfe9b9f6d0749788a75a6ccf158f50aa",
         "size": 178755
@@ -315,167 +560,332 @@
       "encoding.dat": {
         "description": "encoding.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/encoding.dat"
+        "firmware_path": "scummvm/extra/encoding.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "fonts.dat": {
         "description": "fonts.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/fonts.dat"
+        "firmware_path": "scummvm/extra/fonts.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "freescape.dat": {
         "description": "freescape.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/freescape.dat"
+        "firmware_path": "scummvm/extra/freescape.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "grim-patch.lab": {
         "description": "grim-patch.lab",
         "required": false,
-        "firmware_path": "scummvm/extra/grim-patch.lab"
+        "firmware_path": "scummvm/extra/grim-patch.lab",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "gui-icons.dat": {
         "description": "gui-icons.dat",
         "required": false,
-        "firmware_path": "scummvm/theme/gui-icons.dat"
+        "firmware_path": "scummvm/theme/gui-icons.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "hadesch_translations.dat": {
         "description": "hadesch_translations.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/hadesch_translations.dat"
+        "firmware_path": "scummvm/extra/hadesch_translations.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "hugo.dat": {
         "description": "hugo.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/hugo.dat"
+        "firmware_path": "scummvm/extra/hugo.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "kyra.dat": {
         "description": "kyra.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/kyra.dat"
+        "firmware_path": "scummvm/extra/kyra.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "lure.dat": {
         "description": "lure.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/lure.dat"
+        "firmware_path": "scummvm/extra/lure.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "macgui.dat": {
         "description": "macgui.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/macgui.dat"
+        "firmware_path": "scummvm/extra/macgui.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "macventure.dat": {
         "description": "macventure.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/macventure.dat"
+        "firmware_path": "scummvm/extra/macventure.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "mm.dat": {
         "description": "mm.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/mm.dat"
+        "firmware_path": "scummvm/extra/mm.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "monkey4-patch.m4b": {
         "description": "monkey4-patch.m4b",
         "required": false,
-        "firmware_path": "scummvm/extra/monkey4-patch.m4b"
+        "firmware_path": "scummvm/extra/monkey4-patch.m4b",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "mort.dat": {
         "description": "mort.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/mort.dat"
+        "firmware_path": "scummvm/extra/mort.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "myst3.dat": {
         "description": "myst3.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/myst3.dat"
+        "firmware_path": "scummvm/extra/myst3.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "nancy.dat": {
         "description": "nancy.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/nancy.dat"
+        "firmware_path": "scummvm/extra/nancy.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "neverhood.dat": {
         "description": "neverhood.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/neverhood.dat"
+        "firmware_path": "scummvm/extra/neverhood.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "queen.tbl": {
         "description": "queen.tbl",
         "required": false,
-        "firmware_path": "scummvm/extra/queen.tbl"
+        "firmware_path": "scummvm/extra/queen.tbl",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "residualvm.zip": {
         "description": "residualvm.zip",
         "required": false,
-        "firmware_path": "scummvm/theme/residualvm.zip"
+        "firmware_path": "scummvm/theme/residualvm.zip",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "scummclassic.zip": {
         "description": "scummclassic.zip",
         "required": false,
-        "firmware_path": "scummvm/theme/scummclassic.zip"
+        "firmware_path": "scummvm/theme/scummclassic.zip",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "scummmodern.zip": {
         "description": "scummmodern.zip",
         "required": false,
-        "firmware_path": "scummvm/theme/scummmodern.zip"
+        "firmware_path": "scummvm/theme/scummmodern.zip",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "scummremastered.zip": {
         "description": "scummremastered.zip",
         "required": false,
-        "firmware_path": "scummvm/theme/scummremastered.zip"
+        "firmware_path": "scummvm/theme/scummremastered.zip",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "shaders.dat": {
         "description": "shaders.dat",
         "required": false,
-        "firmware_path": "scummvm/theme/shaders.dat"
+        "firmware_path": "scummvm/theme/shaders.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "sky.cpt": {
         "description": "sky.cpt",
         "required": false,
-        "firmware_path": "scummvm/extra/sky.cpt"
+        "firmware_path": "scummvm/extra/sky.cpt",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "supernova.dat": {
         "description": "supernova.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/supernova.dat"
+        "firmware_path": "scummvm/extra/supernova.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "teenagent.dat": {
         "description": "teenagent.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/teenagent.dat"
+        "firmware_path": "scummvm/extra/teenagent.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "titanic.dat": {
         "description": "titanic.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/titanic.dat"
+        "firmware_path": "scummvm/extra/titanic.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "tony.dat": {
         "description": "tony.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/tony.dat"
+        "firmware_path": "scummvm/extra/tony.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "toon.dat": {
         "description": "toon.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/toon.dat"
+        "firmware_path": "scummvm/extra/toon.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "translations.dat": {
         "description": "translations.dat",
         "required": false,
-        "firmware_path": "scummvm/theme/translations.dat"
+        "firmware_path": "scummvm/theme/translations.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "ultima.dat": {
         "description": "ultima.dat",
         "required": false,
-        "firmware_path": "scummvm/extra/ultima.dat"
+        "firmware_path": "scummvm/extra/ultima.dat",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "vkeybd_default.zip": {
         "description": "vkeybd_default.zip",
         "required": false,
-        "firmware_path": "scummvm/extra/vkeybd_default.zip"
+        "firmware_path": "scummvm/extra/vkeybd_default.zip",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       },
       "wintermute.zip": {
         "description": "wintermute.zip",
         "required": false,
-        "firmware_path": "scummvm/extra/wintermute.zip"
+        "firmware_path": "scummvm/extra/wintermute.zip",
+        "cores": {
+          "scummvm_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "_unknown": {
@@ -578,7 +988,12 @@
       "CHRGEN.BIN": {
         "description": "CHRGEN.BIN (Character ROM)",
         "required": false,
-        "firmware_path": "galaksija/CHRGEN.BIN"
+        "firmware_path": "galaksija/CHRGEN.BIN",
+        "cores": {
+          "galaksija_libretro": {
+            "required": false
+          }
+        }
       },
       "CYRILLIC.FNT": {
         "description": "",
@@ -623,12 +1038,22 @@
       "ROM1.BIN": {
         "description": "ROM1.BIN (Base ROM)",
         "required": false,
-        "firmware_path": "galaksija/ROM1.BIN"
+        "firmware_path": "galaksija/ROM1.BIN",
+        "cores": {
+          "galaksija_libretro": {
+            "required": false
+          }
+        }
       },
       "ROM2.BIN": {
         "description": "ROM2.BIN (Extensions)",
         "required": false,
-        "firmware_path": "galaksija/ROM2.BIN"
+        "firmware_path": "galaksija/ROM2.BIN",
+        "cores": {
+          "galaksija_libretro": {
+            "required": false
+          }
+        }
       },
       "RS232.ROM": {
         "description": "",
@@ -705,12 +1130,22 @@
       "cgb0_boot.bin": {
         "description": "cgb0_boot.bin (GBC BIOS)",
         "required": false,
-        "firmware_path": "cgb0_boot.bin"
+        "firmware_path": "cgb0_boot.bin",
+        "cores": {
+          "skyemu_libretro": {
+            "required": false
+          }
+        }
       },
       "cgb_agb_boot.bin": {
         "description": "cgb_agb_boot.bin (GBC BIOS)",
         "required": false,
-        "firmware_path": "cgb_agb_boot.bin"
+        "firmware_path": "cgb_agb_boot.bin",
+        "cores": {
+          "skyemu_libretro": {
+            "required": false
+          }
+        }
       },
       "dc/airlbios.zip": {
         "description": "",
@@ -811,12 +1246,22 @@
       "dmg0_rom.bin": {
         "description": "dmg0_rom.bin (DMG BIOS)",
         "required": false,
-        "firmware_path": "dmg0_rom.bin"
+        "firmware_path": "dmg0_rom.bin",
+        "cores": {
+          "skyemu_libretro": {
+            "required": false
+          }
+        }
       },
       "dmg_rom.bin": {
         "description": "dmg_rom.bin (DMG BIOS)",
         "required": false,
-        "firmware_path": "dmg_rom.bin"
+        "firmware_path": "dmg_rom.bin",
+        "cores": {
+          "skyemu_libretro": {
+            "required": false
+          }
+        }
       },
       "font.rom": {
         "description": "",
@@ -1005,12 +1450,22 @@
       "nds7.bin": {
         "description": "nds7.bin (NDS ARM7 BIOS)",
         "required": false,
-        "firmware_path": "nds7.bin"
+        "firmware_path": "nds7.bin",
+        "cores": {
+          "skyemu_libretro": {
+            "required": false
+          }
+        }
       },
       "nds9.bin": {
         "description": "nds9.bin (NDS ARM9 BIOS)",
         "required": false,
-        "firmware_path": "nds9.bin"
+        "firmware_path": "nds9.bin",
+        "cores": {
+          "skyemu_libretro": {
+            "required": false
+          }
+        }
       },
       "pcfxbios.bin": {
         "description": "",
@@ -2090,6 +2545,14 @@
         "description": "kick33180.A500 | amiga-os-120.rom (A500-A2000 KS v1.2 rev 33.180)",
         "required": false,
         "firmware_path": "kick33180.A500",
+        "cores": {
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "85ad74194e87c08904327de1a9443b7a",
         "sha1": "11f9e62cf299f72184835b7b2a70a16333fc0d88",
         "size": 262144
@@ -2098,6 +2561,17 @@
         "description": "kick34005.A500 | amiga-os-130.rom (A500-A2000-CDTV KS v1.3 rev 34.005)",
         "required": true,
         "firmware_path": "kick34005.A500",
+        "cores": {
+          "uae4arm_libretro": {
+            "required": true
+          },
+          "puae_libretro": {
+            "required": true
+          },
+          "puae2021_libretro": {
+            "required": true
+          }
+        },
         "md5": "82a21c1890cae844b3df741f2762d48d",
         "sha1": "891e9a547772fe0c6c19b610baf8bc4ea7fcb785",
         "size": 262144
@@ -2106,6 +2580,17 @@
         "description": "kick34005.CDTV | amiga-os-130-cdtv-ext.rom (CDTV extended ROM v1.0)",
         "required": true,
         "firmware_path": "kick34005.CDTV",
+        "cores": {
+          "uae4arm_libretro": {
+            "required": true
+          },
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "89da1838a24460e4b93f4f0c5d92d48d",
         "sha1": "7ba40ffa17e500ed9fed041f3424bd81d9c907be",
         "size": 262144
@@ -2114,6 +2599,14 @@
         "description": "kick37175.A500 | amiga-os-204.rom (A500+ KS v2.04 rev 37.175)",
         "required": false,
         "firmware_path": "kick37175.A500",
+        "cores": {
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "dc10d7bdd1b6f450773dfb558477c230",
         "sha1": "c5839f5cb98a7a8947065c3ed2f14f5f42e334a1",
         "size": 524288
@@ -2122,6 +2615,14 @@
         "description": "kick37350.A600 | amiga-os-205-a600.rom (A600 KS v2.05 rev 37.350)",
         "required": false,
         "firmware_path": "kick37350.A600",
+        "cores": {
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "465646c9b6729f77eea5314d1f057951",
         "sha1": "02843c4253bbd29aba535b0aa3bd9a85034ecde4",
         "size": 524288
@@ -2130,6 +2631,14 @@
         "description": "kick39106.A1200 | amiga-os-300-a1200.rom (A1200 KS v3.0 rev 39.106)",
         "required": false,
         "firmware_path": "kick39106.A1200",
+        "cores": {
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "b7cc148386aa631136f510cd29e42fc3",
         "sha1": "70033828182fffc7ed106e5373a8b89dda76faa5",
         "size": 524288
@@ -2138,6 +2647,14 @@
         "description": "kick39106.A4000 | amiga-os-300-a4000.rom (A4000 KS v3.0 rev 39.106)",
         "required": false,
         "firmware_path": "kick39106.A4000",
+        "cores": {
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "9b8bdd5a3fd32c2a5a6f5b1aefc799a5",
         "sha1": "f0b4e9e29e12218c2d5bd7020e4e785297d91fd7",
         "size": 524288
@@ -2146,6 +2663,17 @@
         "description": "kick40060.CD32 | amiga-os-310-cd32.rom (CD32 KS v3.1 rev 40.060)",
         "required": true,
         "firmware_path": "kick40060.CD32",
+        "cores": {
+          "uae4arm_libretro": {
+            "required": true
+          },
+          "puae_libretro": {
+            "required": true
+          },
+          "puae2021_libretro": {
+            "required": true
+          }
+        },
         "md5": "5f8924d013dd57a89cf349f4cdedc6b1",
         "sha1": "3525be8887f79b5929e017b42380a79edfee542d",
         "size": 524288
@@ -2154,6 +2682,17 @@
         "description": "kick40060.CD32.ext | amiga-os-310-cd32-ext.rom (CD32 extended ROM rev 40.060)",
         "required": true,
         "firmware_path": "kick40060.CD32.ext",
+        "cores": {
+          "uae4arm_libretro": {
+            "required": true
+          },
+          "puae_libretro": {
+            "required": true
+          },
+          "puae2021_libretro": {
+            "required": true
+          }
+        },
         "md5": "bb72565701b1b6faece07d68ea5da639",
         "sha1": "5bef3d628ce59cc02a66e6e4ae0da48f60e78f7f",
         "size": 524288
@@ -2162,6 +2701,17 @@
         "description": "kick40063.A600 | amiga-os-310-a600.rom (A600-A2000 KS v3.1 rev 40.063)",
         "required": true,
         "firmware_path": "kick40063.A600",
+        "cores": {
+          "uae4arm_libretro": {
+            "required": true
+          },
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "e40a5dfb3d017ba8779faba30cbd1c8e",
         "sha1": "3b7f1493b27e212830f989f26ca76c02049f09ca",
         "size": 524288
@@ -2170,6 +2720,17 @@
         "description": "kick40068.A1200 | amiga-os-310-a1200.rom (A1200 KS v3.1 rev 40.068)",
         "required": true,
         "firmware_path": "kick40068.A1200",
+        "cores": {
+          "uae4arm_libretro": {
+            "required": true
+          },
+          "puae_libretro": {
+            "required": true
+          },
+          "puae2021_libretro": {
+            "required": true
+          }
+        },
         "md5": "646773759326fbac3b2311fd8c8793ee",
         "sha1": "e21545723fe8374e91342617604f1b3d703094f1",
         "size": 524288
@@ -2178,6 +2739,14 @@
         "description": "kick40068.A4000 | amiga-os-310-a4000.rom (A4000 KS v3.1 rev 40.068)",
         "required": false,
         "firmware_path": "kick40068.A4000",
+        "cores": {
+          "puae_libretro": {
+            "required": false
+          },
+          "puae2021_libretro": {
+            "required": false
+          }
+        },
         "md5": "9bdedde6a4f33555b4a270c8ca53297d",
         "sha1": "5fe04842d04a489720f0f4bb0e46948199406f49",
         "size": 524288
@@ -2188,6 +2757,14 @@
         "description": "5200.rom (Atari 5200 BIOS)",
         "required": false,
         "firmware_path": "5200.rom",
+        "cores": {
+          "a5200_libretro": {
+            "required": false
+          },
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "281f20ea4320404ec820fb7ec0693b38",
         "sha1": "6ad7a1e8c9fad486fbec9498cb48bf5bc3adc530",
         "size": 2048
@@ -2197,7 +2774,12 @@
       "7800 BIOS (U).rom": {
         "description": "7800 BIOS (U).rom (7800 BIOS)",
         "required": false,
-        "firmware_path": "7800 BIOS (U).rom"
+        "firmware_path": "7800 BIOS (U).rom",
+        "cores": {
+          "prosystem_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "atari800": {
@@ -2205,6 +2787,14 @@
         "description": "5200.rom (Atari 5200 BIOS)",
         "required": false,
         "firmware_path": "5200.rom",
+        "cores": {
+          "a5200_libretro": {
+            "required": false
+          },
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "281f20ea4320404ec820fb7ec0693b38",
         "sha1": "6ad7a1e8c9fad486fbec9498cb48bf5bc3adc530",
         "size": 2048
@@ -2213,6 +2803,11 @@
         "description": "ATARIBAS.ROM (Atari BASIC)",
         "required": false,
         "firmware_path": "ATARIBAS.ROM",
+        "cores": {
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "0bac0c6a50104045d902df4503a4c30b",
         "sha1": "3693c9cb9bf3b41bae1150f7a8264992468fc8c0",
         "size": 8192
@@ -2221,6 +2816,11 @@
         "description": "ATARIOSA.ROM (Atari 400/800 OS A)",
         "required": false,
         "firmware_path": "ATARIOSA.ROM",
+        "cores": {
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "eb1f32f5d9f382db1bbfb8d7f9cb343a",
         "sha1": "6dd53356159a129ed12367beb3b24a771d41adb0",
         "size": 10240
@@ -2229,6 +2829,11 @@
         "description": "ATARIOSB.ROM (Atari 400/800 OS B)",
         "required": false,
         "firmware_path": "ATARIOSB.ROM",
+        "cores": {
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "a3e8d617c95d08031fe1b20d541434b2",
         "sha1": "f1f0741b1d34fb4350cf7cb8ab3b6ea11cdd8174",
         "size": 10240
@@ -2237,6 +2842,11 @@
         "description": "ATARIXL.ROM (Atari XL/XE OS)",
         "required": false,
         "firmware_path": "ATARIXL.ROM",
+        "cores": {
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "06daac977823773a3eea3422fd26a703",
         "sha1": "ae4f523ba08b6fd59f3cae515a2b2410bbd98f55",
         "size": 16384
@@ -2245,6 +2855,11 @@
         "description": "BB01R4_OS.ROM (Atari XL/XE/XEGS OS v4)",
         "required": false,
         "firmware_path": "BB01R4_OS.ROM",
+        "cores": {
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "b7a2a04677d34f069eeb643d5238bf86",
         "sha1": "decde89fbae90adb591ad2fc553d35f49030c129",
         "size": 16384
@@ -2253,6 +2868,11 @@
         "description": "XEGAME.ROM (Atari XEGS Missile Command)",
         "required": false,
         "firmware_path": "XEGAME.ROM",
+        "cores": {
+          "atari800_libretro": {
+            "required": false
+          }
+        },
         "md5": "d7eb37aec6960cba36bc500e0e5d00bc",
         "sha1": "a107db7f16a1129cf9d933c9cf4f013b068c9e82",
         "size": 8192
@@ -2263,6 +2883,11 @@
         "description": "tos.img (TOS 1.02 US aka Mega TOS)",
         "required": true,
         "firmware_path": "tos.img",
+        "cores": {
+          "hatari_libretro": {
+            "required": true
+          }
+        },
         "md5": "c1c57ce48e8ee4135885cee9e63a68a2",
         "sha1": "735793fdba07fe8d5295caa03484f6ef3de931f5",
         "size": 196608
@@ -2272,42 +2897,82 @@
       "B11M_BOS.ROM": {
         "description": "bk/B11M_BOS.ROM",
         "required": false,
-        "firmware_path": "bk/B11M_BOS.ROM"
+        "firmware_path": "bk/B11M_BOS.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       },
       "B11M_EXT.ROM": {
         "description": "bk/B11M_EXT.ROM",
         "required": false,
-        "firmware_path": "bk/B11M_EXT.ROM"
+        "firmware_path": "bk/B11M_EXT.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       },
       "BAS11M_0.ROM": {
         "description": "bk/BAS11M_0.ROM",
         "required": false,
-        "firmware_path": "bk/BAS11M_0.ROM"
+        "firmware_path": "bk/BAS11M_0.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       },
       "BAS11M_1.ROM": {
         "description": "bk/BAS11M_1.ROM",
         "required": false,
-        "firmware_path": "bk/BAS11M_1.ROM"
+        "firmware_path": "bk/BAS11M_1.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       },
       "BASIC10.ROM": {
         "description": "bk/BASIC10.ROM",
         "required": false,
-        "firmware_path": "bk/BASIC10.ROM"
+        "firmware_path": "bk/BASIC10.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       },
       "DISK_327.ROM": {
         "description": "bk/DISK_327.ROM",
         "required": false,
-        "firmware_path": "bk/DISK_327.ROM"
+        "firmware_path": "bk/DISK_327.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       },
       "FOCAL10.ROM": {
         "description": "bk/FOCAL10.ROM",
         "required": false,
-        "firmware_path": "bk/FOCAL10.ROM"
+        "firmware_path": "bk/FOCAL10.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       },
       "MONIT10.ROM": {
         "description": "bk/MONIT10.ROM",
         "required": false,
-        "firmware_path": "bk/MONIT10.ROM"
+        "firmware_path": "bk/MONIT10.ROM",
+        "cores": {
+          "bk_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "c128": {
@@ -2315,6 +2980,23 @@
         "description": "vice/JiffyDOS_1541-II.bin (JiffyDOS 1541 drive BIOS)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_1541-II.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "1b1e985ea5325a1f46eb7fd9681707bf",
         "sha1": "b1a5b826304d3df2a27d7163c6a81a532e040d32",
         "size": 16384
@@ -2323,6 +3005,23 @@
         "description": "vice/JiffyDOS_1571_repl310654.bin (JiffyDOS 1571 drive BIOS)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_1571_repl310654.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "41c6cc528e9515ffd0ed9b180f8467c0",
         "sha1": "d4b79b60cf1eaa399d0932200eb7811e00455249",
         "size": 32768
@@ -2331,6 +3030,23 @@
         "description": "vice/JiffyDOS_1581.bin (JiffyDOS 1581 drive BIOS)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_1581.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "20b6885c6dc2d42c38754a365b043d71",
         "sha1": "65bbf2be7bcd5bdcbff609d6c66471ffb9d04bfe",
         "size": 32768
@@ -2339,6 +3055,11 @@
         "description": "vice/JiffyDOS_C128.bin (JiffyDOS C128 Kernal)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_C128.bin",
+        "cores": {
+          "vice_x128_libretro": {
+            "required": false
+          }
+        },
         "md5": "cbbd1bbcb5e4fd8046b6030ab71fc021",
         "sha1": "7d1898f32beae4b2ae610d469ce578a588efaa7c",
         "size": 16384
@@ -2347,6 +3068,23 @@
         "description": "vice/JiffyDOS_C64.bin (JiffyDOS C64 Kernal)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_C64.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "be09394f0576cf81fa8bacf634daf9a2",
         "sha1": "31e73e66eccb28732daea8ec3ad1addd9b39a017",
         "size": 8192
@@ -2355,6 +3093,11 @@
         "description": "basic20.rom (Enterprise 64 BASIC Interpreter v2.0)",
         "required": false,
         "firmware_path": "ep128emu/roms/basic20.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "8e18edce4a7acb2c33cc0ab18f988482",
         "sha1": "61d0987b906146e21b94f265d5b51b4938c986a9",
         "size": 16384
@@ -2363,6 +3106,11 @@
         "description": "basic21.rom (Enterprise 128 BASIC Interpreter v2.1)",
         "required": false,
         "firmware_path": "ep128emu/roms/basic21.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "e972fe42b398c9ff1d93ff014786aec6",
         "sha1": "03bbb386cf530e804363acdfc1d13e64cf28af2e",
         "size": 16384
@@ -2371,6 +3119,11 @@
         "description": "brd.rom (Enterprise 128 German language extension)",
         "required": false,
         "firmware_path": "ep128emu/roms/brd.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "6af0402906944fd134004b85097c8524",
         "sha1": "f34f0c330b44dbf2548329bea954d5991dec30ca",
         "size": 16384
@@ -2379,6 +3132,11 @@
         "description": "cpc464.rom (Amstrad CPC 464 BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/cpc464.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "a993f85b88ac4350cf4d41554e87fe4f",
         "sha1": "56d39c463da60968d93e58b4ba0e675829412a20",
         "size": 32768
@@ -2387,6 +3145,11 @@
         "description": "cpc6128.rom (Amstrad CPC 6128 BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/cpc6128.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "b96280dc6c95a48857b4b8eb931533ae",
         "sha1": "5977adbad3f7c1e0e082cd02fe76a700d9860c30",
         "size": 32768
@@ -2395,6 +3158,11 @@
         "description": "cpc664.rom (Amstrad CPC 664 BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/cpc664.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "5a384a2310f472c7857888371c00ed66",
         "sha1": "073a7665527b5bd8a148747a3947dbd3328682c8",
         "size": 32768
@@ -2403,6 +3171,11 @@
         "description": "cpc_amsdos.rom (Amstrad CPC AMSDOS BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/cpc_amsdos.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "25629dfe870d097469c217b95fdc1c95",
         "sha1": "39102c8e9cb55fcc0b9b62098780ed4a3cb6a4bb",
         "size": 16384
@@ -2411,6 +3184,11 @@
         "description": "epd19hft.rom (Enterprise 128 EP-DOS with Hungarian language extension)",
         "required": false,
         "firmware_path": "ep128emu/roms/epd19hft.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "12cfc9c7e48c8a16c2e09edbd926d467",
         "sha1": "8f28fe73d13e94dd1da02519908ecc6eebe104f6",
         "size": 32768
@@ -2419,6 +3197,11 @@
         "description": "epfileio.rom (Enterprise 128 Direct File I/O)",
         "required": false,
         "firmware_path": "ep128emu/roms/epfileio.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "a68ebcbc73a4d2178d755b7755bf18fe",
         "sha1": "2f9077bcd89b1ec42dbdcd55d335bdbaf361eff3",
         "size": 16384
@@ -2427,6 +3210,11 @@
         "description": "exdos13.rom (Enterprise 128 Disk Controller v1.3)",
         "required": false,
         "firmware_path": "ep128emu/roms/exdos13.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "ddff70c014d1958dc75378b6c9aab6f8",
         "sha1": "cb43ab3676b93c279f1ed8ffcb0d4dcd4b34e631",
         "size": 32768
@@ -2435,6 +3223,11 @@
         "description": "exos20.rom (Enterprise 64 Expandible OS 2.0)",
         "required": false,
         "firmware_path": "ep128emu/roms/exos20.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "5ad3baaad3b5156d6b60b34229a676fb",
         "sha1": "6033a0535136c40c47137e4d1cd9273c06d5fdff",
         "size": 32768
@@ -2443,6 +3236,11 @@
         "description": "exos21.rom (Enterprise 128 Expandible OS 2.1)",
         "required": false,
         "firmware_path": "ep128emu/roms/exos21.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "f36f24cbb87745fbd2714e4df881db09",
         "sha1": "55315b20fecb4441a07ee4bc5dc7153f396e0a2e",
         "size": 32768
@@ -2451,6 +3249,11 @@
         "description": "exos24uk.rom (Enterprise 128 Expandible OS 2.4)",
         "required": false,
         "firmware_path": "ep128emu/roms/exos24uk.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "55af78f877a21ca45eb2df68a74fcc60",
         "sha1": "cf12e971623a54bf8c4f891ca3a36d969f205c49",
         "size": 65536
@@ -2459,6 +3262,11 @@
         "description": "hun.rom (Enterprise 128 Hungarian language extension)",
         "required": false,
         "firmware_path": "ep128emu/roms/hun.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "22167938f142c222f40992839aa21a06",
         "sha1": "325a5e28c2a0d896711f8829e7ff14fed5dd4103",
         "size": 16384
@@ -2467,6 +3275,11 @@
         "description": "tvc22_ext.rom (Videoton TVC extension BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/tvc22_ext.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "5ce95a26ceed5bec73995d83568da9cf",
         "sha1": "abf119cf947ea32defd08b29a8a25d75f6bd4987",
         "size": 8192
@@ -2475,6 +3288,11 @@
         "description": "tvc22_sys.rom (Videoton TVC system BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/tvc22_sys.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "8c54285f541930cde766069942bad0f2",
         "sha1": "f2572ee83d09fc08f4de4a62f101c8bb301a9505",
         "size": 16384
@@ -2483,6 +3301,11 @@
         "description": "tvc_dos12d.rom (Videoton TVC disk BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/tvc_dos12d.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "88dc7876d584f90e4106f91444ab23b7",
         "sha1": "072c6160d4e7d406f5d8f5b1b66066c797d35561",
         "size": 16384
@@ -2491,6 +3314,11 @@
         "description": "tvcfileio.rom (Videoton TVC Direct File I/O)",
         "required": false,
         "firmware_path": "ep128emu/roms/tvcfileio.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "a2cf86ba8e7fc58b242137fe59036832",
         "sha1": "98889c3a56b11dedf077f866ed2e12d51b604113",
         "size": 8192
@@ -2498,12 +3326,22 @@
       "zt19hfnt.rom": {
         "description": "zt19hfnt.rom (Enterprise 128 ZozoTools with Hungarian language extension 1.9)",
         "required": false,
-        "firmware_path": "ep128emu/roms/zt19hfnt.rom"
+        "firmware_path": "ep128emu/roms/zt19hfnt.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        }
       },
       "zt19uk.rom": {
         "description": "zt19uk.rom (Enterprise 128 ZozoTools extension)",
         "required": false,
         "firmware_path": "ep128emu/roms/zt19uk.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "228540b6be83ae2acd7569c8ff0f91d0",
         "sha1": "b7af62f0bc95fdca4b31d236f8327dafc80f83b7",
         "size": 32768
@@ -2512,6 +3350,11 @@
         "description": "zx128.rom (ZX Spectrum 128 BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/zx128.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "85fede415f4294cc777517d7eada482e",
         "sha1": "16375d42ea109b47edded7a16028de7fdb3013a1",
         "size": 32768
@@ -2520,6 +3363,11 @@
         "description": "zx48.rom (ZX Spectrum 48 BIOS)",
         "required": false,
         "firmware_path": "ep128emu/roms/zx48.rom",
+        "cores": {
+          "ep128emu_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "4c42a2f075212361c3117015b107ff68",
         "sha1": "5ea7c2b824672e914525d1d5c419d71b84a426a2",
         "size": 16384
@@ -2530,6 +3378,23 @@
         "description": "vice/JiffyDOS_1541-II.bin (JiffyDOS 1541 drive BIOS)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_1541-II.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "1b1e985ea5325a1f46eb7fd9681707bf",
         "sha1": "b1a5b826304d3df2a27d7163c6a81a532e040d32",
         "size": 16384
@@ -2538,6 +3403,23 @@
         "description": "vice/JiffyDOS_1571_repl310654.bin (JiffyDOS 1571 drive BIOS)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_1571_repl310654.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "41c6cc528e9515ffd0ed9b180f8467c0",
         "sha1": "d4b79b60cf1eaa399d0932200eb7811e00455249",
         "size": 32768
@@ -2546,6 +3428,23 @@
         "description": "vice/JiffyDOS_1581.bin (JiffyDOS 1581 drive BIOS)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_1581.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "20b6885c6dc2d42c38754a365b043d71",
         "sha1": "65bbf2be7bcd5bdcbff609d6c66471ffb9d04bfe",
         "size": 32768
@@ -2554,6 +3453,23 @@
         "description": "vice/JiffyDOS_C64.bin (JiffyDOS C64 Kernal)",
         "required": false,
         "firmware_path": "vice/JiffyDOS_C64.bin",
+        "cores": {
+          "vice_x64_libretro": {
+            "required": false
+          },
+          "vice_x128_libretro": {
+            "required": false
+          },
+          "vice_x64dtv_libretro": {
+            "required": false
+          },
+          "vice_xscpu64_libretro": {
+            "required": false
+          },
+          "vice_x64sc_libretro": {
+            "required": false
+          }
+        },
         "md5": "be09394f0576cf81fa8bacf634daf9a2",
         "sha1": "31e73e66eccb28732daea8ec3ad1addd9b39a017",
         "size": 8192
@@ -2563,17 +3479,35 @@
       "cdibios.zip": {
         "description": "same_cdi/bios/cdibios.zip",
         "required": false,
-        "firmware_path": "same_cdi/bios/cdibios.zip"
+        "firmware_path": "same_cdi/bios/cdibios.zip",
+        "cores": {
+          "same_cdi_libretro": {
+            "required": false
+          }
+        }
       },
       "cdimono1.zip": {
         "description": "same_cdi/bios/cdimono1.zip",
         "required": true,
-        "firmware_path": "same_cdi/bios/cdimono1.zip"
+        "firmware_path": "same_cdi/bios/cdimono1.zip",
+        "cores": {
+          "same_cdi_libretro": {
+            "required": true
+          },
+          "cdi2015_libretro": {
+            "required": true
+          }
+        }
       },
       "cdimono2.zip": {
         "description": "same_cdi/bios/cdimono2.zip",
         "required": false,
-        "firmware_path": "same_cdi/bios/cdimono2.zip"
+        "firmware_path": "same_cdi/bios/cdimono2.zip",
+        "cores": {
+          "same_cdi_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "channelf": {
@@ -2581,6 +3515,11 @@
         "description": "sl31253.bin",
         "required": true,
         "firmware_path": "sl31253.bin",
+        "cores": {
+          "freechaf_libretro": {
+            "required": true
+          }
+        },
         "md5": "ac9804d4c0e9d07e33472e3726ed15c3",
         "sha1": "81193965a374d77b99b4743d317824b53c3e3c78",
         "size": 1024
@@ -2589,6 +3528,11 @@
         "description": "sl31254.bin",
         "required": true,
         "firmware_path": "sl31254.bin",
+        "cores": {
+          "freechaf_libretro": {
+            "required": true
+          }
+        },
         "md5": "da98f4bb3242ab80d76629021bb27585",
         "sha1": "8f70d1b74483ba3a37e86cf16c849d601a8c3d2c",
         "size": 1024
@@ -2597,6 +3541,11 @@
         "description": "sl90025.bin",
         "required": true,
         "firmware_path": "sl90025.bin",
+        "cores": {
+          "freechaf_libretro": {
+            "required": true
+          }
+        },
         "md5": "95d339631d867c8f1d15a5f2ec26069d",
         "sha1": "759e2ed31fbde4a2d8daf8b9f3e0dffebc90dae2",
         "size": 1024
@@ -2606,17 +3555,32 @@
       "bioscv.rom": {
         "description": "bioscv.rom (CreatiVision BIOS)",
         "required": false,
-        "firmware_path": "bioscv.rom"
+        "firmware_path": "bioscv.rom",
+        "cores": {
+          "jollycv_libretro": {
+            "required": false
+          }
+        }
       },
       "coleco.rom": {
         "description": "coleco.rom (ColecoVision BIOS)",
         "required": false,
-        "firmware_path": "coleco.rom"
+        "firmware_path": "coleco.rom",
+        "cores": {
+          "jollycv_libretro": {
+            "required": false
+          }
+        }
       },
       "colecovision.rom": {
         "description": "colecovision.rom (ColecoVision BIOS)",
         "required": true,
         "firmware_path": "colecovision.rom",
+        "cores": {
+          "gearcoleco_libretro": {
+            "required": true
+          }
+        },
         "md5": "2c66f5911e5b42b8ebe113403548eee7",
         "sha1": "45bedc4cbdeac66c7df59e9e599195c778d86a92",
         "size": 8192
@@ -2626,59 +3590,144 @@
       "hiscore.dat": {
         "description": "fbneo/hiscore.dat (High Score support database)",
         "required": false,
-        "firmware_path": "fbneo/hiscore.dat"
+        "firmware_path": "fbneo/hiscore.dat",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          },
+          "fbneo_cps12_libretro": {
+            "required": false
+          },
+          "fbneo_neogeo_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "dc": {
       "airlbios.zip": {
         "description": "dc/airlbios.zip (Naomi Airline Pilots deluxe Bios from MAME)",
         "required": false,
-        "firmware_path": "dc/airlbios.zip"
+        "firmware_path": "dc/airlbios.zip",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       },
       "awbios.zip": {
         "description": "dc/awbios.zip (Atomiswave BIOS from MAME)",
         "required": false,
-        "firmware_path": "dc/awbios.zip"
+        "firmware_path": "dc/awbios.zip",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       },
       "boot.bin": {
         "description": "boot.bin (Dreamcast BIOS)",
         "required": true,
-        "firmware_path": "dc/boot.bin"
+        "firmware_path": "dc/boot.bin",
+        "cores": {
+          "retrodream_libretro": {
+            "required": true
+          }
+        }
       },
       "dc_boot.bin": {
         "description": "dc/dc_boot.bin (Dreamcast BIOS)",
         "required": false,
-        "firmware_path": "dc/dc_boot.bin"
+        "firmware_path": "dc/dc_boot.bin",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       },
       "f355bios.zip": {
         "description": "dc/f355bios.zip (Naomi Ferrari F355 Challenge twin/deluxe Bios from MAME)",
         "required": false,
-        "firmware_path": "dc/f355bios.zip"
+        "firmware_path": "dc/f355bios.zip",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       },
       "f355dlx.zip": {
         "description": "dc/f355dlx.zip (Naomi Ferrari F355 Challenge deluxe Bios from MAME)",
         "required": false,
-        "firmware_path": "dc/f355dlx.zip"
+        "firmware_path": "dc/f355dlx.zip",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       },
       "flash.bin": {
         "description": "flash.bin (Date/Time/Language)",
         "required": true,
-        "firmware_path": "dc/flash.bin"
+        "firmware_path": "dc/flash.bin",
+        "cores": {
+          "retrodream_libretro": {
+            "required": true
+          }
+        }
       },
       "hod2bios.zip": {
         "description": "dc/hod2bios.zip (Naomi The House of the Dead 2 Bios from MAME)",
         "required": false,
-        "firmware_path": "dc/hod2bios.zip"
+        "firmware_path": "dc/hod2bios.zip",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       },
       "naomi.zip": {
         "description": "dc/naomi.zip (Naomi Bios from MAME)",
         "required": false,
-        "firmware_path": "dc/naomi.zip"
+        "firmware_path": "dc/naomi.zip",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       },
       "naomi2.zip": {
         "description": "dc/naomi2.zip (Naomi2 Bios from MAME)",
         "required": false,
-        "firmware_path": "dc/naomi2.zip"
+        "firmware_path": "dc/naomi2.zip",
+        "cores": {
+          "flycast_libretro": {
+            "required": false
+          },
+          "flycast_gles2_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "dos": {
@@ -2686,6 +3735,11 @@
         "description": "CM32L_CONTROL.ROM (CM-32L/LAPC-I Control ROM v1.02)",
         "required": false,
         "firmware_path": "CM32L_CONTROL.ROM",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "bfff32b6144c1d706109accb6e6b1113",
         "sha1": "a439fbb390da38cada95a7cbb1d6ca199cd66ef8",
         "size": 65536
@@ -2694,6 +3748,11 @@
         "description": "CM32L_PCM.ROM (CM-32L/CM-64/LAPC-I PCM ROM)",
         "required": false,
         "firmware_path": "CM32L_PCM.ROM",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "08cdcfa0ed93e9cb16afa76e6ac5f0a4",
         "sha1": "289cc298ad532b702461bfc738009d9ebe8025ea",
         "size": 1048576
@@ -2702,6 +3761,11 @@
         "description": "MT32_CONTROL.ROM (MT-32 Control ROM v1.07)",
         "required": false,
         "firmware_path": "MT32_CONTROL.ROM",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "5626206284b22c2734f3e9efefcd2675",
         "sha1": "b083518fffb7f66b03c23b7eb4f868e62dc5a987",
         "size": 65536
@@ -2710,6 +3774,11 @@
         "description": "MT32_PCM.ROM (MT-32 PCM ROM)",
         "required": false,
         "firmware_path": "MT32_PCM.ROM",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        },
         "md5": "89e42e386e82e0cacb4a2704a03706ca",
         "sha1": "f6b1eebc4b2d200ec6d3d21d51325d5b48c60252",
         "size": 524288
@@ -2717,47 +3786,83 @@
       "bass.dll": {
         "description": "bass.dll (BASS Windows library)",
         "required": false,
-        "firmware_path": "bass.dll"
+        "firmware_path": "bass.dll",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        }
       },
       "bassmidi.dll": {
         "description": "bassmidi.dll (BASSMIDI Windows library)",
         "required": false,
-        "firmware_path": "bassmidi.dll"
+        "firmware_path": "bassmidi.dll",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        }
       },
       "libbass.dylib": {
         "description": "libbass.dylib (BASS macOS library)",
         "required": false,
-        "firmware_path": "libbass.dylib"
+        "firmware_path": "libbass.dylib",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        }
       },
       "libbass.so": {
         "description": "libbass.so (BASS Linux library)",
         "required": false,
-        "firmware_path": "libbass.so"
+        "firmware_path": "libbass.so",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        }
       },
       "libbassmidi.dylib": {
         "description": "libbassmidi.dylib (BASSMIDI macOS library)",
         "required": false,
-        "firmware_path": "libbassmidi.dylib"
+        "firmware_path": "libbassmidi.dylib",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        }
       },
       "libbassmidi.so": {
         "description": "libbassmidi.so (BASSMIDI Linux library)",
         "required": false,
-        "firmware_path": "libbassmidi.so"
+        "firmware_path": "libbassmidi.so",
+        "cores": {
+          "dosbox_core_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "gb": {
-      "cgb_boot.bin": {
-        "description": "cgb_boot.bin (Game Boy Color boot ROM)",
-        "required": false,
-        "firmware_path": "cgb_boot.bin",
-        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
-        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
-        "size": 2304
-      },
       "dmg_boot.bin": {
-        "description": "dmg_boot.bin (Game Boy Boot ROM)",
+        "description": "dmg_boot.bin (Game Boy boot ROM)",
         "required": true,
         "firmware_path": "dmg_boot.bin",
+        "cores": {
+          "gearboy_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "emux_gb_libretro": {
+            "required": true
+          },
+          "sameboy_libretro": {
+            "required": false
+          }
+        },
         "md5": "32fbbd84168d3482956eb3c5051637f5",
         "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
         "size": 256
@@ -2766,63 +3871,127 @@
         "description": "gb_bios.bin (Game Boy BIOS)",
         "required": false,
         "firmware_path": "gb_bios.bin",
+        "cores": {
+          "gambatte_libretro": {
+            "required": false
+          },
+          "mgba_libretro": {
+            "required": false
+          },
+          "vbam_libretro": {
+            "required": false
+          }
+        },
         "md5": "32fbbd84168d3482956eb3c5051637f5",
         "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
         "size": 256
-      },
-      "gbc_bios.bin": {
-        "description": "gbc_bios.bin (Game Boy Color BIOS)",
-        "required": false,
-        "firmware_path": "gbc_bios.bin",
-        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
-        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
-        "size": 2304
       }
     },
     "gba": {
-      "gb_bios.bin": {
-        "description": "gb_bios.bin (Game Boy BIOS)",
-        "required": false,
-        "firmware_path": "gb_bios.bin",
-        "md5": "32fbbd84168d3482956eb3c5051637f5",
-        "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
-        "size": 256
-      },
       "gba_bios.bin": {
         "description": "gba_bios.bin (Game Boy Advance BIOS)",
         "required": true,
         "firmware_path": "gba_bios.bin",
+        "cores": {
+          "noods_libretro": {
+            "required": false
+          },
+          "gpsp_libretro": {
+            "required": true
+          },
+          "mednafen_gba_libretro": {
+            "required": false
+          },
+          "skyemu_libretro": {
+            "required": false
+          },
+          "vba_next_libretro": {
+            "required": false
+          },
+          "mgba_libretro": {
+            "required": false
+          },
+          "tempgba_libretro": {
+            "required": true
+          },
+          "vbam_libretro": {
+            "required": false
+          }
+        },
         "md5": "a860e8c0b6d573d191e4ec7db1b1e4f6",
         "sha1": "300c20df6731a33952ded8c436f7f186d25d3492",
         "size": 16384
+      }
+    },
+    "gbc": {
+      "cgb_boot.bin": {
+        "description": "cgb_boot.bin (Game Boy Color boot ROM)",
+        "required": false,
+        "firmware_path": "cgb_boot.bin",
+        "cores": {
+          "gearboy_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "skyemu_libretro": {
+            "required": false
+          },
+          "sameboy_libretro": {
+            "required": false
+          }
+        },
+        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
+        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
+        "size": 2304
       },
       "gbc_bios.bin": {
         "description": "gbc_bios.bin (Game Boy Color BIOS)",
         "required": false,
         "firmware_path": "gbc_bios.bin",
+        "cores": {
+          "fixgb_libretro": {
+            "required": false
+          },
+          "gambatte_libretro": {
+            "required": false
+          },
+          "skyemu_libretro": {
+            "required": false
+          },
+          "mgba_libretro": {
+            "required": false
+          },
+          "vbam_libretro": {
+            "required": false
+          }
+        },
         "md5": "dbfce9db9deaa2567f6a84fde55f9680",
         "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
         "size": 2304
-      },
-      "sgb_bios.bin": {
-        "description": "sgb_bios.bin (Super Game Boy BIOS)",
-        "required": false,
-        "firmware_path": "sgb_bios.bin",
-        "md5": "d574d4f9c12f305074798f54c091a8b4",
-        "sha1": "aa2f50a77dfb4823da96ba99309085a3c6278515",
-        "size": 256
       }
     },
     "gc": {
       "IPL.bin": {
         "description": "dolphin-emu/Sys/GC/JAP/IPL.bin (GameCube JP BIOS)",
         "required": false,
-        "firmware_path": "dolphin-emu/Sys/GC/JAP/IPL.bin"
+        "firmware_path": "dolphin-emu/Sys/GC/JAP/IPL.bin",
+        "cores": {
+          "dolphin_libretro": {
+            "required": false
+          }
+        }
       },
       "codehandler.bin": {
         "description": "Dolphin 'Sys' folder",
         "required": true,
-        "firmware_path": "dolphin-emu/Sys/codehandler.bin"
+        "firmware_path": "dolphin-emu/Sys/codehandler.bin",
+        "cores": {
+          "dolphin_libretro": {
+            "required": true
+          }
+        }
       }
     },
     "genesis": {
@@ -2830,78 +3999,46 @@
         "description": "areplay.bin (Action Replay ROM)",
         "required": false,
         "firmware_path": "areplay.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
         "md5": "a0028b3043f9d59ceeb03da5b073b30d",
         "sha1": "1e0f246826be4ebc7b99bb3f9de7f1de347122e5",
         "size": 32768
-      },
-      "bios.gg": {
-        "description": "bios.gg (Game Gear BIOS)",
-        "required": false,
-        "firmware_path": "bios.gg",
-        "md5": "672e104c3be3a238301aceffc3b23fd6",
-        "sha1": "914aa165e3d879f060be77870d345b60cfeb4ede",
-        "size": 1024
-      },
-      "bios_CD_E.bin": {
-        "description": "bios_CD_E.bin (MegaCD EU BIOS)",
-        "required": false,
-        "firmware_path": "bios_CD_E.bin",
-        "md5": "e66fa1dc5820d254611fdcdba0662372",
-        "sha1": "f891e0ea651e2232af0c5c4cb46a0cae2ee8f356",
-        "size": 131072
-      },
-      "bios_CD_J.bin": {
-        "description": "bios_CD_J.bin (MegaCD JP BIOS)",
-        "required": false,
-        "firmware_path": "bios_CD_J.bin",
-        "md5": "278a9397d192149e84e820ac621a8edd",
-        "sha1": "4846f448160059a7da0215a5df12ca160f26dd69",
-        "size": 131072
-      },
-      "bios_CD_U.bin": {
-        "description": "bios_CD_U.bin (SegaCD US BIOS)",
-        "required": false,
-        "firmware_path": "bios_CD_U.bin",
-        "md5": "2efd74e3232ff260e371b99f84024f7f",
-        "sha1": "f4f315adcef9b8feb0364c21ab7f0eaf5457f3ed",
-        "size": 131072
-      },
-      "bios_E.sms": {
-        "description": "bios_E.sms (MasterSystem EU BIOS)",
-        "required": false,
-        "firmware_path": "bios_E.sms",
-        "md5": "840481177270d5642a14ca71ee72844c",
-        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
-        "size": 8192
-      },
-      "bios_J.sms": {
-        "description": "bios_J.sms (MasterSystem JP BIOS)",
-        "required": false,
-        "firmware_path": "bios_J.sms",
-        "md5": "24a519c53f67b00640d0048ef7089105",
-        "sha1": "a8c1b39a2e41137835eda6a5de6d46dd9fadbaf2",
-        "size": 8192
       },
       "bios_MD.bin": {
         "description": "bios_MD.bin (Mega Drive startup ROM)",
         "required": false,
         "firmware_path": "bios_MD.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
         "md5": "d3293ebaaa7f4eb2a6766b68a0fb4609",
         "sha1": "3f50b76b0529db7f79c396b5e808cc0786ffc311",
         "size": 2048
-      },
-      "bios_U.sms": {
-        "description": "bios_U.sms (MasterSystem US BIOS)",
-        "required": false,
-        "firmware_path": "bios_U.sms",
-        "md5": "840481177270d5642a14ca71ee72844c",
-        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
-        "size": 8192
       },
       "ggenie.bin": {
         "description": "ggenie.bin (Game Genie ROM)",
         "required": false,
         "firmware_path": "ggenie.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
         "md5": "e8af7fe115a75c849f6aab3701e7799b",
         "sha1": "937e1878ebd104f489e6bdbc410a184f79f1144a",
         "size": 32768
@@ -2910,6 +4047,11 @@
         "description": "rom.db (ROM feature database)",
         "required": false,
         "firmware_path": "rom.db",
+        "cores": {
+          "blastem_libretro": {
+            "required": false
+          }
+        },
         "md5": "ff4a3572475236e859e3e9ac5c87d1f1",
         "sha1": "02c287d10da6de579af7a4ce73b134bbdf23c970",
         "size": 17742
@@ -2918,6 +4060,14 @@
         "description": "sk.bin (Sonic & Knuckles ROM)",
         "required": false,
         "firmware_path": "sk.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
         "md5": "4ea493ea4e9f6c9ebfccbdb15110367e",
         "sha1": "88d6499d874dcb5721ff58d76fe1b9af811192e3",
         "size": 2097152
@@ -2926,9 +4076,38 @@
         "description": "sk2chip.bin (Sonic & Knuckles UPMEM ROM)",
         "required": false,
         "firmware_path": "sk2chip.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
         "md5": "b4e76e416b887f4e7413ba76fa735f16",
         "sha1": "70429f1d80503a0632f603bf762fe0bbaa881d22",
         "size": 262144
+      }
+    },
+    "gg": {
+      "bios.gg": {
+        "description": "bios.gg (Game Gear BIOS)",
+        "required": false,
+        "firmware_path": "bios.gg",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "gearsystem_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "672e104c3be3a238301aceffc3b23fd6",
+        "sha1": "914aa165e3d879f060be77870d345b60cfeb4ede",
+        "size": 1024
       }
     },
     "intellivision": {
@@ -2936,6 +4115,11 @@
         "description": "exec.bin",
         "required": true,
         "firmware_path": "exec.bin",
+        "cores": {
+          "freeintv_libretro": {
+            "required": true
+          }
+        },
         "md5": "62e761035cb657903761800f4437b8af",
         "sha1": "5a65b922b562cb1f57dab51b73151283f0e20c7a",
         "size": 8192
@@ -2944,6 +4128,14 @@
         "description": "exec.bin (Intellivision Exec BIOS)",
         "required": true,
         "firmware_path": "grom.bin",
+        "cores": {
+          "FreeIntvTSOverlay_libretro": {
+            "required": true
+          },
+          "freeintv_libretro": {
+            "required": true
+          }
+        },
         "md5": "0cd5946c6473e42e8e4c2137785e427f",
         "sha1": "f9608bb4ad1cfe3640d02844c7ad8e0bcd974917",
         "size": 2048
@@ -2954,6 +4146,11 @@
         "description": "freej2me-lr.jar",
         "required": true,
         "firmware_path": "freej2me-lr.jar",
+        "cores": {
+          "freej2me_libretro": {
+            "required": true
+          }
+        },
         "md5": "ccd92e7156ce2f0ce14c88ffb68a16eb",
         "sha1": "fb231192894e2fd17a5799fbbdf86a4696951bce",
         "size": 552042
@@ -2961,42 +4158,82 @@
       "squirreljme-0.3.0-fast.jar": {
         "description": "squirreljme-0.3.0-fast.jar (SquirrelJME Class Library)",
         "required": false,
-        "firmware_path": "squirreljme-0.3.0-fast.jar"
+        "firmware_path": "squirreljme-0.3.0-fast.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       },
       "squirreljme-0.3.0-slow-test.jar": {
         "description": "squirreljme-0.3.0-slow-test.jar (SquirrelJME Class Library, Slow with tests)",
         "required": false,
-        "firmware_path": "squirreljme-0.3.0-slow-test.jar"
+        "firmware_path": "squirreljme-0.3.0-slow-test.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       },
       "squirreljme-0.3.0-slow.jar": {
         "description": "squirreljme-0.3.0-slow.jar (SquirrelJME Class Library, Slow)",
         "required": false,
-        "firmware_path": "squirreljme-0.3.0-slow.jar"
+        "firmware_path": "squirreljme-0.3.0-slow.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       },
       "squirreljme-0.3.0.jar": {
         "description": "squirreljme-0.3.0.jar (SquirrelJME Class Library)",
         "required": false,
-        "firmware_path": "squirreljme-0.3.0.jar"
+        "firmware_path": "squirreljme-0.3.0.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       },
       "squirreljme-fast.jar": {
         "description": "squirreljme-fast.jar (SquirrelJME Class Library)",
         "required": false,
-        "firmware_path": "squirreljme-fast.jar"
+        "firmware_path": "squirreljme-fast.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       },
       "squirreljme-slow-test.jar": {
         "description": "squirreljme-slow-test.jar (SquirrelJME Class Library, Slow with tests)",
         "required": false,
-        "firmware_path": "squirreljme-slow-test.jar"
+        "firmware_path": "squirreljme-slow-test.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       },
       "squirreljme-slow.jar": {
         "description": "squirreljme-slow.jar (SquirrelJME Class Library, Slow)",
         "required": false,
-        "firmware_path": "squirreljme-slow.jar"
+        "firmware_path": "squirreljme-slow.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       },
       "squirreljme.jar": {
         "description": "squirreljme.jar (SquirrelJME Class Library)",
         "required": false,
-        "firmware_path": "squirreljme.jar"
+        "firmware_path": "squirreljme.jar",
+        "cores": {
+          "squirreljme_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "lynx": {
@@ -3004,6 +4241,20 @@
         "description": "lynxboot.img (Lynx Boot Image)",
         "required": true,
         "firmware_path": "lynxboot.img",
+        "cores": {
+          "holani_libretro": {
+            "required": false
+          },
+          "gearlynx_libretro": {
+            "required": true
+          },
+          "handy_libretro": {
+            "required": false
+          },
+          "mednafen_lynx_libretro": {
+            "required": true
+          }
+        },
         "md5": "fcd403db69f54290b51035d82f835e7b",
         "sha1": "e4ed47fae31693e016b081c6bda48da5b70d7ccb",
         "size": 512
@@ -3014,6 +4265,11 @@
         "description": "MacII.ROM",
         "required": true,
         "firmware_path": "MacII.ROM",
+        "cores": {
+          "minivmac_libretro": {
+            "required": true
+          }
+        },
         "md5": "66223be1497460f1e60885eeb35e03cc",
         "sha1": "db6b504744281369794e26ba71a6e385cf6227fa",
         "size": 262144
@@ -3024,6 +4280,11 @@
         "description": "DISK.ROM (DiskROM/BDOS)",
         "required": false,
         "firmware_path": "DISK.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": false
+          }
+        },
         "md5": "80dcd1ad1a4cf65d64b7ba10504e8190",
         "sha1": "032cb1c1c75b9a191fa1230978971698d9d2a17f",
         "size": 16384
@@ -3032,6 +4293,11 @@
         "description": "FMPAC.ROM (FMPAC BIOS)",
         "required": false,
         "firmware_path": "FMPAC.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": false
+          }
+        },
         "md5": "6f69cc8b5ed761b03afd78000dfb0e19",
         "sha1": "9d789166e3caf28e4742fe933d962e99618c633d",
         "size": 65536
@@ -3040,6 +4306,11 @@
         "description": "KANJI.ROM (Kanji Font)",
         "required": false,
         "firmware_path": "KANJI.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": false
+          }
+        },
         "md5": "febe8782b466d7c3b16de6d104826b34",
         "sha1": "84a645becec0a25d3ab7a909cde1b242699a8662",
         "size": 131072
@@ -3048,6 +4319,11 @@
         "description": "MSX.ROM (MSX BIOS)",
         "required": true,
         "firmware_path": "MSX.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": true
+          }
+        },
         "md5": "aa95aea2563cd5ec0a0919b44cc17d47",
         "sha1": "409e82adac40f6bdd18eb6c84e8b2fbdc7fb5498",
         "size": 32768
@@ -3055,12 +4331,22 @@
       "MSX.rom": {
         "description": "'Machines' folder",
         "required": true,
-        "firmware_path": "Machines/Shared Roms/MSX.rom"
+        "firmware_path": "Machines/Shared Roms/MSX.rom",
+        "cores": {
+          "bluemsx_libretro": {
+            "required": true
+          }
+        }
       },
       "MSX2.ROM": {
         "description": "MSX2.ROM (MSX2 BIOS)",
         "required": true,
         "firmware_path": "MSX2.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": true
+          }
+        },
         "md5": "ec3a01c91f24fbddcbcab0ad301bc9ef",
         "sha1": "6103b39f1e38d1aa2d84b1c3219c44f1abb5436e",
         "size": 32768
@@ -3069,6 +4355,11 @@
         "description": "MSX2EXT.ROM (MSX2 ExtROM)",
         "required": true,
         "firmware_path": "MSX2EXT.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": true
+          }
+        },
         "md5": "2183c2aff17cf4297bdb496de78c2e8a",
         "sha1": "5c1f9c7fb655e43d38e5dd1fcc6b942b2ff68b02",
         "size": 16384
@@ -3077,6 +4368,11 @@
         "description": "MSX2P.ROM (MSX2+ BIOS)",
         "required": true,
         "firmware_path": "MSX2P.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": true
+          }
+        },
         "md5": "6d8c0ca64e726c82a4b726e9b01cdf1e",
         "sha1": "e2fbd56e42da637609d23ae9df9efd1b4241b18a",
         "size": 32768
@@ -3085,6 +4381,11 @@
         "description": "MSX2PEXT.ROM (MSX2+ ExtROM)",
         "required": true,
         "firmware_path": "MSX2PEXT.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": true
+          }
+        },
         "md5": "7c8243c71d8f143b2531f01afa6a05dc",
         "sha1": "fe0254cbfc11405b79e7c86c7769bd6322b04995",
         "size": 16384
@@ -3093,6 +4394,11 @@
         "description": "MSXDOS2.ROM (MSX-DOS 2)",
         "required": false,
         "firmware_path": "MSXDOS2.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": false
+          }
+        },
         "md5": "6418d091cd6907bbcf940324339e43bb",
         "sha1": "c36c9e0f96738a340381e23b4f97245388801a46",
         "size": 65536
@@ -3101,6 +4407,11 @@
         "description": "PAINTER.ROM (Yamaha Painter)",
         "required": false,
         "firmware_path": "PAINTER.ROM",
+        "cores": {
+          "fmsx_libretro": {
+            "required": false
+          }
+        },
         "md5": "403cdea1cbd2bb24fae506941f8f655e",
         "sha1": "7fd2a28c4fdaeb140f3c8c8fb90271b1472c97b9",
         "size": 65536
@@ -3108,7 +4419,12 @@
       "msxromdb.xml": {
         "description": "'Databases' folder",
         "required": true,
-        "firmware_path": "Databases/msxromdb.xml"
+        "firmware_path": "Databases/msxromdb.xml",
+        "cores": {
+          "bluemsx_libretro": {
+            "required": true
+          }
+        }
       }
     },
     "n64": {
@@ -3116,6 +4432,14 @@
         "description": "64DD_IPL.bin (64DD IPL ROM)",
         "required": false,
         "firmware_path": "64DD_IPL.bin",
+        "cores": {
+          "parallel_n64_debug_libretro": {
+            "required": false
+          },
+          "parallel_n64_libretro": {
+            "required": false
+          }
+        },
         "md5": "8d3d9f294b6e174bc7b1d2fd1c727530",
         "sha1": "bf861922dcb78c316360e3e742f4f70ff63c9bc3",
         "size": 4194304
@@ -3123,7 +4447,21 @@
       "IPL.n64": {
         "description": "Mupen64plus/IPL.n64 (64DD BIOS)",
         "required": false,
-        "firmware_path": "Mupen64plus/IPL.n64"
+        "firmware_path": "Mupen64plus/IPL.n64",
+        "cores": {
+          "mupen64plus_next_gles2_libretro": {
+            "required": false
+          },
+          "mupen64plus_next_libretro": {
+            "required": false
+          },
+          "mupen64plus_next_develop_libretro": {
+            "required": false
+          },
+          "mupen64plus_next_gles3_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "nds": {
@@ -3131,6 +4469,23 @@
         "description": "bios7.bin (ARM7 BIOS)",
         "required": false,
         "firmware_path": "bios7.bin",
+        "cores": {
+          "melondsds_libretro": {
+            "required": false
+          },
+          "noods_libretro": {
+            "required": false
+          },
+          "melonds_libretro": {
+            "required": false
+          },
+          "desmume2015_libretro": {
+            "required": false
+          },
+          "desmume_libretro": {
+            "required": false
+          }
+        },
         "md5": "df692a80a5b1bc90728bc3dfc76cd948",
         "sha1": "24f67bdea115a2c847c8813a262502ee1607b7df",
         "size": 16384
@@ -3139,6 +4494,23 @@
         "description": "bios9.bin (ARM9 BIOS)",
         "required": false,
         "firmware_path": "bios9.bin",
+        "cores": {
+          "melondsds_libretro": {
+            "required": false
+          },
+          "noods_libretro": {
+            "required": false
+          },
+          "melonds_libretro": {
+            "required": false
+          },
+          "desmume2015_libretro": {
+            "required": false
+          },
+          "desmume_libretro": {
+            "required": false
+          }
+        },
         "md5": "a392174eb3e572fed6447e956bde4b25",
         "sha1": "bfaac75f101c135e32e2aaf541de6b1be4c8c62d",
         "size": 4096
@@ -3146,32 +4518,89 @@
       "dsi_bios7.bin": {
         "description": "dsi_bios7.bin (DSi ARM7 BIOS)",
         "required": false,
-        "firmware_path": "dsi_bios7.bin"
+        "firmware_path": "dsi_bios7.bin",
+        "cores": {
+          "melondsds_libretro": {
+            "required": false
+          },
+          "melonds_libretro": {
+            "required": false
+          }
+        }
       },
       "dsi_bios9.bin": {
         "description": "dsi_bios9.bin (DSi ARM9 BIOS)",
         "required": false,
-        "firmware_path": "dsi_bios9.bin"
+        "firmware_path": "dsi_bios9.bin",
+        "cores": {
+          "melondsds_libretro": {
+            "required": false
+          },
+          "melonds_libretro": {
+            "required": false
+          }
+        }
       },
       "dsi_firmware.bin": {
         "description": "dsi_firmware.bin (DSi Firmware)",
         "required": false,
-        "firmware_path": "dsi_firmware.bin"
+        "firmware_path": "dsi_firmware.bin",
+        "cores": {
+          "melondsds_libretro": {
+            "required": false
+          },
+          "melonds_libretro": {
+            "required": false
+          }
+        }
       },
       "dsi_nand.bin": {
         "description": "dsi_nand.bin (DSi NAND)",
         "required": false,
-        "firmware_path": "dsi_nand.bin"
+        "firmware_path": "dsi_nand.bin",
+        "cores": {
+          "melondsds_libretro": {
+            "required": false
+          },
+          "melonds_libretro": {
+            "required": false
+          }
+        }
       },
       "dsi_sd_card.bin": {
         "description": "dsi_sd_card.bin (DSi SD card)",
         "required": false,
-        "firmware_path": "dsi_sd_card.bin"
+        "firmware_path": "dsi_sd_card.bin",
+        "cores": {
+          "melonds_libretro": {
+            "required": false
+          }
+        }
       },
       "firmware.bin": {
         "description": "firmware.bin (NDS Firmware)",
         "required": false,
         "firmware_path": "firmware.bin",
+        "cores": {
+          "melondsds_libretro": {
+            "required": false
+          },
+          "noods_libretro": {
+            "required": false
+          },
+          "melonds_libretro": {
+            "required": false
+          },
+          "desmume2015_libretro": {
+            "required": false
+          },
+          "skyemu_libretro": {
+            "required": false
+          },
+          "desmume_libretro": {
+            "required": false
+          }
+        },
         "md5": "e45033d9b0fa6b0de071292bba7c9d13",
         "sha1": "cfe072921ee3fb93f688743f8beef89043c3e9ad",
         "size": 262144
@@ -3180,6 +4609,32 @@
         "description": "gba_bios.bin (Game Boy Advance BIOS)",
         "required": true,
         "firmware_path": "gba_bios.bin",
+        "cores": {
+          "noods_libretro": {
+            "required": false
+          },
+          "gpsp_libretro": {
+            "required": true
+          },
+          "mednafen_gba_libretro": {
+            "required": false
+          },
+          "skyemu_libretro": {
+            "required": false
+          },
+          "vba_next_libretro": {
+            "required": false
+          },
+          "mgba_libretro": {
+            "required": false
+          },
+          "tempgba_libretro": {
+            "required": true
+          },
+          "vbam_libretro": {
+            "required": false
+          }
+        },
         "md5": "a860e8c0b6d573d191e4ec7db1b1e4f6",
         "sha1": "300c20df6731a33952ded8c436f7f186d25d3492",
         "size": 16384
@@ -3187,29 +4642,69 @@
       "nds_sd_card.bin": {
         "description": "nds_sd_card.bin (NDS SD card)",
         "required": false,
-        "firmware_path": "nds_sd_card.bin"
+        "firmware_path": "nds_sd_card.bin",
+        "cores": {
+          "noods_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "neogeo": {
       "aes.zip": {
         "description": "aes.zip (Neo Geo AES System ROM)",
         "required": true,
-        "firmware_path": "aes.zip"
+        "firmware_path": "aes.zip",
+        "cores": {
+          "geolith_libretro": {
+            "required": true
+          }
+        }
       },
       "hiscore.dat": {
         "description": "fbneo/hiscore.dat (High Score support database)",
         "required": false,
-        "firmware_path": "fbneo/hiscore.dat"
+        "firmware_path": "fbneo/hiscore.dat",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          },
+          "fbneo_cps12_libretro": {
+            "required": false
+          },
+          "fbneo_neogeo_libretro": {
+            "required": false
+          }
+        }
       },
       "neocdz.zip": {
         "description": "fbneo/neocdz.zip (Neo Geo CDZ System BIOS)",
         "required": false,
-        "firmware_path": "fbneo/neocdz.zip"
+        "firmware_path": "fbneo/neocdz.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          },
+          "fbneo_neogeo_libretro": {
+            "required": false
+          }
+        }
       },
       "neogeo.zip": {
         "description": "neogeo.zip (Neo Geo MVS System ROM)",
         "required": true,
         "firmware_path": "fbneo/neogeo.zip",
+        "cores": {
+          "fbneo_libretro": {
+            "required": false
+          },
+          "geolith_libretro": {
+            "required": true
+          },
+          "fbneo_neogeo_libretro": {
+            "required": false
+          }
+        },
         "md5": "00dad01abdbf8ea9e79ad2fe11bdb182",
         "sha1": "deb62b0074b8cae4f162c257662136733cfc76ad",
         "size": 1859335
@@ -3220,6 +4715,11 @@
         "description": "neocd/000-lo.lo (Y-ZOOM ROM (MAME))",
         "required": false,
         "firmware_path": "neocd/000-lo.lo",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "fc7599f3f871578fe9a0453662d1c966",
         "sha1": "5992277debadeb64d1c1c64b0a92d9293eaf7e4a",
         "size": 131072
@@ -3228,6 +4728,11 @@
         "description": "neocd/front-sp1.bin (Front Loader BIOS (MAME))",
         "required": false,
         "firmware_path": "neocd/front-sp1.bin",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "5c2366f25ff92d71788468ca492ebeca",
         "sha1": "53bc1f283cdf00fa2efbb79f2e36d4c8038d743a",
         "size": 524288
@@ -3236,6 +4741,11 @@
         "description": "neocd/neocd.bin (CDZ BIOS (MAME))",
         "required": false,
         "firmware_path": "neocd/neocd.bin",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "f39572af7584cb5b3f70ae8cc848aba2",
         "sha1": "7bb26d1e5d1e930515219cb18bcde5b7b23e2eda",
         "size": 524288
@@ -3244,6 +4754,11 @@
         "description": "neocd/neocd_f.rom (Front Loader BIOS)",
         "required": false,
         "firmware_path": "neocd/neocd_f.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "8834880c33164ccbe6476b559f3e37de",
         "sha1": "a5f4a7a627b3083c979f6ebe1fabc5d2df6d083b",
         "size": 524288
@@ -3252,6 +4767,11 @@
         "description": "neocd/neocd_sf.rom (Front Loader BIOS (SMKDAN))",
         "required": false,
         "firmware_path": "neocd/neocd_sf.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "043d76d5f0ef836500700c34faef774d",
         "sha1": "4a94719ee5d0e3f2b981498f70efc1b8f1cef325",
         "size": 524288
@@ -3260,6 +4780,11 @@
         "description": "neocd/neocd_st.rom (Top Loader BIOS (SMKDAN))",
         "required": false,
         "firmware_path": "neocd/neocd_st.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "f6325a33c6d63ea4b9162a3fa8c32727",
         "sha1": "19729b51bdab60c42aafef6e20ea9234c7eb8410",
         "size": 524288
@@ -3268,6 +4793,11 @@
         "description": "neocd/neocd_sz.rom (CDZ BIOS (SMKDAN))",
         "required": false,
         "firmware_path": "neocd/neocd_sz.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "971ee8a36fb72da57aed01758f0a37f5",
         "sha1": "6a947457031dd3a702a296862446d7485aa89dbb",
         "size": 524288
@@ -3276,6 +4806,11 @@
         "description": "neocd/neocd_t.rom (Top Loader BIOS))",
         "required": false,
         "firmware_path": "neocd/neocd_t.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "de3cf45d227ad44645b22aa83b49f450",
         "sha1": "cc92b54a18a8bff6e595aabe8e5c360ba9e62eb5",
         "size": 524288
@@ -3284,6 +4819,11 @@
         "description": "neocd/neocd_z.rom (CDZ BIOS)",
         "required": false,
         "firmware_path": "neocd/neocd_z.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "11526d58d4c524daef7d5d677dc6b004",
         "sha1": "b0f1c4fa8d4492a04431805f6537138b842b549f",
         "size": 524288
@@ -3291,12 +4831,22 @@
       "ng-lo.rom": {
         "description": "neocd/ng-lo.rom (Y-ZOOM ROM)",
         "required": false,
-        "firmware_path": "neocd/ng-lo.rom"
+        "firmware_path": "neocd/ng-lo.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        }
       },
       "top-sp1.bin": {
         "description": "neocd/top-sp1.bin (Top Loader BIOS (MAME))",
         "required": false,
         "firmware_path": "neocd/top-sp1.bin",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "122aee210324c72e8a11116e6ef9c0d0",
         "sha1": "235f4d1d74364415910f73c10ae5482d90b4274f",
         "size": 524288
@@ -3305,6 +4855,11 @@
         "description": "neocd/uni-bioscd.rom (Universe BIOS 3.2)",
         "required": false,
         "firmware_path": "neocd/uni-bioscd.rom",
+        "cores": {
+          "neocd_libretro": {
+            "required": false
+          }
+        },
         "md5": "08ca8b2dba6662e8024f9e789711c6fc",
         "sha1": "5142f205912869b673a71480c5828b1eaed782a8",
         "size": 524288
@@ -3315,6 +4870,20 @@
         "description": "disksys.rom (Family Computer Disk System BIOS)",
         "required": false,
         "firmware_path": "disksys.rom",
+        "cores": {
+          "fixnes_libretro": {
+            "required": false
+          },
+          "nestopia_libretro": {
+            "required": false
+          },
+          "fceumm_libretro": {
+            "required": false
+          },
+          "mesen_libretro": {
+            "required": false
+          }
+        },
         "md5": "ca30b50f880eb660a320674ed365ef7a",
         "sha1": "57fe1bdee955bb48d357e463ccbf129496930b62",
         "size": 8192
@@ -3323,6 +4892,11 @@
         "description": "gamegenie.nes (Game Genie add-on cartridge)",
         "required": false,
         "firmware_path": "gamegenie.nes",
+        "cores": {
+          "fceumm_libretro": {
+            "required": false
+          }
+        },
         "md5": "7f98d77d7a094ad7d069b74bd553ec98",
         "sha1": "f430a0d752a9fa0c7032db8131f9090d18f71779",
         "size": 24592
@@ -3330,7 +4904,12 @@
       "nes.pal": {
         "description": "nes.pal (custom NES Palette)",
         "required": false,
-        "firmware_path": "nes.pal"
+        "firmware_path": "nes.pal",
+        "cores": {
+          "fceumm_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "odyssey2": {
@@ -3338,6 +4917,11 @@
         "description": "c52.bin (Videopac French BIOS - G7000 model)",
         "required": true,
         "firmware_path": "c52.bin",
+        "cores": {
+          "o2em_libretro": {
+            "required": true
+          }
+        },
         "md5": "f1071cdb0b6b10dde94d3bc8a6146387",
         "sha1": "a6120aed50831c9c0d95dbdf707820f601d9452e",
         "size": 1024
@@ -3346,6 +4930,11 @@
         "description": "g7400.bin (Videopac+ European BIOS - G7400 model)",
         "required": true,
         "firmware_path": "g7400.bin",
+        "cores": {
+          "o2em_libretro": {
+            "required": true
+          }
+        },
         "md5": "c500ff71236068e0dc0d0603d265ae76",
         "sha1": "5130243429b40b01a14e1304d0394b8459a6fbae",
         "size": 1024
@@ -3354,6 +4943,11 @@
         "description": "jopac.bin (Videopac+ French BIOS - G7400 model)",
         "required": true,
         "firmware_path": "jopac.bin",
+        "cores": {
+          "o2em_libretro": {
+            "required": true
+          }
+        },
         "md5": "279008e4a0db2dc5f1c048853b033828",
         "sha1": "54b8d2c1317628de51a85fc1c424423a986775e4",
         "size": 1024
@@ -3362,6 +4956,11 @@
         "description": "o2rom.bin (Odyssey2 BIOS - G7000 model)",
         "required": true,
         "firmware_path": "o2rom.bin",
+        "cores": {
+          "o2em_libretro": {
+            "required": true
+          }
+        },
         "md5": "562d5ebf9e030a40d6fabfc2f33139fd",
         "sha1": "b2e1955d957a475de2411770452eff4ea19f4cee",
         "size": 1024
@@ -3371,121 +4970,236 @@
       "bootloader-dbvz.rom": {
         "description": "bootloader-dbvz.rom (MC68VZ328 UART Bootloader)",
         "required": false,
-        "firmware_path": "bootloader-dbvz.rom"
+        "firmware_path": "bootloader-dbvz.rom",
+        "cores": {
+          "mu_libretro": {
+            "required": false
+          }
+        }
       },
       "palmos40-en-m500.rom": {
         "description": "palmos40-en-m500.rom (Palm OS 4.0)",
         "required": false,
-        "firmware_path": "palmos40-en-m500.rom"
+        "firmware_path": "palmos40-en-m500.rom",
+        "cores": {
+          "mu_libretro": {
+            "required": false
+          }
+        }
       },
       "palmos41-en-m515.rom": {
         "description": "palmos41-en-m515.rom (Palm OS 4.1)",
         "required": true,
-        "firmware_path": "palmos41-en-m515.rom"
+        "firmware_path": "palmos41-en-m515.rom",
+        "cores": {
+          "mu_libretro": {
+            "required": true
+          }
+        }
       },
       "palmos52-en-t3.rom": {
         "description": "palmos52-en-t3.rom (Palm OS 5.2.1)",
         "required": false,
-        "firmware_path": "palmos52-en-t3.rom"
+        "firmware_path": "palmos52-en-t3.rom",
+        "cores": {
+          "mu_libretro": {
+            "required": false
+          }
+        }
       },
       "palmos60-en-t3.rom": {
         "description": "palmos60-en-t3.rom (Palm OS 6.0)",
         "required": false,
-        "firmware_path": "palmos60-en-t3.rom"
+        "firmware_path": "palmos60-en-t3.rom",
+        "cores": {
+          "mu_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "pc88": {
       "disk.rom": {
         "description": "disk.rom (Sub BIOS)",
         "required": false,
-        "firmware_path": "quasi88/disk.rom"
+        "firmware_path": "quasi88/disk.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       },
       "n88.rom": {
         "description": "n88.rom (Main BIOS)",
         "required": true,
-        "firmware_path": "quasi88/n88.rom"
+        "firmware_path": "quasi88/n88.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": true
+          }
+        }
       },
       "n88_0.rom": {
         "description": "n88_0.rom (Extension BIOS 1)",
         "required": true,
-        "firmware_path": "quasi88/n88_0.rom"
+        "firmware_path": "quasi88/n88_0.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": true
+          }
+        }
       },
       "n88_1.rom": {
         "description": "n88_1.rom (Extension BIOS 2)",
         "required": false,
-        "firmware_path": "quasi88/n88_1.rom"
+        "firmware_path": "quasi88/n88_1.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       },
       "n88_2.rom": {
         "description": "n88_2.rom (Extension BIOS 3)",
         "required": false,
-        "firmware_path": "quasi88/n88_2.rom"
+        "firmware_path": "quasi88/n88_2.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       },
       "n88_3.rom": {
         "description": "n88_3.rom (Extension BIOS 4)",
         "required": false,
-        "firmware_path": "quasi88/n88_3.rom"
+        "firmware_path": "quasi88/n88_3.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       },
       "n88jisho.rom": {
         "description": "n88jisho.rom (Jisho)",
         "required": false,
-        "firmware_path": "quasi88/n88jisho.rom"
+        "firmware_path": "quasi88/n88jisho.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       },
       "n88knj1.rom": {
         "description": "n88knj1.rom (Kanji Font 1)",
         "required": false,
-        "firmware_path": "quasi88/n88knj1.rom"
+        "firmware_path": "quasi88/n88knj1.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       },
       "n88knj2.rom": {
         "description": "n88knj2.rom (Kanji Font 2)",
         "required": false,
-        "firmware_path": "quasi88/n88knj2.rom"
+        "firmware_path": "quasi88/n88knj2.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       },
       "n88n.rom": {
         "description": "n88n.rom (N Basic BIOS)",
         "required": false,
-        "firmware_path": "quasi88/n88n.rom"
+        "firmware_path": "quasi88/n88n.rom",
+        "cores": {
+          "quasi88_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "pc98": {
       "2608_BD.WAV": {
         "description": "np2kai/2608_BD.WAV (YM2608 rhythm sample)",
         "required": false,
-        "firmware_path": "np2kai/2608_BD.WAV"
+        "firmware_path": "np2kai/2608_BD.WAV",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        }
       },
       "2608_HH.WAV": {
         "description": "np2kai/2608_HH.WAV (YM2608 rhythm sample)",
         "required": false,
-        "firmware_path": "np2kai/2608_HH.WAV"
+        "firmware_path": "np2kai/2608_HH.WAV",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        }
       },
       "2608_RIM.WAV": {
         "description": "np2kai/2608_RIM.WAV (YM2608 rhythm sample)",
         "required": false,
-        "firmware_path": "np2kai/2608_RIM.WAV"
+        "firmware_path": "np2kai/2608_RIM.WAV",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        }
       },
       "2608_SD.WAV": {
         "description": "np2kai/2608_SD.WAV (YM2608 rhythm sample)",
         "required": false,
-        "firmware_path": "np2kai/2608_SD.WAV"
+        "firmware_path": "np2kai/2608_SD.WAV",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        }
       },
       "2608_TOM.WAV": {
         "description": "np2kai/2608_TOM.WAV (YM2608 rhythm sample)",
         "required": false,
-        "firmware_path": "np2kai/2608_TOM.WAV"
+        "firmware_path": "np2kai/2608_TOM.WAV",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        }
       },
       "2608_TOP.WAV": {
         "description": "np2kai/2608_TOP.WAV (YM2608 rhythm sample)",
         "required": false,
-        "firmware_path": "np2kai/2608_TOP.WAV"
+        "firmware_path": "np2kai/2608_TOP.WAV",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        }
       },
       "FONT.ROM": {
         "description": "np2kai/FONT.ROM (alt font file)",
         "required": false,
-        "firmware_path": "np2kai/FONT.ROM"
+        "firmware_path": "np2kai/FONT.ROM",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        }
       },
       "bios.rom": {
         "description": "np2kai/bios.rom",
         "required": false,
         "firmware_path": "np2kai/bios.rom",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        },
         "md5": "cd237e16e7e77c06bb58540e9e9fca68",
         "sha1": "76a7360502fa0296ea93b4c537174610a834d367",
         "size": 98304
@@ -3494,6 +5208,11 @@
         "description": "np2kai/font.bmp (needed to display text)",
         "required": false,
         "firmware_path": "np2kai/font.bmp",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        },
         "md5": "7da1e5b7c482d4108d22a5b09631d967",
         "sha1": "b4f14e58030ed40fff2dc312b58ea4440bdf8cc5",
         "size": 524350
@@ -3502,6 +5221,11 @@
         "description": "np2kai/itf.rom",
         "required": false,
         "firmware_path": "np2kai/itf.rom",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        },
         "md5": "72ea51443070f0e9212bfc9b793ee28e",
         "sha1": "a2fb11c000ed7c976520622cfb7940ed6ddc904e",
         "size": 32768
@@ -3510,6 +5234,11 @@
         "description": "np2kai/sound.rom",
         "required": false,
         "firmware_path": "np2kai/sound.rom",
+        "cores": {
+          "np2kai_libretro": {
+            "required": false
+          }
+        },
         "md5": "524473c1a5a03b17e21d86a0408ff827",
         "sha1": "d5dbc4fea3b8367024d363f5351baecd6adcd8ef",
         "size": 16384
@@ -3520,6 +5249,20 @@
         "description": "gexpress.pce (Game Express CD Card)",
         "required": false,
         "firmware_path": "gexpress.pce",
+        "cores": {
+          "mednafen_supergrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_libretro": {
+            "required": false
+          },
+          "geargrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_fast_libretro": {
+            "required": false
+          }
+        },
         "md5": "6d2cb14fc3e1f65ceb135633d1694122",
         "sha1": "014881a959e045e00f4db8f52955200865d40280",
         "size": 32768
@@ -3528,6 +5271,20 @@
         "description": "syscard1.pce (CD-ROM System V1.xx)",
         "required": false,
         "firmware_path": "syscard1.pce",
+        "cores": {
+          "mednafen_supergrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_libretro": {
+            "required": false
+          },
+          "geargrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_fast_libretro": {
+            "required": false
+          }
+        },
         "md5": "2b7ccb3d86baa18f6402c176f3065082",
         "sha1": "a39a66da7de6ba94ab84d04eef7afeec7d4ee66a",
         "size": 262144
@@ -3536,6 +5293,20 @@
         "description": "syscard2.pce (CD-ROM System V2.xx)",
         "required": false,
         "firmware_path": "syscard2.pce",
+        "cores": {
+          "mednafen_supergrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_libretro": {
+            "required": false
+          },
+          "geargrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_fast_libretro": {
+            "required": false
+          }
+        },
         "md5": "3cdd6614a918616bfc41c862e889dd79",
         "sha1": "88da02e2503f7c32810f5d93a34849d470742b6d",
         "size": 262144
@@ -3544,6 +5315,20 @@
         "description": "syscard3.pce (Super CD-ROM2 System V3.xx)",
         "required": false,
         "firmware_path": "syscard3.pce",
+        "cores": {
+          "mednafen_supergrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_libretro": {
+            "required": false
+          },
+          "geargrafx_libretro": {
+            "required": false
+          },
+          "mednafen_pce_fast_libretro": {
+            "required": false
+          }
+        },
         "md5": "38179df8f4ac870017db21ebcbf53114",
         "sha1": "79f5ff55dd10187c7fd7b8daab0b3ffbd1f56a2c",
         "size": 262144
@@ -3554,6 +5339,11 @@
         "description": "pcfx.rom (PC-FX BIOS v1.00 - 2 Sep 1994)",
         "required": true,
         "firmware_path": "pcfx.rom",
+        "cores": {
+          "mednafen_pcfx_libretro": {
+            "required": true
+          }
+        },
         "md5": "08e36edbea28a017f79f8d4f7ff9b6d7",
         "sha1": "1a77fd83e337f906aecab27a1604db064cf10074",
         "size": 1048576
@@ -3564,6 +5354,11 @@
         "description": "bios.min (Pokemon Mini BIOS)",
         "required": false,
         "firmware_path": "bios.min",
+        "cores": {
+          "pokemini_libretro": {
+            "required": false
+          }
+        },
         "md5": "1e4fb124a3a886865acb574f388c803d",
         "sha1": "daad4113713ed776fbd47727762bca81ba74915f",
         "size": 4096
@@ -3573,12 +5368,22 @@
       "GameIndex.yaml": {
         "description": "pcsx2/resources/GameIndex.yaml (Game Database)",
         "required": true,
-        "firmware_path": "pcsx2/resources/GameIndex.yaml"
+        "firmware_path": "pcsx2/resources/GameIndex.yaml",
+        "cores": {
+          "pcsx2_libretro": {
+            "required": true
+          }
+        }
       },
       "bios": {
         "description": "'pcsx2/bios' folder",
         "required": true,
-        "firmware_path": "pcsx2/bios"
+        "firmware_path": "pcsx2/bios",
+        "cores": {
+          "pcsx2_libretro": {
+            "required": true
+          }
+        }
       }
     },
     "psp": {
@@ -3586,6 +5391,11 @@
         "description": "ppge_atlas.zim (PPSSPP Data ROM)",
         "required": true,
         "firmware_path": "PPSSPP/ppge_atlas.zim",
+        "cores": {
+          "ppsspp_libretro": {
+            "required": true
+          }
+        },
         "md5": "866855cc330b9b95cc69135fb7b41d38",
         "sha1": "30a33f3651f8e1b0967a5dfe6ff714baebcce41a",
         "size": 666530
@@ -3596,6 +5406,17 @@
         "description": "ps1_rom.bin (PS3 PS1 BIOS)",
         "required": false,
         "firmware_path": "ps1_rom.bin",
+        "cores": {
+          "mednafen_psx_hw_libretro": {
+            "required": false
+          },
+          "swanstation_libretro": {
+            "required": false
+          },
+          "mednafen_psx_libretro": {
+            "required": false
+          }
+        },
         "md5": "81bbe60ba7a3d1cea1d48c14cbcc647b",
         "sha1": "c40146361eb8cf670b19fdc9759190257803cab7",
         "size": 524288
@@ -3604,6 +5425,20 @@
         "description": "psponpsx660.bin (PSP PSX Emu BIOS)",
         "required": false,
         "firmware_path": "psxonpsp660.bin",
+        "cores": {
+          "mednafen_psx_hw_libretro": {
+            "required": false
+          },
+          "swanstation_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_libretro": {
+            "required": false
+          },
+          "mednafen_psx_libretro": {
+            "required": false
+          }
+        },
         "md5": "c53ca5908936d412331790f4426c6c33",
         "sha1": "96880d1ca92a016ff054be5159bb06fe03cb4e14",
         "size": 524288
@@ -3612,6 +5447,32 @@
         "description": "scph5500.bin (PS1 JP BIOS)",
         "required": true,
         "firmware_path": "scph5500.bin",
+        "cores": {
+          "pcsx1_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_interpreter_libretro": {
+            "required": false
+          },
+          "mednafen_psx_hw_libretro": {
+            "required": true
+          },
+          "swanstation_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_neon_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_libretro": {
+            "required": false
+          },
+          "mednafen_psx_libretro": {
+            "required": true
+          },
+          "duckstation_libretro": {
+            "required": true
+          }
+        },
         "md5": "8dd7d5296a650fac7319bce665a6a53c",
         "sha1": "b05def971d8ec59f346f2d9ac21fb742e3eb6917",
         "size": 524288
@@ -3620,6 +5481,32 @@
         "description": "scph5501.bin (PS1 US BIOS)",
         "required": true,
         "firmware_path": "scph5501.bin",
+        "cores": {
+          "pcsx1_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_interpreter_libretro": {
+            "required": false
+          },
+          "mednafen_psx_hw_libretro": {
+            "required": true
+          },
+          "swanstation_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_neon_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_libretro": {
+            "required": false
+          },
+          "mednafen_psx_libretro": {
+            "required": true
+          },
+          "duckstation_libretro": {
+            "required": true
+          }
+        },
         "md5": "490f666e1afb15b7362b406ed1cea246",
         "sha1": "0555c6fae8906f3f09baf5988f00e55f88e9f30b",
         "size": 524288
@@ -3628,6 +5515,32 @@
         "description": "scph5502.bin (PS1 EU BIOS)",
         "required": true,
         "firmware_path": "scph5502.bin",
+        "cores": {
+          "pcsx1_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_interpreter_libretro": {
+            "required": false
+          },
+          "mednafen_psx_hw_libretro": {
+            "required": true
+          },
+          "swanstation_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_neon_libretro": {
+            "required": false
+          },
+          "pcsx_rearmed_libretro": {
+            "required": false
+          },
+          "mednafen_psx_libretro": {
+            "required": true
+          },
+          "duckstation_libretro": {
+            "required": true
+          }
+        },
         "md5": "32736f17079d0b2b7024407c39bd3050",
         "sha1": "f6bc2d1f5eb6593de7d089c425ac681d6fffd3f0",
         "size": 524288
@@ -3638,6 +5551,11 @@
         "description": "mpr-17933.bin (Saturn US/EU BIOS)",
         "required": true,
         "firmware_path": "mpr-17933.bin",
+        "cores": {
+          "mednafen_saturn_libretro": {
+            "required": true
+          }
+        },
         "md5": "3240872c70984b6cbfda1586cab68dbe",
         "sha1": "faa8ea183a6d7bbe5d4e03bb1332519800d3fbc3",
         "size": 524288
@@ -3646,6 +5564,14 @@
         "description": "mpr-18811-mx.ic1 (The King of Fighters '95 ROM Cartridge)",
         "required": false,
         "firmware_path": "mpr-18811-mx.ic1",
+        "cores": {
+          "kronos_libretro": {
+            "required": false
+          },
+          "mednafen_saturn_libretro": {
+            "required": false
+          }
+        },
         "md5": "255113ba943c92a54facd25a10fd780c",
         "sha1": "a67cd4f550751f8b91de2b8b74528ab4e0c11c77",
         "size": 2097152
@@ -3654,6 +5580,14 @@
         "description": "mpr-19367-mx.ic1 (Ultraman: Hikari no Kyojin Densetsu ROM Cartridge)",
         "required": false,
         "firmware_path": "mpr-19367-mx.ic1",
+        "cores": {
+          "kronos_libretro": {
+            "required": false
+          },
+          "mednafen_saturn_libretro": {
+            "required": false
+          }
+        },
         "md5": "1cd19988d1d72a3e7caa0b73234c96b4",
         "sha1": "56c1b93da6b660bf393fbf48ca47569000ef4047",
         "size": 2097152
@@ -3662,6 +5596,17 @@
         "description": "kronos/saturn_bios.bin (Saturn BIOS)",
         "required": true,
         "firmware_path": "kronos/saturn_bios.bin",
+        "cores": {
+          "kronos_libretro": {
+            "required": true
+          },
+          "yabause_libretro": {
+            "required": false
+          },
+          "yabasanshiro_libretro": {
+            "required": true
+          }
+        },
         "md5": "af5828fdff51384f99b3c4926be27762",
         "sha1": "2b8cb4f87580683eb4d760e4ed210813d667f0a2",
         "size": 524288
@@ -3670,6 +5615,11 @@
         "description": "sega_101.bin (Saturn JP BIOS)",
         "required": true,
         "firmware_path": "sega_101.bin",
+        "cores": {
+          "mednafen_saturn_libretro": {
+            "required": true
+          }
+        },
         "md5": "85ec9ca47d8f6807718151cbcca8b964",
         "sha1": "df94c5b4d47eb3cc404d88b33a8fda237eaf4720",
         "size": 524288
@@ -3677,7 +5627,12 @@
       "stvbios.zip": {
         "description": "kronos/stvbios.zip (ST-V BIOS from MAME)",
         "required": true,
-        "firmware_path": "kronos/stvbios.zip"
+        "firmware_path": "kronos/stvbios.zip",
+        "cores": {
+          "kronos_libretro": {
+            "required": true
+          }
+        }
       }
     },
     "scv": {
@@ -3685,29 +5640,149 @@
         "description": "upd7801g.s01 (Super Cassette Vision BIOS)",
         "required": true,
         "firmware_path": "upd7801g.s01",
+        "cores": {
+          "emuscv_libretro": {
+            "required": true
+          }
+        },
         "md5": "635a978fd40db9a18ee44eff449fc126",
         "sha1": "6e89d1227581c76441a53d605f9e324185f1da33",
         "size": 4096
+      }
+    },
+    "segacd": {
+      "bios_CD_E.bin": {
+        "description": "bios_CD_E.bin (MegaCD EU BIOS)",
+        "required": false,
+        "firmware_path": "bios_CD_E.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "picodrive_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "e66fa1dc5820d254611fdcdba0662372",
+        "sha1": "f891e0ea651e2232af0c5c4cb46a0cae2ee8f356",
+        "size": 131072
+      },
+      "bios_CD_J.bin": {
+        "description": "bios_CD_J.bin (MegaCD JP BIOS)",
+        "required": false,
+        "firmware_path": "bios_CD_J.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "picodrive_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "278a9397d192149e84e820ac621a8edd",
+        "sha1": "4846f448160059a7da0215a5df12ca160f26dd69",
+        "size": 131072
+      },
+      "bios_CD_U.bin": {
+        "description": "bios_CD_U.bin (SegaCD US BIOS)",
+        "required": false,
+        "firmware_path": "bios_CD_U.bin",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "picodrive_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "2efd74e3232ff260e371b99f84024f7f",
+        "sha1": "f4f315adcef9b8feb0364c21ab7f0eaf5457f3ed",
+        "size": 131072
       }
     },
     "sms": {
       "BIOS.col": {
         "description": "BIOS.col (Colecovision BIOS)",
         "required": false,
-        "firmware_path": "BIOS.col"
-      },
-      "bios.gg": {
-        "description": "bios.gg (Game Gear BIOS)",
-        "required": false,
-        "firmware_path": "bios.gg",
-        "md5": "672e104c3be3a238301aceffc3b23fd6",
-        "sha1": "914aa165e3d879f060be77870d345b60cfeb4ede",
-        "size": 1024
+        "firmware_path": "BIOS.col",
+        "cores": {
+          "smsplus_libretro": {
+            "required": false
+          }
+        }
       },
       "bios.sms": {
         "description": "bios.sms (Master System BIOS)",
         "required": true,
         "firmware_path": "bios.sms",
+        "cores": {
+          "emux_sms_libretro": {
+            "required": true
+          },
+          "gearsystem_libretro": {
+            "required": false
+          },
+          "smsplus_libretro": {
+            "required": false
+          }
+        },
+        "md5": "840481177270d5642a14ca71ee72844c",
+        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
+        "size": 8192
+      },
+      "bios_E.sms": {
+        "description": "bios_E.sms (MasterSystem EU BIOS)",
+        "required": false,
+        "firmware_path": "bios_E.sms",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "840481177270d5642a14ca71ee72844c",
+        "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
+        "size": 8192
+      },
+      "bios_J.sms": {
+        "description": "bios_J.sms (MasterSystem JP BIOS)",
+        "required": false,
+        "firmware_path": "bios_J.sms",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
+        "md5": "24a519c53f67b00640d0048ef7089105",
+        "sha1": "a8c1b39a2e41137835eda6a5de6d46dd9fadbaf2",
+        "size": 8192
+      },
+      "bios_U.sms": {
+        "description": "bios_U.sms (MasterSystem US BIOS)",
+        "required": false,
+        "firmware_path": "bios_U.sms",
+        "cores": {
+          "genesis_plus_gx_libretro": {
+            "required": false
+          },
+          "genesis_plus_gx_wide_libretro": {
+            "required": false
+          }
+        },
         "md5": "840481177270d5642a14ca71ee72844c",
         "sha1": "c315672807d8ddb8d91443729405c766dd95cae7",
         "size": 8192
@@ -3718,6 +5793,17 @@
         "description": "BS-X.bin (BS-X - Sore wa Namae o Nusumareta Machi no Monogatari (Japan) (Rev 1))",
         "required": false,
         "firmware_path": "BS-X.bin",
+        "cores": {
+          "bsnes_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "snes9x_libretro": {
+            "required": false
+          }
+        },
         "md5": "fed4d8242cfbed61343d53d48432aced",
         "sha1": "604556b2e62860af18db5a77f2956ebc75450020",
         "size": 1048576
@@ -3726,6 +5812,17 @@
         "description": "SGB1.sfc (SGB Boot Image)",
         "required": false,
         "firmware_path": "SGB1.sfc",
+        "cores": {
+          "bsnes_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          }
+        },
         "md5": "b15ddb15721c657d82c5bab6db982ee9",
         "sha1": "973e10840db683cf3faf61bd443090786b3a9f04",
         "size": 262144
@@ -3734,6 +5831,17 @@
         "description": "SGB2.sfc (SGB Boot Image)",
         "required": false,
         "firmware_path": "SGB2.sfc",
+        "cores": {
+          "bsnes_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          }
+        },
         "md5": "8ecd73eb4edf7ed7e81aef1be80031d5",
         "sha1": "e5b2922ca137051059e4269b236d07a22c07bc84",
         "size": 524288
@@ -3742,38 +5850,91 @@
         "description": "STBIOS.bin (Sufami Turbo (Japan))",
         "required": false,
         "firmware_path": "STBIOS.bin",
+        "cores": {
+          "snes9x_libretro": {
+            "required": false
+          }
+        },
         "md5": "d3a44ba7d42a74d3ac58cb9c14c6a5ca",
         "sha1": "ef86ea192eed03d5c413fdbbfd46043be1d7a127",
         "size": 262144
-      },
-      "cgb_boot.bin": {
-        "description": "cgb_boot.bin (Game Boy Color boot ROM)",
-        "required": false,
-        "firmware_path": "cgb_boot.bin",
-        "md5": "dbfce9db9deaa2567f6a84fde55f9680",
-        "sha1": "1293d68bf9643bc4f36954c1e80e38f39864528d",
-        "size": 2304
       },
       "cx4.data.rom": {
         "description": "cx4.data.rom",
         "required": false,
         "firmware_path": "cx4.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          }
+        },
         "md5": "037ac4296b6b6a5c47c440188d3c72e3",
         "sha1": "a002f4efba42775a31185d443f3ed1790b0e949a",
         "size": 3072
-      },
-      "dmg_boot.bin": {
-        "description": "dmg_boot.bin (Game Boy Boot ROM)",
-        "required": true,
-        "firmware_path": "dmg_boot.bin",
-        "md5": "32fbbd84168d3482956eb3c5051637f5",
-        "sha1": "4ed31ec6b0b175bb109c0eb5fd3d193da823339f",
-        "size": 256
       },
       "dsp1.data.rom": {
         "description": "dsp1.data.rom",
         "required": false,
         "firmware_path": "dsp1.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "3d81b45fa0c2aa8b852dfb1ece7c0971",
         "sha1": "589c158685fe3cf88c7ca77cb6083f0e4de9c7c3",
         "size": 2048
@@ -3782,6 +5943,44 @@
         "description": "dsp1.program.rom",
         "required": false,
         "firmware_path": "dsp1.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "ae209fbe789fbf11a48aea5ab1197321",
         "sha1": "c5d283604beebb3d832f15a0b3fc60d10dd4bddc",
         "size": 6144
@@ -3790,6 +5989,44 @@
         "description": "dsp1b.data.rom",
         "required": false,
         "firmware_path": "dsp1b.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "1e3f568634a7d8284020dddc0ae905bc",
         "sha1": "19d5e822fe15ee6942e9921c3d8275a761a969df",
         "size": 2048
@@ -3798,6 +6035,44 @@
         "description": "dsp1b.program.rom",
         "required": false,
         "firmware_path": "dsp1b.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "d10f446888e097cbf500f3f663cf4f6d",
         "sha1": "03c6c0bdb40846c42aeff6b716e1ea0e001c3ae3",
         "size": 6144
@@ -3806,6 +6081,44 @@
         "description": "dsp2.data.rom",
         "required": false,
         "firmware_path": "dsp2.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "e9417e29223b139c3c4b635a2a3b8744",
         "sha1": "aed9167cc2897cd8d0432f0b8f713fabbc48f5c4",
         "size": 2048
@@ -3814,6 +6127,44 @@
         "description": "dsp2.program.rom",
         "required": false,
         "firmware_path": "dsp2.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "aa6e5922a3ed5ded54f24247c11143c5",
         "sha1": "51a274955ef493cfcf2efad7e2ee54738c81eb15",
         "size": 6144
@@ -3822,6 +6173,44 @@
         "description": "dsp3.data.rom",
         "required": false,
         "firmware_path": "dsp3.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "0a81210c0a940b997dd9843281008ee6",
         "sha1": "e7ec3da203a4edba2b17c06d9384787304a025a0",
         "size": 2048
@@ -3830,6 +6219,44 @@
         "description": "dsp3.program.rom",
         "required": false,
         "firmware_path": "dsp3.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "d99ca4562818d49cee1f242705bba6f8",
         "sha1": "11b7ba3501a8542af4cdfdbd1c9702ae0a0e3fae",
         "size": 6144
@@ -3838,6 +6265,44 @@
         "description": "dsp4.data.rom",
         "required": false,
         "firmware_path": "dsp4.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "ee4990879eb68e3cbca239c5bc20303d",
         "sha1": "8f2ffb9c1702aa2f76191e98f3fef43f73e5aab7",
         "size": 2048
@@ -3846,6 +6311,44 @@
         "description": "dsp4.program.rom",
         "required": false,
         "firmware_path": "dsp4.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "a151023b948b90ffc23a5b594bb6fef2",
         "sha1": "1abee528a59238fd5668fdcffd598d079cb056c2",
         "size": 6144
@@ -3853,17 +6356,53 @@
       "program.rom": {
         "description": "SGB1.sfc/program.rom (SGB Boot Image)",
         "required": false,
-        "firmware_path": "SGB1.sfc/program.rom"
+        "firmware_path": "SGB1.sfc/program.rom",
+        "cores": {
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          }
+        }
       },
       "sgb.boot.rom": {
         "description": "sgb.boot.rom (SGB Boot Image)",
         "required": false,
-        "firmware_path": "sgb.boot.rom"
+        "firmware_path": "sgb.boot.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          }
+        }
       },
       "sgb1.boot.rom": {
         "description": "SGB1.sfc/sgb1.boot.rom (SGB Boot BIOS)",
         "required": false,
         "firmware_path": "SGB1.sfc/sgb1.boot.rom",
+        "cores": {
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          }
+        },
         "md5": "d574d4f9c12f305074798f54c091a8b4",
         "sha1": "aa2f50a77dfb4823da96ba99309085a3c6278515",
         "size": 256
@@ -3872,6 +6411,14 @@
         "description": "SGB2.sfc/sgb2.boot.rom (SGB Boot BIOS)",
         "required": false,
         "firmware_path": "SGB2.sfc/sgb2.boot.rom",
+        "cores": {
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          }
+        },
         "md5": "e0430bca9925fb9882148fd2dc2418c1",
         "sha1": "93407ea10d2f30ab96a314d8eca44fe160aea734",
         "size": 256
@@ -3879,17 +6426,78 @@
       "sgb2_boot.bin": {
         "description": "sgb2_boot.bin (SGB2 Boot Image)",
         "required": false,
-        "firmware_path": "sgb2_boot.bin"
+        "firmware_path": "sgb2_boot.bin",
+        "cores": {
+          "mesen-s_libretro": {
+            "required": false
+          }
+        }
+      },
+      "sgb_bios.bin": {
+        "description": "sgb_bios.bin (Super Game Boy BIOS)",
+        "required": false,
+        "firmware_path": "sgb_bios.bin",
+        "cores": {
+          "mgba_libretro": {
+            "required": false
+          }
+        },
+        "md5": "d574d4f9c12f305074798f54c091a8b4",
+        "sha1": "aa2f50a77dfb4823da96ba99309085a3c6278515",
+        "size": 256
       },
       "sgb_boot.bin": {
         "description": "sgb_boot.bin (SGB Boot Image)",
         "required": false,
-        "firmware_path": "sgb_boot.bin"
+        "firmware_path": "sgb_boot.bin",
+        "cores": {
+          "mesen-s_libretro": {
+            "required": false
+          }
+        }
       },
       "st010.data.rom": {
         "description": "st010.data.rom",
         "required": false,
         "firmware_path": "st010.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "254d70762b6f59f99c27c395aba7d07d",
         "sha1": "bd116501ec41c438fff210fd03233c6c9d15a514",
         "size": 4096
@@ -3898,6 +6506,44 @@
         "description": "st010.program.rom",
         "required": false,
         "firmware_path": "st010.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "1d70019179a59a566a0bb5d3f2845544",
         "sha1": "2d0f34074ed3c6dfd61f767ee8b18e699b9769ac",
         "size": 49152
@@ -3906,6 +6552,44 @@
         "description": "st011.data.rom",
         "required": false,
         "firmware_path": "st011.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "10bd3f4aa949737ab9836512c35bcc29",
         "sha1": "798ab84110ca93a6e73a540f4146d21f8d9e1442",
         "size": 4096
@@ -3914,6 +6598,44 @@
         "description": "st011.program.rom",
         "required": false,
         "firmware_path": "st011.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "mesen-s_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "95222ebf1c0c2990bcf25db43743f032",
         "sha1": "375eca92592621e83881f3a9d7fd5ea3e5b306dc",
         "size": 49152
@@ -3922,6 +6644,41 @@
         "description": "st018.data.rom",
         "required": false,
         "firmware_path": "st018.data.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "49c898b60d0f15e90d0ba780dd12f366",
         "sha1": "b19c0f8f207d62fdabf4bf71442826063bccc626",
         "size": 32768
@@ -3930,6 +6687,41 @@
         "description": "st018.program.rom",
         "required": false,
         "firmware_path": "st018.program.rom",
+        "cores": {
+          "bsnes2014_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_balanced_libretro": {
+            "required": false
+          },
+          "bsnes2014_performance_libretro": {
+            "required": false
+          },
+          "bsnes_libretro": {
+            "required": false
+          },
+          "higan_sfc_balanced_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_performance_libretro": {
+            "required": false
+          },
+          "higan_sfc_libretro": {
+            "required": false
+          },
+          "bsnes_mercury_accuracy_libretro": {
+            "required": false
+          },
+          "bsnes_hd_beta_libretro": {
+            "required": false
+          },
+          "bsnes2014_balanced_libretro": {
+            "required": false
+          },
+          "bsnes-jg_libretro": {
+            "required": false
+          }
+        },
         "md5": "dda40ccd57390c96e49d30a041f9a9e7",
         "sha1": "388e3721b94cd074d6ba0eca8616523d2118a6c3",
         "size": 131072
@@ -3940,6 +6732,11 @@
         "description": "ti83.rom (TI-83)",
         "required": false,
         "firmware_path": "ti83.rom",
+        "cores": {
+          "numero_libretro": {
+            "required": false
+          }
+        },
         "md5": "d4448d09bbfde687c04f9e3310e023ab",
         "sha1": "ef66dad3e7b2b6a86f326765e7dfd7d1a308ad8f",
         "size": 262144
@@ -3948,6 +6745,11 @@
         "description": "ti83plus.rom (TI-83 Plus)",
         "required": false,
         "firmware_path": "ti83plus.rom",
+        "cores": {
+          "numero_libretro": {
+            "required": false
+          }
+        },
         "md5": "8011181f810b5ec4e9d6a03f0e14257a",
         "sha1": "1fddd44d54f3ff12bfb548fcb03ce36b5a4f295a",
         "size": 524288
@@ -3956,6 +6758,11 @@
         "description": "ti83se.rom (TI-83 Silver Edition)",
         "required": false,
         "firmware_path": "ti83se.rom",
+        "cores": {
+          "numero_libretro": {
+            "required": false
+          }
+        },
         "md5": "c6ff8204c5c81b7be34614dbbd690c8b",
         "sha1": "8177bc6d5489d575cbfa9a004d097fc08c6f8c86",
         "size": 2097152
@@ -3965,19 +6772,34 @@
       "Vircon32Bios.v32": {
         "description": "Vircon32Bios.v32 (alternative BIOS file)",
         "required": false,
-        "firmware_path": "Vircon32Bios.v32"
+        "firmware_path": "Vircon32Bios.v32",
+        "cores": {
+          "vircon32_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "x1": {
       "IPLROM.X1": {
         "description": "xmil/IPLROM.X1 (Sharp X1 IPL ROM)",
         "required": false,
-        "firmware_path": "xmil/IPLROM.X1"
+        "firmware_path": "xmil/IPLROM.X1",
+        "cores": {
+          "x1_libretro": {
+            "required": false
+          }
+        }
       },
       "IPLROM.X1T": {
         "description": "xmil/IPLROM.X1T (Sharp X1 8x8 Font ROM)",
         "required": false,
-        "firmware_path": "xmil/IPLROM.X1T"
+        "firmware_path": "xmil/IPLROM.X1T",
+        "cores": {
+          "x1_libretro": {
+            "required": false
+          }
+        }
       }
     },
     "x68000": {
@@ -3985,6 +6807,11 @@
         "description": "cgrom.dat (X68000 BIOS 2)",
         "required": true,
         "firmware_path": "keropi/cgrom.dat",
+        "cores": {
+          "px68k_libretro": {
+            "required": true
+          }
+        },
         "md5": "cb0a5cfcf7247a7eab74bb2716260269",
         "sha1": "8d72c5b4d63bb14c5dbdac495244d659aa1498b6",
         "size": 786432
@@ -3993,6 +6820,11 @@
         "description": "iplrom.dat (X68000 BIOS)",
         "required": true,
         "firmware_path": "keropi/iplrom.dat",
+        "cores": {
+          "px68k_libretro": {
+            "required": true
+          }
+        },
         "md5": "7fd4caabac1d9169e289f0f7bbf71d8e",
         "sha1": "0ed038ed2133b9f78c6e37256807424e0d927560",
         "size": 131072
@@ -4001,6 +6833,11 @@
         "description": "iplrom30.dat (X68000 BIOS 3)",
         "required": false,
         "firmware_path": "keropi/iplrom30.dat",
+        "cores": {
+          "px68k_libretro": {
+            "required": false
+          }
+        },
         "md5": "f373003710ab4322642f527f567e020a",
         "sha1": "239e9124568c862c31d9ec0605e32373ea74b86a",
         "size": 131072
@@ -4011,6 +6848,11 @@
         "description": "128p-0.rom (Pentagon machines)",
         "required": false,
         "firmware_path": "fuse/128p-0.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "a249565f03b98d004ee7f019570069cd",
         "sha1": "d07fcdeca892ee80494d286ea9ea5bf3928a1aca",
         "size": 16384
@@ -4019,6 +6861,11 @@
         "description": "128p-1.rom (Pentagon machines)",
         "required": false,
         "firmware_path": "fuse/128p-1.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "6e09e5d3c4aef166601669feaaadc01c",
         "sha1": "80080644289ed93d71a1103992a154cc9802b2fa",
         "size": 16384
@@ -4027,6 +6874,11 @@
         "description": "256s-0.rom (Scorpion 256K)",
         "required": false,
         "firmware_path": "fuse/256s-0.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "b9fda5b6a747ff037365b0e2d8c4379a",
         "sha1": "477114ff0fe1388e0979df1423602b21248164e5",
         "size": 16384
@@ -4035,6 +6887,11 @@
         "description": "256s-1.rom (Scorpion 256K)",
         "required": false,
         "firmware_path": "fuse/256s-1.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "643861ad34831b255bf2eb64e8b6ecb8",
         "sha1": "367b5a102fb663beee8e7930b8c4acc219c1f7b3",
         "size": 16384
@@ -4043,6 +6900,11 @@
         "description": "256s-2.rom (Scorpion 256K)",
         "required": false,
         "firmware_path": "fuse/256s-2.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "d8ad507b1c915a9acfe0d73957082926",
         "sha1": "07783ee295274d8ff15d935bfd787c8ac1d54900",
         "size": 16384
@@ -4051,6 +6913,11 @@
         "description": "256s-3.rom (Scorpion 256K)",
         "required": false,
         "firmware_path": "fuse/256s-3.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "ce0723f9bc02f4948c15d3b3230ae831",
         "sha1": "33703e97cc93b7edfcc0334b64233cf81b7930db",
         "size": 16384
@@ -4059,6 +6926,11 @@
         "description": "gluck.rom (Pentagon 512K / 1024)",
         "required": false,
         "firmware_path": "fuse/gluck.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "d5869034604dbfd2c1d54170e874fd0a",
         "sha1": "015eb96dafb273d4f4512c467e9b43c305fd1bc4",
         "size": 16384
@@ -4067,6 +6939,11 @@
         "description": "trdos.rom (Pentagon machines)",
         "required": false,
         "firmware_path": "fuse/trdos.rom",
+        "cores": {
+          "fuse_libretro": {
+            "required": false
+          }
+        },
         "md5": "0da70a5d2a0e733398e005b96b7e4ba6",
         "sha1": "21695e3f2a8f796386ce66eea8a246b0ac44810c",
         "size": 16384

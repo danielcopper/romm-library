@@ -131,6 +131,14 @@ export const BiosManager: FC<BiosManagerProps> = ({ onBack }) => {
             description={summaryDescription}
           />
         </PanelSectionRow>
+        {platform.active_core_label && (
+          <PanelSectionRow>
+            <Field
+              label="Core"
+              description={platform.active_core_label}
+            />
+          </PanelSectionRow>
+        )}
         <PanelSectionRow>
           <ButtonItem
             layout="below"

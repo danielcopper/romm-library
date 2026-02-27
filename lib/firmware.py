@@ -42,12 +42,17 @@ class FirmwareMixin:
         except Exception as e:
             decky.logger.error(f"Failed to load bios_registry.json: {e}")
 
-    def _enrich_firmware_file(self, file_dict):
+    def _enrich_firmware_file(self, file_dict, core_so=None):
         entry = self._bios_files_index.get(file_dict.get("file_name", ""))
         if entry:
-            file_dict["required"] = entry.get("required", True)
+            # Use per-core required value if active core is known
+            if core_so and "cores" in entry and core_so in entry["cores"]:
+                is_required = entry["cores"][core_so]["required"]
+            else:
+                is_required = entry.get("required", True)
+            file_dict["required"] = is_required
             file_dict["description"] = entry.get("description", file_dict.get("file_name", ""))
-            file_dict["classification"] = "required" if entry.get("required", True) else "optional"
+            file_dict["classification"] = "required" if is_required else "optional"
         else:
             # Unknown file: not in registry, don't count as required
             file_dict["required"] = False
@@ -104,7 +109,11 @@ class FirmwareMixin:
             )
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
-            return {"success": False, "message": f"Failed to fetch firmware: {e}", "platforms": []}
+            if "Connection refused" in str(e) or "urlopen error" in str(e):
+                msg = "RomM server is unreachable. Check your connection settings."
+            else:
+                msg = f"Failed to fetch firmware: {e}"
+            return {"success": False, "message": msg, "platforms": []}
 
         # Group firmware by platform
         platforms_map = {}
@@ -125,8 +134,17 @@ class FirmwareMixin:
                 "md5": fw.get("md5_hash", ""),
                 "downloaded": os.path.exists(dest),
             }
-            self._enrich_firmware_file(file_dict)
             platforms_map[platform_slug]["files"].append(file_dict)
+
+        # Resolve active core per platform and enrich files with core-specific required values
+        from lib import es_de_config
+        for plat in platforms_map.values():
+            slug = plat["platform_slug"]
+            core_so, core_label = es_de_config.get_active_core(slug)
+            plat["active_core"] = core_so
+            plat["active_core_label"] = core_label
+            for f in plat["files"]:
+                self._enrich_firmware_file(f, core_so=core_so)
 
         # Cross-reference: installed platforms that have firmware on server but not all downloaded
         installed_slugs = set()
@@ -255,15 +273,25 @@ class FirmwareMixin:
             return {"success": False, "message": f"Failed to fetch firmware: {e}", "downloaded": 0}
 
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
+
+        # Resolve active core to filter by core-specific required status
+        from lib import es_de_config
+        core_so, _ = es_de_config.get_active_core(platform_slug)
+
         platform_firmware = []
         for fw in firmware_list:
             slug = self._firmware_slug(fw.get("file_path", ""))
             if slug in fw_slugs:
                 file_name = fw.get("file_name", "")
                 index_entry = self._bios_files_index.get(file_name)
-                # Only download files that are in the index with required=True
-                # Unknown files (not in index) are NOT downloaded
-                if index_entry and index_entry.get("required", True):
+                if not index_entry:
+                    continue  # Unknown files are NOT downloaded
+                # Use per-core required value if active core is known
+                if core_so and "cores" in index_entry and core_so in index_entry["cores"]:
+                    is_required = index_entry["cores"][core_so]["required"]
+                else:
+                    is_required = index_entry.get("required", True)
+                if is_required:
                     platform_firmware.append(fw)
 
         downloaded = 0
@@ -290,6 +318,10 @@ class FirmwareMixin:
         files = []
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
 
+        # Resolve active core for per-core filtering
+        from lib import es_de_config
+        active_core_so, active_core_label = es_de_config.get_active_core(platform_slug)
+
         # Build combined registry entries for this platform from all mapped slugs
         registry_platform = {}
         for slug in fw_slugs:
@@ -304,14 +336,17 @@ class FirmwareMixin:
                 if not fw_slug:
                     continue
                 if fw_slug in fw_slugs:
-                    server_count += 1
-                    dest = self._firmware_dest_path(fw)
-                    downloaded = os.path.exists(dest)
-                    if downloaded:
-                        local_count += 1
                     file_name = fw.get("file_name", "")
                     reg_entry = registry_platform.get(file_name)
-                    if reg_entry:
+
+                    # Filter by active core: skip files the active core doesn't use
+                    if active_core_so and reg_entry and "cores" in reg_entry:
+                        if active_core_so not in reg_entry["cores"]:
+                            continue
+                        is_required = reg_entry["cores"][active_core_so]["required"]
+                        classification = "required" if is_required else "optional"
+                        description = reg_entry.get("description", file_name)
+                    elif reg_entry:
                         classification = "required" if reg_entry.get("required", True) else "optional"
                         is_required = reg_entry.get("required", True)
                         description = reg_entry.get("description", file_name)
@@ -319,6 +354,12 @@ class FirmwareMixin:
                         classification = "unknown"
                         is_required = False
                         description = file_name
+
+                    server_count += 1
+                    dest = self._firmware_dest_path(fw)
+                    downloaded = os.path.exists(dest)
+                    if downloaded:
+                        local_count += 1
                     files.append({
                         "file_name": file_name,
                         "downloaded": downloaded,
@@ -333,10 +374,16 @@ class FirmwareMixin:
                 return {"needs_bios": False}
             bios_base = retrodeck_config.get_bios_path()
             for file_name, reg_entry in registry_platform.items():
+                # Filter by active core: skip files the active core doesn't use
+                if active_core_so and "cores" in reg_entry:
+                    if active_core_so not in reg_entry["cores"]:
+                        continue
+                    is_required = reg_entry["cores"][active_core_so]["required"]
+                else:
+                    is_required = reg_entry.get("required", True)
                 firmware_path = reg_entry.get("firmware_path", file_name)
                 dest = os.path.join(bios_base, firmware_path)
                 downloaded = os.path.exists(dest)
-                is_required = reg_entry.get("required", True)
                 server_count += 1
                 if downloaded:
                     local_count += 1
@@ -366,6 +413,8 @@ class FirmwareMixin:
             "required_downloaded": required_downloaded,
             "unknown_count": unknown_count,
             "files": files,
+            "active_core": active_core_so,
+            "active_core_label": active_core_label,
         }
 
     async def delete_platform_bios(self, platform_slug):

@@ -21,8 +21,8 @@ SSL verification enabled for all requests. SteamGridDB always verifies via `cert
 ### Bug 7: BIOS Status Reporting ✅
 Static BIOS registry (`defaults/bios_registry.json`) derived from libretro core-info + System.dat (553 entries, 51 platforms, v3.0.0). Backend enriches firmware responses with `required`/`description`/`hash_valid`/`classification` fields. Frontend distinguishes required vs optional vs unknown files in BiosManager, PlaySection badge, and GameInfoPanel. "Download Required" button for required-only downloads. Unknown files shown in orange with GitHub issue prompt. Platform-grouped registry with `firmware_path` field for correct subfolder placement.
 
-### Bug 8: VDF-Created Shortcut Icons Not Displaying
-Icon path set but not rendered. Investigate format requirements and compare with other plugins.
+### Bug 8: VDF-Created Shortcut Icons Not Displaying ✅
+Icons display correctly. No issue found.
 
 ### Bug 10: BIOS Badge Missing from PlaySection ✅
 `bios_status` was hardcoded to `None` in `get_cached_game_detail`. Now populated via `check_platform_bios()`.
@@ -31,27 +31,71 @@ Icon path set but not rendered. Investigate format requirements and compare with
 All file downloads (ROMs, BIOS) hardcoded to `~/retrodeck/` — breaks SD card installs. Now reads paths from `retrodeck.json` via centralized `lib/retrodeck_config.py`. BIOS subfolder placement from registry `firmware_path` (eliminates manual `BIOS_DEST_MAP`). BIOS download tracking in `state.json`. Path change detection on startup with migration UI (MainPage warning banner + ConnectionSettings migration panel). Untracked BIOS files matched by registry for migration.
 
 ### Bug 12: BIOS Required/Optional Per Active Core
-Currently OR-logic across all cores — if ANY core marks a file required, it shows as required. This causes false warnings (e.g. GBA BIOS shown required because gpSP needs it, even though RetroDECK defaults to mGBA which doesn't). Need to determine the active core per platform and show BIOS requirements based on that specific core.
+
+Currently OR-logic across all cores — if ANY core marks a file required, it shows as required. This causes false warnings (e.g. GBA BIOS shown required because gpSP needs it, even though RetroDECK defaults to mGBA which doesn't). Also shows BIOS files from unrelated systems (e.g. GB/GBC/SGB BIOS on a GBA game page) because the registry entry includes all files any core on that platform could use.
 
 **Research findings:**
-- RetroDECK uses ES-DE's `es_systems.xml` for core defaults (first `<command>` = default). Baked into flatpak at `/app/retrodeck/components/ES-DE/resources/systems/linux/es_systems.xml`, source at [RetroDECK/ES-DE](https://github.com/RetroDECK/ES-DE/blob/retrodeck-main/resources/systems/linux/es_systems.xml).
-- Users can override per-system via ES-DE menu (Other Settings > Alternative Emulators) — stored in `{roms_path}/../ES-DE/gamelists/{system}/gamelist.xml` as `<alternativeEmulator><label>...</label></alternativeEmulator>`.
+- RetroDECK uses ES-DE's `es_systems.xml` for core defaults (first `<command>` = default). Baked into flatpak, accessible at predictable path under `/var/lib/flatpak/app/net.retrodeck.retrodeck/.../files/retrodeck/components/es-de/share/es-de/resources/systems/linux/es_systems.xml`.
+- Users can override per-system via ES-DE menu (Other Settings > Alternative Emulators) — stored in `{retrodeck_home}/ES-DE/gamelists/{system}/gamelist.xml` as `<alternativeEmulator><label>...</label></alternativeEmulator>`.
 - Users can override per-game via metadata editor — stored as `<altemulator>...</altemulator>` in game entry.
 - Resolution chain: per-game override → per-system override → es_systems.xml default.
-- Known defaults: GBA=mGBA, GB/GBC=Gambatte, NES=Mesen, N64=Mupen64Plus-Next, NDS=DeSmuME, DC=Flycast, Genesis=Genesis Plus GX, Neo Geo=FBNeo.
+- Our `romm-launcher` calls `flatpak run net.retrodeck.retrodeck "$ROM_PATH"` — RetroDECK/ES-DE determines the core using the same resolution chain. Our games use whatever core ES-DE is configured to use.
+- Games placed in `{retrodeck_home}/roms/{system}/` are auto-discovered by ES-DE.
+- No `core_defaults.json` shipped — read es_systems.xml live instead.
 
-**Approach:**
-1. Ship `defaults/core_defaults.json` mapping system slug → default core `.so` name (derived from RetroDECK's es_systems.xml).
-2. Update `generate_bios_registry.py` to store per-core firmware requirements (which cores need each file and whether required/optional for that core).
-3. At runtime: read gamelist.xml for per-system override → fall back to core_defaults.json → look up active core's firmware requirements.
-4. `required` flag becomes dynamic based on active core config, not static OR across all cores.
+#### Phase A: Read-Only BIOS Filtering (Bug 12 fix)
 
-**Optional — Per-system core selector in QAM:**
-Currently core selection is only possible through ES-DE's menu (Start > Other Settings > Alternative Emulators). We could expose this in our plugin's QAM settings — show available cores per platform, let the user pick, and write the `<alternativeEmulator>` entry to the system's `gamelist.xml`. This would let users change cores without leaving Game Mode. Ties into Phase 7 multi-emulator support.
+**Goal:** Show only the BIOS files relevant to the active core for each platform/game.
+
+1. **Parse es_systems.xml live** — new `lib/es_de_config.py` module:
+   - Find es_systems.xml in flatpak path (glob for version-independent matching)
+   - Structural validation before parsing: root is `<systemList>`, each `<system>` has `<name>` and `<command label="...">`. If validation fails → log warning, fall back to current behavior (show all files)
+   - Extract per-system: default core (first `<command>`), available cores list (all `<command>` entries with labels)
+   - Parse gamelist.xml for per-system overrides (`<alternativeEmulator>`)
+   - Parse gamelist.xml for per-game overrides (`<altemulator>`) — matched by ROM filename
+   - Resolution: `get_active_core(system_slug, rom_filename=None)` → core label
+
+2. **Restructure `bios_registry.json`** — per-core firmware requirements:
+   - Current: `platforms > {slug} > {filename} > {required: bool}` (OR across all cores)
+   - New: add `cores` dict to each file entry: `{core_label: {required: bool}}` mapping which cores need this file
+   - Update `generate_bios_registry.py` to produce per-core data from libretro core-info
+   - Keep top-level `required` as fallback (for unknown cores or validation failure)
+
+3. **Filter in `check_platform_bios()`** — use active core to filter:
+   - Call `get_active_core(platform_slug)` to determine active core
+   - For each file in registry: check if the active core is in the file's `cores` dict
+   - If active core not listed → file is irrelevant, skip it entirely
+   - If listed → use that core's `required` value instead of the top-level OR value
+   - Return `active_core` label in response so frontend can show it as a badge
+
+4. **Frontend: show active core badge** — display which core is active on game detail page and BiosManager
+
+5. **BiosManager (per-platform view):** Show default core's requirements only. If per-game overrides exist for different cores, show a note.
+
+**Fallback:** If es_systems.xml can't be found or fails structural validation, fall back to current behavior (show all files with OR-logic). Log a warning.
+
+#### Phase B: Core Switching UI (separate PR)
+
+**Goal:** Let users change the active core per-platform and per-game from within the plugin, without leaving Game Mode.
+
+1. **Per-platform core selector in BiosManager QAM page:**
+   - Dropdown showing available cores (from es_systems.xml) for the platform
+   - Current selection shows the active core (per-system override or default)
+   - Changing writes `<alternativeEmulator><label>CoreName</label></alternativeEmulator>` to `{retrodeck_home}/ES-DE/gamelists/{system}/gamelist.xml`
+   - Does NOT overwrite existing per-game overrides
+
+2. **Per-game core selector in gear menu (game detail page):**
+   - Dropdown in gear popup showing available cores for the game's platform
+   - Current selection shows per-game override or "Platform default (CoreName)"
+   - Changing writes `<altemulator>CoreName</altemulator>` to game entry in gamelist.xml
+
+3. **Structural validation gate:** If es_systems.xml fails validation, disable core switching UI entirely. Show "Unsupported ES-DE version" message. Read-only BIOS filtering still works via fallback.
+
+4. **BIOS display updates live** when core is changed — re-run `check_platform_bios()` after core switch.
 
 ### Testing needed
 - [x] Startup pruning removes orphaned state entries
-- [ ] Shortcut icons display correctly in Steam
+- [x] Shortcut icons display correctly in Steam
 - [ ] BIOS files download to correct SD card path
 - [ ] Migration moves files from internal to SD card
 - [ ] BIOS required/optional matches active core (Bug 12)

@@ -975,3 +975,265 @@ class TestCheckPlatformBiosOffline:
         assert result["required_downloaded"] == 1
         # all_downloaded is false because optional file is missing
         assert result["all_downloaded"] is False
+
+
+class TestPerCoreFiltering:
+    """Tests for per-core BIOS filtering in check_platform_bios and _enrich_firmware_file."""
+
+    def test_enrich_uses_core_specific_required(self, plugin):
+        """When core_so is provided, uses per-core required value."""
+        plugin._bios_files_index = {
+            "gba_bios.bin": {
+                "description": "GBA BIOS",
+                "required": True,  # OR-logic says required
+                "md5": "",
+                "platform": "gba",
+                "cores": {
+                    "mgba_libretro": {"required": False},
+                    "gpsp_libretro": {"required": True},
+                },
+            },
+        }
+        # mGBA says optional
+        file_dict = {"file_name": "gba_bios.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict, core_so="mgba_libretro")
+        assert result["required"] is False
+        assert result["classification"] == "optional"
+
+    def test_enrich_gpsp_makes_required(self, plugin):
+        """gpSP core marks gba_bios.bin as required."""
+        plugin._bios_files_index = {
+            "gba_bios.bin": {
+                "description": "GBA BIOS",
+                "required": True,
+                "md5": "",
+                "platform": "gba",
+                "cores": {
+                    "mgba_libretro": {"required": False},
+                    "gpsp_libretro": {"required": True},
+                },
+            },
+        }
+        file_dict = {"file_name": "gba_bios.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict, core_so="gpsp_libretro")
+        assert result["required"] is True
+        assert result["classification"] == "required"
+
+    def test_enrich_falls_back_without_core(self, plugin):
+        """Without core_so, falls back to top-level OR-logic required."""
+        plugin._bios_files_index = {
+            "gba_bios.bin": {
+                "description": "GBA BIOS",
+                "required": True,
+                "md5": "",
+                "platform": "gba",
+                "cores": {
+                    "mgba_libretro": {"required": False},
+                    "gpsp_libretro": {"required": True},
+                },
+            },
+        }
+        file_dict = {"file_name": "gba_bios.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict, core_so=None)
+        assert result["required"] is True  # OR-logic fallback
+
+    def test_enrich_unknown_core_uses_toplevel(self, plugin):
+        """Core not in cores dict falls back to top-level required."""
+        plugin._bios_files_index = {
+            "gba_bios.bin": {
+                "description": "GBA BIOS",
+                "required": True,
+                "md5": "",
+                "platform": "gba",
+                "cores": {
+                    "mgba_libretro": {"required": False},
+                },
+            },
+        }
+        file_dict = {"file_name": "gba_bios.bin", "md5": ""}
+        result = plugin._enrich_firmware_file(file_dict, core_so="unknown_core_libretro")
+        assert result["required"] is True  # top-level OR fallback
+
+    @pytest.mark.asyncio
+    async def test_check_platform_bios_filters_by_core(self, plugin, tmp_path):
+        """check_platform_bios skips files not used by active core."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        firmware_list = [
+            {"id": 1, "file_name": "gba_bios.bin", "file_path": "bios/gba/gba_bios.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {"id": 2, "file_name": "gb_bios.bin", "file_path": "bios/gba/gb_bios.bin", "file_size_bytes": 200, "md5_hash": ""},
+            {"id": 3, "file_name": "sgb_bios.bin", "file_path": "bios/gba/sgb_bios.bin", "file_size_bytes": 300, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "platforms": {
+                "gba": {
+                    "gba_bios.bin": {
+                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "cores": {"mgba_libretro": {"required": False}, "gpsp_libretro": {"required": True}},
+                    },
+                    "gb_bios.bin": {
+                        "description": "GB BIOS", "required": False, "firmware_path": "gb_bios.bin", "md5": "",
+                        "cores": {"gambatte_libretro": {"required": False}, "mgba_libretro": {"required": False}},
+                    },
+                    "sgb_bios.bin": {
+                        "description": "SGB BIOS", "required": False, "firmware_path": "sgb_bios.bin", "md5": "",
+                        "cores": {"mgba_libretro": {"required": False}},
+                    },
+                },
+            },
+        }
+        plugin._bios_files_index = {
+            "gba_bios.bin": {**plugin._bios_registry["platforms"]["gba"]["gba_bios.bin"], "platform": "gba"},
+            "gb_bios.bin": {**plugin._bios_registry["platforms"]["gba"]["gb_bios.bin"], "platform": "gba"},
+            "sgb_bios.bin": {**plugin._bios_registry["platforms"]["gba"]["sgb_bios.bin"], "platform": "gba"},
+        }
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
+
+        # gpSP only uses gba_bios.bin — should filter out gb_bios and sgb_bios
+        with patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")):
+            result = await plugin.check_platform_bios("gba")
+
+        assert result["needs_bios"] is True
+        file_names = [f["file_name"] for f in result["files"]]
+        assert "gba_bios.bin" in file_names
+        assert "gb_bios.bin" not in file_names
+        assert "sgb_bios.bin" not in file_names
+        assert result["server_count"] == 1
+        assert result["active_core"] == "gpsp_libretro"
+        assert result["active_core_label"] == "gpSP"
+        # gpSP requires gba_bios.bin
+        gba_file = [f for f in result["files"] if f["file_name"] == "gba_bios.bin"][0]
+        assert gba_file["required"] is True
+        assert gba_file["classification"] == "required"
+
+    @pytest.mark.asyncio
+    async def test_check_platform_bios_mgba_all_optional(self, plugin, tmp_path):
+        """mGBA shows files it uses but all as optional."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        firmware_list = [
+            {"id": 1, "file_name": "gba_bios.bin", "file_path": "bios/gba/gba_bios.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {"id": 2, "file_name": "gb_bios.bin", "file_path": "bios/gba/gb_bios.bin", "file_size_bytes": 200, "md5_hash": ""},
+            {"id": 3, "file_name": "sgb_bios.bin", "file_path": "bios/gba/sgb_bios.bin", "file_size_bytes": 300, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "platforms": {
+                "gba": {
+                    "gba_bios.bin": {
+                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "cores": {"mgba_libretro": {"required": False}, "gpsp_libretro": {"required": True}},
+                    },
+                    "gb_bios.bin": {
+                        "description": "GB BIOS", "required": False, "firmware_path": "gb_bios.bin", "md5": "",
+                        "cores": {"mgba_libretro": {"required": False}},
+                    },
+                    "sgb_bios.bin": {
+                        "description": "SGB BIOS", "required": False, "firmware_path": "sgb_bios.bin", "md5": "",
+                        "cores": {"mgba_libretro": {"required": False}},
+                    },
+                },
+            },
+        }
+        plugin._bios_files_index = {
+            "gba_bios.bin": {**plugin._bios_registry["platforms"]["gba"]["gba_bios.bin"], "platform": "gba"},
+            "gb_bios.bin": {**plugin._bios_registry["platforms"]["gba"]["gb_bios.bin"], "platform": "gba"},
+            "sgb_bios.bin": {**plugin._bios_registry["platforms"]["gba"]["sgb_bios.bin"], "platform": "gba"},
+        }
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
+
+        # mGBA uses all 3 files, all optional
+        with patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro", "mGBA")):
+            result = await plugin.check_platform_bios("gba")
+
+        assert result["needs_bios"] is True
+        assert result["server_count"] == 3
+        assert result["required_count"] == 0  # all optional for mGBA
+        for f in result["files"]:
+            assert f["classification"] == "optional"
+
+    @pytest.mark.asyncio
+    async def test_check_platform_bios_no_core_shows_all(self, plugin, tmp_path):
+        """When core resolution fails, shows all files with OR-logic."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        firmware_list = [
+            {"id": 1, "file_name": "gba_bios.bin", "file_path": "bios/gba/gba_bios.bin", "file_size_bytes": 100, "md5_hash": ""},
+        ]
+
+        plugin._bios_registry = {
+            "platforms": {
+                "gba": {
+                    "gba_bios.bin": {
+                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "cores": {"mgba_libretro": {"required": False}},
+                    },
+                },
+            },
+        }
+        plugin._bios_files_index = {
+            "gba_bios.bin": {**plugin._bios_registry["platforms"]["gba"]["gba_bios.bin"], "platform": "gba"},
+        }
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
+
+        # Core resolution fails
+        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+            result = await plugin.check_platform_bios("gba")
+
+        assert result["needs_bios"] is True
+        assert result["server_count"] == 1
+        assert result["active_core"] is None
+        # Falls back to OR-logic: required=True
+        assert result["files"][0]["required"] is True
+
+    @pytest.mark.asyncio
+    async def test_offline_fallback_filters_by_core(self, plugin, tmp_path):
+        """Offline registry fallback also filters by active core."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        bios_dir = tmp_path / "bios"
+        bios_dir.mkdir()
+        (bios_dir / "gba_bios.bin").write_bytes(b"\x00" * 100)
+
+        plugin._bios_registry = {
+            "platforms": {
+                "gba": {
+                    "gba_bios.bin": {
+                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "cores": {"gpsp_libretro": {"required": True}},
+                    },
+                    "gb_bios.bin": {
+                        "description": "GB BIOS", "required": False, "firmware_path": "gb_bios.bin", "md5": "",
+                        "cores": {"mgba_libretro": {"required": False}},
+                    },
+                },
+            },
+        }
+        plugin._bios_files_index = {}
+
+        plugin.loop = MagicMock()
+        plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("offline"))
+
+        with patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")), \
+             patch("lib.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+            result = await plugin.check_platform_bios("gba")
+
+        assert result["needs_bios"] is True
+        file_names = [f["file_name"] for f in result["files"]]
+        assert "gba_bios.bin" in file_names
+        assert "gb_bios.bin" not in file_names  # gpSP doesn't use gb_bios

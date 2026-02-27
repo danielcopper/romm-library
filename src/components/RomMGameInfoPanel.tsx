@@ -131,6 +131,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             required_count: cached.bios_status.required_count,
             required_downloaded: cached.bios_status.required_downloaded,
             files: cached.bios_status.files as BiosStatus["files"],
+            active_core: cached.bios_status.active_core,
+            active_core_label: cached.bios_status.active_core_label,
           };
         }
 
@@ -485,6 +487,13 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         createElement("span", { className: "romm-panel-value" }, biosLabel),
       ),
     );
+
+    // Active core label
+    if (bios.active_core_label) {
+      biosChildren.push(
+        infoRow("core", "Core", bios.active_core_label)
+      );
+    }
 
     // Individual file rows
     if (bios.files && bios.files.length > 0) {

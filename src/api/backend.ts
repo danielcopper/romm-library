@@ -12,7 +12,7 @@ export interface CachedGameDetail {
   save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
   pending_conflicts?: Array<{ rom_id: number; filename: string; detected_at: string }>;
   metadata?: Record<string, unknown> | null;
-  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string }> } | null;
+  bios_status?: { platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string }> } | null;
 }
 
 const _cachedGameDetailRaw = callable<[number], CachedGameDetail>("get_cached_game_detail");
