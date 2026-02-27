@@ -55,4 +55,4 @@ jobs:
         run: pip install import-linter
 
       - name: Check import boundaries
-        run: lint-imports
+        run: PYTHONPATH=py_modules lint-imports

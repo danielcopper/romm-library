@@ -37,10 +37,10 @@ RomM Server <-HTTP-> Python Backend (main.py)
 
 ```
 main.py                              # Plugin entry point, composes mixin classes from lib/
-lib/                                 # Backend mixin modules (state, sync, downloads, etc.)
-lib/save_sync.py                     # Save sync backend (device registration, upload/download, conflict detection)
-lib/es_de_config.py                  # ES-DE config parser (core resolution, gamelist.xml read/write)
-lib/retrodeck_config.py              # RetroDECK path resolution (roms, saves, BIOS, states)
+py_modules/lib/                      # Backend mixin modules (in py_modules/ for Decky sys.path)
+py_modules/lib/save_sync.py          # Save sync backend (device registration, upload/download, conflict detection)
+py_modules/lib/es_de_config.py       # ES-DE config parser (core resolution, gamelist.xml read/write)
+py_modules/lib/retrodeck_config.py   # RetroDECK path resolution (roms, saves, BIOS, states)
 src/index.tsx                        # Plugin entry, event listeners, QAM router
 src/components/MainPage.tsx          # Status, sync button, navigation
 src/components/ConnectionSettings.tsx # RomM connection, SGDB API key, controller settings
