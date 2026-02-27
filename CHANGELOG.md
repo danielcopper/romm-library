@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.1...decky-romm-sync-v0.9.2) (2026-02-27)
+
+
+### Bug Fixes
+
+* pre-beta review — bug fixes + docs ([#63](https://github.com/danielcopper/decky-romm-sync/issues/63)) ([0e1e271](https://github.com/danielcopper/decky-romm-sync/commit/0e1e2715ecd8ec39afc10b07ff036ae5225df0bf))
+
 ## [0.9.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.0...decky-romm-sync-v0.9.1) (2026-02-27)
 
 
