@@ -169,8 +169,8 @@ class TestMigrateRetroDeckFiles:
         assert plugin._state["downloaded_bios"]["scph5501.bin"]["file_path"] == new_bios
 
     @pytest.mark.asyncio
-    async def test_migrate_skips_existing(self, plugin, tmp_path):
-        """Destination file already exists — skip, don't overwrite."""
+    async def test_migrate_conflicts_need_confirmation(self, plugin, tmp_path):
+        """Destination file already exists — first call returns conflicts for user decision."""
         import decky
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
@@ -193,12 +193,82 @@ class TestMigrateRetroDeckFiles:
             "1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}
         }
 
+        # First call with no strategy returns conflicts
         result = await plugin.migrate_retrodeck_files()
-        assert result["roms_moved"] == 0
-        assert len(result["errors"]) == 1
-        # New file should be preserved
+        assert result["needs_confirmation"] is True
+        assert result["conflict_count"] == 1
+        assert "zelda.z64" in result["conflicts"]
+        # Nothing moved yet
         with open(new_rom) as f:
             assert f.read() == "new data"
+        with open(old_rom) as f:
+            assert f.read() == "old data"
+
+    @pytest.mark.asyncio
+    async def test_migrate_conflict_overwrite(self, plugin, tmp_path):
+        """Overwrite strategy replaces destination with source."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_rom = os.path.join(old_home, "roms", "n64", "zelda.z64")
+        new_rom = os.path.join(new_home, "roms", "n64", "zelda.z64")
+
+        os.makedirs(os.path.dirname(old_rom))
+        os.makedirs(os.path.dirname(new_rom))
+        with open(old_rom, "w") as f:
+            f.write("old data")
+        with open(new_rom, "w") as f:
+            f.write("new data")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+        plugin._state["installed_roms"] = {
+            "1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}
+        }
+
+        result = await plugin.migrate_retrodeck_files("overwrite")
+        assert result["success"] is True
+        assert result["roms_moved"] == 1
+        with open(new_rom) as f:
+            assert f.read() == "old data"
+        assert plugin._state["installed_roms"]["1"]["file_path"] == new_rom
+
+    @pytest.mark.asyncio
+    async def test_migrate_conflict_skip(self, plugin, tmp_path):
+        """Skip strategy keeps destination file, updates state path."""
+        import decky
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        old_home = str(tmp_path / "old")
+        new_home = str(tmp_path / "new")
+        old_rom = os.path.join(old_home, "roms", "n64", "zelda.z64")
+        new_rom = os.path.join(new_home, "roms", "n64", "zelda.z64")
+
+        os.makedirs(os.path.dirname(old_rom))
+        os.makedirs(os.path.dirname(new_rom))
+        with open(old_rom, "w") as f:
+            f.write("old data")
+        with open(new_rom, "w") as f:
+            f.write("new data")
+
+        plugin._state["retrodeck_home_path_previous"] = old_home
+        plugin._state["retrodeck_home_path"] = new_home
+        plugin._state["installed_roms"] = {
+            "1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}
+        }
+
+        result = await plugin.migrate_retrodeck_files("skip")
+        assert result["success"] is True
+        assert result["roms_moved"] == 1
+        # Destination file preserved
+        with open(new_rom) as f:
+            assert f.read() == "new data"
+        # State updated to new path
+        assert plugin._state["installed_roms"]["1"]["file_path"] == new_rom
 
     @pytest.mark.asyncio
     async def test_migrate_source_missing(self, plugin, tmp_path):

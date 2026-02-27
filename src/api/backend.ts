@@ -107,13 +107,16 @@ export interface MigrationStatus {
 export interface MigrationResult {
   success: boolean;
   message: string;
+  needs_confirmation?: boolean;
+  conflict_count?: number;
+  conflicts?: string[];
   roms_moved?: number;
   bios_moved?: number;
   errors?: string[];
 }
 
 export const getMigrationStatus = callable<[], MigrationStatus>("get_migration_status");
-export const migrateRetroDeckFiles = callable<[], MigrationResult>("migrate_retrodeck_files");
+export const migrateRetroDeckFiles = callable<[string | null], MigrationResult>("migrate_retrodeck_files");
 
 // Delete operations
 export const deleteLocalSaves = callable<[number], { success: boolean; deleted_count: number; message: string }>("delete_local_saves");
