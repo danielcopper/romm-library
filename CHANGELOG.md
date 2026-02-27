@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.3...decky-romm-sync-v0.9.0) (2026-02-27)
+
+
+### Features
+
+* core switching UI — per-platform and per-game ([#59](https://github.com/danielcopper/decky-romm-sync/issues/59)) ([50c8987](https://github.com/danielcopper/decky-romm-sync/commit/50c8987cda9bab9ac8b5e197dd42f7c7827a86e4))
+* per-core BIOS filtering ([#57](https://github.com/danielcopper/decky-romm-sync/issues/57)) ([171b9d6](https://github.com/danielcopper/decky-romm-sync/commit/171b9d6eb586f8d41d333b14bee0726cec607676))
+
 ## [0.8.3](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.2...decky-romm-sync-v0.8.3) (2026-02-27)
 
 
