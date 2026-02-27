@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.3](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.2...decky-romm-sync-v0.8.3) (2026-02-27)
+
+
+### Bug Fixes
+
+* BIOS status reporting + RetroDECK path resolution ([#56](https://github.com/danielcopper/decky-romm-sync/issues/56)) ([220df10](https://github.com/danielcopper/decky-romm-sync/commit/220df10ec07538d36ff24813dc890b25e7e16009))
+* enforce 0600 permissions on settings.json ([#55](https://github.com/danielcopper/decky-romm-sync/issues/55)) ([921ab48](https://github.com/danielcopper/decky-romm-sync/commit/921ab48fec7fed4474d7a8737af15db0b9bd0f3f))
+* restore BIOS badge in game detail PlaySection ([#53](https://github.com/danielcopper/decky-romm-sync/issues/53)) ([f86c867](https://github.com/danielcopper/decky-romm-sync/commit/f86c8675ac8671269d60191b8b5fbf415a39d81e))
+
 ## [0.8.2](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.8.1...decky-romm-sync-v0.8.2) (2026-02-25)
 
 
