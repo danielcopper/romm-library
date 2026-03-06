@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.3...decky-romm-sync-v0.9.4) (2026-03-06)
+
+
+### Bug Fixes
+
+* resolve defaults/ file paths after lib move to py_modules/ ([#67](https://github.com/danielcopper/decky-romm-sync/issues/67)) ([8ff95b0](https://github.com/danielcopper/decky-romm-sync/commit/8ff95b0006bd15bb785f7b30982a4c1f7c80aec9))
+
 ## [0.9.3](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.2...decky-romm-sync-v0.9.3) (2026-02-27)
 
 
