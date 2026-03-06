@@ -28,7 +28,11 @@ if TYPE_CHECKING:
 
 class RommClientMixin:
     def _load_platform_map(self):
-        config_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "config.json")
+        # Check plugin root first (Decky CLI moves defaults/ contents to root),
+        # then defaults/ subdirectory (dev deploys via mise run deploy)
+        root_path = os.path.join(decky.DECKY_PLUGIN_DIR, "config.json")
+        dev_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "config.json")
+        config_path = root_path if os.path.exists(root_path) else dev_path
         with open(config_path, "r") as f:
             config = json.load(f)
         return config.get("platform_map", {})

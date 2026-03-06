@@ -364,11 +364,11 @@ class TestBiosRegistry:
         registry_file = defaults_dir / "bios_registry.json"
         registry_file.write_text(json.dumps(registry_data))
 
-        from unittest.mock import patch
-        # _load_bios_registry uses __file__ to locate bios_registry.json relative to lib/
-        # We patch os.path.dirname to redirect to our tmp_path
-        fake_lib_dir = str(tmp_path / "lib")
-        with patch("lib.firmware.os.path.dirname", side_effect=[fake_lib_dir, str(tmp_path)]):
+        from unittest.mock import patch, MagicMock
+        # _load_bios_registry uses decky.DECKY_PLUGIN_DIR to locate bios_registry.json
+        mock_decky = MagicMock()
+        mock_decky.DECKY_PLUGIN_DIR = str(tmp_path)
+        with patch("lib.firmware.decky", mock_decky):
             plugin._load_bios_registry()
 
         assert "_meta" in plugin._bios_registry
@@ -386,9 +386,11 @@ class TestBiosRegistry:
 
     def test_load_bios_registry_missing_file(self, plugin):
         """When registry file doesn't exist, returns empty dict."""
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
 
-        with patch("lib.firmware.os.path.dirname", side_effect=["/nonexistent/lib", "/nonexistent"]):
+        mock_decky = MagicMock()
+        mock_decky.DECKY_PLUGIN_DIR = "/nonexistent"
+        with patch("lib.firmware.decky", mock_decky):
             plugin._load_bios_registry()
 
         assert plugin._bios_registry == {}

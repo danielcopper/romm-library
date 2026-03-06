@@ -157,7 +157,11 @@ def _load_core_defaults():
     if _core_defaults_cache is not None:
         return _core_defaults_cache
 
-    defaults_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "defaults", "core_defaults.json")
+    # Check plugin root first (Decky CLI moves defaults/ contents to root),
+    # then defaults/ subdirectory (dev deploys via mise run deploy)
+    root_path = os.path.join(decky.DECKY_PLUGIN_DIR, "core_defaults.json")
+    dev_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "core_defaults.json")
+    defaults_path = root_path if os.path.exists(root_path) else dev_path
     try:
         with open(defaults_path, "r") as f:
             data = json.load(f)

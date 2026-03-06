@@ -26,10 +26,11 @@ class FirmwareMixin:
     def _load_bios_registry(self):
         self._bios_registry = {}
         self._bios_files_index = {}
-        registry_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "defaults", "bios_registry.json",
-        )
+        # Check plugin root first (Decky CLI moves defaults/ contents to root),
+        # then defaults/ subdirectory (dev deploys via mise run deploy)
+        root_path = os.path.join(decky.DECKY_PLUGIN_DIR, "bios_registry.json")
+        defaults_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "bios_registry.json")
+        registry_path = root_path if os.path.exists(root_path) else defaults_path
         try:
             with open(registry_path, "r") as f:
                 self._bios_registry = json.load(f)
