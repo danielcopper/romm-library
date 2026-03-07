@@ -134,9 +134,6 @@ export function registerGameDetailPatch() {
                   (x: any) => x?.props?.className?.includes?.(psContainerClass),
                 );
                 debugLog(`findInReactTree(playSectionClasses.Container): ${psFound ? "FOUND" : "NOT FOUND"}`);
-                if (psFound) {
-                  debugLog(`  -> type=${psFound?.type?.name || psFound?.type?.displayName || typeof psFound?.type} cls=${(psFound?.props?.className || "").substring(0, 80)}`);
-                }
               }
 
               // Search for basicAppDetailsSectionStylerClasses.PlaySection deep in tree
@@ -148,45 +145,34 @@ export function registerGameDetailPatch() {
                   (x: any) => x?.props?.className?.includes?.(bpsClass),
                 );
                 debugLog(`findInReactTree(basicAppDetailsSectionStylerClasses.PlaySection): ${bpsFound ? "FOUND" : "NOT FOUND"}`);
-                if (bpsFound) {
-                  debugLog(`  -> type=${bpsFound?.type?.name || bpsFound?.type?.displayName || typeof bpsFound?.type} cls=${(bpsFound?.props?.className || "").substring(0, 80)}`);
-                }
               }
 
               debugLog(`===== END DEEP TREE DUMP =====`);
             }
 
-            // For RomM games: replace native PlaySection with RomMPlaySection,
-            // then insert RomMGameInfoPanel as a separate child below it.
+            // For RomM games: replace the native AppDetailsOverviewPanel
+            // (which renders Play button + tabs + all native content via `se`)
+            // with our RomMPlaySection and RomMGameInfoPanel.
             if (isRomM) {
               const children = container.props.children;
 
-              // Deduplication: don't insert if already present
+              // Deduplication: don't inject if already present
               const alreadyHasPlayBtn = children.some(
                 (c: any) => c?.key === "romm-play-section",
               );
               if (!alreadyHasPlayBtn) {
-                // Identify the native PlaySection by CSS class match.
-                // Uses basicAppDetailsSectionStylerClasses.PlaySection to positively
-                // find it, regardless of what other plugins inject into the tree.
-                const psClass = basicAppDetailsSectionStylerClasses?.PlaySection;
-                let nativePlayIdx = -1;
-                if (psClass) {
-                  for (let i = 0; i < children.length; i++) {
-                    const found = findInReactTree(
-                      children[i],
-                      (x: any) => x?.props?.className?.includes?.(psClass),
-                    );
-                    if (found) {
-                      nativePlayIdx = i;
-                      break;
-                    }
+                // Find the AppDetailsOverviewPanel by its distinctive child props.
+                // This is the component that wraps `se` which renders the native
+                // Play button, tabs (ACTIVITY, YOUR STUFF, COMMUNITY, GAME INFO),
+                // and all tab content. We identify it by its children carrying
+                // details, overview, and bFastRender props.
+                let nativeOverviewIdx = -1;
+                for (let i = 0; i < children.length; i++) {
+                  const cp = children[i]?.props?.children?.props || {};
+                  if (cp.details && cp.overview && cp.bFastRender !== undefined) {
+                    nativeOverviewIdx = i;
+                    break;
                   }
-                }
-                // Fallback: if CSS class not found, use position-based heuristic
-                // (2nd native child = PlaySection)
-                if (nativePlayIdx < 0) {
-                  nativePlayIdx = children.length > 1 ? 1 : -1;
                 }
 
                 const rommPlaySection = createElement(RomMPlaySection, {
@@ -194,32 +180,19 @@ export function registerGameDetailPatch() {
                   appId,
                 });
 
-                if (nativePlayIdx >= 0) {
-                  debugLog(`gameDetailPatch: replacing native PlaySection at index ${nativePlayIdx} with RomMPlaySection`);
-                  children.splice(nativePlayIdx, 1, rommPlaySection);
-                } else {
-                  debugLog(`gameDetailPatch: fallback, inserting RomMPlaySection at index 1`);
-                  children.splice(1, 0, rommPlaySection);
-                }
-              }
-
-              // Inject RomMGameInfoPanel right after the PlaySection
-              const alreadyHasInfoPanel = children.some(
-                (c: any) => c?.key === "romm-info-panel",
-              );
-              if (!alreadyHasInfoPanel) {
-                const playSectionIdx = children.findIndex(
-                  (c: any) => c?.key === "romm-play-section",
-                );
-                const insertIdx = playSectionIdx >= 0 ? playSectionIdx + 1 : 2;
-
                 const rommInfoPanel = createElement(RomMGameInfoPanel, {
                   key: "romm-info-panel",
                   appId,
                 });
 
-                debugLog(`gameDetailPatch: inserting RomMGameInfoPanel at index ${insertIdx}`);
-                children.splice(insertIdx, 0, rommInfoPanel);
+                if (nativeOverviewIdx >= 0) {
+                  debugLog(`gameDetailPatch: replacing AppDetailsOverviewPanel at index ${nativeOverviewIdx} with RomM components`);
+                  children.splice(nativeOverviewIdx, 1, rommPlaySection, rommInfoPanel);
+                } else {
+                  // Fallback: insert after header if we can't find the native panel
+                  debugLog(`gameDetailPatch: AppDetailsOverviewPanel not found, inserting RomM components at index 1`);
+                  children.splice(1, 0, rommPlaySection, rommInfoPanel);
+                }
               }
             }
 
