@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.5](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.4...decky-romm-sync-v0.9.5) (2026-03-07)
+
+
+### Bug Fixes
+
+* hide native Steam tabs on RomM game detail pages ([#69](https://github.com/danielcopper/decky-romm-sync/issues/69)) ([4046f1e](https://github.com/danielcopper/decky-romm-sync/commit/4046f1eac1298c9dd7656386c3b85def7ba4dac4))
+
 ## [0.9.4](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.3...decky-romm-sync-v0.9.4) (2026-03-06)
 
 
