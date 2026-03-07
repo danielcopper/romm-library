@@ -21,13 +21,24 @@ A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://githu
 
 ## Installation
 
-### From a release zip
+Both methods below require **Developer Mode** in Decky Loader:
+1. Open the Quick Access Menu (QAM) and select **Decky**
+2. Click the **gear icon** (top right) to open Decky settings
+3. Toggle on **Developer Mode** — a **Developer** tab will appear
 
-1. Download the latest `decky-romm-sync.zip` from the [releases page](https://github.com/danielcopper/decky-romm-sync/releases)
-2. Open Decky Loader's settings (gear icon in the QAM)
-3. Use **Install Plugin From URL** and paste the direct link to the zip file
-4. Alternatively, extract the zip manually to `~/homebrew/plugins/` on your device (via SSH, file manager, or USB)
-5. Restart Decky Loader — either reboot, or run `sudo systemctl restart plugin_loader` via SSH
+### Install from ZIP
+
+1. Download the latest `decky-romm-sync.zip` from the [releases page](https://github.com/danielcopper/decky-romm-sync/releases) to your Steam Deck
+2. In Decky settings, go to the **Developer** tab
+3. Select **Install Plugin from ZIP**
+4. Choose the downloaded file and confirm
+
+### Install from URL
+
+1. In Decky settings, go to the **Developer** tab
+2. Select **Install Plugin from URL**
+3. Paste the direct link to the latest release zip (e.g. `https://github.com/danielcopper/decky-romm-sync/releases/latest/download/decky-romm-sync.zip`)
+4. Confirm installation
 
 ### From source
 
