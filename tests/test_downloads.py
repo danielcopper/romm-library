@@ -71,7 +71,7 @@ class TestStartDownload:
 
         result = await plugin.start_download(9999)
         assert result["success"] is False
-        assert "Could not connect to RomM server" in result["message"]
+        assert "error_code" in result
 
     @pytest.mark.asyncio
     async def test_checks_disk_space(self, plugin, tmp_path):

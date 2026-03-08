@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import decky
 
 from lib import retrodeck_config
+from lib.errors import error_response
 
 if TYPE_CHECKING:
     import asyncio
@@ -198,7 +199,7 @@ class FirmwareMixin:
             )
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
-            return {"success": False, "message": f"Failed to fetch firmware details: {e}"}
+            return error_response(e)
 
         file_name = fw.get("file_name", "")
         dest = self._firmware_dest_path(fw)
@@ -215,7 +216,7 @@ class FirmwareMixin:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             decky.logger.error(f"Failed to download firmware {file_name}: {e}")
-            return {"success": False, "message": f"Download failed: {e}"}
+            return error_response(e)
 
         # Verify MD5 if available
         md5_match = None
@@ -263,7 +264,9 @@ class FirmwareMixin:
             )
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
-            return {"success": False, "message": f"Failed to fetch firmware: {e}", "downloaded": 0}
+            resp = error_response(e)
+            resp["downloaded"] = 0
+            return resp
 
         # Filter by platform slug (use mapped slugs, e.g. "psx" -> ["psx", "ps"])
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
@@ -298,7 +301,9 @@ class FirmwareMixin:
             )
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
-            return {"success": False, "message": f"Failed to fetch firmware: {e}", "downloaded": 0}
+            resp = error_response(e)
+            resp["downloaded"] = 0
+            return resp
 
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
 

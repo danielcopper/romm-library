@@ -320,20 +320,26 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         decky.logger.info("RomM Sync plugin unloaded")
 
     async def test_connection(self):
+        from lib.errors import error_response
         if not self.settings.get("romm_url"):
-            return {"success": False, "message": "No server URL configured"}
+            return {"success": False, "message": "No server URL configured", "error_code": "config_error"}
+        # Test basic connectivity (heartbeat may not require auth)
         try:
             await self.loop.run_in_executor(
                 None, self._romm_request, "/api/heartbeat"
             )
         except Exception as e:
-            return {"success": False, "message": f"Cannot reach server: {e}"}
+            return error_response(e)
+        # Test authenticated access
         try:
             await self.loop.run_in_executor(
                 None, self._romm_request, "/api/platforms"
             )
         except Exception as e:
-            return {"success": False, "message": f"Authentication failed: {e}"}
+            resp = error_response(e)
+            if resp["error_code"] not in ("auth_error", "forbidden_error"):
+                resp["message"] = f"Server reachable but API request failed: {resp['message']}"
+            return resp
         return {"success": True, "message": "Connected to RomM"}
 
     async def save_settings(self, romm_url, romm_user, romm_pass, allow_insecure_ssl=None):

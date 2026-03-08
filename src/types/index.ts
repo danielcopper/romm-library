@@ -1,3 +1,16 @@
+export type RommErrorCode =
+  | "auth_error"
+  | "forbidden_error"
+  | "connection_error"
+  | "timeout_error"
+  | "ssl_error"
+  | "server_error"
+  | "not_found_error"
+  | "config_error"
+  | "disk_error"
+  | "api_error"
+  | "unknown_error";
+
 export interface RomMPlatform {
   id: number;
   slug: string;
