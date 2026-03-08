@@ -217,7 +217,7 @@ class TestDownloadFirmware:
             result = await plugin.download_firmware(10)
 
         assert result["success"] is False
-        assert "Download failed" in result["message"]
+        assert "error_code" in result
 
 
 class TestDownloadAllFirmware:

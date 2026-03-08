@@ -48,3 +48,31 @@ class RommTimeoutError(RommApiError):
 
 class RommSSLError(RommApiError):
     """SSL certificate verification failure."""
+
+
+def classify_error(exc):
+    """Return (error_code, user_friendly_message) for an exception."""
+    if isinstance(exc, RommAuthError):
+        return "auth_error", "Authentication failed \u2014 check your username and password"
+    if isinstance(exc, RommForbiddenError):
+        return "forbidden_error", "Access denied \u2014 your account lacks permissions for this action"
+    if isinstance(exc, RommSSLError):
+        return "ssl_error", "SSL certificate error \u2014 enable 'Allow Insecure SSL' in settings for self-signed certs"
+    if isinstance(exc, RommTimeoutError):
+        return "timeout_error", "Request timed out \u2014 server may be overloaded or network is slow"
+    if isinstance(exc, RommConnectionError):
+        return "connection_error", "Server unreachable \u2014 check your URL and ensure RomM is running"
+    if isinstance(exc, RommServerError):
+        code = exc.status_code or 500
+        return "server_error", f"Server error ({code}) \u2014 check your RomM server logs"
+    if isinstance(exc, RommNotFoundError):
+        return "not_found_error", "Resource not found on server"
+    if isinstance(exc, RommApiError):
+        return "api_error", str(exc)
+    return "unknown_error", str(exc)
+
+
+def error_response(exc, fallback_message=None):
+    """Build a standard {success, message, error_code} dict from an exception."""
+    code, msg = classify_error(exc)
+    return {"success": False, "message": fallback_message or msg, "error_code": code}

@@ -48,7 +48,7 @@ Extends Phase 5 to standalone emulator save formats:
 - **Auto sync interval**: Configurable background re-sync
 - **Library management**: Detect removed/updated ROMs, stale state cleanup
 - **Offline mode**: Cache lists locally, queue operations
-- **Error handling**: Retry with backoff, toast notifications, detailed logging. Includes frontend error differentiation: show specific messages for auth failures (401), SSL errors, timeouts, and connection refused — instead of generic "could not connect" (depends on EXT-8 backend structured errors)
+- **Error handling**: Retry with backoff, toast notifications, detailed logging. ~~Frontend error differentiation~~: ✅ Done — `classify_error()`/`error_response()` in `errors.py` maps structured exceptions to user-friendly messages and `error_code` fields. All backend callables (`test_connection`, `start_download`, `_do_sync`, firmware, save sync) return `{success, message, error_code}`. Frontend `BackendResult` type with `RommErrorCode` union. Users now see "Authentication failed", "Server unreachable", "SSL certificate error", etc. instead of generic messages
 - **Connection settings UX**: Remove save button, save on popup confirm
 - **RomM playtime API**: When feature request #1225 ships, plug in delta-based accumulation
 - **Emulator save state sync**: RetroArch `.state` files (larger, version-specific, multiple slots)

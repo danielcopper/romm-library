@@ -1,5 +1,11 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode } from "../types";
+
+export interface BackendResult {
+  success: boolean;
+  message: string;
+  error_code?: RommErrorCode;
+}
 
 export interface CachedGameDetail {
   found: boolean;
@@ -32,18 +38,18 @@ export function getCachedGameDetail(appId: number): Promise<CachedGameDetail> {
   return promise;
 }
 export const getSettings = callable<[], PluginSettings>("get_settings");
-export const saveSettings = callable<[string, string, string, boolean], { success: boolean; message: string }>("save_settings");
-export const testConnection = callable<[], { success: boolean; message: string }>("test_connection");
-export const startSync = callable<[], { success: boolean; message: string }>("start_sync");
-export const cancelSync = callable<[], { success: boolean; message: string }>("cancel_sync");
+export const saveSettings = callable<[string, string, string, boolean], BackendResult>("save_settings");
+export const testConnection = callable<[], BackendResult>("test_connection");
+export const startSync = callable<[], BackendResult>("start_sync");
+export const cancelSync = callable<[], BackendResult>("cancel_sync");
 export const syncHeartbeat = callable<[], { success: boolean }>("sync_heartbeat");
 export const getSyncStats = callable<[], SyncStats>("get_sync_stats");
-export const startDownload = callable<[number], { success: boolean; message: string }>("start_download");
-export const cancelDownload = callable<[number], { success: boolean; message: string }>("cancel_download");
+export const startDownload = callable<[number], BackendResult>("start_download");
+export const cancelDownload = callable<[number], BackendResult>("cancel_download");
 export const getDownloadQueue = callable<[], { downloads: DownloadItem[] }>("get_download_queue");
 export const getInstalledRom = callable<[number], InstalledRom | null>("get_installed_rom");
 export const getRomBySteamAppId = callable<[number], RomLookupResult | null>("get_rom_by_steam_app_id");
-export const removeRom = callable<[number], { success: boolean; message: string }>("remove_rom");
+export const removeRom = callable<[number], BackendResult>("remove_rom");
 export const getPlatforms = callable<[], { success: boolean; platforms: PlatformSyncSetting[] }>("get_platforms");
 export const savePlatformSync = callable<[number, boolean], { success: boolean; message: string }>("save_platform_sync");
 export const setAllPlatformsSync = callable<[boolean], { success: boolean; message: string }>("set_all_platforms_sync");

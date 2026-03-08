@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import decky
 
 from lib import retrodeck_config
+from lib.errors import error_response
 
 if TYPE_CHECKING:
     from typing import Callable, Optional, Protocol
@@ -109,7 +110,7 @@ class DownloadMixin:
         except Exception as e:
             self._download_in_progress.discard(rom_id)
             decky.logger.error(f"Failed to fetch ROM {rom_id}: {e}")
-            return {"success": False, "message": "Could not connect to RomM server"}
+            return error_response(e)
 
         platform_slug = rom_detail.get("platform_slug", "")
         platform_fs_slug = rom_detail.get("platform_fs_slug")

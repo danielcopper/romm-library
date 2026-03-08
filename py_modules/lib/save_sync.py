@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import decky
 
 from lib import retrodeck_config
-from lib.errors import RommApiError, RommConflictError
+from lib.errors import RommApiError, RommConflictError, classify_error
 
 if TYPE_CHECKING:
     import asyncio
@@ -553,7 +553,8 @@ class SaveSyncMixin:
             server_saves = self._with_retry(self._romm_list_saves, rom_id)
         except Exception as e:
             decky.logger.error(f"_sync_rom_saves({rom_id}): failed to list saves: {e}")
-            return 0, [f"Failed to fetch saves: {e}"]
+            _code, _msg = classify_error(e)
+            return 0, [f"Failed to fetch saves: {_msg}"]
         self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): list_saves {time.time()-t0:.3f}s")
 
         t0 = time.time()
@@ -627,9 +628,11 @@ class SaveSyncMixin:
                 else:
                     errors.append(f"{filename}: conflict without matching local+server")
             except RommApiError as e:
-                errors.append(f"{filename}: {e}")
+                _code, _msg = classify_error(e)
+                errors.append(f"{filename}: {_msg}")
             except Exception as e:
-                errors.append(f"{filename}: {e}")
+                _code, _msg = classify_error(e)
+                errors.append(f"{filename}: {_msg}")
                 tmp = os.path.join(saves_dir, filename + ".tmp")
                 if os.path.exists(tmp):
                     try:

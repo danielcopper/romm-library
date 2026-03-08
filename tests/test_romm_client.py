@@ -573,3 +573,94 @@ class TestRetryLogic:
             result = plugin._with_retry(fn, max_attempts=3, base_delay=0)
         assert result == "ok"
         assert fn.call_count == 2
+
+
+# ============================================================================
+# test_connection structured errors
+# ============================================================================
+
+
+class TestTestConnectionErrors:
+    """test_connection returns structured error_code in responses."""
+
+    @pytest.mark.asyncio
+    async def test_config_error_when_url_empty(self, plugin):
+        """Returns config_error when no URL is configured."""
+        plugin.settings["romm_url"] = ""
+        result = await plugin.test_connection()
+        assert result["success"] is False
+        assert result["error_code"] == "config_error"
+        assert "No server URL" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_auth_error_on_401(self, plugin):
+        """Returns auth_error when platforms endpoint returns 401."""
+        import asyncio
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        # Heartbeat succeeds, platforms raises auth error
+        heartbeat_response = {"status": "ok"}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat_response, RommAuthError("401")]):
+            result = await plugin.test_connection()
+        assert result["success"] is False
+        assert result["error_code"] == "auth_error"
+        assert "Authentication failed" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_connection_error_on_refused(self, plugin):
+        """Returns connection_error when server is unreachable."""
+        import asyncio
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        with patch.object(plugin, "_romm_request", side_effect=RommConnectionError("refused")):
+            result = await plugin.test_connection()
+        assert result["success"] is False
+        assert result["error_code"] == "connection_error"
+        assert "unreachable" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_ssl_error(self, plugin):
+        """Returns ssl_error on SSL certificate failure."""
+        import asyncio
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        with patch.object(plugin, "_romm_request", side_effect=RommSSLError("cert fail")):
+            result = await plugin.test_connection()
+        assert result["success"] is False
+        assert result["error_code"] == "ssl_error"
+        assert "SSL" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_success_on_happy_path(self, plugin):
+        """Returns success when both heartbeat and platforms succeed."""
+        import asyncio
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        with patch.object(plugin, "_romm_request", return_value={"status": "ok"}):
+            result = await plugin.test_connection()
+        assert result["success"] is True
+        assert "Connected" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_server_reachable_but_api_failed(self, plugin):
+        """When heartbeat succeeds but platforms fails with non-auth error, message is prefixed."""
+        import asyncio
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        heartbeat_response = {"status": "ok"}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat_response, RommServerError("500", status_code=500)]):
+            result = await plugin.test_connection()
+        assert result["success"] is False
+        assert result["error_code"] == "server_error"
+        assert "Server reachable but API request failed" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_timeout_error(self, plugin):
+        """Returns timeout_error on request timeout."""
+        import asyncio
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        with patch.object(plugin, "_romm_request", side_effect=RommTimeoutError("timed out")):
+            result = await plugin.test_connection()
+        assert result["success"] is False
+        assert result["error_code"] == "timeout_error"

@@ -10,6 +10,8 @@ from lib.errors import (
     RommSSLError,
     RommServerError,
     RommTimeoutError,
+    classify_error,
+    error_response,
 )
 
 
@@ -113,3 +115,145 @@ class TestExceptionMessage:
         exc = RommServerError("HTTP 502: Bad Gateway (GET /api/heartbeat)", status_code=502)
         assert "502" in str(exc)
         assert "Bad Gateway" in str(exc)
+
+
+class TestClassifyError:
+    """classify_error returns (error_code, user_friendly_message) for each exception type."""
+
+    def test_auth_error(self):
+        code, msg = classify_error(RommAuthError("401"))
+        assert code == "auth_error"
+        assert "Authentication failed" in msg
+
+    def test_forbidden_error(self):
+        code, msg = classify_error(RommForbiddenError("403"))
+        assert code == "forbidden_error"
+        assert "Access denied" in msg
+
+    def test_ssl_error(self):
+        code, msg = classify_error(RommSSLError("cert fail"))
+        assert code == "ssl_error"
+        assert "SSL certificate error" in msg
+
+    def test_timeout_error(self):
+        code, msg = classify_error(RommTimeoutError("timed out"))
+        assert code == "timeout_error"
+        assert "timed out" in msg.lower()
+
+    def test_connection_error(self):
+        code, msg = classify_error(RommConnectionError("refused"))
+        assert code == "connection_error"
+        assert "unreachable" in msg.lower()
+
+    def test_server_error(self):
+        code, msg = classify_error(RommServerError("500", status_code=500))
+        assert code == "server_error"
+        assert "500" in msg
+
+    def test_server_error_502(self):
+        code, msg = classify_error(RommServerError("bad gateway", status_code=502))
+        assert code == "server_error"
+        assert "502" in msg
+
+    def test_not_found_error(self):
+        code, msg = classify_error(RommNotFoundError("missing"))
+        assert code == "not_found_error"
+        assert "not found" in msg.lower()
+
+    def test_generic_api_error(self):
+        code, msg = classify_error(RommApiError("some API issue"))
+        assert code == "api_error"
+        assert msg == "some API issue"
+
+    def test_conflict_error_is_api_error(self):
+        """RommConflictError is a subclass of RommApiError, not specifically handled."""
+        code, msg = classify_error(RommConflictError("conflict"))
+        assert code == "api_error"
+        assert msg == "conflict"
+
+    def test_unknown_exception_value_error(self):
+        code, msg = classify_error(ValueError("bad value"))
+        assert code == "unknown_error"
+        assert msg == "bad value"
+
+    def test_unknown_exception_runtime_error(self):
+        code, msg = classify_error(RuntimeError("something broke"))
+        assert code == "unknown_error"
+        assert msg == "something broke"
+
+    def test_messages_are_user_friendly_not_tracebacks(self):
+        """User-friendly messages should not contain traceback-like text."""
+        for exc in [
+            RommAuthError("HTTP 401: Unauthorized"),
+            RommConnectionError("Connection refused"),
+            RommSSLError("certificate verify failed"),
+            RommTimeoutError("timed out"),
+            RommServerError("Internal Server Error", status_code=500),
+        ]:
+            _code, msg = classify_error(exc)
+            assert "Traceback" not in msg
+            assert "File " not in msg
+
+    def test_subclass_ordering_auth_before_api(self):
+        """RommAuthError (subclass of RommApiError) should be classified as auth_error, not api_error."""
+        code, _ = classify_error(RommAuthError("auth fail"))
+        assert code == "auth_error"
+
+    def test_subclass_ordering_ssl_before_connection(self):
+        """RommSSLError should be classified as ssl_error even though it's a RommApiError."""
+        code, _ = classify_error(RommSSLError("cert fail"))
+        assert code == "ssl_error"
+
+
+class TestErrorResponse:
+    """error_response returns a proper {success, message, error_code} dict."""
+
+    def test_structure(self):
+        resp = error_response(RommAuthError("401"))
+        assert resp["success"] is False
+        assert "message" in resp
+        assert "error_code" in resp
+
+    def test_auth_error_code(self):
+        resp = error_response(RommAuthError("unauthorized"))
+        assert resp["error_code"] == "auth_error"
+        assert resp["success"] is False
+
+    def test_connection_error_code(self):
+        resp = error_response(RommConnectionError("refused"))
+        assert resp["error_code"] == "connection_error"
+
+    def test_ssl_error_code(self):
+        resp = error_response(RommSSLError("cert fail"))
+        assert resp["error_code"] == "ssl_error"
+
+    def test_timeout_error_code(self):
+        resp = error_response(RommTimeoutError("timed out"))
+        assert resp["error_code"] == "timeout_error"
+
+    def test_server_error_code(self):
+        resp = error_response(RommServerError("500", status_code=500))
+        assert resp["error_code"] == "server_error"
+
+    def test_unknown_error_code(self):
+        resp = error_response(ValueError("bad"))
+        assert resp["error_code"] == "unknown_error"
+
+    def test_fallback_message_override(self):
+        resp = error_response(RommAuthError("401"), fallback_message="Custom message")
+        assert resp["message"] == "Custom message"
+        assert resp["error_code"] == "auth_error"
+
+    def test_fallback_message_none_uses_default(self):
+        resp = error_response(RommAuthError("401"), fallback_message=None)
+        assert "Authentication failed" in resp["message"]
+
+    def test_not_found_error_response(self):
+        resp = error_response(RommNotFoundError("missing"))
+        assert resp["error_code"] == "not_found_error"
+        assert resp["success"] is False
+
+    def test_forbidden_error_response(self):
+        resp = error_response(RommForbiddenError("forbidden"))
+        assert resp["error_code"] == "forbidden_error"
+        assert "Access denied" in resp["message"]

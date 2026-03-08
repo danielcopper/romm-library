@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 import decky
 
+from lib.errors import classify_error
+
 if TYPE_CHECKING:
     from typing import Callable, Optional, Protocol
 
@@ -45,7 +47,8 @@ class SyncMixin:
             )
         except Exception as e:
             decky.logger.error(f"Failed to fetch platforms: {e}")
-            return {"success": False, "message": "Could not connect to RomM server"}
+            _code, _msg = classify_error(e)
+            return {"success": False, "message": _msg, "error_code": _code}
 
         enabled = self.settings.get("enabled_platforms", {})
         result = []
@@ -77,7 +80,8 @@ class SyncMixin:
             )
         except Exception as e:
             decky.logger.error(f"Failed to fetch platforms: {e}")
-            return {"success": False, "message": "Could not connect to RomM server"}
+            _code, _msg = classify_error(e)
+            return {"success": False, "message": _msg, "error_code": _code}
 
         ep = {}
         for p in platforms:
@@ -131,7 +135,8 @@ class SyncMixin:
                 )
             except Exception as e:
                 decky.logger.error(f"Failed to fetch platforms: {e}")
-                await self._emit_progress("error", message="Could not connect to RomM server", running=False)
+                _code, _msg = classify_error(e)
+                await self._emit_progress("error", message=_msg, running=False)
                 self._sync_running = False
                 return
 
@@ -290,13 +295,14 @@ class SyncMixin:
         except Exception as e:
             import traceback
             decky.logger.error(f"Sync failed: {e}\n{traceback.format_exc()}")
+            _code, _msg = classify_error(e)
             # Can't await in except, so set directly; finally will not override
             self._sync_progress = {
                 "running": False,
                 "phase": "error",
                 "current": 0,
                 "total": 0,
-                "message": "Sync failed — could not connect to RomM server",
+                "message": f"Sync failed \u2014 {_msg}",
             }
             # Fire-and-forget emit
             self.loop.create_task(decky.emit("sync_progress", self._sync_progress))
