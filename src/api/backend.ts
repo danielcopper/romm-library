@@ -46,6 +46,7 @@ export const syncHeartbeat = callable<[], { success: boolean }>("sync_heartbeat"
 export const syncPreview = callable<[], SyncPreview>("sync_preview");
 export const syncApplyDelta = callable<[string], BackendResult>("sync_apply_delta");
 export const syncCancelPreview = callable<[], BackendResult>("sync_cancel_preview");
+export const clearSyncCache = callable<[], BackendResult>("clear_sync_cache");
 export const getSyncStats = callable<[], SyncStats>("get_sync_stats");
 export const startDownload = callable<[number], BackendResult>("start_download");
 export const cancelDownload = callable<[number], BackendResult>("cancel_download");

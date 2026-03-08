@@ -19,6 +19,7 @@ import {
   syncPreview,
   syncApplyDelta,
   syncCancelPreview,
+  clearSyncCache,
 } from "../api/backend";
 import { getSyncProgress } from "../utils/syncProgress";
 import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
@@ -149,13 +150,14 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
 
   const handleApply = async () => {
     if (!preview) return;
+    const previewId = preview.preview_id;
+    setPreview(null);
     setLoading(true);
     setSyncing(true);
     setSyncProgress({ running: true, phase: "applying", message: "Applying changes..." });
     try {
-      const result = await syncApplyDelta(preview.preview_id);
+      const result = await syncApplyDelta(previewId);
       if (result.success) {
-        setPreview(null);
         startPolling();
       } else {
         setStatus(result.message);
@@ -351,6 +353,24 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                 onChange={setSkipPreview}
               />
             </PanelSectionRow>
+            {stats?.last_sync && (
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  description="Clear cached sync data to re-fetch all platforms"
+                  onClick={async () => {
+                    const result = await clearSyncCache();
+                    setStatus(result.message);
+                    if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+                    statusTimeoutRef.current = setTimeout(() => setStatus(""), 8000);
+                    getSyncStats().then(setStats);
+                  }}
+                  disabled={loading || connected === false}
+                >
+                  Force Full Sync
+                </ButtonItem>
+              </PanelSectionRow>
+            )}
           </>
         ) : (
           <>

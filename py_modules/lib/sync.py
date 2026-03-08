@@ -5,7 +5,7 @@ import base64
 import time
 import uuid
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import decky
@@ -301,6 +301,7 @@ class SyncMixin:
         """Fetch platforms + ROMs, prepare shortcut data.
         Returns (all_roms, shortcuts_data, platforms) or raises on cancel/error.
         Artwork download is deferred to the apply phase.
+        Uses updated_after on subsequent syncs to skip unchanged platforms.
         Emits sync_progress events throughout."""
 
         # Phase 1: Fetch platforms
@@ -324,8 +325,11 @@ class SyncMixin:
         ]
         decky.logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
 
-        # Phase 2: Fetch ROMs per platform
+        # Phase 2: Fetch ROMs per platform (incremental if possible)
         await self._emit_progress("roms", message="Fetching ROMs...", step=2)
+
+        last_sync = self._state.get("last_sync")
+        registry = self._state.get("shortcut_registry", {})
 
         all_roms = []
         total_platforms = len(platforms)
@@ -335,9 +339,66 @@ class SyncMixin:
 
             platform_id = platform["id"]
             platform_name = platform.get("name", platform.get("display_name", "Unknown"))
+            platform_slug = platform.get("slug", "")
             offset = 0
-            limit = 250
+            limit = 50
 
+            # Count how many ROMs we have in registry for this platform
+            registry_count = sum(
+                1 for e in registry.values()
+                if e.get("platform_name") == platform_name
+            )
+
+            # Try incremental fetch if we have a last_sync timestamp
+            if last_sync and registry_count > 0:
+                updated_after = urllib.parse.quote(last_sync)
+                try:
+                    delta_resp = await self.loop.run_in_executor(
+                        None,
+                        self._romm_request,
+                        f"/api/roms?platform_ids={platform_id}&limit=1&offset=0&updated_after={updated_after}",
+                    )
+                    server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
+
+                    # Also check total ROM count without updated_after (for stale detection)
+                    count_resp = await self.loop.run_in_executor(
+                        None,
+                        self._romm_request,
+                        f"/api/roms?platform_ids={platform_id}&limit=1&offset=0",
+                    )
+                    platform_total = count_resp.get("total", 0) if isinstance(count_resp, dict) else 0
+
+                    if server_total == 0 and platform_total == registry_count:
+                        # Nothing changed, nothing deleted — reconstruct from registry
+                        decky.logger.info(
+                            f"Skipping {platform_name}: {registry_count} ROMs unchanged"
+                        )
+                        for rid, entry in registry.items():
+                            if entry.get("platform_name") == platform_name:
+                                all_roms.append({
+                                    "id": int(rid),
+                                    "name": entry["name"],
+                                    "fs_name": entry.get("fs_name", ""),
+                                    "platform_name": platform_name,
+                                    "platform_slug": platform_slug,
+                                    "platform_display_name": platform_name,
+                                    "igdb_id": entry.get("igdb_id"),
+                                    "sgdb_id": entry.get("sgdb_id"),
+                                })
+                        await self._emit_progress("roms", current=len(all_roms),
+                            message=f"{platform_name} unchanged ({pi}/{total_platforms})", step=2)
+                        continue
+                    else:
+                        decky.logger.info(
+                            f"{platform_name}: {server_total} updated, "
+                            f"server={platform_total} vs registry={registry_count} — full fetch"
+                        )
+                except Exception as e:
+                    decky.logger.warning(
+                        f"Incremental check failed for {platform_name}, falling back to full fetch: {e}"
+                    )
+
+            # Full fetch for this platform
             await self._emit_progress("roms", current=len(all_roms),
                 message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})", step=2)
 
@@ -363,8 +424,9 @@ class SyncMixin:
                     rom_list = roms
 
                 for rom in rom_list:
+                    rom.pop("files", None)
                     rom["platform_name"] = platform_name
-                    rom["platform_slug"] = platform.get("slug", "")
+                    rom["platform_slug"] = platform_slug
 
                 all_roms.extend(rom_list)
                 await self._emit_progress("roms", current=len(all_roms),
@@ -570,7 +632,7 @@ class SyncMixin:
                 decky.logger.error(f"Failed to set Steam Input config: {e}")
 
         # Update timestamp and save
-        self._state["last_sync"] = datetime.now().isoformat()
+        self._state["last_sync"] = datetime.now(timezone.utc).isoformat()
         self._save_state()
         self._pending_sync = {}
 
@@ -906,6 +968,13 @@ class SyncMixin:
                 decky.logger.warning(f"Failed to read artwork for rom {rom_id}: {e}")
 
         return {"base64": None}
+
+    async def clear_sync_cache(self):
+        """Clear last_sync timestamp to force a full re-fetch on next sync."""
+        self._state["last_sync"] = None
+        self._save_state()
+        decky.logger.info("Sync cache cleared — next sync will do a full fetch")
+        return {"success": True, "message": "Next sync will do a full fetch"}
 
     async def get_sync_stats(self):
         registry = self._state.get("shortcut_registry", {})
