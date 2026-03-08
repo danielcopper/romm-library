@@ -55,14 +55,14 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     }
   };
 
-  const startPolling = () => {
+  const startPolling = (progressOnly = false) => {
     stopPolling();
     pollRef.current = setInterval(() => {
       // Read directly from module-level store — no async callable, no WebSocket
       const progress = getSyncProgress();
       setSyncProgress(progress);
 
-      if (!progress.running) {
+      if (!progressOnly && !progress.running) {
         stopPolling();
         setSyncing(false);
         setLoading(false);
@@ -106,9 +106,11 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     setSyncing(true);
     setStatus("");
     setPreview(null);
-    setSyncProgress({ running: true, phase: "starting", message: "Starting sync..." });
+    setSyncProgress({ running: true, phase: "fetching", message: "Fetching library..." });
+    startPolling(true);
     try {
       const result = await syncPreview();
+      stopPolling();
       if (result.success) {
         if (skipPreview && (result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0)) {
           // Auto-apply: skip preview UI
@@ -138,6 +140,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
         setLoading(false);
       }
     } catch {
+      stopPolling();
       setStatus("Failed to start sync");
       setSyncing(false);
       setLoading(false);
@@ -365,7 +368,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                   label={
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <Spinner width={16} height={16} />
-                      {syncProgress?.message || "Syncing..."}
+                      {syncProgress?.message || "Fetching..."}
                     </div>
                   }
                 />
