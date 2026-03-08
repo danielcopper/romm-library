@@ -48,13 +48,15 @@ Extends Phase 5 to standalone emulator save formats:
 - **Auto sync interval**: Configurable background re-sync
 - **Library management**: Detect removed/updated ROMs, stale state cleanup
 - **Offline mode**: Cache lists locally, queue operations
-- **Error handling**: Retry with backoff, toast notifications, detailed logging
+- **Error handling**: Retry with backoff, toast notifications, detailed logging. Includes frontend error differentiation: show specific messages for auth failures (401), SSL errors, timeouts, and connection refused — instead of generic "could not connect" (depends on EXT-8 backend structured errors)
 - **Connection settings UX**: Remove save button, save on popup confirm
 - **RomM playtime API**: When feature request #1225 ships, plug in delta-based accumulation
 - **Emulator save state sync**: RetroArch `.state` files (larger, version-specific, multiple slots)
 - **Steam gear menu**: Add to Favorites, Collections, Hide Game, etc.
 - **Save backup on enable**: Prompt to create local save backup when toggling save sync on, and as option during conflict resolution
 - **Screenshots gallery**: Custom IGDB screenshot gallery in game detail (deferred from Phase 4C)
+- **Sync preview / dry-run**: Show "X shortcuts to add, Y to remove, Z unchanged" before applying. Let user review changes before committing the sync.
+- **Insecure SSL warning prominence**: Current toggle has a text description but no visual warning styling. Add warning icon/color and consider a confirmation dialog when enabling, since it allows MITM.
 
 ---
 
@@ -62,8 +64,8 @@ Extends Phase 5 to standalone emulator save formats:
 
 Items from a full code review of `main` and `feat/phase-5-save-sync` branches. New items not tracked elsewhere:
 
-### EXT-1: Platform Map Caching
-`_load_platform_map()` reads `config.json` from disk on every `_resolve_system()` call. Cache once on init.
+### EXT-1: Platform Map Caching ✅
+`_resolve_system()` now caches `_platform_map` on first call via `hasattr` check. No repeated disk reads.
 
 ### EXT-2: Atomic Writes for Settings ✅
 All state/settings writes use atomic `.tmp` + `os.replace()` pattern.
@@ -82,6 +84,18 @@ Consolidated into `_romm_ssl_context()` + `_romm_auth_header()` helpers in `romm
 
 ### EXT-7: No Rate Limiting on RomM API During Sync
 Rapid sequential requests during batch sync. Add configurable delay for remote/slow servers.
+
+### EXT-8: Structured HTTP Error Handling in RomM Client ✅
+Exception hierarchy in `lib/errors.py`: `RommApiError` base → `RommAuthError` (401), `RommForbiddenError` (403), `RommNotFoundError` (404), `RommConflictError` (409), `RommServerError` (5xx), `RommConnectionError`, `RommTimeoutError`, `RommSSLError`. All `_romm_*` methods in `romm_client.py` translate urllib exceptions via `_translate_http_error()`. Handles URLError-wrapped SSL/timeout, subclass ordering (HTTPError before URLError, ssl before OSError). Callers can catch specific types or continue catching generic `Exception`.
+
+### EXT-9: File Locking on State Files
+`fcntl.flock()` is used for `download_requests.json` but NOT for `state.json`, `settings.json`, `metadata_cache.json`, or `save_sync_state.json`. Decky plugin loader can trigger parallel calls — concurrent writes without locking risk corruption even with atomic writes.
+
+### EXT-10: State File Schema Versioning
+Only `save_sync_state.json` has a `"version"` field. `state.json`, `settings.json`, and `metadata_cache.json` lack schema versioning. Add version numbers + migration logic to handle format changes across plugin updates.
+
+### EXT-11: Generalize `_with_retry` to RomM Client ✅
+`_with_retry()` and `_is_retryable()` moved from `SaveSyncMixin` to `RommClientMixin`. Retry logic updated to use structured exceptions: `RommServerError`, `RommConnectionError`, `RommTimeoutError` are retryable; auth/forbidden/not-found/conflict/SSL are not. All existing save_sync callers work unchanged via MRO. `save_sync.py` 409 handler updated to catch `RommConflictError` instead of manual `HTTPError.code` check.
 
 ---
 
@@ -106,7 +120,11 @@ Rapid sequential requests during batch sync. Add configurable delay for remote/s
   3. **Lightweight check should show "Possible Conflict"** instead of "Conflict" — it only compares timestamps/sizes, not hashes. Full confirmation happens on Play click. Avoids false positives scaring users.
   4. **Gear menu "Sync Saves" should show conflict modal.** Currently `syncRomSaves()` silently queues conflicts without user notification. Should behave like pre-launch sync: detect conflict → show modal → resolve or skip. Same for "Sync Saves" in SaveSyncSettings QAM page.
   5. **Pass conflict data through frontend round-trip.** `preLaunchSync()` already returns full conflict details (sizes, timestamps, server_save_id). Frontend shows modal, user picks resolution, frontend passes details back to `resolve_conflict()`. No backend state lookup needed.
+- **Save sync: RetroArch save sorting support**: Currently hardcoded to `<saves_dir>/<system>/<rom>.srm` (matches RetroDECK default: `sort_savefiles_by_content_enable=true`, `sort_savefiles_enable=false`). Breaks silently if user enables "Sort by Core Name" (`<saves_dir>/<core_name>/` or `<saves_dir>/<system>/<core_name>/`), or disables both (flat `<saves_dir>/`). Options: (a) read RetroArch's `retroarch.cfg` to detect active sort mode and construct paths accordingly, (b) search multiple candidate paths, (c) refuse to enable save sync if non-default sort settings detected. Also affects multi-disc ROMs in subdirectories where content_dir becomes the ROM's subfolder name instead of the system name. Disclaimer added to enable-sync modal and wiki Save-Sync page.
 - **Multi-save-file support**: Current logic assumes one `.srm` per ROM (RetroArch pattern). RomM's API supports multiple saves per ROM (different slots, emulators, devices). Locally, standalone emulators like PCSX2/Dolphin use shared memory cards or per-slot saves. Filename matching works for 1:1 but breaks with multiple files. Needs: enumerate all local + server saves per ROM, match by filename, detect conflicts per file, resolve individually or batch. Ties into Phase 7 standalone emulator save sync.
+- **Artwork cache size cap**: Artwork files cached to disk with no size limit or eviction policy. Only cleanup is orphan pruning after sync. For large libraries (1000+ ROMs × 4 artwork types), unbounded disk usage could be problematic on Steam Deck. Add LRU eviction or configurable size cap.
+- **CI: Decky build smoke test on PRs**: Decky CLI plugin build only runs during release workflow, not on PRs. A packaging regression won't surface until release time. Add decky build step to CI.
+- **CI: Decky CLI SHA256 verification**: `release.yml` downloads decky CLI via plain curl with no integrity check. Pin a SHA256 hash and verify after download.
 - **RomM M3U validation**: RomM bundles M3U files in ZIP archives that may list `.bin` track files (e.g. Tomb Raider lists 57 `.bin` tracks + 1 `.cue`). RetroArch expects M3U to list `.cue` files only. Need to test whether these RomM-bundled M3Us actually break launching. If they do: post-extraction validation to strip `.bin` entries or delete bad M3Us. If they work: drop this item. Our own `_maybe_generate_m3u()` is correct (only writes `.cue`/`.chd`/`.iso` entries).
 
 ---

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import decky
 
 from lib import retrodeck_config
+from lib.errors import RommApiError, RommConflictError
 
 if TYPE_CHECKING:
     import asyncio
@@ -256,41 +257,6 @@ class SaveSyncMixin:
             self._log_debug(f"Failed to sync playtime to RomM for rom {rom_id}: {e}")
 
     # ── HTTP Helpers ──────────────────────────────────────────────
-
-    @staticmethod
-    def _is_retryable(exc):
-        """Check if an exception is a transient network error worth retrying.
-
-        Retries on: timeouts, connection refused/reset, 5xx server errors.
-        Does NOT retry on: 4xx client errors (400, 401, 403, 404, 409, etc.).
-        """
-        if isinstance(exc, urllib.error.HTTPError):
-            return exc.code >= 500
-        if isinstance(exc, (urllib.error.URLError, ConnectionError, TimeoutError, OSError)):
-            return True
-        return False
-
-    def _with_retry(self, fn, *args, max_attempts=3, base_delay=1, **kwargs):
-        """Call fn(*args, **kwargs) with exponential backoff retry.
-
-        Delays: base_delay * 3^attempt (1s, 3s, 9s for defaults).
-        Only retries on transient errors (see _is_retryable).
-        """
-        last_exc = None
-        for attempt in range(max_attempts):
-            try:
-                return fn(*args, **kwargs)
-            except Exception as exc:
-                last_exc = exc
-                if attempt < max_attempts - 1 and self._is_retryable(exc):
-                    delay = base_delay * (3 ** attempt)
-                    self._log_debug(
-                        f"Retry {attempt + 1}/{max_attempts} after {delay}s: {exc}"
-                    )
-                    time.sleep(delay)
-                else:
-                    raise
-        raise last_exc  # pragma: no cover
 
     def _romm_upload_save(self, rom_id, file_path, emulator="retroarch", save_id=None):
         """Upload or update a save file on RomM.
@@ -654,12 +620,14 @@ class SaveSyncMixin:
                     )
                     synced += 1
                 self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time()-t_action:.3f}s")
-            except urllib.error.HTTPError as e:
-                if e.code == 409 and local and server:
+            except RommConflictError:
+                if local and server:
                     # Server has newer save — queue as conflict
                     self._add_pending_conflict(rom_id, filename, local["path"], server)
                 else:
-                    errors.append(f"{filename}: HTTP {e.code}")
+                    errors.append(f"{filename}: conflict without matching local+server")
+            except RommApiError as e:
+                errors.append(f"{filename}: {e}")
             except Exception as e:
                 errors.append(f"{filename}: {e}")
                 tmp = os.path.join(saves_dir, filename + ".tmp")

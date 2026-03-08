@@ -831,7 +831,7 @@ class TestPostExitSync:
     @pytest.mark.asyncio
     async def test_409_conflict_queued(self, plugin, tmp_path):
         """409 during upload queues conflict in pending_conflicts."""
-        import urllib.error
+        from lib.errors import RommConflictError
 
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path, content=b"\x05" * 1024)
@@ -851,9 +851,10 @@ class TestPostExitSync:
         }
 
         server = _server_save()
-        error_409 = urllib.error.HTTPError(
-            url="http://romm.local/api/saves", code=409,
-            msg="Conflict", hdrs={}, fp=None,
+        error_409 = RommConflictError(
+            "HTTP 409: Conflict (POST http://romm.local/api/saves)",
+            url="http://romm.local/api/saves",
+            method="POST",
         )
 
         with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
@@ -1819,82 +1820,19 @@ class TestRommListSaves:
 
 
 # ============================================================================
-# Retry Logic
+# Retry Logic (MRO verification — full tests in test_romm_client.py)
 # ============================================================================
 
 
-class TestRetryLogic:
-    """Tests for _with_retry and _is_retryable."""
+class TestRetryMRO:
+    """Verify _with_retry is accessible on Plugin via RommClientMixin MRO."""
 
-    def test_is_retryable_5xx(self, plugin):
-        """HTTP 500/502/503 are retryable."""
-        import urllib.error
-        for code in (500, 502, 503):
-            exc = urllib.error.HTTPError("url", code, "err", {}, None)
-            assert plugin._is_retryable(exc) is True
-
-    def test_is_not_retryable_4xx(self, plugin):
-        """HTTP 400/401/404/409 are NOT retryable."""
-        import urllib.error
-        for code in (400, 401, 403, 404, 409):
-            exc = urllib.error.HTTPError("url", code, "err", {}, None)
-            assert plugin._is_retryable(exc) is False
-
-    def test_is_retryable_connection_errors(self, plugin):
-        """ConnectionError, TimeoutError, URLError are retryable."""
-        import urllib.error
-        assert plugin._is_retryable(ConnectionError("refused")) is True
-        assert plugin._is_retryable(TimeoutError("timed out")) is True
-        assert plugin._is_retryable(urllib.error.URLError("unreachable")) is True
-        assert plugin._is_retryable(OSError("network down")) is True
-
-    def test_is_not_retryable_other(self, plugin):
-        """ValueError, KeyError etc. are NOT retryable."""
-        assert plugin._is_retryable(ValueError("bad")) is False
-        assert plugin._is_retryable(KeyError("missing")) is False
-
-    def test_retry_succeeds_on_first_try(self, plugin):
-        """No retries needed when call succeeds."""
+    def test_with_retry_accessible_via_mro(self, plugin):
+        """_with_retry should be inherited from RommClientMixin."""
         fn = MagicMock(return_value="ok")
-        result = plugin._with_retry(fn, "arg1", key="val")
+        result = plugin._with_retry(fn, "arg1")
         assert result == "ok"
-        fn.assert_called_once_with("arg1", key="val")
-
-    def test_retry_succeeds_after_transient_failure(self, plugin):
-        """Retries on transient error, succeeds on second attempt."""
-        fn = MagicMock(side_effect=[ConnectionError("refused"), "ok"])
-        with patch("time.sleep"):
-            result = plugin._with_retry(fn, max_attempts=3, base_delay=0)
-        assert result == "ok"
-        assert fn.call_count == 2
-
-    def test_retry_exhausted_raises(self, plugin):
-        """All attempts fail → raises last exception."""
-        fn = MagicMock(side_effect=ConnectionError("refused"))
-        with patch("time.sleep"):
-            with pytest.raises(ConnectionError):
-                plugin._with_retry(fn, max_attempts=3, base_delay=0)
-        assert fn.call_count == 3
-
-    def test_retry_no_retry_on_4xx(self, plugin):
-        """4xx errors raise immediately without retry."""
-        import urllib.error
-        err = urllib.error.HTTPError("url", 404, "not found", {}, None)
-        fn = MagicMock(side_effect=err)
-        with pytest.raises(urllib.error.HTTPError):
-            plugin._with_retry(fn, max_attempts=3, base_delay=0)
-        fn.assert_called_once()
-
-    def test_retry_delays_exponential(self, plugin):
-        """Delays follow base_delay * 3^attempt pattern."""
-        fn = MagicMock(side_effect=[
-            ConnectionError("1"), ConnectionError("2"), "ok"
-        ])
-        with patch("time.sleep") as mock_sleep:
-            plugin._with_retry(fn, max_attempts=3, base_delay=1)
-        assert mock_sleep.call_count == 2
-        mock_sleep.assert_any_call(1)   # 1 * 3^0
-        mock_sleep.assert_any_call(3)   # 1 * 3^1
+        fn.assert_called_once_with("arg1")
 
     def test_retry_integrated_in_sync(self, plugin, tmp_path):
         """_sync_rom_saves retries transient list_saves failures."""
