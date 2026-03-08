@@ -24,6 +24,12 @@ def plugin():
     return p
 
 
+@pytest.fixture(autouse=True)
+async def _set_event_loop(plugin):
+    """Ensure plugin.loop matches the running event loop for async tests."""
+    plugin.loop = asyncio.get_event_loop()
+
+
 class TestFirmwareDestPath:
     """Tests for _firmware_dest_path — registry-based BIOS destination mapping."""
 

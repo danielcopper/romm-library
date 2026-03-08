@@ -348,8 +348,8 @@ class SyncMixin:
         self._sync_running = False
         decky.logger.info(message)
 
-    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
-        """Called by frontend after applying shortcuts via SteamClient."""
+    def _report_sync_results_io(self, rom_id_to_app_id, removed_rom_ids):
+        """Sync helper for report_sync_results — artwork renames, VDF writes, state save in executor."""
         grid = self._grid_dir()
 
         # Update registry with new mappings from frontend
@@ -408,6 +408,14 @@ class SyncMixin:
         for entry in self._state["shortcut_registry"].values():
             pname = entry.get("platform_name", "Unknown")
             platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
+
+        return platform_app_ids
+
+    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
+        """Called by frontend after applying shortcuts via SteamClient."""
+        platform_app_ids = await self.loop.run_in_executor(
+            None, self._report_sync_results_io, rom_id_to_app_id, removed_rom_ids
+        )
 
         total = len(self._state["shortcut_registry"])
         processed = len(rom_id_to_app_id)
@@ -638,8 +646,8 @@ class SyncMixin:
         rom_ids = list(registry.keys())
         return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids}
 
-    async def report_removal_results(self, removed_rom_ids):
-        """Called by frontend after removing shortcuts via SteamClient."""
+    def _report_removal_results_io(self, removed_rom_ids):
+        """Sync helper for report_removal_results — file deletions, VDF writes, state save in executor."""
         # Clean up Steam Input config for removed shortcuts (always reset to default)
         removed_app_ids = []
         for rom_id in removed_rom_ids:
@@ -688,6 +696,12 @@ class SyncMixin:
             "roms": len(registry),
         }
         self._save_state()
+
+    async def report_removal_results(self, removed_rom_ids):
+        """Called by frontend after removing shortcuts via SteamClient."""
+        await self.loop.run_in_executor(
+            None, self._report_removal_results_io, removed_rom_ids
+        )
         return {"success": True, "message": f"Removed {len(removed_rom_ids)} shortcuts"}
 
     async def get_artwork_base64(self, rom_id):

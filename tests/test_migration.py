@@ -25,6 +25,12 @@ def plugin():
     return p
 
 
+@pytest.fixture(autouse=True)
+async def _set_event_loop(plugin):
+    """Ensure plugin.loop matches the running event loop for async tests."""
+    plugin.loop = asyncio.get_event_loop()
+
+
 class TestPathChangeDetection:
     def test_first_run_stores_path(self, plugin, tmp_path):
         """First run (empty stored path) stores current path, no event."""

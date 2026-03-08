@@ -23,6 +23,12 @@ def plugin():
     return p
 
 
+@pytest.fixture(autouse=True)
+async def _set_event_loop(plugin):
+    """Ensure plugin.loop matches the running event loop for async tests."""
+    plugin.loop = asyncio.get_event_loop()
+
+
 class TestReportSyncResults:
     @pytest.mark.asyncio
     async def test_updates_registry(self, plugin, tmp_path):

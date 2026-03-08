@@ -70,14 +70,14 @@ Items from a full code review of `main` and `feat/phase-5-save-sync` branches. N
 ### EXT-2: Atomic Writes for Settings ✅
 All state/settings writes use atomic `.tmp` + `os.replace()` pattern.
 
-### EXT-3: Download Queue Memory Growth
-`_download_queue` grows indefinitely. Prune completed/failed entries after N days or max queue size.
+### EXT-3: Download Queue Memory Growth ✅
+`_prune_download_queue()` keeps max 50 terminal items (completed/failed/cancelled), called after each download. `clear_completed_downloads()` callable lets frontend clear on demand.
 
 ### EXT-4: HTTP Client Code Duplication ✅
 Consolidated into `_romm_ssl_context()` + `_romm_auth_header()` helpers in `romm_client.py`. Moved RomM HTTP methods from `save_sync.py` to `romm_client.py`.
 
-### EXT-5: Blocking I/O in Async Callables — PARTIALLY FIXED
-`save_sync.py` wrapped in `run_in_executor` (`_sync_rom_saves`, `_with_retry`, `_sync_playtime_to_romm`, `_resolve_conflict_io`). Same pattern likely exists in other modules — tracked in Future Improvements async/blocking audit.
+### EXT-5: Blocking I/O in Async Callables ✅
+All HIGH/MEDIUM severity blocking I/O wrapped in `run_in_executor`: `save_sync.get_save_status` (conflict detection + hashing), `downloads._do_download` (ZIP extraction, M3U gen, file renames), `downloads._poll_download_requests` (fcntl lock), `downloads.remove_rom`/`uninstall_all_roms`, `sync.report_sync_results`/`report_removal_results` (artwork renames + VDF writes), `sgdb.verify_sgdb_api_key` (resp.read on event loop), `main.migrate_retrodeck_files`/`get_migration_status` (FS traversal), `main.set_system_core`/`set_game_core` (XML I/O), `firmware.download_firmware` (MD5 hash), `firmware.delete_platform_bios`. Remaining LOW items (single small state file writes) are <10ms and deferred.
 
 ### EXT-6: Shell Interpolation in Launcher
 `bin/romm-launcher` interpolates `$ROM_ID` into Python strings. Regex-validated (digits only) so safe, but fragile. Consider environment variables instead.
@@ -113,7 +113,7 @@ Only `save_sync_state.json` has a `"version"` field. `state.json`, `settings.jso
 - **Per-game sync selection**: Select/deselect individual games within a platform
 - **Translations / i18n**: Adapt to user's Steam language (reference: Unifideck `src/i18n/`)
 - **Global launch interceptor**: Safety net via `SteamClient.Apps.RegisterForGameActionStart` for launches from context menus/search/recent games (outside game detail page). Currently save sync and conflict checks only run when launching from the game detail page.
-- **Async/blocking audit**: Systematic review of all `callable()` handlers for blocking I/O that runs directly on the async event loop instead of in `run_in_executor`. Decky's `callable()` dispatches on the main asyncio loop — any synchronous HTTP call, file I/O, or `time.sleep()` blocks all other callables until it returns. `save_sync.py` was partially fixed (wrapped `_sync_rom_saves`, `_with_retry`, `_sync_playtime_to_romm` in `run_in_executor`), but the same pattern likely exists in `romm_client.py`, `downloads.py`, `sync.py`, `firmware.py`, `metadata.py`, and `sgdb.py`. Audit every `async def` callable for blocking calls and wrap them.
+- ~~**Async/blocking audit**~~: ✅ Done (EXT-5). All HIGH/MEDIUM severity items fixed. Remaining: LOW-priority single-file state writes (`_save_state`, `_save_settings_to_disk`, `_save_metadata_cache`) are <10ms each and not worth the churn.
 - **Save sync conflict architecture refactor**: Remove `pending_conflicts` persistence from `save_sync_state.json` in favor of fully live conflict detection. Currently conflicts are detected live (hash + timestamp) but then stored to disk and looked up later during resolution — this creates stale state risks and unnecessary complexity. Proposed changes:
   1. **Drop `pending_conflicts` from state file.** Every entry point (pre-launch, post-exit, manual sync, lightweight check) already does live detection. No need to persist between detections.
   2. **Derive `server_save_id` at resolution time.** Instead of storing it at detection time, `resolve_conflict()` should list saves for the ROM via API and match by filename. Eliminates the main reason for persistence.

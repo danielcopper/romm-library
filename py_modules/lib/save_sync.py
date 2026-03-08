@@ -678,19 +678,13 @@ class SaveSyncMixin:
         decky.logger.info(f"Device ID generated: {device_id} ({hostname})")
         return {"success": True, "device_id": device_id, "device_name": hostname}
 
-    async def get_save_status(self, rom_id):
-        """Get save sync status for a ROM (local files, server saves, conflict state)."""
-        rom_id = int(rom_id)
+    def _get_save_status_io(self, rom_id, server_saves):
+        """Sync helper for get_save_status — runs in executor.
+
+        Performs local file checks, MD5 hashing, and conflict detection.
+        """
         rom_id_str = str(rom_id)
         local_files = self._find_save_files(rom_id)
-
-        server_saves = []
-        try:
-            server_saves = await self.loop.run_in_executor(
-                None, self._with_retry, self._romm_list_saves, rom_id
-            )
-        except Exception as e:
-            self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
 
         server_by_name = {
             ss.get("file_name", ""): ss for ss in server_saves if ss.get("file_name")
@@ -753,6 +747,22 @@ class SaveSyncMixin:
             "device_id": self._save_sync_state.get("device_id", ""),
             "last_sync_check_at": save_entry.get("last_sync_check_at"),
         }
+
+    async def get_save_status(self, rom_id):
+        """Get save sync status for a ROM (local files, server saves, conflict state)."""
+        rom_id = int(rom_id)
+
+        server_saves = []
+        try:
+            server_saves = await self.loop.run_in_executor(
+                None, self._with_retry, self._romm_list_saves, rom_id
+            )
+        except Exception as e:
+            self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
+
+        return await self.loop.run_in_executor(
+            None, self._get_save_status_io, rom_id, server_saves
+        )
 
     async def check_save_status_lightweight(self, rom_id):
         """Lightweight save status: timestamps only, no file hashing or downloads.

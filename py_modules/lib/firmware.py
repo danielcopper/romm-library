@@ -190,33 +190,10 @@ class FirmwareMixin:
         platforms = sorted(platforms_map.values(), key=lambda p: p["platform_slug"])
         return {"success": True, "server_offline": server_offline, "platforms": platforms}
 
-    async def download_firmware(self, firmware_id):
-        """Download a single firmware file from RomM."""
-        firmware_id = int(firmware_id)
-        try:
-            fw = await self.loop.run_in_executor(
-                None, self._romm_request, f"/api/firmware/{firmware_id}"
-            )
-        except Exception as e:
-            decky.logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
-            return error_response(e)
-
+    def _download_firmware_post_io(self, fw, firmware_id, dest, tmp_path):
+        """Sync helper for download_firmware — rename, hash verification, state save in executor."""
         file_name = fw.get("file_name", "")
-        dest = self._firmware_dest_path(fw)
-        tmp_path = dest + ".tmp"
-
-        try:
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            download_path = f"/api/firmware/{firmware_id}/content/{urllib.parse.quote(file_name, safe='')}"
-            await self.loop.run_in_executor(
-                None, self._romm_download, download_path, tmp_path
-            )
-            os.replace(tmp_path, dest)
-        except Exception as e:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            decky.logger.error(f"Failed to download firmware {file_name}: {e}")
-            return error_response(e)
+        os.replace(tmp_path, dest)
 
         # Verify MD5 if available
         md5_match = None
@@ -252,6 +229,39 @@ class FirmwareMixin:
             "downloaded_at": datetime.now(timezone.utc).isoformat(),
         }
         self._save_state()
+
+        return md5_match, registry_hash_valid
+
+    async def download_firmware(self, firmware_id):
+        """Download a single firmware file from RomM."""
+        firmware_id = int(firmware_id)
+        try:
+            fw = await self.loop.run_in_executor(
+                None, self._romm_request, f"/api/firmware/{firmware_id}"
+            )
+        except Exception as e:
+            decky.logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
+            return error_response(e)
+
+        file_name = fw.get("file_name", "")
+        dest = self._firmware_dest_path(fw)
+        tmp_path = dest + ".tmp"
+
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            download_path = f"/api/firmware/{firmware_id}/content/{urllib.parse.quote(file_name, safe='')}"
+            await self.loop.run_in_executor(
+                None, self._romm_download, download_path, tmp_path
+            )
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            decky.logger.error(f"Failed to download firmware {file_name}: {e}")
+            return error_response(e)
+
+        md5_match, registry_hash_valid = await self.loop.run_in_executor(
+            None, self._download_firmware_post_io, fw, firmware_id, dest, tmp_path
+        )
 
         decky.logger.info(f"Firmware downloaded: {file_name} -> {dest}")
         return {"success": True, "file_path": dest, "md5_match": md5_match, "registry_hash_valid": registry_hash_valid}
@@ -488,15 +498,11 @@ class FirmwareMixin:
             "available_cores": available_cores,
         }
 
-    async def delete_platform_bios(self, platform_slug):
-        """Delete locally downloaded BIOS files for a platform."""
-        bios_status = await self.check_platform_bios(platform_slug)
-        if not bios_status.get("needs_bios") or not bios_status.get("files"):
-            return {"success": True, "deleted_count": 0, "message": "No BIOS files for this platform"}
-
+    def _delete_platform_bios_io(self, files):
+        """Sync helper for delete_platform_bios — file deletions + state save in executor."""
         deleted = 0
         errors = []
-        for f in bios_status["files"]:
+        for f in files:
             if not f.get("downloaded"):
                 continue
             try:
@@ -509,6 +515,18 @@ class FirmwareMixin:
 
         if deleted:
             self._save_state()
+
+        return deleted, errors
+
+    async def delete_platform_bios(self, platform_slug):
+        """Delete locally downloaded BIOS files for a platform."""
+        bios_status = await self.check_platform_bios(platform_slug)
+        if not bios_status.get("needs_bios") or not bios_status.get("files"):
+            return {"success": True, "deleted_count": 0, "message": "No BIOS files for this platform"}
+
+        deleted, errors = await self.loop.run_in_executor(
+            None, self._delete_platform_bios_io, bios_status["files"]
+        )
 
         if errors:
             return {"success": False, "deleted_count": deleted, "message": f"Deleted {deleted} file(s), {len(errors)} error(s)"}

@@ -29,7 +29,39 @@ if TYPE_CHECKING:
         def _save_state(self) -> None: ...
 
 
+_DOWNLOAD_QUEUE_MAX_TERMINAL = 50
+
+
 class DownloadMixin:
+    def _prune_download_queue(self):
+        """Remove oldest completed/failed/cancelled items when over the limit.
+
+        Keeps all active (downloading) items. Retains up to
+        _DOWNLOAD_QUEUE_MAX_TERMINAL terminal items, removing the oldest
+        (by insertion order) when the count exceeds the limit.
+        """
+        terminal_ids = [
+            rid for rid, item in self._download_queue.items()
+            if item.get("status") in ("completed", "failed", "cancelled")
+        ]
+        excess = len(terminal_ids) - _DOWNLOAD_QUEUE_MAX_TERMINAL
+        if excess <= 0:
+            return
+        # Dict preserves insertion order (Python 3.7+), so the first
+        # entries in terminal_ids are the oldest.
+        for rid in terminal_ids[:excess]:
+            del self._download_queue[rid]
+
+    async def clear_completed_downloads(self):
+        """Remove all completed/failed/cancelled items from the download queue."""
+        terminal_ids = [
+            rid for rid, item in self._download_queue.items()
+            if item.get("status") in ("completed", "failed", "cancelled")
+        ]
+        for rid in terminal_ids:
+            del self._download_queue[rid]
+        return {"success": True, "removed": len(terminal_ids)}
+
     def _cleanup_leftover_tmp_files(self):
         """Remove leftover .tmp and .zip.tmp files from ROM and BIOS directories on startup."""
         cleaned = 0
@@ -66,6 +98,24 @@ class DownloadMixin:
         if cleaned:
             decky.logger.info(f"Cleaned {cleaned} leftover tmp file(s)")
 
+    def _poll_download_requests_io(self, requests_path):
+        """Sync helper for _poll_download_requests — file lock + read + write in executor."""
+        try:
+            with open(requests_path, "r+") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    requests = json.load(f)
+                except json.JSONDecodeError:
+                    requests = []
+                if not requests:
+                    return []
+                f.seek(0)
+                f.truncate()
+                json.dump([], f)
+            return requests
+        except FileNotFoundError:
+            return []
+
     async def _poll_download_requests(self):
         """Poll for download requests from the launcher script."""
         requests_path = os.path.join(
@@ -74,19 +124,10 @@ class DownloadMixin:
         while True:
             try:
                 await asyncio.sleep(2)
-                try:
-                    with open(requests_path, "r+") as f:
-                        fcntl.flock(f, fcntl.LOCK_EX)
-                        try:
-                            requests = json.load(f)
-                        except json.JSONDecodeError:
-                            requests = []
-                        if not requests:
-                            continue
-                        f.seek(0)
-                        f.truncate()
-                        json.dump([], f)
-                except FileNotFoundError:
+                requests = await self.loop.run_in_executor(
+                    None, self._poll_download_requests_io, requests_path
+                )
+                if not requests:
                     continue
                 for req in requests:
                     rom_id = req.get("rom_id")
@@ -157,6 +198,77 @@ class DownloadMixin:
         self._download_tasks[rom_id] = task
         return {"success": True, "message": "Download started"}
 
+    def _post_download_multi_io(self, rom_id, rom_detail, target_path, file_name, system):
+        """Sync helper for _do_download multi-file — extraction + renames in executor."""
+        rom_dir_name = os.path.splitext(file_name)[0]
+        extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
+        os.makedirs(extract_dir, exist_ok=True)
+        # Fix 4: Validate extract_dir is within roms_dir
+        roms_base = retrodeck_config.get_roms_path()
+        if not os.path.realpath(extract_dir).startswith(os.path.realpath(roms_base) + os.sep):
+            raise ValueError(f"Extract directory would be outside roms directory: {extract_dir}")
+        tmp_zip = target_path + ".zip.tmp"
+        with zipfile.ZipFile(tmp_zip, "r") as zf:
+            # Fix 3: ZIP slip protection
+            real_extract = os.path.realpath(extract_dir)
+            for member in zf.namelist():
+                member_path = os.path.realpath(os.path.join(extract_dir, member))
+                if not member_path.startswith(real_extract + os.sep) and member_path != real_extract:
+                    raise ValueError(f"ZIP member {member} would extract outside target directory")
+            zf.extractall(extract_dir)
+        os.remove(tmp_zip)
+        # Fix URL-encoded filenames from RomM (e.g. %20 -> space)
+        for root, dirs, files in os.walk(extract_dir, topdown=False):
+            for fname in files:
+                decoded = urllib.parse.unquote(fname)
+                if decoded != fname:
+                    old_path = os.path.join(root, fname)
+                    new_path = os.path.join(root, decoded)
+                    os.replace(old_path, new_path)
+                    decky.logger.info(f"Renamed URL-encoded file: {fname} -> {decoded}")
+            for dname in dirs:
+                decoded = urllib.parse.unquote(dname)
+                if decoded != dname:
+                    old_path = os.path.join(root, dname)
+                    new_path = os.path.join(root, decoded)
+                    os.replace(old_path, new_path)
+                    decky.logger.info(f"Renamed URL-encoded dir: {dname} -> {decoded}")
+        # Auto-generate M3U if missing and multiple disc files exist
+        self._maybe_generate_m3u(extract_dir, rom_detail)
+        # Detect launch file: prefer M3U > CUE > largest file
+        launch_file = self._detect_launch_file(extract_dir)
+
+        # Register as installed
+        installed_entry = {
+            "rom_id": rom_id,
+            "file_name": file_name,
+            "file_path": launch_file,
+            "system": system,
+            "platform_slug": rom_detail.get("platform_slug", ""),
+            "installed_at": datetime.now().isoformat(),
+            "rom_dir": extract_dir,
+        }
+        self._state["installed_roms"][str(rom_id)] = installed_entry
+        self._save_state()
+        return launch_file
+
+    def _post_download_single_io(self, rom_id, rom_detail, target_path, file_name, system):
+        """Sync helper for _do_download single-file — rename + state update in executor."""
+        tmp_path = target_path + ".tmp"
+        os.replace(tmp_path, target_path)
+
+        installed_entry = {
+            "rom_id": rom_id,
+            "file_name": file_name,
+            "file_path": target_path,
+            "system": system,
+            "platform_slug": rom_detail.get("platform_slug", ""),
+            "installed_at": datetime.now().isoformat(),
+        }
+        self._state["installed_roms"][str(rom_id)] = installed_entry
+        self._save_state()
+        return target_path
+
     async def _do_download(self, rom_id, rom_detail, target_path, system):
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
         rom_name = rom_detail.get("name", file_name)
@@ -198,65 +310,19 @@ class DownloadMixin:
                 await self.loop.run_in_executor(
                     None, self._romm_download, download_path, tmp_zip, progress_callback
                 )
-                # Extract to a subdirectory named after the ROM
-                rom_dir_name = os.path.splitext(file_name)[0]
-                extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
-                os.makedirs(extract_dir, exist_ok=True)
-                # Fix 4: Validate extract_dir is within roms_dir
-                roms_base = retrodeck_config.get_roms_path()
-                if not os.path.realpath(extract_dir).startswith(os.path.realpath(roms_base) + os.sep):
-                    raise ValueError(f"Extract directory would be outside roms directory: {extract_dir}")
-                with zipfile.ZipFile(tmp_zip, "r") as zf:
-                    # Fix 3: ZIP slip protection
-                    real_extract = os.path.realpath(extract_dir)
-                    for member in zf.namelist():
-                        member_path = os.path.realpath(os.path.join(extract_dir, member))
-                        if not member_path.startswith(real_extract + os.sep) and member_path != real_extract:
-                            raise ValueError(f"ZIP member {member} would extract outside target directory")
-                    zf.extractall(extract_dir)
-                os.remove(tmp_zip)
-                # Fix URL-encoded filenames from RomM (e.g. %20 -> space)
-                for root, dirs, files in os.walk(extract_dir, topdown=False):
-                    for fname in files:
-                        decoded = urllib.parse.unquote(fname)
-                        if decoded != fname:
-                            old_path = os.path.join(root, fname)
-                            new_path = os.path.join(root, decoded)
-                            os.replace(old_path, new_path)
-                            decky.logger.info(f"Renamed URL-encoded file: {fname} -> {decoded}")
-                    for dname in dirs:
-                        decoded = urllib.parse.unquote(dname)
-                        if decoded != dname:
-                            old_path = os.path.join(root, dname)
-                            new_path = os.path.join(root, decoded)
-                            os.replace(old_path, new_path)
-                            decky.logger.info(f"Renamed URL-encoded dir: {dname} -> {decoded}")
-                # Auto-generate M3U if missing and multiple disc files exist
-                self._maybe_generate_m3u(extract_dir, rom_detail)
-                # Detect launch file: prefer M3U > CUE > largest file
-                launch_file = self._detect_launch_file(extract_dir)
-                final_path = launch_file
+                final_path = await self.loop.run_in_executor(
+                    None, self._post_download_multi_io,
+                    rom_id, rom_detail, target_path, file_name, system
+                )
             else:
                 tmp_path = target_path + ".tmp"
                 await self.loop.run_in_executor(
                     None, self._romm_download, download_path, tmp_path, progress_callback
                 )
-                os.replace(tmp_path, target_path)
-                final_path = target_path
-
-            # Register as installed
-            installed_entry = {
-                "rom_id": rom_id,
-                "file_name": file_name,
-                "file_path": final_path,
-                "system": system,
-                "platform_slug": rom_detail.get("platform_slug", ""),
-                "installed_at": datetime.now().isoformat(),
-            }
-            if has_multiple:
-                installed_entry["rom_dir"] = extract_dir
-            self._state["installed_roms"][str(rom_id)] = installed_entry
-            self._save_state()
+                final_path = await self.loop.run_in_executor(
+                    None, self._post_download_single_io,
+                    rom_id, rom_detail, target_path, file_name, system
+                )
 
             self._download_queue[rom_id]["status"] = "completed"
             self._download_queue[rom_id]["progress"] = 1.0
@@ -282,6 +348,7 @@ class DownloadMixin:
         finally:
             self._download_tasks.pop(rom_id, None)
             self._download_in_progress.discard(rom_id)
+            self._prune_download_queue()
 
     def _maybe_generate_m3u(self, extract_dir, rom_detail):
         """Auto-generate an M3U playlist if none exists and multiple disc files are found."""
@@ -399,17 +466,9 @@ class DownloadMixin:
             elif os.path.exists(file_path):
                 os.remove(file_path)
 
-    async def remove_rom(self, rom_id):
-        rom_id_str = str(int(rom_id))
-        installed = self._state["installed_roms"].get(rom_id_str)
-        if not installed:
-            return {"success": False, "message": "ROM not installed"}
-
-        try:
-            self._delete_rom_files(installed)
-        except Exception as e:
-            decky.logger.error(f"Failed to delete ROM files: {e}")
-            return {"success": False, "message": "Failed to delete ROM files"}
+    def _remove_rom_io(self, rom_id_str, installed):
+        """Sync helper for remove_rom — file deletion + state update in executor."""
+        self._delete_rom_files(installed)
 
         del self._state["installed_roms"][rom_id_str]
         # Clean save sync state for removed ROM
@@ -421,11 +480,27 @@ class DownloadMixin:
                 save_changed = True
             if save_changed:
                 self._save_save_sync_state()
-        self._download_queue.pop(int(rom_id), None)
         self._save_state()
+
+    async def remove_rom(self, rom_id):
+        rom_id_str = str(int(rom_id))
+        installed = self._state["installed_roms"].get(rom_id_str)
+        if not installed:
+            return {"success": False, "message": "ROM not installed"}
+
+        try:
+            await self.loop.run_in_executor(
+                None, self._remove_rom_io, rom_id_str, installed
+            )
+        except Exception as e:
+            decky.logger.error(f"Failed to delete ROM files: {e}")
+            return {"success": False, "message": "Failed to delete ROM files"}
+
+        self._download_queue.pop(int(rom_id), None)
         return {"success": True, "message": "ROM removed"}
 
-    async def uninstall_all_roms(self):
+    def _uninstall_all_roms_io(self):
+        """Sync helper for uninstall_all_roms — bulk file deletion + state update in executor."""
         count = 0
         errors = []
         successfully_deleted = []
@@ -450,8 +525,14 @@ class DownloadMixin:
                     save_changed = True
             if save_changed:
                 self._save_save_sync_state()
-        self._download_queue.clear()
         self._save_state()
+        return count, errors
+
+    async def uninstall_all_roms(self):
+        count, errors = await self.loop.run_in_executor(
+            None, self._uninstall_all_roms_io
+        )
+        self._download_queue.clear()
         msg = f"Removed {count} ROMs"
         if errors:
             msg += f" ({len(errors)} errors)"
