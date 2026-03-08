@@ -127,6 +127,10 @@ export const SaveSyncSettings: FC<SaveSyncSettingsProps> = ({ onBack }) => {
             "This will sync RetroArch save files (.srm) between this device and your RomM server.\n\n" +
             "Before enabling, please back up your local save files. " +
             "They are stored in your RetroArch/RetroDECK saves directory.\n\n" +
+            "IMPORTANT: Save sync requires RetroArch's save sorting to be set to " +
+            "\"Sort Saves into Folders by Content Directory = ON\" and " +
+            "\"Sort Saves into Folders by Core Name = OFF\" (RetroDECK default). " +
+            "If you changed these settings, save sync will not find your save files.\n\n" +
             "Also make sure you are not using this on a shared RomM account " +
             "(e.g. admin, romm, guest) - unless you know what you are doing. " +
             "Save sync is intended for single user accounts.\n\n" +
