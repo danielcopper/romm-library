@@ -588,6 +588,7 @@ class SyncMixin:
                 message=f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
                 running=False)
             decky.logger.info(f"Sync results reported: {total} games")
+        self._sync_running = False
         return {"success": True}
 
     # Deprecated: VDF-based shortcut creation (replaced by frontend SteamClient API)

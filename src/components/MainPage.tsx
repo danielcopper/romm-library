@@ -6,6 +6,8 @@ import {
   Field,
   ProgressBarWithInfo,
   DropdownItem,
+  ToggleField,
+  Spinner,
 } from "@decky/ui";
 import {
   testConnection,
@@ -37,6 +39,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [status, setStatus] = useState("");
   const [preview, setPreview] = useState<SyncPreview | null>(null);
+  const [skipPreview, setSkipPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [logLevel, setLogLevel] = useState("warn");
   const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string } | null>(null);
@@ -107,9 +110,28 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     try {
       const result = await syncPreview();
       if (result.success) {
-        setPreview(result);
-        setSyncing(false);
-        setLoading(false);
+        if (skipPreview && (result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0)) {
+          // Auto-apply: skip preview UI
+          setSyncProgress({ running: true, phase: "applying", message: "Applying changes..." });
+          const applyResult = await syncApplyDelta(result.preview_id);
+          if (applyResult.success) {
+            startPolling();
+          } else {
+            setStatus(applyResult.message);
+            setSyncing(false);
+            setLoading(false);
+          }
+        } else if (skipPreview) {
+          // Nothing to sync — show brief status
+          await syncCancelPreview();
+          setStatus("Everything is up to date");
+          setSyncing(false);
+          setLoading(false);
+        } else {
+          setPreview(result);
+          setSyncing(false);
+          setLoading(false);
+        }
       } else {
         setStatus(result.message || "Preview failed");
         setSyncing(false);
@@ -308,23 +330,44 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
             )}
           </>
         ) : !syncing ? (
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={handleSync}
-              disabled={loading || connected === false}
-            >
-              Sync Library
-            </ButtonItem>
-          </PanelSectionRow>
+          <>
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                onClick={handleSync}
+                disabled={loading || connected === false}
+              >
+                Sync Library
+              </ButtonItem>
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ToggleField
+                label="Skip Preview"
+                description="Apply changes immediately without preview"
+                checked={skipPreview}
+                onChange={setSkipPreview}
+              />
+            </PanelSectionRow>
+          </>
         ) : (
           <>
-            {syncProgress && (
+            {syncProgress && syncProgress.phase === "applying" ? (
               <PanelSectionRow>
                 <ProgressBarWithInfo
                   indeterminate={progressFraction === undefined}
                   nProgress={progressFraction}
                   sOperationText={formatProgressText(syncProgress)}
+                />
+              </PanelSectionRow>
+            ) : (
+              <PanelSectionRow>
+                <Field
+                  label={
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <Spinner width={16} height={16} />
+                      {syncProgress?.message || "Syncing..."}
+                    </div>
+                  }
                 />
               </PanelSectionRow>
             )}
