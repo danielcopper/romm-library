@@ -11,8 +11,6 @@ import { ConnectionSettings } from "./components/ConnectionSettings";
 import { PlatformSync } from "./components/PlatformSync";
 import { DangerZone } from "./components/DangerZone";
 import { DownloadQueue } from "./components/DownloadQueue";
-import { BiosManager } from "./components/BiosManager";
-import { SaveSyncSettings } from "./components/SaveSyncSettings";
 import { initSyncManager } from "./utils/syncManager";
 import { setSyncProgress } from "./utils/syncProgress";
 import { updateDownload } from "./utils/downloadStore";
@@ -24,7 +22,7 @@ import { setMigrationStatus } from "./utils/migrationStore";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
-type Page = "main" | "connection" | "platforms" | "danger" | "downloads" | "bios" | "savesync";
+type Page = "main" | "settings" | "platforms" | "data" | "downloads";
 
 // Module-level page state survives QAM remounts (e.g. after modal close)
 let currentPage: Page = "main";
@@ -34,18 +32,14 @@ const QAMPanel: FC = () => {
   const setPage = (p: Page) => { currentPage = p; setPageState(p); };
 
   switch (page) {
-    case "connection":
+    case "settings":
       return <ConnectionSettings onBack={() => setPage("main")} />;
     case "platforms":
       return <PlatformSync onBack={() => setPage("main")} />;
-    case "danger":
+    case "data":
       return <DangerZone onBack={() => setPage("main")} />;
     case "downloads":
       return <DownloadQueue onBack={() => setPage("main")} />;
-    case "bios":
-      return <BiosManager onBack={() => setPage("main")} />;
-    case "savesync":
-      return <SaveSyncSettings onBack={() => setPage("main")} />;
     default:
       return <MainPage onNavigate={(p) => setPage(p)} />;
   }

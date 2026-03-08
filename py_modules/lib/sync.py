@@ -192,10 +192,15 @@ class SyncMixin:
 
         # Download artwork for new + changed ROMs only
         delta_roms = delta.get("delta_roms", [])
+        apply_total_steps = 2 if delta_roms else 1
+        apply_step = 0
         if delta_roms:
+            apply_step += 1
             await self._emit_progress("artwork", total=len(delta_roms),
-                message=f"Downloading artwork... 0/{len(delta_roms)}", step=4)
-            cover_paths = await self._download_artwork(delta_roms)
+                message=f"Downloading artwork... 0/{len(delta_roms)}",
+                step=apply_step, total_steps=apply_total_steps)
+            cover_paths = await self._download_artwork(
+                delta_roms, progress_step=apply_step, progress_total_steps=apply_total_steps)
             # Update cover_path in the shortcut data
             for sd in delta["new"] + delta["changed"]:
                 sd["cover_path"] = cover_paths.get(sd["rom_id"], "")
@@ -210,8 +215,10 @@ class SyncMixin:
         }
         self._save_state()
 
+        apply_step += 1
         total_changes = len(delta["new"]) + len(delta["changed"]) + len(delta["remove_rom_ids"])
-        await self._emit_progress("applying", total=total_changes, message="Applying changes...", step=5)
+        await self._emit_progress("applying", total=total_changes, message="Applying changes...",
+            step=apply_step, total_steps=apply_total_steps)
 
         # Emit delta
         await decky.emit("sync_apply", {
@@ -756,7 +763,7 @@ class SyncMixin:
         decky.logger.info(f"Wrote {len(current_rom_ids)} shortcuts")
         return platform_apps
 
-    async def _download_artwork(self, all_roms):
+    async def _download_artwork(self, all_roms, progress_step=4, progress_total_steps=6):
         """Download cover artwork to staging filenames (romm_{rom_id}_cover.png).
 
         Decouples download from the final Steam app_id, which isn't known until
@@ -775,7 +782,7 @@ class SyncMixin:
             if self._sync_cancel:
                 return cover_paths
 
-            await self._emit_progress("artwork", current=i + 1, total=total, message=f"Downloading artwork... {i + 1}/{total}", step=4)
+            await self._emit_progress("artwork", current=i + 1, total=total, message=f"Downloading artwork... {i + 1}/{total}", step=progress_step, total_steps=progress_total_steps)
 
             # Determine cover URL from ROM data
             cover_url = rom.get("path_cover_large") or rom.get("path_cover_small")

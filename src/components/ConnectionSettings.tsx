@@ -12,9 +12,28 @@ import {
   showModal,
   ToggleField,
 } from "@decky/ui";
-import { getSettings, saveSettings, testConnection, saveSgdbApiKey, verifySgdbApiKey, saveSteamInputSetting, applySteamInputSetting, getMigrationStatus, migrateRetroDeckFiles, logError } from "../api/backend";
+import {
+  getSettings,
+  saveSettings,
+  testConnection,
+  saveSgdbApiKey,
+  verifySgdbApiKey,
+  saveSteamInputSetting,
+  applySteamInputSetting,
+  getMigrationStatus,
+  migrateRetroDeckFiles,
+  getSaveSyncSettings,
+  updateSaveSyncSettings,
+  syncAllSaves,
+  getPendingConflicts,
+  saveLogLevel,
+  fixRetroarchInputDriver,
+  logError,
+} from "../api/backend";
 import type { MigrationStatus } from "../api/backend";
 import { getMigrationState, setMigrationStatus, clearMigration, onMigrationChange } from "../utils/migrationStore";
+import { showConflictResolutionModal } from "./ConflictModal";
+import type { SaveSyncSettings as SaveSyncSettingsType, PendingConflict, ConflictMode, RetroArchInputCheck } from "../types";
 
 // Module-level state survives component remounts (modal close can remount QAM)
 const pendingEdits: { url?: string; username?: string; password?: string } = {};
@@ -80,25 +99,70 @@ const TextInputModal: FC<{
   );
 };
 
+const conflictModeOptions = [
+  { data: "ask_me" as ConflictMode, label: "Ask Me (Default)" },
+  { data: "newest_wins" as ConflictMode, label: "Newest Wins" },
+  { data: "always_upload" as ConflictMode, label: "Always Upload" },
+  { data: "always_download" as ConflictMode, label: "Always Download" },
+];
+
+function formatTimeAgo(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return "just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  } catch {
+    return iso;
+  }
+}
+
 interface ConnectionSettingsProps {
   onBack: () => void;
 }
 
 export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
+  // Connection state
   const [url, setUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [allowInsecureSsl, setAllowInsecureSsl] = useState(false);
+
+  // SteamGridDB state
   const [sgdbApiKey, setSgdbApiKey] = useState("");
   const [sgdbStatus, setSgdbStatus] = useState("");
   const [sgdbVerifying, setSgdbVerifying] = useState(false);
-  const [allowInsecureSsl, setAllowInsecureSsl] = useState(false);
+
+  // Save Sync state
+  const [saveSyncSettings, setSaveSyncSettings] = useState<SaveSyncSettingsType | null>(null);
+  const [saveSyncConflicts, setSaveSyncConflicts] = useState<PendingConflict[]>([]);
+  const [saveSyncToggleKey, setSaveSyncToggleKey] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("");
+  const [resolving, setResolving] = useState<string | null>(null);
+
+  // Controller state
   const [steamInputMode, setSteamInputMode] = useState("default");
   const [steamInputStatus, setSteamInputStatus] = useState("");
+  const [retroarchWarning, setRetroarchWarning] = useState<RetroArchInputCheck | null>(null);
+  const [retroarchFixStatus, setRetroarchFixStatus] = useState("");
+
+  // Migration state
   const [migration, setMigration] = useState<MigrationStatus>(getMigrationState());
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState("");
+
+  // Advanced state
+  const [logLevel, setLogLevel] = useState("warn");
+
   useEffect(() => {
     getSettings().then((s) => {
       // Apply any pending edits that survived a remount, fall back to backend values
@@ -108,6 +172,10 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       setAllowInsecureSsl(s.romm_allow_insecure_ssl ?? false);
       setSgdbApiKey(s.sgdb_api_key_masked);
       setSteamInputMode(s.steam_input_mode || "default");
+      setLogLevel(s.log_level ?? "warn");
+      if (s.retroarch_input_check) {
+        setRetroarchWarning(s.retroarch_input_check);
+      }
     }).catch((e) => {
       logError(`Failed to load settings: ${e}`);
       setStatus("Failed to load settings");
@@ -121,24 +189,27 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       }
     }).catch(() => {});
 
+    // Load save sync settings and conflicts
+    getSaveSyncSettings()
+      .then(setSaveSyncSettings)
+      .catch((e) => logError(`Failed to load save sync settings: ${e}`));
+    loadSaveSyncConflicts();
+
     const unsubMigration = onMigrationChange(() => setMigration(getMigrationState()));
     return () => unsubMigration();
   }, []);
 
-  const handleSave = async () => {
-    setLoading(true);
-    setStatus("");
+  // Auto-save connection fields when a modal edit is confirmed
+  const autoSaveSettings = async (field: "url" | "username" | "password", newValue: string) => {
+    const currentUrl = field === "url" ? newValue : url;
+    const currentUser = field === "username" ? newValue : username;
+    const currentPass = field === "password" ? newValue : password;
     try {
-      const result = await saveSettings(url, username, password, allowInsecureSsl);
-      setStatus(result.message);
-      // Clear pending edits after successful save
-      delete pendingEdits.url;
-      delete pendingEdits.username;
-      delete pendingEdits.password;
+      await saveSettings(currentUrl, currentUser, currentPass, allowInsecureSsl);
+      delete pendingEdits[field];
     } catch {
       setStatus("Failed to save settings");
     }
-    setLoading(false);
   };
 
   const handleTest = async () => {
@@ -152,6 +223,95 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
     }
     setLoading(false);
   };
+
+  // Save Sync helpers
+  const loadSaveSyncConflicts = async () => {
+    try {
+      const result = await getPendingConflicts();
+      setSaveSyncConflicts(result.conflicts);
+    } catch (e) {
+      logError(`Failed to load conflicts: ${e}`);
+    }
+  };
+
+  const handleSaveSyncSettingChange = async (partial: Partial<SaveSyncSettingsType>) => {
+    if (!saveSyncSettings) return;
+    const updated = { ...saveSyncSettings, ...partial };
+    setSaveSyncSettings(updated);
+    try {
+      await updateSaveSyncSettings(updated);
+      if ("save_sync_enabled" in partial) {
+        window.dispatchEvent(new CustomEvent("romm_data_changed", {
+          detail: { type: "save_sync_settings", save_sync_enabled: updated.save_sync_enabled },
+        }));
+      }
+    } catch (e) {
+      logError(`Failed to save settings: ${e}`);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setSyncing(true);
+    setSyncStatus("");
+    try {
+      const result = await syncAllSaves();
+      setSyncStatus(result.message);
+      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
+      if (result.conflicts > 0) {
+        await loadSaveSyncConflicts();
+      }
+    } catch {
+      setSyncStatus("Sync failed");
+    }
+    setSyncing(false);
+  };
+
+  const handleResolveConflict = async (conflict: PendingConflict) => {
+    const key = `${conflict.rom_id}:${conflict.filename}`;
+    setResolving(key);
+
+    const resolution = await showConflictResolutionModal([conflict]);
+    if (resolution === "use_local" || resolution === "use_server") {
+      setSaveSyncConflicts((prev) =>
+        prev.filter((c) => !(c.rom_id === conflict.rom_id && c.filename === conflict.filename)),
+      );
+    }
+
+    setResolving(null);
+  };
+
+  const handleToggleSaveSync = (value: boolean) => {
+    if (value) {
+      showModal(
+        <ConfirmModal
+          strTitle="Enable Save Sync?"
+          strDescription={
+            "This will sync RetroArch save files (.srm) between this device and your RomM server.\n\n" +
+            "Before enabling, please back up your local save files. " +
+            "They are stored in your RetroArch/RetroDECK saves directory.\n\n" +
+            "IMPORTANT: Save sync requires RetroArch's save sorting to be set to " +
+            "\"Sort Saves into Folders by Content Directory = ON\" and " +
+            "\"Sort Saves into Folders by Core Name = OFF\" (RetroDECK default). " +
+            "If you changed these settings, save sync will not find your save files.\n\n" +
+            "Also make sure you are not using this on a shared RomM account " +
+            "(e.g. admin, romm, guest) - unless you know what you are doing. " +
+            "Save sync is intended for single user accounts.\n\n" +
+            "Are you sure you want to proceed?"
+          }
+          strOKButtonText="I am sure"
+          strCancelButtonText="Cancel"
+          onOK={() => handleSaveSyncSettingChange({ save_sync_enabled: true })}
+          onCancel={() => {
+            setSaveSyncToggleKey((k) => k + 1);
+          }}
+        />,
+      );
+    } else {
+      handleSaveSyncSettingChange({ save_sync_enabled: false });
+    }
+  };
+
+  const saveSyncEnabled = saveSyncSettings?.save_sync_enabled ?? false;
 
   return (
     <>
@@ -231,7 +391,15 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         <PanelSectionRow>
           <Field label="RomM URL" description={url || "(not set)"}>
             <DialogButton onClick={() => showModal(
-              <TextInputModal label="RomM URL" value={url} field="url" onSubmit={setUrl} />
+              <TextInputModal
+                label="RomM URL"
+                value={url}
+                field="url"
+                onSubmit={(value) => {
+                  setUrl(value);
+                  autoSaveSettings("url", value);
+                }}
+              />
             )}>
               Edit
             </DialogButton>
@@ -240,7 +408,15 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         <PanelSectionRow>
           <Field label="Username" description={username || "(not set)"}>
             <DialogButton onClick={() => showModal(
-              <TextInputModal label="Username" value={username} field="username" onSubmit={setUsername} />
+              <TextInputModal
+                label="Username"
+                value={username}
+                field="username"
+                onSubmit={(value) => {
+                  setUsername(value);
+                  autoSaveSettings("username", value);
+                }}
+              />
             )}>
               Edit
             </DialogButton>
@@ -255,9 +431,18 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
           </PanelSectionRow>
         )}
         <PanelSectionRow>
-          <Field label="Password" description={password ? "••••" : "(not set)"}>
+          <Field label="Password" description={password ? "\u2022\u2022\u2022\u2022" : "(not set)"}>
             <DialogButton onClick={() => showModal(
-              <TextInputModal label="Password" value="" field="password" bIsPassword onSubmit={setPassword} />
+              <TextInputModal
+                label="Password"
+                value=""
+                field="password"
+                bIsPassword
+                onSubmit={(value) => {
+                  setPassword(value);
+                  autoSaveSettings("password", value);
+                }}
+              />
             )}>
               Edit
             </DialogButton>
@@ -269,15 +454,16 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
               label="Allow Insecure SSL"
               description="Skip certificate verification for self-signed certs (LAN only)"
               checked={allowInsecureSsl}
-              onChange={(val) => setAllowInsecureSsl(val)}
+              onChange={(val) => {
+                setAllowInsecureSsl(val);
+                // Auto-save with the new SSL setting
+                saveSettings(url, username, password, val).catch(() => {
+                  setStatus("Failed to save settings");
+                });
+              }}
             />
           </PanelSectionRow>
         )}
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={handleSave} disabled={loading}>
-            Save Settings
-          </ButtonItem>
-        </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={handleTest} disabled={loading}>
             Test Connection
@@ -291,7 +477,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       </PanelSection>
       <PanelSection title="SteamGridDB">
         <PanelSectionRow>
-          <Field label="API Key" description={sgdbApiKey ? "••••" : "Not configured"}>
+          <Field label="API Key" description={sgdbApiKey ? "\u2022\u2022\u2022\u2022" : "Not configured"}>
             <DialogButton onClick={() => showModal(
               <TextInputModal
                 label="SteamGridDB API Key"
@@ -338,6 +524,93 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
           </PanelSectionRow>
         )}
       </PanelSection>
+      <PanelSection title="Save Sync">
+        {saveSyncSettings ? (
+          <>
+            <PanelSectionRow>
+              <ToggleField
+                key={saveSyncToggleKey}
+                label="Enable Save Sync"
+                description="Sync RetroArch saves between this device and RomM server"
+                checked={saveSyncEnabled}
+                onChange={handleToggleSaveSync}
+              />
+            </PanelSectionRow>
+            {!saveSyncEnabled && (
+              <PanelSectionRow>
+                <Field label="Save sync is disabled" description="Enable above to configure sync settings" />
+              </PanelSectionRow>
+            )}
+            {saveSyncEnabled && (
+              <>
+                <PanelSectionRow>
+                  <ToggleField
+                    label="Sync before launch"
+                    description="Download newer saves from server before starting a game"
+                    checked={saveSyncSettings.sync_before_launch}
+                    onChange={(value) => handleSaveSyncSettingChange({ sync_before_launch: value })}
+                  />
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ToggleField
+                    label="Sync after exit"
+                    description="Upload changed saves to server after closing a game"
+                    checked={saveSyncSettings.sync_after_exit}
+                    onChange={(value) => handleSaveSyncSettingChange({ sync_after_exit: value })}
+                  />
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <DropdownItem
+                    label="When saves conflict"
+                    description="How to handle conflicting save files between devices"
+                    rgOptions={conflictModeOptions}
+                    selectedOption={saveSyncSettings.conflict_mode}
+                    onChange={(option) => handleSaveSyncSettingChange({ conflict_mode: option.data as ConflictMode })}
+                  />
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ButtonItem layout="below" onClick={handleSyncAll} disabled={syncing}>
+                    {syncing ? "Syncing..." : "Sync All Saves Now"}
+                  </ButtonItem>
+                </PanelSectionRow>
+                {syncStatus && (
+                  <PanelSectionRow>
+                    <Field label={syncStatus} />
+                  </PanelSectionRow>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          <PanelSectionRow>
+            <Field label="Loading..." />
+          </PanelSectionRow>
+        )}
+      </PanelSection>
+      {saveSyncEnabled && saveSyncConflicts.length > 0 && (
+        <PanelSection title={`Conflicts (${saveSyncConflicts.length})`}>
+          {saveSyncConflicts.map((c) => {
+            const key = `${c.rom_id}:${c.filename}`;
+            const isResolving = resolving === key;
+            return (
+              <PanelSectionRow key={key}>
+                <Field
+                  label={c.filename}
+                  description={`ROM #${c.rom_id} \u2014 detected ${formatTimeAgo(c.created_at)}`}
+                >
+                  <ButtonItem
+                    layout="below"
+                    onClick={() => handleResolveConflict(c)}
+                    disabled={isResolving}
+                  >
+                    {isResolving ? "Resolving..." : "Resolve"}
+                  </ButtonItem>
+                </Field>
+              </PanelSectionRow>
+            );
+          })}
+        </PanelSection>
+      )}
       <PanelSection title="Controller">
         <PanelSectionRow>
           <DropdownItem
@@ -378,6 +651,59 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
             <Field label={steamInputStatus} />
           </PanelSectionRow>
         )}
+        {retroarchWarning && retroarchWarning.warning && (
+          <>
+            <PanelSectionRow>
+              <Field
+                label={`RetroArch input_driver: "${retroarchWarning.current}"`}
+                description="Controller navigation in RetroArch menus may not work with this setting."
+              />
+            </PanelSectionRow>
+            <PanelSectionRow>
+              <ButtonItem
+                layout="below"
+                onClick={async () => {
+                  setRetroarchFixStatus("Applying...");
+                  try {
+                    const result = await fixRetroarchInputDriver();
+                    setRetroarchFixStatus(result.message);
+                    if (result.success) {
+                      setRetroarchWarning(null);
+                    }
+                  } catch {
+                    setRetroarchFixStatus("Failed to apply fix");
+                  }
+                }}
+              >
+                Fix input_driver to sdl2
+              </ButtonItem>
+            </PanelSectionRow>
+            {retroarchFixStatus && (
+              <PanelSectionRow>
+                <Field label={retroarchFixStatus} />
+              </PanelSectionRow>
+            )}
+          </>
+        )}
+      </PanelSection>
+      <PanelSection title="Advanced">
+        <PanelSectionRow>
+          <DropdownItem
+            label="Log Level"
+            description="Controls how much detail is written to plugin logs"
+            rgOptions={[
+              { data: "error", label: "Error" },
+              { data: "warn", label: "Warn" },
+              { data: "info", label: "Info" },
+              { data: "debug", label: "Debug" },
+            ]}
+            selectedOption={logLevel}
+            onChange={(option) => {
+              setLogLevel(option.data);
+              saveLogLevel(option.data);
+            }}
+          />
+        </PanelSectionRow>
       </PanelSection>
     </>
   );
