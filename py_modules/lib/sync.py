@@ -125,6 +125,11 @@ class SyncMixin:
             new, changed, unchanged_ids, stale, disabled_count = \
                 self._classify_roms(shortcuts_data, platform_names)
 
+            # Build rom lookup for artwork download during apply
+            roms_by_id = {r["id"]: r for r in all_roms}
+            delta_rom_ids = {sd["rom_id"] for sd in new + changed}
+            delta_roms = [roms_by_id[rid] for rid in delta_rom_ids if rid in roms_by_id]
+
             preview_id = str(uuid.uuid4())
             self._pending_delta = {
                 "preview_id": preview_id,
@@ -133,6 +138,7 @@ class SyncMixin:
                 "unchanged_ids": unchanged_ids,
                 "remove_rom_ids": stale,
                 "all_shortcuts": {sd["rom_id"]: sd for sd in shortcuts_data},
+                "delta_roms": delta_roms,
                 "platforms_count": len(platforms),
                 "total_roms": len(all_roms),
             }
@@ -183,6 +189,16 @@ class SyncMixin:
             app_id = reg.get("app_id")
             if pname and app_id:
                 collection_map.setdefault(pname, []).append(app_id)
+
+        # Download artwork for new + changed ROMs only
+        delta_roms = delta.get("delta_roms", [])
+        if delta_roms:
+            await self._emit_progress("artwork", total=len(delta_roms),
+                message=f"Downloading artwork... 0/{len(delta_roms)}", step=4)
+            cover_paths = await self._download_artwork(delta_roms)
+            # Update cover_path in the shortcut data
+            for sd in delta["new"] + delta["changed"]:
+                sd["cover_path"] = cover_paths.get(sd["rom_id"], "")
 
         # Populate _pending_sync for report_sync_results and get_artwork_base64
         self._pending_sync = delta["all_shortcuts"]
@@ -282,8 +298,9 @@ class SyncMixin:
         return new, changed, unchanged_ids, stale, disabled_count
 
     async def _fetch_and_prepare(self):
-        """Fetch platforms + ROMs, prepare shortcut data, download artwork.
+        """Fetch platforms + ROMs, prepare shortcut data.
         Returns (all_roms, shortcuts_data, platforms) or raises on cancel/error.
+        Artwork download is deferred to the apply phase.
         Emits sync_progress events throughout."""
 
         # Phase 1: Fetch platforms
@@ -391,18 +408,6 @@ class SyncMixin:
         self._save_metadata_cache()
         self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
-        # Phase 4: Download artwork
-        await self._emit_progress("artwork", total=len(all_roms), message="Downloading artwork...", step=4)
-
-        cover_paths = await self._download_artwork(all_roms)
-
-        if self._sync_cancel:
-            raise asyncio.CancelledError("Sync cancelled")
-
-        # Update shortcuts_data with cover paths
-        for sd in shortcuts_data:
-            sd["cover_path"] = cover_paths.get(sd["rom_id"], "")
-
         return all_roms, shortcuts_data, platforms
 
     async def _do_sync(self):
@@ -418,6 +423,18 @@ class SyncMixin:
                 await self._emit_progress("error", message=_msg, running=False)
                 self._sync_running = False
                 return
+
+            # Phase 4: Download artwork
+            await self._emit_progress("artwork", total=len(all_roms),
+                message="Downloading artwork...", step=4)
+            cover_paths = await self._download_artwork(all_roms)
+
+            if self._sync_cancel:
+                await self._finish_sync("Sync cancelled")
+                return
+
+            for sd in shortcuts_data:
+                sd["cover_path"] = cover_paths.get(sd["rom_id"], "")
 
             # Determine stale rom_ids by comparing current sync with registry
             current_rom_ids = {r["id"] for r in all_roms}
