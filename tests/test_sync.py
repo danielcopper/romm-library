@@ -20,6 +20,7 @@ def plugin():
     p._download_queue = {}
     p._download_in_progress = set()
     p._metadata_cache = {}
+    p._pending_delta = None
     return p
 
 
@@ -583,15 +584,7 @@ class TestShortcutDataFormat:
         ])
         plugin._download_artwork = AsyncMock(return_value={})
         plugin._emit_progress = AsyncMock()
-        plugin._finish_sync = AsyncMock()
         plugin._sync_cancel = False
-
-        # Capture the emitted sync_apply data
-        emitted = {}
-        async def capture_emit(event, **kwargs):
-            if event == "sync_apply":
-                emitted.update(kwargs)
-        plugin._emit = capture_emit
 
         # Mock decky.emit to capture the shortcuts
         import decky
@@ -602,9 +595,11 @@ class TestShortcutDataFormat:
         decky.emit = mock_emit
 
         try:
-            await plugin.start_sync()
+            # Call _do_sync directly (start_sync creates a background task
+            # that never runs with a mock loop)
+            await plugin._do_sync()
         except Exception:
-            pass  # _finish_sync mock may cause issues
+            pass
         finally:
             if original_emit:
                 decky.emit = original_emit
@@ -616,12 +611,12 @@ class TestShortcutDataFormat:
                 sync_items = args[0] if args else None
                 break
 
-        if sync_items:
-            required_fields = {"rom_id", "name", "exe", "start_dir", "launch_options",
-                               "platform_name", "platform_slug"}
-            for item in sync_items:
-                for field in required_fields:
-                    assert field in item, f"Missing field '{field}' in shortcut data"
+        assert sync_items is not None, "sync_apply event should have been emitted"
+        required_fields = {"rom_id", "name", "exe", "start_dir", "launch_options",
+                           "platform_name", "platform_slug"}
+        for item in sync_items.get("shortcuts", sync_items):
+            for field in required_fields:
+                assert field in item, f"Missing field '{field}' in shortcut data"
 
     @pytest.mark.asyncio
     async def test_exe_path_points_to_romm_launcher(self, plugin):
@@ -771,3 +766,466 @@ class TestPruneOrphanedStagingArtwork:
         assert staging.exists()
         # Warning should have been logged
         assert any("Failed to remove orphaned staging artwork" in r.message for r in caplog.records)
+
+
+class TestClassifyRoms:
+    """Tests for _classify_roms() delta classification."""
+
+    def _make_sd(self, rom_id, name="Game", platform_name="N64",
+                 platform_slug="n64", fs_name="game.z64",
+                 igdb_id=None, sgdb_id=None):
+        """Helper to build a shortcut_data dict matching _fetch_and_prepare output."""
+        return {
+            "rom_id": rom_id,
+            "name": name,
+            "platform_name": platform_name,
+            "platform_slug": platform_slug,
+            "fs_name": fs_name,
+            "igdb_id": igdb_id,
+            "sgdb_id": sgdb_id,
+        }
+
+    def test_all_new_empty_registry(self, plugin):
+        """Empty registry -> all in new, none in changed/unchanged."""
+        sd = [self._make_sd(1, "Game A"), self._make_sd(2, "Game B")]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(new) == 2
+        assert changed == []
+        assert unchanged_ids == []
+        assert stale == []
+        assert disabled == 0
+
+    def test_all_unchanged(self, plugin):
+        """Registry matches all items -> all in unchanged_ids."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "gamea.z64"},
+            "2": {"app_id": 1002, "name": "Game B", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "gameb.z64"},
+        }
+        sd = [
+            self._make_sd(1, "Game A", fs_name="gamea.z64"),
+            self._make_sd(2, "Game B", fs_name="gameb.z64"),
+        ]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert new == []
+        assert changed == []
+        assert set(unchanged_ids) == {1, 2}
+        assert stale == []
+
+    def test_mixed_new_changed_unchanged(self, plugin):
+        """Mix of new, changed, unchanged ROMs."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "gamea.z64"},
+            "2": {"app_id": 1002, "name": "Old Name", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "gameb.z64"},
+        }
+        sd = [
+            self._make_sd(1, "Game A", fs_name="gamea.z64"),       # unchanged
+            self._make_sd(2, "New Name", fs_name="gameb.z64"),     # changed (name)
+            self._make_sd(3, "Game C", fs_name="gamec.z64"),       # new
+        ]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(new) == 1
+        assert new[0]["rom_id"] == 3
+        assert len(changed) == 1
+        assert changed[0]["rom_id"] == 2
+        assert changed[0]["existing_app_id"] == 1002
+        assert unchanged_ids == [1]
+
+    def test_stale_detection(self, plugin):
+        """Registry has ROM not in fetched set -> appears in stale."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64"},
+            "99": {"app_id": 1099, "name": "Deleted Game", "platform_name": "N64"},
+        }
+        sd = [self._make_sd(1, "Game A", fs_name="")]
+        # Must also set fs_name in registry to match
+        plugin._state["shortcut_registry"]["1"]["fs_name"] = ""
+        plugin._state["shortcut_registry"]["1"]["platform_slug"] = "n64"
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert 99 in stale
+        assert disabled == 0  # N64 is in fetched_platform_names
+
+    def test_disabled_platform_stale_count(self, plugin):
+        """Stale ROMs from platforms not in fetched_platform_names -> counted as disabled."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "SNES"},
+        }
+        sd = []  # nothing fetched
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert 1 in stale
+        assert disabled == 1  # SNES is not in {"N64"}
+
+    def test_name_change_detected(self, plugin):
+        """ROM name changed -> classified as changed with existing_app_id."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Old Title", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "game.z64"},
+        }
+        sd = [self._make_sd(1, "New Title")]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(changed) == 1
+        assert changed[0]["existing_app_id"] == 1001
+        assert new == []
+        assert unchanged_ids == []
+
+    def test_platform_name_change_detected(self, plugin):
+        """Platform name changed -> classified as changed."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "Nintendo 64",
+                   "platform_slug": "n64", "fs_name": "game.z64"},
+        }
+        sd = [self._make_sd(1, "Game A", platform_name="N64")]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(changed) == 1
+        assert changed[0]["rom_id"] == 1
+
+    def test_fs_name_change_detected(self, plugin):
+        """fs_name changed -> classified as changed."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "old.z64"},
+        }
+        sd = [self._make_sd(1, "Game A", fs_name="new.z64")]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(changed) == 1
+        assert changed[0]["rom_id"] == 1
+
+    def test_igdb_id_change_no_false_positive(self, plugin):
+        """Only igdb_id/sgdb_id changed -> still unchanged."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "game.z64"},
+        }
+        sd = [self._make_sd(1, "Game A", igdb_id=999, sgdb_id=888)]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert unchanged_ids == [1]
+        assert changed == []
+        assert new == []
+
+    def test_registry_without_app_id_is_new(self, plugin):
+        """Registry entry without app_id -> classified as new."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"name": "Game A", "platform_name": "N64"},
+        }
+        sd = [self._make_sd(1, "Game A")]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(new) == 1
+        assert new[0]["rom_id"] == 1
+        assert changed == []
+
+    def test_first_sync_empty_registry_all_new(self, plugin):
+        """First sync (empty registry) -> all new."""
+        sd = [self._make_sd(i, f"Game {i}") for i in range(1, 6)]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(new) == 5
+        assert changed == []
+        assert unchanged_ids == []
+        assert stale == []
+        assert disabled == 0
+
+    def test_no_changes(self, plugin):
+        """Exact match -> 0 new, 0 changed, 0 removed."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "game.z64"},
+        }
+        sd = [self._make_sd(1, "Game A")]
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(new) == 0
+        assert len(changed) == 0
+        assert len(stale) == 0
+        assert len(unchanged_ids) == 1
+
+    def test_all_stale_disabled_platforms(self, plugin):
+        """Everything stale from disabled platforms."""
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "GBA"},
+            "2": {"app_id": 1002, "name": "Game B", "platform_name": "SNES"},
+        }
+        sd = []  # nothing fetched
+        # Neither GBA nor SNES in fetched set
+        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        assert len(stale) == 2
+        assert disabled == 2
+
+
+class TestSyncPreview:
+    """Tests for sync_preview()."""
+
+    @pytest.mark.asyncio
+    async def test_returns_correct_summary(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+        import decky
+
+        plugin.loop = asyncio.get_event_loop()
+        decky.emit.reset_mock()
+
+        # Mock _fetch_and_prepare to return known data
+        platforms = [{"name": "N64", "slug": "n64"}]
+        all_roms = [{"id": 1}, {"id": 2}, {"id": 3}]
+        shortcuts_data = [
+            {"rom_id": 1, "name": "Game A", "platform_name": "N64",
+             "platform_slug": "n64", "fs_name": "a.z64"},
+            {"rom_id": 2, "name": "Game B", "platform_name": "N64",
+             "platform_slug": "n64", "fs_name": "b.z64"},
+            {"rom_id": 3, "name": "Game C", "platform_name": "N64",
+             "platform_slug": "n64", "fs_name": "c.z64"},
+        ]
+        plugin._fetch_and_prepare = AsyncMock(
+            return_value=(all_roms, shortcuts_data, platforms)
+        )
+        plugin._emit_progress = AsyncMock()
+
+        # Set up registry: rom 1 unchanged, rom 2 changed name
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "a.z64"},
+            "2": {"app_id": 1002, "name": "Old B", "platform_name": "N64",
+                   "platform_slug": "n64", "fs_name": "b.z64"},
+        }
+
+        result = await plugin.sync_preview()
+        assert result["success"] is True
+        summary = result["summary"]
+        assert summary["new_count"] == 1      # rom 3 is new
+        assert summary["changed_count"] == 1   # rom 2 name changed
+        assert summary["unchanged_count"] == 1  # rom 1 unchanged
+        assert summary["remove_count"] == 0
+        assert "preview_id" in result
+
+    @pytest.mark.asyncio
+    async def test_populates_pending_delta(self, plugin):
+        from unittest.mock import AsyncMock
+        import decky
+
+        plugin.loop = asyncio.get_event_loop()
+        decky.emit.reset_mock()
+
+        platforms = [{"name": "N64", "slug": "n64"}]
+        all_roms = [{"id": 1}]
+        shortcuts_data = [
+            {"rom_id": 1, "name": "Game A", "platform_name": "N64",
+             "platform_slug": "n64", "fs_name": "a.z64"},
+        ]
+        plugin._fetch_and_prepare = AsyncMock(
+            return_value=(all_roms, shortcuts_data, platforms)
+        )
+        plugin._emit_progress = AsyncMock()
+
+        result = await plugin.sync_preview()
+        assert plugin._pending_delta is not None
+        assert plugin._pending_delta["preview_id"] == result["preview_id"]
+        assert len(plugin._pending_delta["new"]) == 1
+        assert plugin._pending_delta["platforms_count"] == 1
+        assert plugin._pending_delta["total_roms"] == 1
+
+    @pytest.mark.asyncio
+    async def test_returns_error_when_sync_running(self, plugin):
+        plugin._sync_running = True
+        result = await plugin.sync_preview()
+        assert result["success"] is False
+        assert "already in progress" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_resets_sync_running_on_completion(self, plugin):
+        from unittest.mock import AsyncMock
+        import decky
+
+        plugin.loop = asyncio.get_event_loop()
+        decky.emit.reset_mock()
+
+        platforms = [{"name": "N64"}]
+        all_roms = [{"id": 1}]
+        shortcuts_data = [
+            {"rom_id": 1, "name": "Game A", "platform_name": "N64",
+             "platform_slug": "n64", "fs_name": "a.z64"},
+        ]
+        plugin._fetch_and_prepare = AsyncMock(
+            return_value=(all_roms, shortcuts_data, platforms)
+        )
+        plugin._emit_progress = AsyncMock()
+
+        await plugin.sync_preview()
+        assert plugin._sync_running is False
+
+
+class TestSyncApplyDelta:
+    """Tests for sync_apply_delta()."""
+
+    def _setup_pending_delta(self, plugin, preview_id="test-preview-123"):
+        """Helper to populate _pending_delta with valid data."""
+        plugin._pending_delta = {
+            "preview_id": preview_id,
+            "new": [
+                {"rom_id": 3, "name": "Game C", "platform_name": "N64",
+                 "platform_slug": "n64", "fs_name": "c.z64", "cover_path": ""},
+            ],
+            "changed": [
+                {"rom_id": 2, "name": "New B", "existing_app_id": 1002,
+                 "platform_name": "N64", "platform_slug": "n64",
+                 "fs_name": "b.z64", "cover_path": ""},
+            ],
+            "unchanged_ids": [1],
+            "remove_rom_ids": [99],
+            "all_shortcuts": {
+                1: {"rom_id": 1, "name": "Game A", "platform_name": "N64"},
+                2: {"rom_id": 2, "name": "New B", "platform_name": "N64"},
+                3: {"rom_id": 3, "name": "Game C", "platform_name": "N64"},
+            },
+            "platforms_count": 1,
+            "total_roms": 3,
+        }
+
+    @pytest.mark.asyncio
+    async def test_rejects_wrong_preview_id(self, plugin):
+        self._setup_pending_delta(plugin, "correct-id")
+        result = await plugin.sync_apply_delta("wrong-id")
+        assert result["success"] is False
+        assert result["error_code"] == "stale_preview"
+
+    @pytest.mark.asyncio
+    async def test_rejects_when_no_pending_delta(self, plugin):
+        assert plugin._pending_delta is None
+        result = await plugin.sync_apply_delta("any-id")
+        assert result["success"] is False
+        assert result["error_code"] == "stale_preview"
+
+    @pytest.mark.asyncio
+    async def test_emits_sync_apply_with_delta(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock
+        import decky
+
+        plugin.loop = asyncio.get_event_loop()
+        decky.emit.reset_mock()
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        # Set up registry for unchanged rom
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64"},
+        }
+        plugin._save_state = lambda: None
+
+        self._setup_pending_delta(plugin)
+        plugin._emit_progress = AsyncMock()
+
+        result = await plugin.sync_apply_delta("test-preview-123")
+        assert result["success"] is True
+
+        # Check decky.emit was called with sync_apply
+        emit_calls = [c for c in decky.emit.call_args_list
+                      if c[0][0] == "sync_apply"]
+        assert len(emit_calls) == 1
+        payload = emit_calls[0][0][1]
+        assert len(payload["shortcuts"]) == 1      # new
+        assert len(payload["changed_shortcuts"]) == 1  # changed
+        assert payload["remove_rom_ids"] == [99]
+
+    @pytest.mark.asyncio
+    async def test_populates_pending_sync(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock
+        import decky
+
+        plugin.loop = asyncio.get_event_loop()
+        decky.emit.reset_mock()
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64"},
+        }
+        plugin._save_state = lambda: None
+
+        self._setup_pending_delta(plugin)
+        plugin._emit_progress = AsyncMock()
+
+        await plugin.sync_apply_delta("test-preview-123")
+        assert 1 in plugin._pending_sync
+        assert 2 in plugin._pending_sync
+        assert 3 in plugin._pending_sync
+
+    @pytest.mark.asyncio
+    async def test_clears_pending_delta(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock
+        import decky
+
+        plugin.loop = asyncio.get_event_loop()
+        decky.emit.reset_mock()
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64"},
+        }
+        plugin._save_state = lambda: None
+
+        self._setup_pending_delta(plugin)
+        plugin._emit_progress = AsyncMock()
+
+        await plugin.sync_apply_delta("test-preview-123")
+        assert plugin._pending_delta is None
+
+    @pytest.mark.asyncio
+    async def test_builds_collection_map_from_unchanged(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock
+        import decky
+
+        plugin.loop = asyncio.get_event_loop()
+        decky.emit.reset_mock()
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64"},
+            "5": {"app_id": 1005, "name": "Game E", "platform_name": "SNES"},
+        }
+        plugin._save_state = lambda: None
+
+        # Include both rom 1 and 5 as unchanged
+        plugin._pending_delta = {
+            "preview_id": "test-preview-123",
+            "new": [],
+            "changed": [],
+            "unchanged_ids": [1, 5],
+            "remove_rom_ids": [],
+            "all_shortcuts": {
+                1: {"rom_id": 1, "name": "Game A", "platform_name": "N64"},
+                5: {"rom_id": 5, "name": "Game E", "platform_name": "SNES"},
+            },
+            "platforms_count": 2,
+            "total_roms": 2,
+        }
+        plugin._emit_progress = AsyncMock()
+
+        await plugin.sync_apply_delta("test-preview-123")
+
+        emit_calls = [c for c in decky.emit.call_args_list
+                      if c[0][0] == "sync_apply"]
+        assert len(emit_calls) == 1
+        collection_map = emit_calls[0][0][1]["collection_platform_app_ids"]
+        assert 1001 in collection_map.get("N64", [])
+        assert 1005 in collection_map.get("SNES", [])
+
+
+class TestSyncCancelPreview:
+    """Tests for sync_cancel_preview()."""
+
+    @pytest.mark.asyncio
+    async def test_clears_pending_delta(self, plugin):
+        plugin._pending_delta = {
+            "preview_id": "some-id",
+            "new": [],
+            "changed": [],
+            "unchanged_ids": [],
+            "remove_rom_ids": [],
+            "all_shortcuts": {},
+            "platforms_count": 0,
+            "total_roms": 0,
+        }
+        result = await plugin.sync_cancel_preview()
+        assert plugin._pending_delta is None
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_returns_success(self, plugin):
+        result = await plugin.sync_cancel_preview()
+        assert result == {"success": True}

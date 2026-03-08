@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview } from "../types";
 
 export interface BackendResult {
   success: boolean;
@@ -43,6 +43,9 @@ export const testConnection = callable<[], BackendResult>("test_connection");
 export const startSync = callable<[], BackendResult>("start_sync");
 export const cancelSync = callable<[], BackendResult>("cancel_sync");
 export const syncHeartbeat = callable<[], { success: boolean }>("sync_heartbeat");
+export const syncPreview = callable<[], SyncPreview>("sync_preview");
+export const syncApplyDelta = callable<[string], BackendResult>("sync_apply_delta");
+export const syncCancelPreview = callable<[], BackendResult>("sync_cancel_preview");
 export const getSyncStats = callable<[], SyncStats>("get_sync_stats");
 export const startDownload = callable<[number], BackendResult>("start_download");
 export const cancelDownload = callable<[number], BackendResult>("cancel_download");

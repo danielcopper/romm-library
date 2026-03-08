@@ -1,5 +1,5 @@
 import { addEventListener } from "@decky/api";
-import type { SyncApplyData } from "../types";
+import type { SyncApplyData, SyncChangedItem } from "../types";
 import { getArtworkBase64, reportSyncResults, syncHeartbeat, logInfo, logError } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
 import { createOrUpdateCollections, clearPlatformCollection } from "./collections";
@@ -20,7 +20,8 @@ export function requestSyncCancel(): void {
  */
 export function initSyncManager(): ReturnType<typeof addEventListener> {
   return addEventListener("sync_apply", async (data: SyncApplyData) => {
-    logInfo(`sync_apply received: ${data.shortcuts.length} add, ${data.remove_rom_ids.length} remove`);
+    const isDelta = Array.isArray(data.changed_shortcuts);
+    logInfo(`sync_apply received: ${data.shortcuts.length} new, ${isDelta ? data.changed_shortcuts!.length + " changed, " : ""}${data.remove_rom_ids.length} remove${isDelta ? " (delta)" : ""}`);
 
     _cancelRequested = false;
     let cancelled = false;
@@ -31,33 +32,44 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
     const romIdToAppId: Record<string, number> = {};
     const removedRomIds: number[] = [];
 
-    // Process additions/updates with small delays to avoid corrupting Steam state
-    const total = data.shortcuts.length;
-    updateSyncProgress({ running: true, phase: "applying", current: 0, total, message: "Applying shortcuts...", step: 5, totalSteps: 6 });
+    // --- Process new shortcuts ---
+    const totalNew = data.shortcuts.length;
+    const totalChanges = totalNew + (data.changed_shortcuts?.length ?? 0);
+    updateSyncProgress({ running: true, phase: "applying", current: 0, total: totalChanges, message: "Applying shortcuts...", step: 5, totalSteps: 6 });
+
     for (let i = 0; i < data.shortcuts.length; i++) {
       const item = data.shortcuts[i];
       try {
-        updateSyncProgress({ current: i + 1, message: `Applying shortcuts... ${i + 1}/${total}` });
+        updateSyncProgress({ current: i + 1, message: `Applying shortcuts... ${i + 1}/${totalChanges}` });
         let appId: number | undefined;
-        const existingAppId = existing.get(item.rom_id);
-        if (existingAppId) {
-          // Already exists — update properties
-          SteamClient.Apps.SetShortcutName(existingAppId, item.name);
-          SteamClient.Apps.SetShortcutExe(existingAppId, item.exe);
-          SteamClient.Apps.SetShortcutStartDir(existingAppId, item.start_dir);
-          SteamClient.Apps.SetAppLaunchOptions(existingAppId, item.launch_options);
-          appId = existingAppId;
-          romIdToAppId[String(item.rom_id)] = existingAppId;
-        } else {
-          // New — create shortcut with all launch params upfront
+
+        if (isDelta) {
+          // Delta mode: shortcuts list contains only truly new ROMs
           const newAppId = await addShortcut(item);
           if (newAppId) {
             appId = newAppId;
             romIdToAppId[String(item.rom_id)] = newAppId;
           }
+        } else {
+          // Legacy mode: check existing map for each item
+          const existingAppId = existing.get(item.rom_id);
+          if (existingAppId) {
+            SteamClient.Apps.SetShortcutName(existingAppId, item.name);
+            SteamClient.Apps.SetShortcutExe(existingAppId, item.exe);
+            SteamClient.Apps.SetShortcutStartDir(existingAppId, item.start_dir);
+            SteamClient.Apps.SetAppLaunchOptions(existingAppId, item.launch_options);
+            appId = existingAppId;
+            romIdToAppId[String(item.rom_id)] = existingAppId;
+          } else {
+            const newAppId = await addShortcut(item);
+            if (newAppId) {
+              appId = newAppId;
+              romIdToAppId[String(item.rom_id)] = newAppId;
+            }
+          }
         }
 
-        // Fetch and apply artwork per item via callable (avoids bulk base64 in WebSocket)
+        // Fetch and apply artwork per item
         if (appId) {
           try {
             const artResult = await getArtworkBase64(item.rom_id);
@@ -68,26 +80,64 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
           } catch (artErr) {
             logError(`Failed to fetch/set artwork for ${item.name}: ${artErr}`);
           }
-
-          // SGDB artwork (hero, logo, wide grid, icon) is fetched on-demand
-          // when user visits the game detail page — not during sync
         }
       } catch (e) {
         logError(`Failed to process shortcut for rom ${item.rom_id}: ${e}`);
       }
-      // Small delay between operations to avoid overwhelming Steam
       await delay(50);
 
-      // Keep backend safety timeout alive during long application loops
       if (Date.now() - lastHeartbeat > HEARTBEAT_INTERVAL_MS) {
         syncHeartbeat().catch(() => {});
         lastHeartbeat = Date.now();
       }
 
       if (_cancelRequested) {
-        logInfo(`Cancel requested after processing ${i + 1}/${total} shortcuts`);
+        logInfo(`Cancel requested after processing ${i + 1}/${totalChanges} shortcuts`);
         cancelled = true;
         break;
+      }
+    }
+
+    // --- Process changed shortcuts (delta mode only) ---
+    if (!cancelled && isDelta && data.changed_shortcuts) {
+      for (let i = 0; i < data.changed_shortcuts.length; i++) {
+        const item: SyncChangedItem = data.changed_shortcuts[i];
+        const idx = totalNew + i;
+        try {
+          updateSyncProgress({ current: idx + 1, message: `Updating shortcuts... ${idx + 1}/${totalChanges}` });
+          const appId = item.existing_app_id;
+
+          SteamClient.Apps.SetShortcutName(appId, item.name);
+          SteamClient.Apps.SetShortcutExe(appId, item.exe);
+          SteamClient.Apps.SetShortcutStartDir(appId, item.start_dir);
+          SteamClient.Apps.SetAppLaunchOptions(appId, item.launch_options);
+          romIdToAppId[String(item.rom_id)] = appId;
+
+          // Refresh artwork for changed items
+          try {
+            const artResult = await getArtworkBase64(item.rom_id);
+            if (artResult.base64) {
+              await SteamClient.Apps.SetCustomArtworkForApp(appId, artResult.base64, "png", 0);
+              logInfo(`Updated cover artwork for ${item.name} (appId=${appId})`);
+            }
+          } catch (artErr) {
+            logError(`Failed to fetch/set artwork for ${item.name}: ${artErr}`);
+          }
+        } catch (e) {
+          logError(`Failed to update shortcut for rom ${item.rom_id}: ${e}`);
+        }
+        await delay(50);
+
+        if (Date.now() - lastHeartbeat > HEARTBEAT_INTERVAL_MS) {
+          syncHeartbeat().catch(() => {});
+          lastHeartbeat = Date.now();
+        }
+
+        if (_cancelRequested) {
+          logInfo(`Cancel requested during changed shortcuts processing`);
+          cancelled = true;
+          break;
+        }
       }
     }
 
@@ -109,8 +159,15 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       }
     }
 
-    // Create/update Steam collections for whatever was processed
+    // Create/update Steam collections
+    // Start with unchanged app_ids from backend (delta mode)
     const platformAppIds: Record<string, number[]> = {};
+    if (data.collection_platform_app_ids) {
+      for (const [pname, appIds] of Object.entries(data.collection_platform_app_ids)) {
+        platformAppIds[pname] = [...appIds];
+      }
+    }
+    // Add newly processed app_ids
     for (const item of data.shortcuts) {
       const appId = romIdToAppId[String(item.rom_id)];
       if (appId) {
@@ -120,6 +177,19 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
         platformAppIds[item.platform_name].push(appId);
       }
     }
+    // Add changed app_ids
+    if (data.changed_shortcuts) {
+      for (const item of data.changed_shortcuts) {
+        const appId = romIdToAppId[String(item.rom_id)];
+        if (appId) {
+          if (!platformAppIds[item.platform_name]) {
+            platformAppIds[item.platform_name] = [];
+          }
+          platformAppIds[item.platform_name].push(appId);
+        }
+      }
+    }
+
     if (!cancelled && Object.keys(platformAppIds).length > 0) {
       const numCollections = Object.keys(platformAppIds).length;
       updateSyncProgress({ phase: "collections", current: 0, total: numCollections, message: "Creating collections...", step: 6, totalSteps: 6 });
@@ -128,15 +198,12 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       });
     }
 
-    // Clean up collections for platforms that are no longer synced.
-    // Collection names are "RomM: Platform (hostname)" — extract the platform
-    // portion before the hostname suffix for comparison with activePlatforms.
+    // Clean up collections for platforms that are no longer synced
     if (!cancelled && typeof collectionStore !== "undefined") {
       const activePlatforms = new Set(Object.keys(platformAppIds));
       const staleCollections = collectionStore.userCollections.filter((c) => {
         if (!c.displayName.startsWith("RomM: ")) return false;
-        const afterPrefix = c.displayName.slice(6); // e.g. "Nintendo 64 (steamdeck)" or legacy "Nintendo 64"
-        // Strip trailing " (hostname)" suffix if present to get the bare platform name
+        const afterPrefix = c.displayName.slice(6);
         const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
         return !activePlatforms.has(platformName);
       });
@@ -148,7 +215,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       }
     }
 
-    // Report results to backend — always call this so partial progress is saved
+    // Report results to backend
     try {
       await reportSyncResults(romIdToAppId, removedRomIds, cancelled);
     } catch (e) {
@@ -158,7 +225,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
     const doneMsg = cancelled
       ? `Sync cancelled (${Object.keys(romIdToAppId).length} processed)`
       : "Sync complete";
-    updateSyncProgress({ running: false, phase: "done", current: total, total, message: doneMsg });
+    updateSyncProgress({ running: false, phase: "done", current: totalChanges, total: totalChanges, message: doneMsg });
     logInfo(`sync_apply ${cancelled ? "cancelled" : "complete"}: ${Object.keys(romIdToAppId).length} added/updated, ${removedRomIds.length} removed`);
   });
 }

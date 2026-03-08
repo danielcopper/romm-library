@@ -74,6 +74,12 @@ class TestPathChangeDetection:
 
         plugin._state["retrodeck_home_path"] = "/home/deck/retrodeck"
         plugin.loop = MagicMock()
+        _create_task_calls = []
+        def _close_coro_task(coro):
+            coro.close()
+            _create_task_calls.append(coro)
+            return MagicMock()
+        plugin.loop.create_task = _close_coro_task
 
         with patch("lib.retrodeck_config.get_retrodeck_home",
                     return_value="/run/media/deck/SD/retrodeck"):
@@ -81,7 +87,7 @@ class TestPathChangeDetection:
 
         assert plugin._state["retrodeck_home_path"] == "/run/media/deck/SD/retrodeck"
         assert plugin._state["retrodeck_home_path_previous"] == "/home/deck/retrodeck"
-        plugin.loop.create_task.assert_called_once()
+        assert len(_create_task_calls) == 1
 
     def test_empty_current_home_no_action(self, plugin, tmp_path):
         """If retrodeck_config returns empty string, do nothing."""

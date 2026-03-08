@@ -49,7 +49,12 @@ class TestStartDownload:
 
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
-        plugin.loop.create_task = MagicMock(return_value=MagicMock())
+        _create_task_calls = []
+        def _close_coro_task(coro):
+            coro.close()
+            _create_task_calls.append(coro)
+            return MagicMock()
+        plugin.loop.create_task = _close_coro_task
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
             result = await plugin.start_download(42)
@@ -57,7 +62,7 @@ class TestStartDownload:
         assert result["success"] is True
         assert 42 in plugin._download_queue
         assert plugin._download_queue[42]["status"] == "downloading"
-        plugin.loop.create_task.assert_called_once()
+        assert len(_create_task_calls) == 1
 
     @pytest.mark.asyncio
     async def test_rejects_already_downloading(self, plugin):
@@ -632,7 +637,10 @@ class TestPathTraversalFsName:
 
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
-        plugin.loop.create_task = MagicMock(return_value=MagicMock())
+        def _close_coro_task(coro):
+            coro.close()
+            return MagicMock()
+        plugin.loop.create_task = _close_coro_task
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
             result = await plugin.start_download(77)
@@ -641,8 +649,6 @@ class TestPathTraversalFsName:
         # The target path should use sanitized basename only
         queue_entry = plugin._download_queue[77]
         assert queue_entry["file_name"] == "passwd"
-        # create_task was called with args containing only the safe path
-        call_args = plugin.loop.create_task.call_args[0][0]
         # The coroutine was created — just verify the queue entry is safe
         assert ".." not in queue_entry["file_name"]
 
@@ -783,7 +789,10 @@ class TestStartDownloadReDownload:
 
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
-        plugin.loop.create_task = MagicMock(return_value=MagicMock())
+        def _close_coro_task(coro):
+            coro.close()
+            return MagicMock()
+        plugin.loop.create_task = _close_coro_task
 
         # Set status to completed (previous download)
         plugin._download_queue[42] = {"status": "completed"}

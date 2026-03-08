@@ -9,17 +9,19 @@ import {
 } from "@decky/ui";
 import {
   testConnection,
-  startSync,
   cancelSync,
   getSyncStats,
   getSettings,
   saveLogLevel,
   fixRetroarchInputDriver,
+  syncPreview,
+  syncApplyDelta,
+  syncCancelPreview,
 } from "../api/backend";
 import { getSyncProgress } from "../utils/syncProgress";
 import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 import { requestSyncCancel } from "../utils/syncManager";
-import type { SyncProgress, SyncStats } from "../types";
+import type { SyncProgress, SyncStats, SyncPreview } from "../types";
 import type { MigrationStatus } from "../api/backend";
 
 type Page = "connection" | "platforms" | "danger" | "downloads" | "bios" | "savesync";
@@ -34,6 +36,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [status, setStatus] = useState("");
+  const [preview, setPreview] = useState<SyncPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [logLevel, setLogLevel] = useState("warn");
   const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string } | null>(null);
@@ -99,10 +102,19 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     setLoading(true);
     setSyncing(true);
     setStatus("");
+    setPreview(null);
     setSyncProgress({ running: true, phase: "starting", message: "Starting sync..." });
     try {
-      await startSync();
-      startPolling();
+      const result = await syncPreview();
+      if (result.success) {
+        setPreview(result);
+        setSyncing(false);
+        setLoading(false);
+      } else {
+        setStatus(result.message || "Preview failed");
+        setSyncing(false);
+        setLoading(false);
+      }
     } catch {
       setStatus("Failed to start sync");
       setSyncing(false);
@@ -110,7 +122,45 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleApply = async () => {
+    if (!preview) return;
+    setLoading(true);
+    setSyncing(true);
+    setSyncProgress({ running: true, phase: "applying", message: "Applying changes..." });
+    try {
+      const result = await syncApplyDelta(preview.preview_id);
+      if (result.success) {
+        setPreview(null);
+        startPolling();
+      } else {
+        setStatus(result.message);
+        setSyncing(false);
+        setLoading(false);
+      }
+    } catch {
+      setStatus("Failed to apply sync");
+      setSyncing(false);
+      setLoading(false);
+    }
+  };
+
+  const handleDismiss = async () => {
+    setPreview(null);
+    setStatus("");
+    try {
+      await syncCancelPreview();
+    } catch {
+      // ignore
+    }
+  };
+
   const handleCancel = async () => {
+    if (preview) {
+      await handleDismiss();
+      setSyncing(false);
+      setLoading(false);
+      return;
+    }
     try {
       requestSyncCancel();
       const result = await cancelSync();
@@ -218,7 +268,46 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
       </PanelSection>
 
       <PanelSection title="Sync">
-        {!syncing ? (
+        {preview ? (
+          <>
+            <PanelSectionRow>
+              <Field
+                label="Preview"
+                description={
+                  preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count === 0
+                    ? "Everything is up to date."
+                    : `${preview.summary.new_count} new, ${preview.summary.changed_count} updated, ${preview.summary.unchanged_count} unchanged` +
+                      (preview.summary.remove_count > 0
+                        ? `\n${preview.summary.remove_count} to remove` +
+                          (preview.summary.disabled_platform_remove_count > 0
+                            ? ` (${preview.summary.disabled_platform_remove_count} from disabled platforms)`
+                            : "")
+                        : "")
+                }
+              />
+            </PanelSectionRow>
+            {preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count > 0 ? (
+              <>
+                <PanelSectionRow>
+                  <ButtonItem layout="below" onClick={handleApply}>
+                    Apply Sync
+                  </ButtonItem>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ButtonItem layout="below" onClick={handleDismiss}>
+                    Cancel
+                  </ButtonItem>
+                </PanelSectionRow>
+              </>
+            ) : (
+              <PanelSectionRow>
+                <ButtonItem layout="below" onClick={handleDismiss}>
+                  Dismiss
+                </ButtonItem>
+              </PanelSectionRow>
+            )}
+          </>
+        ) : !syncing ? (
           <PanelSectionRow>
             <ButtonItem
               layout="below"
@@ -246,7 +335,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
             </PanelSectionRow>
           </>
         )}
-        {status && !syncing && (
+        {status && !syncing && !preview && (
           <PanelSectionRow>
             <Field label={status} />
           </PanelSectionRow>

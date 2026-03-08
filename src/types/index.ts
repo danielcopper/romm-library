@@ -115,9 +115,32 @@ export interface SyncAddItem {
   cover_path: string;
 }
 
+export interface SyncPreviewSummary {
+  new_count: number;
+  changed_count: number;
+  unchanged_count: number;
+  remove_count: number;
+  disabled_platform_remove_count: number;
+}
+
+export interface SyncPreview {
+  success: boolean;
+  summary: SyncPreviewSummary;
+  new_names: string[];
+  changed_names: string[];
+  preview_id: string;
+  message?: string;
+}
+
+export interface SyncChangedItem extends SyncAddItem {
+  existing_app_id: number;
+}
+
 export interface SyncApplyData {
   shortcuts: SyncAddItem[];
+  changed_shortcuts?: SyncChangedItem[];
   remove_rom_ids: number[];
+  collection_platform_app_ids?: Record<string, number[]>;
 }
 
 export interface FirmwareFile {

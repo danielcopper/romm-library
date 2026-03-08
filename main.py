@@ -46,6 +46,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "retrodeck_home_path": "",
         }
         self._pending_sync = {}
+        self._pending_delta = None
         self._download_tasks = {}   # rom_id -> asyncio.Task
         self._download_queue = {}   # rom_id -> DownloadItem dict
         self._download_in_progress = set()  # rom_ids currently being processed
