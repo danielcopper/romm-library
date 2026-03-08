@@ -180,20 +180,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
 
         return items
 
-    async def migrate_retrodeck_files(self, conflict_strategy=None):
-        """Move downloaded ROMs, BIOS, and save files from old RetroDECK path to new.
-
-        Args:
-            conflict_strategy: None to scan and return conflicts, "overwrite" to
-                replace existing destination files, "skip" to keep existing files
-                and just update state paths.
-        """
-        old_home = self._state.get("retrodeck_home_path_previous", "")
-        new_home = self._state.get("retrodeck_home_path", "")
-
-        if not old_home or not new_home or old_home == new_home:
-            return {"success": False, "message": "No path migration needed"}
-
+    def _migrate_retrodeck_files_io(self, old_home, new_home, conflict_strategy):
+        """Sync helper for migrate_retrodeck_files — FS traversal + moves in executor."""
         import shutil
 
         items = self._collect_migration_items(old_home, new_home)
@@ -288,14 +276,26 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "errors": errors,
         }
 
-    async def get_migration_status(self):
-        """Return whether a RetroDECK path migration is pending and file counts."""
+    async def migrate_retrodeck_files(self, conflict_strategy=None):
+        """Move downloaded ROMs, BIOS, and save files from old RetroDECK path to new.
+
+        Args:
+            conflict_strategy: None to scan and return conflicts, "overwrite" to
+                replace existing destination files, "skip" to keep existing files
+                and just update state paths.
+        """
         old_home = self._state.get("retrodeck_home_path_previous", "")
         new_home = self._state.get("retrodeck_home_path", "")
 
         if not old_home or not new_home or old_home == new_home:
-            return {"pending": False}
+            return {"success": False, "message": "No path migration needed"}
 
+        return await self.loop.run_in_executor(
+            None, self._migrate_retrodeck_files_io, old_home, new_home, conflict_strategy
+        )
+
+    def _get_migration_status_io(self, old_home, new_home):
+        """Sync helper for get_migration_status — FS traversal in executor."""
         items = self._collect_migration_items(old_home, new_home)
         roms_count = sum(1 for _, _, _, _, kind in items if kind == "rom")
         bios_count = sum(1 for _, _, _, _, kind in items if kind == "bios")
@@ -309,6 +309,18 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "bios_count": bios_count,
             "saves_count": saves_count,
         }
+
+    async def get_migration_status(self):
+        """Return whether a RetroDECK path migration is pending and file counts."""
+        old_home = self._state.get("retrodeck_home_path_previous", "")
+        new_home = self._state.get("retrodeck_home_path", "")
+
+        if not old_home or not new_home or old_home == new_home:
+            return {"pending": False}
+
+        return await self.loop.run_in_executor(
+            None, self._get_migration_status_io, old_home, new_home
+        )
 
     async def _unload(self):
         if self._sync_running:
@@ -512,34 +524,49 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "active_core_label": active_core_label,
         }
 
+    @staticmethod
+    def _set_system_core_io(retrodeck_home, platform_slug, core_label):
+        """Sync helper for set_system_core — XML read/parse/write in executor."""
+        from lib import es_de_config
+        es_de_config.set_system_override(
+            retrodeck_home, platform_slug, core_label or None
+        )
+        es_de_config._reset_cache()
+
     async def set_system_core(self, platform_slug, core_label):
         """Set system-wide core override. Pass empty string to reset to default."""
-        from lib import es_de_config
         retrodeck_home = retrodeck_config.get_retrodeck_home()
         if not retrodeck_home:
             return {"success": False, "message": "RetroDECK home not found"}
         try:
-            es_de_config.set_system_override(
-                retrodeck_home, platform_slug, core_label or None
+            await self.loop.run_in_executor(
+                None, self._set_system_core_io, retrodeck_home, platform_slug, core_label
             )
-            es_de_config._reset_cache()
             bios = await self.check_platform_bios(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set system core: {e}")
             return {"success": False, "message": str(e)}
 
+    @staticmethod
+    def _set_game_core_io(retrodeck_home, platform_slug, rom_path, core_label):
+        """Sync helper for set_game_core — XML read/parse/write in executor."""
+        from lib import es_de_config
+        es_de_config.set_game_override(
+            retrodeck_home, platform_slug, rom_path, core_label or None
+        )
+        es_de_config._reset_cache()
+
     async def set_game_core(self, platform_slug, rom_path, core_label):
         """Set per-game core override. Pass empty string to reset to platform default."""
-        from lib import es_de_config
         retrodeck_home = retrodeck_config.get_retrodeck_home()
         if not retrodeck_home:
             return {"success": False, "message": "RetroDECK home not found"}
         try:
-            es_de_config.set_game_override(
-                retrodeck_home, platform_slug, rom_path, core_label or None
+            await self.loop.run_in_executor(
+                None, self._set_game_core_io,
+                retrodeck_home, platform_slug, rom_path, core_label
             )
-            es_de_config._reset_cache()
             # Extract rom filename from path for per-game core detection
             rom_filename = rom_path.lstrip("./") if rom_path else None
             bios = await self.check_platform_bios(platform_slug, rom_filename=rom_filename)

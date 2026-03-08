@@ -24,6 +24,12 @@ def plugin():
     return p
 
 
+@pytest.fixture(autouse=True)
+async def _set_event_loop(plugin):
+    """Ensure plugin.loop matches the running event loop for async tests."""
+    plugin.loop = asyncio.get_event_loop()
+
+
 class TestStartDownload:
     @pytest.mark.asyncio
     async def test_starts_download_task(self, plugin, tmp_path):
@@ -1139,3 +1145,112 @@ class TestRemoveRomCleansSaveSyncState:
         assert plugin._save_sync_state["playtime"] == {}
         # _save_save_sync_state should have been called
         assert len(save_calls) == 1
+
+
+class TestPruneDownloadQueue:
+    def test_keeps_active_downloads(self, plugin):
+        """Active (downloading) items are never pruned."""
+        for i in range(60):
+            plugin._download_queue[i] = {"rom_id": i, "status": "downloading"}
+        plugin._prune_download_queue()
+        assert len(plugin._download_queue) == 60
+
+    def test_removes_oldest_terminal_when_over_limit(self, plugin):
+        """When there are more than 50 terminal items, remove the oldest."""
+        # Insert 60 completed items (rom_id 0..59)
+        for i in range(60):
+            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
+        plugin._prune_download_queue()
+        # Should keep the 50 most recent (10..59)
+        assert len(plugin._download_queue) == 50
+        for i in range(10):
+            assert i not in plugin._download_queue
+        for i in range(10, 60):
+            assert i in plugin._download_queue
+
+    def test_does_nothing_when_under_limit(self, plugin):
+        """No pruning if terminal count is at or below the limit."""
+        for i in range(30):
+            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
+        plugin._prune_download_queue()
+        assert len(plugin._download_queue) == 30
+
+    def test_does_nothing_at_exactly_limit(self, plugin):
+        """No pruning when terminal count is exactly 50."""
+        for i in range(50):
+            plugin._download_queue[i] = {"rom_id": i, "status": "failed"}
+        plugin._prune_download_queue()
+        assert len(plugin._download_queue) == 50
+
+    def test_mixed_active_and_terminal(self, plugin):
+        """Active items are kept; only terminal items count toward the limit."""
+        # 5 active + 55 completed = 55 terminal -> prune 5 oldest terminal
+        for i in range(5):
+            plugin._download_queue[1000 + i] = {"rom_id": 1000 + i, "status": "downloading"}
+        for i in range(55):
+            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
+        plugin._prune_download_queue()
+        # 5 active + 50 terminal = 55 total
+        assert len(plugin._download_queue) == 55
+        # All active still present
+        for i in range(5):
+            assert 1000 + i in plugin._download_queue
+        # Oldest 5 terminal removed (0..4)
+        for i in range(5):
+            assert i not in plugin._download_queue
+        # Remaining terminal still present (5..54)
+        for i in range(5, 55):
+            assert i in plugin._download_queue
+
+    def test_handles_all_terminal_statuses(self, plugin):
+        """Completed, failed, and cancelled items are all treated as terminal."""
+        for i in range(20):
+            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
+        for i in range(20, 40):
+            plugin._download_queue[i] = {"rom_id": i, "status": "failed"}
+        for i in range(40, 60):
+            plugin._download_queue[i] = {"rom_id": i, "status": "cancelled"}
+        plugin._prune_download_queue()
+        assert len(plugin._download_queue) == 50
+        # Oldest 10 (all completed, 0..9) should be removed
+        for i in range(10):
+            assert i not in plugin._download_queue
+
+
+class TestClearCompletedDownloads:
+    @pytest.mark.asyncio
+    async def test_removes_all_terminal_items(self, plugin):
+        plugin._download_queue[1] = {"rom_id": 1, "status": "completed"}
+        plugin._download_queue[2] = {"rom_id": 2, "status": "failed"}
+        plugin._download_queue[3] = {"rom_id": 3, "status": "cancelled"}
+        result = await plugin.clear_completed_downloads()
+        assert result["success"] is True
+        assert result["removed"] == 3
+        assert len(plugin._download_queue) == 0
+
+    @pytest.mark.asyncio
+    async def test_keeps_active_downloads(self, plugin):
+        plugin._download_queue[1] = {"rom_id": 1, "status": "downloading"}
+        plugin._download_queue[2] = {"rom_id": 2, "status": "completed"}
+        plugin._download_queue[3] = {"rom_id": 3, "status": "downloading"}
+        result = await plugin.clear_completed_downloads()
+        assert result["success"] is True
+        assert result["removed"] == 1
+        assert len(plugin._download_queue) == 2
+        assert 1 in plugin._download_queue
+        assert 3 in plugin._download_queue
+
+    @pytest.mark.asyncio
+    async def test_empty_queue(self, plugin):
+        result = await plugin.clear_completed_downloads()
+        assert result["success"] is True
+        assert result["removed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_only_active_items(self, plugin):
+        plugin._download_queue[1] = {"rom_id": 1, "status": "downloading"}
+        plugin._download_queue[2] = {"rom_id": 2, "status": "downloading"}
+        result = await plugin.clear_completed_downloads()
+        assert result["success"] is True
+        assert result["removed"] == 0
+        assert len(plugin._download_queue) == 2

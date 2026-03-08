@@ -195,6 +195,16 @@ class SgdbMixin:
 
         return {"base64": None, "no_api_key": False}
 
+    def _verify_sgdb_api_key_io(self, api_key):
+        """Sync helper for verify_sgdb_api_key — full HTTP round-trip in executor."""
+        url = "https://www.steamgriddb.com/api/v2/search/autocomplete/test"
+        req = urllib.request.Request(url, method="GET")
+        req.add_header("Authorization", f"Bearer {api_key}")
+        req.add_header("User-Agent", "decky-romm-sync/0.1")
+        ctx = ssl.create_default_context(cafile=_ca_bundle())
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+            return json.loads(resp.read().decode())
+
     async def verify_sgdb_api_key(self, api_key=None):
         # Use saved key if no valid key provided (modal pattern doesn't hold the real key)
         if not api_key or api_key == "••••":
@@ -202,15 +212,9 @@ class SgdbMixin:
         if not api_key:
             return {"success": False, "message": "No API key configured"}
         try:
-            url = "https://www.steamgriddb.com/api/v2/search/autocomplete/test"
-            req = urllib.request.Request(url, method="GET")
-            req.add_header("Authorization", f"Bearer {api_key}")
-            req.add_header("User-Agent", "decky-romm-sync/0.1")
-            ctx = ssl.create_default_context(cafile=_ca_bundle())
-            resp = await self.loop.run_in_executor(
-                None, lambda: urllib.request.urlopen(req, context=ctx, timeout=30)
+            data = await self.loop.run_in_executor(
+                None, self._verify_sgdb_api_key_io, api_key
             )
-            data = json.loads(resp.read().decode())
             if data.get("success"):
                 return {"success": True, "message": "API key is valid"}
             return {"success": False, "message": "API key rejected by SteamGridDB"}
