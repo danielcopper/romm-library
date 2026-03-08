@@ -328,14 +328,18 @@ class SyncMixin:
         await self._emit_progress("roms", message="Fetching ROMs...", step=2)
 
         all_roms = []
-        for platform in platforms:
+        total_platforms = len(platforms)
+        for pi, platform in enumerate(platforms, 1):
             if self._sync_cancel:
                 raise asyncio.CancelledError("Sync cancelled")
 
             platform_id = platform["id"]
             platform_name = platform.get("name", platform.get("display_name", "Unknown"))
             offset = 0
-            limit = 50
+            limit = 250
+
+            await self._emit_progress("roms", current=len(all_roms),
+                message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})", step=2)
 
             while True:
                 if self._sync_cancel:
@@ -363,7 +367,8 @@ class SyncMixin:
                     rom["platform_slug"] = platform.get("slug", "")
 
                 all_roms.extend(rom_list)
-                await self._emit_progress("roms", current=len(all_roms), message=f"Fetching ROMs... {len(all_roms)} found", step=2)
+                await self._emit_progress("roms", current=len(all_roms),
+                    message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})", step=2)
 
                 if len(rom_list) < limit:
                     break
