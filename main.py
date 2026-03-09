@@ -79,20 +79,13 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         if stored_home == current_home:
             return
 
-        if stored_home:
-            old_home = stored_home
-        else:
-            # First run — check if files exist at the hardcoded fallback path
-            # that differ from the actual RetroDECK config path
-            fallback_home = os.path.join(decky.DECKY_USER_HOME, "retrodeck")
-            if fallback_home != current_home and os.path.isdir(fallback_home):
-                # Files may have been downloaded to fallback before we read config
-                old_home = fallback_home
-            else:
-                # Genuine first run, no migration needed
-                self._state["retrodeck_home_path"] = current_home
-                self._save_state()
-                return
+        if not stored_home:
+            # First run — just store the current path, no migration needed
+            self._state["retrodeck_home_path"] = current_home
+            self._save_state()
+            return
+
+        old_home = stored_home
 
         # Path changed — store both old and new, emit event
         self._state["retrodeck_home_path_previous"] = old_home
