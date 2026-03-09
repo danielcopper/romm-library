@@ -11,6 +11,7 @@ import {
   ConfirmModal,
   showModal,
 } from "@decky/ui";
+import { FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 import {
   testConnection,
   cancelSync,
@@ -256,29 +257,39 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
         <PanelSectionRow>
           <Field
             label="Connection"
-            description={
-              connected === null
-                ? "Checking..."
-                : connected
-                  ? "Connected"
-                  : "Not connected"
-            }
-          />
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {connected === null ? (
+                <>
+                  <Spinner width={14} height={14} />
+                  <span style={{ fontSize: "12px", opacity: 0.7 }}>Checking...</span>
+                </>
+              ) : connected ? (
+                <>
+                  <FaCheckCircle style={{ color: "#59bf40", fontSize: "14px" }} />
+                  <span style={{ fontSize: "12px" }}>Connected</span>
+                </>
+              ) : (
+                <>
+                  <FaTimesCircle style={{ color: "#d4343c", fontSize: "14px" }} />
+                  <span style={{ fontSize: "12px" }}>Not connected</span>
+                </>
+              )}
+            </div>
+          </Field>
         </PanelSectionRow>
         {stats && (
           <>
             <PanelSectionRow>
-              <Field
-                label="Last sync"
-                description={formatLastSync(stats.last_sync)}
-              />
+              <Field label="Last sync">
+                <span style={{ fontSize: "12px" }}>{formatLastSync(stats.last_sync)}</span>
+              </Field>
             </PanelSectionRow>
             {stats.roms > 0 && (
               <PanelSectionRow>
-                <Field
-                  label="Library"
-                  description={`${stats.roms} ROMs from ${stats.platforms} platforms`}
-                />
+                <Field label="Library">
+                  <span style={{ fontSize: "12px" }}>{stats.roms} ROMs · {stats.platforms} platforms</span>
+                </Field>
               </PanelSectionRow>
             )}
           </>
