@@ -13,7 +13,7 @@
       "retrodeck",
       "emulation"
     ],
-    "description": "Sync your RomM library to Steam as non-steam shortcuts",
-    "image": ""
+    "description": "Sync your self-hosted RomM library to Steam. Games appear as native shortcuts with cover art, metadata, and launch via RetroDECK. Includes ROM downloads, BIOS management, save file sync, and SteamGridDB artwork.",
+    "image": "https://raw.githubusercontent.com/danielcopper/decky-romm-sync/main/assets/store_image.png"
   }
 }
