@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.10.0...decky-romm-sync-v0.10.1) (2026-03-09)
+
+
+### Bug Fixes
+
+* don't show migration warning on fresh install ([#80](https://github.com/danielcopper/decky-romm-sync/issues/80)) ([c78d703](https://github.com/danielcopper/decky-romm-sync/commit/c78d7033972e21d534dd573138b595c73a9134d3))
+
 ## [0.10.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.5...decky-romm-sync-v0.10.0) (2026-03-09)
 
 
