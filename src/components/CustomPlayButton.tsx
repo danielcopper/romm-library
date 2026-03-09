@@ -35,7 +35,7 @@ import { getRommConnectionState } from "../utils/connectionState";
 import { showConflictResolutionModal } from "./ConflictModal";
 import type { DownloadProgressEvent, DownloadCompleteEvent } from "../types";
 
-type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "syncing" | "play" | "launching";
+type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "syncing" | "play" | "launching" | "dl_complete" | "uninstalling";
 
 interface DownloadProgress {
   bytesDownloaded: number;
@@ -56,11 +56,12 @@ const BLUE_RIGHT: [number, number, number] = [0, 120, 212];   // #0078d4
 const GREEN_LEFT: [number, number, number] = [80, 200, 47];   // #50c82f
 const GREEN_RIGHT: [number, number, number] = [24, 177, 78];  // #18b14e
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+function formatProgress(downloaded: number, total: number): string {
+  // Show "x / y MB" with unit only on the total
+  if (total < 1024) return `${downloaded} / ${total} B`;
+  if (total < 1024 * 1024) return `${(downloaded / 1024).toFixed(1)} / ${(total / 1024).toFixed(1)} KB`;
+  if (total < 1024 * 1024 * 1024) return `${(downloaded / (1024 * 1024)).toFixed(1)} / ${(total / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(downloaded / (1024 * 1024 * 1024)).toFixed(2)} / ${(total / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 interface CustomPlayButtonProps {
@@ -165,16 +166,19 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
       "download_complete",
       (evt: DownloadCompleteEvent) => {
         if (evt.rom_id !== romIdRef.current) return;
-        setState("play");
-        setActionPending(false);
+        // Brief completion flash before transitioning to Play
         setDlProgress(null);
+        setActionPending(false);
+        setState("dl_complete");
+        setTimeout(() => setState("play"), 1100);
       },
     );
 
     const onUninstall = (e: Event) => {
       const romId = (e as CustomEvent).detail?.rom_id;
       if (romId !== romIdRef.current) return;
-      setState("download");
+      // Don't override uninstalling animation if we triggered it ourselves
+      setState((prev) => prev === "uninstalling" ? prev : "download");
       setActionPending(false);
     };
     window.addEventListener("romm_rom_uninstalled", onUninstall);
@@ -343,6 +347,10 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
       if (result.success) {
         window.dispatchEvent(new CustomEvent("romm_rom_uninstalled", { detail: { rom_id: romId } }));
         toaster.toast({ title: "RomM Sync", body: `${romName || "ROM"} uninstalled` });
+        // Dark pulse transition before showing Download button
+        setState("uninstalling");
+        setTimeout(() => setState("download"), 500);
+        return;
       } else {
         toaster.toast({ title: "RomM Sync", body: result.message || "Uninstall failed" });
       }
@@ -402,24 +410,57 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     fontWeight: "bold",
   };
 
+  if (state === "dl_complete") {
+    // "Ready!" state — must match the Play button exactly (same classes + Green tint)
+    return (
+      <Focusable
+        className={[appActionButtonClasses?.PlayButtonContainer, appActionButtonClasses?.Green].filter(Boolean).join(" ")}
+        style={btnContainerStyle}
+      >
+        <DialogButton
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-play", "romm-dl-complete-flash"].filter(Boolean).join(" ")}
+          style={{
+            ...mainBtnStyle,
+            borderRadius: "2px",
+            background: "linear-gradient(to right, #80e62a, #01b866)",
+            filter: "brightness(1.2)",
+          }}
+          disabled
+        >
+          <span className="romm-dl-label">Ready!</span>
+        </DialogButton>
+      </Focusable>
+    );
+  }
+
   if (state === "download") {
     const t = dlProgress && dlProgress.totalBytes > 0
       ? dlProgress.bytesDownloaded / dlProgress.totalBytes
       : 0;
     const downloading = actionPending && dlProgress;
 
-    // Gradually shift the entire button color from blue to green
-    const dlBackground = isOffline
-      ? "linear-gradient(to right, #6b7b8b, #5a6a7a)"
-      : downloading
-        ? `linear-gradient(to right, ${lerpColor(BLUE_LEFT, GREEN_LEFT, t)}, ${lerpColor(BLUE_RIGHT, GREEN_RIGHT, t)})`
-        : "linear-gradient(to right, #1a9fff, #0078d4)";
+    // Fill color shifts from blue to green as download progresses
+    const fillColor = downloading
+      ? `linear-gradient(to right, ${lerpColor(BLUE_LEFT, GREEN_LEFT, t)}, ${lerpColor(BLUE_RIGHT, GREEN_RIGHT, t)})`
+      : "linear-gradient(to right, #1a9fff, #0078d4)";
+
+    // Pulse color shifts from blue to green with progress
+    const pulseColor = downloading
+      ? lerpColor(BLUE_LEFT, GREEN_LEFT, t)
+      : "rgba(26,159,255,0.7)";
 
     const dlLabel = downloading
-      ? `${formatBytes(dlProgress.bytesDownloaded)} / ${formatBytes(dlProgress.totalBytes)}`
+      ? formatProgress(dlProgress.bytesDownloaded, dlProgress.totalBytes)
       : actionPending
         ? "Starting..."
         : "Download";
+
+    // Unfilled portion: darker shade of the current fill color
+    const baseBg = isOffline
+      ? "linear-gradient(to right, #6b7b8b, #5a6a7a)"
+      : downloading
+        ? `linear-gradient(to right, ${lerpColor([10, 50, 90], [5, 35, 65], t)}, ${lerpColor([5, 35, 65], [5, 50, 30], t)})`
+        : "linear-gradient(to right, #1a9fff, #0078d4)";
 
     return (
       <Focusable
@@ -428,16 +469,53 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         style={btnContainerStyle}
       >
         <DialogButton
-          className={[appActionButtonClasses?.PlayButton, "romm-btn-download"].filter(Boolean).join(" ")}
+          className={[
+            appActionButtonClasses?.PlayButton,
+            "romm-btn-download",
+            downloading && "romm-dl-active",
+          ].filter(Boolean).join(" ")}
           style={{
             ...mainBtnStyle,
             borderRadius: "2px",
-            background: dlBackground,
-          }}
+            background: baseBg,
+            "--romm-pulse-color": pulseColor,
+          } as React.CSSProperties}
           onClick={handleDownload}
           disabled={actionPending || isOffline}
         >
-          {dlLabel}
+          {/* Progress fill bar */}
+          {downloading && (
+            <div
+              className="romm-dl-fill"
+              style={{
+                width: `${t * 100}%`,
+                background: fillColor,
+              }}
+            />
+          )}
+          <span className="romm-dl-label">{dlLabel}</span>
+        </DialogButton>
+      </Focusable>
+    );
+  }
+
+  if (state === "uninstalling") {
+    return (
+      <Focusable
+        className={appActionButtonClasses?.PlayButtonContainer}
+        style={btnContainerStyle}
+      >
+        <DialogButton
+          className={[appActionButtonClasses?.PlayButton, "romm-btn-download", "romm-dl-uninstall-flash"].filter(Boolean).join(" ")}
+          style={{
+            ...mainBtnStyle,
+            borderRadius: "2px",
+            background: "linear-gradient(to right, #47b3ff, #1a9fff)",
+            filter: "brightness(1.3)",
+          }}
+          disabled
+        >
+          <span className="romm-dl-label">Uninstalled</span>
         </DialogButton>
       </Focusable>
     );
