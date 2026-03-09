@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.5...decky-romm-sync-v0.10.0) (2026-03-09)
+
+
+### Features
+
+* delta sync with preview before apply ([#76](https://github.com/danielcopper/decky-romm-sync/issues/76)) ([8060710](https://github.com/danielcopper/decky-romm-sync/commit/80607101e841c7883522d1a42bf7503458be3051))
+* frontend error differentiation with user-friendly messages ([#73](https://github.com/danielcopper/decky-romm-sync/issues/73)) ([18ec727](https://github.com/danielcopper/decky-romm-sync/commit/18ec72770be29a14c05e2145bdddef221b90349b))
+
+
+### Bug Fixes
+
+* download queue pruning and async blocking I/O audit (EXT-3, EXT-5) ([#75](https://github.com/danielcopper/decky-romm-sync/issues/75)) ([75d5cb0](https://github.com/danielcopper/decky-romm-sync/commit/75d5cb03e7ebbf6ed638b8645c9d0828a29dc1e0))
+* resolve 8 Dependabot security alerts (minimatch ReDoS, rollup path traversal) ([#78](https://github.com/danielcopper/decky-romm-sync/issues/78)) ([57114c2](https://github.com/danielcopper/decky-romm-sync/commit/57114c28058c38e20ca5e3445c815d89f7a84d8c))
+
 ## [0.9.5](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.9.4...decky-romm-sync-v0.9.5) (2026-03-07)
 
 
