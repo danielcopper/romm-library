@@ -33,6 +33,7 @@ import {
 } from "../api/backend";
 import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict, Achievement, AchievementProgress, EarnedAchievement } from "../types";
 import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
+import { scrollFocusedToCenter } from "../utils/scrollHelpers";
 
 interface RomMGameInfoPanelProps {
   appId: number;
@@ -413,24 +414,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         display: "block",
       },
       noFocusRing: false,
-      onFocus: (e: FocusEvent) => {
-        const el = e.currentTarget as HTMLElement;
-        setTimeout(() => {
-          if (!el) return;
-          let scrollParent: HTMLElement | null = el.parentElement;
-          while (scrollParent) {
-            const ov = window.getComputedStyle(scrollParent).overflowY;
-            if (ov === "scroll" || ov === "auto") break;
-            scrollParent = scrollParent.parentElement;
-          }
-          if (scrollParent) {
-            const elRect = el.getBoundingClientRect();
-            const spRect = scrollParent.getBoundingClientRect();
-            const targetScroll = scrollParent.scrollTop + (elRect.top - spRect.top) - (spRect.height / 2) + (elRect.height / 2);
-            scrollParent.scrollTo({ top: targetScroll, behavior: "smooth" });
-          }
-        }, 50);
-      },
+      onFocus: scrollFocusedToCenter,
     },
       title ? createElement("div", { className: "romm-panel-section-title" }, title) : null,
       ...children.filter(Boolean),
@@ -970,27 +954,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           key: `cheevo-${a.ra_id}`,
           className: rowClasses,
           noFocusRing: false,
-          onFocus: (e: FocusEvent) => {
-            // Delay to override Steam's built-in focus scroll
-            const el = e.currentTarget as HTMLElement;
-            setTimeout(() => {
-              if (!el) return;
-              // Find the scroll container (ancestor with overflowY=scroll)
-              let scrollParent: HTMLElement | null = el.parentElement;
-              while (scrollParent) {
-                const ov = window.getComputedStyle(scrollParent).overflowY;
-                if (ov === "scroll" || ov === "auto") break;
-                scrollParent = scrollParent.parentElement;
-              }
-              if (scrollParent) {
-                const elRect = el.getBoundingClientRect();
-                const spRect = scrollParent.getBoundingClientRect();
-                // Scroll so focused element is centered in viewport
-                const targetScroll = scrollParent.scrollTop + (elRect.top - spRect.top) - (spRect.height / 2) + (elRect.height / 2);
-                scrollParent.scrollTo({ top: targetScroll, behavior: "smooth" });
-              }
-            }, 50);
-          },
+          onFocus: scrollFocusedToCenter,
           style: {
             background: "transparent",
             border: "none",
@@ -1097,7 +1061,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     );
   } else if (state.activeTab === "achievements") {
     // Don't wrap in section() — that creates ONE giant focusable element.
-    // Individual rows are now Focusable, enabling focus-driven scrolling.
+    // Individual rows are now DialogButtons, enabling focus-driven scrolling.
     activeTabContent = achievementsContent;
   } else if (state.activeTab === "saves") {
     activeTabContent = saveSyncSection;
