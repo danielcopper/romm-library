@@ -413,7 +413,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
           </>
         ) : (
           <>
-            {syncProgress && syncProgress.phase === "applying" ? (
+            {syncProgress && syncProgress.step && syncProgress.totalSteps ? (
               <PanelSectionRow>
                 <ProgressBarWithInfo
                   indeterminate={progressFraction === undefined}

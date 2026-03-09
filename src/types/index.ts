@@ -141,6 +141,8 @@ export interface SyncApplyData {
   changed_shortcuts?: SyncChangedItem[];
   remove_rom_ids: number[];
   collection_platform_app_ids?: Record<string, number[]>;
+  next_step?: number;
+  total_steps?: number;
 }
 
 export interface FirmwareFile {

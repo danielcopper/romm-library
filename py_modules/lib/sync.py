@@ -190,18 +190,32 @@ class SyncMixin:
             if pname and app_id:
                 collection_map.setdefault(pname, []).append(app_id)
 
-        # Download artwork for new + changed ROMs only
+        # Calculate apply step plan
         delta_roms = delta.get("delta_roms", [])
-        apply_total_steps = 2 if delta_roms else 1
-        apply_step = 0
-        if delta_roms:
-            apply_step += 1
-            await self._emit_progress("artwork", total=len(delta_roms),
-                message=f"Downloading artwork... 0/{len(delta_roms)}",
-                step=apply_step, total_steps=apply_total_steps)
+        has_artwork = len(delta_roms) > 0
+        has_shortcuts = len(delta["new"]) + len(delta["changed"]) > 0
+        has_removals = len(delta["remove_rom_ids"]) > 0
+        # Collections step is always counted (unchanged shortcuts need collection updates too)
+
+        apply_steps = []
+        if has_artwork:
+            apply_steps.append("artwork")
+        if has_shortcuts:
+            apply_steps.append("shortcuts")
+        if has_removals:
+            apply_steps.append("removals")
+        apply_steps.append("collections")
+        total_steps = len(apply_steps)
+        current_step = 0
+
+        # Step: Download artwork
+        if has_artwork:
+            current_step += 1
+            await self._emit_progress("applying", total=len(delta_roms),
+                message=f"Downloading artwork 0/{len(delta_roms)}",
+                step=current_step, total_steps=total_steps)
             cover_paths = await self._download_artwork(
-                delta_roms, progress_step=apply_step, progress_total_steps=apply_total_steps)
-            # Update cover_path in the shortcut data
+                delta_roms, progress_step=current_step, progress_total_steps=total_steps)
             for sd in delta["new"] + delta["changed"]:
                 sd["cover_path"] = cover_paths.get(sd["rom_id"], "")
 
@@ -215,17 +229,22 @@ class SyncMixin:
         }
         self._save_state()
 
-        apply_step += 1
-        total_changes = len(delta["new"]) + len(delta["changed"]) + len(delta["remove_rom_ids"])
-        await self._emit_progress("applying", total=total_changes, message="Applying changes...",
-            step=apply_step, total_steps=apply_total_steps)
+        # Figure out which step the frontend starts at
+        next_step = current_step + 1
 
-        # Emit delta
+        total_changes = len(delta["new"]) + len(delta["changed"])
+        await self._emit_progress("applying", total=total_changes,
+            message=f"Applying shortcuts 0/{total_changes}",
+            step=next_step, total_steps=total_steps)
+
+        # Emit delta with step plan for frontend
         await decky.emit("sync_apply", {
             "shortcuts": delta["new"],
             "changed_shortcuts": delta["changed"],
             "remove_rom_ids": delta["remove_rom_ids"],
             "collection_platform_app_ids": collection_map,
+            "next_step": next_step,
+            "total_steps": total_steps,
         })
 
         decky.logger.info(
@@ -261,7 +280,7 @@ class SyncMixin:
         self._pending_delta = None
         return {"success": True}
 
-    async def _emit_progress(self, phase, current=0, total=0, message="", running=True, step=0, total_steps=6):
+    async def _emit_progress(self, phase, current=0, total=0, message="", running=True, step=0, total_steps=0):
         """Update _sync_progress and emit sync_progress event to frontend."""
         self._sync_progress = {
             "running": running,
@@ -312,7 +331,7 @@ class SyncMixin:
         Emits sync_progress events throughout."""
 
         # Phase 1: Fetch platforms
-        await self._emit_progress("platforms", message="Fetching platforms...", step=1)
+        await self._emit_progress("platforms", message="Fetching platforms...")
 
         platforms = await self.loop.run_in_executor(
             None, self._romm_request, "/api/platforms"
@@ -333,7 +352,7 @@ class SyncMixin:
         decky.logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
 
         # Phase 2: Fetch ROMs per platform (incremental if possible)
-        await self._emit_progress("roms", message="Fetching ROMs...", step=2)
+        await self._emit_progress("roms", message="Fetching ROMs...")
 
         last_sync = self._state.get("last_sync")
         registry = self._state.get("shortcut_registry", {})
@@ -393,7 +412,7 @@ class SyncMixin:
                                     "sgdb_id": entry.get("sgdb_id"),
                                 })
                         await self._emit_progress("roms", current=len(all_roms),
-                            message=f"{platform_name} unchanged ({pi}/{total_platforms})", step=2)
+                            message=f"{platform_name} unchanged ({pi}/{total_platforms})")
                         continue
                     else:
                         decky.logger.info(
@@ -407,7 +426,7 @@ class SyncMixin:
 
             # Full fetch for this platform
             await self._emit_progress("roms", current=len(all_roms),
-                message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})", step=2)
+                message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})")
 
             while True:
                 if self._sync_cancel:
@@ -437,7 +456,7 @@ class SyncMixin:
 
                 all_roms.extend(rom_list)
                 await self._emit_progress("roms", current=len(all_roms),
-                    message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})", step=2)
+                    message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})")
 
                 if len(rom_list) < limit:
                     break
@@ -451,8 +470,6 @@ class SyncMixin:
         )
 
         # Phase 3: Prepare shortcut data
-        await self._emit_progress("shortcuts", total=len(all_roms), message="Preparing shortcuts...", step=3)
-
         exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
         start_dir = os.path.join(decky.DECKY_PLUGIN_DIR, "bin")
 
@@ -498,10 +515,28 @@ class SyncMixin:
                 self._sync_running = False
                 return
 
-            # Phase 4: Download artwork
-            await self._emit_progress("artwork", total=len(all_roms),
-                message="Downloading artwork...", step=4)
-            cover_paths = await self._download_artwork(all_roms)
+            # Calculate step plan for full sync
+            has_artwork = len(all_roms) > 0
+            has_shortcuts = len(shortcuts_data) > 0
+            full_steps = []
+            if has_artwork:
+                full_steps.append("artwork")
+            if has_shortcuts:
+                full_steps.append("shortcuts")
+            full_steps.append("collections")
+            full_total_steps = len(full_steps)
+            full_current_step = 0
+
+            if has_artwork:
+                full_current_step += 1
+                await self._emit_progress("applying", total=len(all_roms),
+                    message=f"Downloading artwork 0/{len(all_roms)}",
+                    step=full_current_step, total_steps=full_total_steps)
+                cover_paths = await self._download_artwork(
+                    all_roms, progress_step=full_current_step,
+                    progress_total_steps=full_total_steps)
+            else:
+                cover_paths = {}
 
             if self._sync_cancel:
                 await self._finish_sync("Sync cancelled")
@@ -517,8 +552,11 @@ class SyncMixin:
                 if int(rid) not in current_rom_ids
             ]
 
-            # Phase 5: Emit sync_apply for frontend to process via SteamClient
-            await self._emit_progress("applying", total=len(shortcuts_data), message="Applying shortcuts...", step=5)
+            # Emit sync_apply for frontend to process via SteamClient
+            next_step = full_current_step + 1
+            await self._emit_progress("applying", total=len(shortcuts_data),
+                message=f"Applying shortcuts 0/{len(shortcuts_data)}",
+                step=next_step, total_steps=full_total_steps)
 
             # Save sync stats (registry updated by report_sync_results)
             self._state["sync_stats"] = {
@@ -533,6 +571,8 @@ class SyncMixin:
             await decky.emit("sync_apply", {
                 "shortcuts": shortcuts_data,
                 "remove_rom_ids": stale_rom_ids,
+                "next_step": next_step,
+                "total_steps": full_total_steps,
             })
 
             decky.logger.info(
@@ -782,7 +822,9 @@ class SyncMixin:
             if self._sync_cancel:
                 return cover_paths
 
-            await self._emit_progress("artwork", current=i + 1, total=total, message=f"Downloading artwork... {i + 1}/{total}", step=progress_step, total_steps=progress_total_steps)
+            await self._emit_progress("applying", current=i + 1, total=total,
+                message=f"Downloading artwork {i + 1}/{total}",
+                step=progress_step, total_steps=progress_total_steps)
 
             # Determine cover URL from ROM data
             cover_url = rom.get("path_cover_large") or rom.get("path_cover_small")
