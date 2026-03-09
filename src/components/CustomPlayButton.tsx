@@ -622,6 +622,21 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           backgroundSize: "330% 100%",
         }}
         onClick={handlePlay}
+        onFocus={(e: any) => {
+          const el = e.currentTarget as HTMLElement;
+          setTimeout(() => {
+            if (!el) return;
+            let scrollParent: HTMLElement | null = el.parentElement;
+            while (scrollParent) {
+              const ov = window.getComputedStyle(scrollParent).overflowY;
+              if (ov === "scroll" || ov === "auto") break;
+              scrollParent = scrollParent.parentElement;
+            }
+            if (scrollParent) {
+              scrollParent.scrollTo({ top: 0, behavior: "smooth" });
+            }
+          }, 50);
+        }}
       >
         Play
       </DialogButton>

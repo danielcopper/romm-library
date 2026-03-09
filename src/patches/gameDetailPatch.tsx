@@ -185,13 +185,21 @@ export function registerGameDetailPatch() {
                   appId,
                 });
 
+                // Wrap in a container with the native AppDetailsOverviewPanel
+                // CSS class so it participates in InnerContainer's flex layout
+                // and scroll system the same way the native panel does.
+                const rommWrapper = createElement("div", {
+                  key: "romm-play-section",
+                  className: appDetailsClasses?.AppDetailsOverviewPanel || "",
+                  "data-romm": "true",
+                }, rommPlaySection, rommInfoPanel);
+
                 if (nativeOverviewIdx >= 0) {
-                  debugLog(`gameDetailPatch: replacing AppDetailsOverviewPanel at index ${nativeOverviewIdx} with RomM components`);
-                  children.splice(nativeOverviewIdx, 1, rommPlaySection, rommInfoPanel);
+                  debugLog(`gameDetailPatch: replacing AppDetailsOverviewPanel at index ${nativeOverviewIdx} with RomM wrapper (cls=${appDetailsClasses?.AppDetailsOverviewPanel})`);
+                  children.splice(nativeOverviewIdx, 1, rommWrapper);
                 } else {
-                  // Fallback: insert after header if we can't find the native panel
-                  debugLog(`gameDetailPatch: AppDetailsOverviewPanel not found, inserting RomM components at index 1`);
-                  children.splice(1, 0, rommPlaySection, rommInfoPanel);
+                  debugLog(`gameDetailPatch: AppDetailsOverviewPanel not found, inserting RomM wrapper at index 1`);
+                  children.splice(1, 0, rommWrapper);
                 }
               }
             }
