@@ -49,13 +49,13 @@ Extends Phase 5 to standalone emulator save formats:
 - **Library management**: Detect removed/updated ROMs, stale state cleanup
 - **Offline mode**: Cache lists locally, queue operations
 - **Error handling**: Retry with backoff, toast notifications, detailed logging. ~~Frontend error differentiation~~: ✅ Done — `classify_error()`/`error_response()` in `errors.py` maps structured exceptions to user-friendly messages and `error_code` fields. All backend callables (`test_connection`, `start_download`, `_do_sync`, firmware, save sync) return `{success, message, error_code}`. Frontend `BackendResult` type with `RommErrorCode` union. Users now see "Authentication failed", "Server unreachable", "SSL certificate error", etc. instead of generic messages
-- **Connection settings UX**: Remove save button, save on popup confirm
+- ~~**Connection settings UX**: Remove save button, save on popup confirm~~ ✅ Done — auto-save on modal confirm, Save Settings button removed
 - **RomM playtime API**: When feature request #1225 ships, plug in delta-based accumulation
 - **Emulator save state sync**: RetroArch `.state` files (larger, version-specific, multiple slots)
 - **Steam gear menu**: Add to Favorites, Collections, Hide Game, etc.
 - **Save backup on enable**: Prompt to create local save backup when toggling save sync on, and as option during conflict resolution
 - **Screenshots gallery**: Custom IGDB screenshot gallery in game detail (deferred from Phase 4C)
-- **Sync preview / dry-run**: Show "X shortcuts to add, Y to remove, Z unchanged" before applying. Let user review changes before committing the sync.
+- ~~**Sync preview / dry-run**: Show "X shortcuts to add, Y to remove, Z unchanged" before applying. Let user review changes before committing the sync.~~ ✅ Done — delta sync with preview before apply (#76)
 - **Insecure SSL warning prominence**: Current toggle has a text description but no visual warning styling. Add warning icon/color and consider a confirmation dialog when enabling, since it allows MITM.
 
 ---
@@ -168,3 +168,6 @@ Custom game detail page for RomM games. RomMPlaySection with info items (Last Pl
 **Bugs 4-8, 10-12** all resolved. State consistency/startup pruning, SSL verification, settings permissions (0600), BIOS status reporting (553-entry registry with required/optional/hash validation), RetroDECK path resolution (SD card support, migration UI), per-core BIOS filtering (expat-based ES-DE config parser, core_defaults.json fallback).
 **Phase A — Per-core BIOS filtering**: Registry v4.0.0 with per-core `required` status. Active core resolution chain: per-game gamelist.xml → per-system gamelist.xml → live es_systems.xml → shipped core_defaults.json. BIOS detail shows all platform files with per-core annotations (one line per emulator). Dot colors: green=downloaded, red=missing+required by active core, orange=required by other core, grey=optional.
 **Phase B — Core switching UI**: Per-game CPU button (microchip icon) + per-platform dropdown in BiosManager. Writes to ES-DE gamelist.xml. Live UI updates via `core_changed` events. BiosManager works offline. Per-game override always writes explicit label (avoids confusion with platform overrides).
+
+### QAM Menu Restructuring ✅
+7 pages consolidated to 4. **Settings**: absorbs SaveSyncSettings + Log Level + RetroArch fix, auto-save connection fields. **Platforms**: Sync/BIOS tab toggle, BIOS lazy-loaded. **Data Management**: 3 per-platform lists merged into 1 with action modal. **MainPage**: inline downloads, 3 nav buttons (down from 6), consolidated RetroArch warning. Delta sync with preview before apply. Consistent sync progress display: spinner during preview, `[step/total] Description X/Y` progress bar during apply with dynamic step counting.
