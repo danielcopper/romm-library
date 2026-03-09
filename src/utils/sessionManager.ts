@@ -15,6 +15,7 @@ import {
   getAppIdRomIdMap,
   getSaveSyncSettings,
   getPendingConflicts,
+  syncAchievementsAfterSession,
   logInfo,
   logError,
 } from "../api/backend";
@@ -103,6 +104,11 @@ async function handleGameStop(): Promise<void> {
   } catch (e) {
     logError(`Failed to record session end: ${e}`);
   }
+
+  // Post-session achievement sync (fire-and-forget, non-blocking)
+  syncAchievementsAfterSession(romId)
+    .then(() => logInfo(`Achievement sync complete for romId=${romId}`))
+    .catch((e) => logError(`Achievement sync failed for romId=${romId}: ${e}`));
 
   // Post-exit save sync (if enabled) — quick healthcheck first to avoid wasting retries
   try {

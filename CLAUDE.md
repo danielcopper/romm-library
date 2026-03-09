@@ -92,7 +92,7 @@ Working (Phases 1-6 complete):
 - RetroDECK path migration (internal SSD ↔ SD card)
 - Native Steam metadata display (descriptions, genres, release date, controller support)
 
-See PLAN.md for the full roadmap (Phases 1-6 done, 7-8 planned).
+See PLAN.md for the full roadmap (Phases 1-6 done, 7=RetroAchievements+Tabs, 8=Save Sync v2, 9-10 deferred).
 
 ## Development
 

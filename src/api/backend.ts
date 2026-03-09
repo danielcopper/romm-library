@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress } from "../types";
 
 export interface BackendResult {
   success: boolean;
@@ -20,6 +20,8 @@ export interface CachedGameDetail {
   metadata?: Record<string, unknown> | null;
   bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string; cores?: Record<string, { required: boolean }>; used_by_active?: boolean }> } | null;
   rom_file?: string;
+  ra_id?: number | null;
+  achievement_summary?: AchievementSummary | null;
 }
 
 const _cachedGameDetailRaw = callable<[number], CachedGameDetail>("get_cached_game_detail");
@@ -138,3 +140,8 @@ export const migrateRetroDeckFiles = callable<[string | null], MigrationResult>(
 export const deleteLocalSaves = callable<[number], { success: boolean; deleted_count: number; message: string }>("delete_local_saves");
 export const deletePlatformSaves = callable<[string], { success: boolean; deleted_count: number; message: string }>("delete_platform_saves");
 export const deletePlatformBios = callable<[string], { success: boolean; deleted_count: number; message: string }>("delete_platform_bios");
+
+// Achievements callables
+export const getAchievements = callable<[number], AchievementList>("get_achievements");
+export const getAchievementProgress = callable<[number], AchievementProgress>("get_achievement_progress");
+export const syncAchievementsAfterSession = callable<[number], AchievementProgress>("sync_achievements_after_session");

@@ -410,6 +410,7 @@ class SyncMixin:
                                     "platform_display_name": platform_name,
                                     "igdb_id": entry.get("igdb_id"),
                                     "sgdb_id": entry.get("sgdb_id"),
+                                    "ra_id": entry.get("ra_id"),
                                 })
                         await self._emit_progress("roms", current=len(all_roms),
                             message=f"{platform_name} unchanged ({pi}/{total_platforms})")
@@ -486,6 +487,7 @@ class SyncMixin:
                 "platform_slug": rom.get("platform_slug", ""),
                 "igdb_id": rom.get("igdb_id"),
                 "sgdb_id": rom.get("sgdb_id"),
+                "ra_id": rom.get("ra_id"),
                 "cover_path": "",
             })
 
@@ -659,7 +661,7 @@ class SyncMixin:
                 "platform_slug": pending.get("platform_slug", ""),
                 "cover_path": cover_path,
             }
-            for meta_key in ("igdb_id", "sgdb_id"):
+            for meta_key in ("igdb_id", "sgdb_id", "ra_id"):
                 if pending.get(meta_key):
                     registry_entry[meta_key] = pending[meta_key]
             self._state["shortcut_registry"][rom_id_str] = registry_entry

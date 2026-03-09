@@ -40,6 +40,7 @@ import {
   deleteLocalSaves,
   saveShortcutIcon,
   setGameCore,
+  getAchievementProgress,
   debugLog,
 } from "../api/backend";
 import type { AvailableCore, BiosStatus, SaveStatus } from "../types";
@@ -106,6 +107,9 @@ interface InfoState {
   activeCoreLabel: string | null;
   activeCoreIsDefault: boolean;
   availableCores: Array<{ core_so: string; label: string; is_default: boolean }>;
+  raId: number | null;
+  achievementEarned: number;
+  achievementTotal: number;
 }
 
 /** Format a Unix timestamp (seconds) as a human-readable date string */
@@ -217,8 +221,11 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     activeCoreLabel: null,
     activeCoreIsDefault: true,
     availableCores: [],
+    raId: null,
+    achievementEarned: 0,
+    achievementTotal: 0,
   });
-  const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
+  const [, setConnectionState] = useState<ConnectionState>("checking");
   const [actionPending, setActionPending] = useState<string | null>(null);
   const romIdRef = useRef<number | null>(null);
 
@@ -311,6 +318,9 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           activeCoreLabel,
           activeCoreIsDefault,
           availableCores,
+          raId: cached.ra_id ?? null,
+          achievementEarned: cached.achievement_summary?.earned ?? 0,
+          achievementTotal: cached.achievement_summary?.total ?? 0,
         }));
 
         // Auto-apply SGDB artwork on first visit (fire-and-forget)
@@ -325,6 +335,19 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         const metaStale = !metaCachedAt || (Date.now() / 1000 - metaCachedAt) > METADATA_TTL_SEC;
         if (romId && (!cached.metadata || metaStale)) {
           getRomMetadata(romId).catch((e) => debugLog(`Background metadata fetch error: ${e}`));
+        }
+
+        // Background: fetch achievement progress if ra_id exists but no summary cached
+        if (cached.ra_id && !cached.achievement_summary) {
+          getAchievementProgress(romId).then((result) => {
+            if (!cancelled && result.success) {
+              setInfo((prev) => ({
+                ...prev,
+                achievementEarned: result.earned,
+                achievementTotal: result.total,
+              }));
+            }
+          }).catch((e) => debugLog(`Background achievement progress fetch error: ${e}`));
         }
       } catch (e) {
         debugLog(`RomMPlaySection: loadCached error: ${e}`);
@@ -450,24 +473,6 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       createElement("div", { className: "romm-info-value" }, value),
     );
 
-  // Helper: info item with a colored status dot
-  const statusInfoItem = (key: string, header: string, value: string, color: string) =>
-    createElement("div", {
-      key,
-      className: "romm-info-item",
-    },
-      createElement("div", { className: "romm-info-header" }, header),
-      createElement("div", {
-        className: "romm-info-value",
-        style: { display: "flex", alignItems: "center", gap: "6px" },
-      },
-        createElement("span", {
-          className: "romm-status-dot",
-          style: { backgroundColor: color },
-        }),
-        value,
-      ),
-    );
 
   // --- Gear button action handlers ---
 
@@ -696,58 +701,90 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     infoItems.push(infoItem("playtime", "PLAYTIME", info.playtime));
   }
 
-  // Achievements (static placeholder)
-  infoItems.push(infoItem("achievements", "ACHIEVEMENTS", "Not available", "romm-info-muted"));
+  // Achievements badge (only when RA data available)
+  if (info.raId) {
+    const hasEarned = info.achievementEarned > 0;
+    const countLabel = info.achievementTotal > 0
+      ? `${info.achievementEarned}/${info.achievementTotal}`
+      : `${info.achievementEarned}`;
 
-  // Save Sync (only when enabled)
-  if (info.saveSyncEnabled && info.saveSyncStatus) {
-    const syncColor =
-      info.saveSyncStatus === "synced" ? "#5ba32b"
-        : info.saveSyncStatus === "conflict" ? "#d94126"
-          : "#8f98a0";
-    infoItems.push(statusInfoItem("save-sync", "SAVE SYNC", info.saveSyncLabel, syncColor));
-  }
+    // Generate sparkle dots at random fixed positions (only when earned > 0)
+    // Positions are deterministic per-index so they don't shift on re-render
+    const sparklePositions = [
+      { top: "5%", left: "80%" },
+      { top: "70%", left: "10%" },
+      { top: "15%", left: "35%" },
+      { top: "85%", left: "70%" },
+      { top: "45%", left: "90%" },
+    ];
+    const sparkleDurs = [2.4, 3.5, 2.8, 3.8, 3.1];
+    const sparkleDelays = [0, 0.9, 0.3, 1.6, 1.1];
+    const sparkleDots = hasEarned ? sparklePositions.map((pos, i) =>
+      createElement("span", {
+        key: `sparkle-${i}`,
+        className: "romm-sparkle-dot",
+        style: {
+          "--romm-sparkle-top": pos.top,
+          "--romm-sparkle-left": pos.left,
+          "--romm-sparkle-delay": `${sparkleDelays[i]}s`,
+          "--romm-sparkle-dur": `${sparkleDurs[i]}s`,
+        } as any,
+      }),
+    ) : [];
 
-  // BIOS (only when platform needs it)
-  if (info.biosNeeded && info.biosStatus) {
-    const biosColor =
-      info.biosStatus === "ok" ? "#5ba32b"
-        : info.biosStatus === "partial" ? "#d4a72c"
-          : "#d94126";
-    infoItems.push(statusInfoItem("bios", "BIOS", info.biosLabel, biosColor));
-  }
-
-  // Non-default core badge
-  if (info.activeCoreLabel && !info.activeCoreIsDefault) {
-    infoItems.push(infoItem("active-core", "NON-DEFAULT CORE", info.activeCoreLabel));
-  }
-
-  // RomM connection status
-  const connColor = connectionState === "connected" ? "#5ba32b"
-    : connectionState === "offline" ? "#8f98a0"
-      : "#1a9fff";
-  const connLabel = connectionState === "connected" ? "Online"
-    : connectionState === "offline" ? "Offline"
-      : "Checking...";
-  const connExtraClass = connectionState === "checking" ? "romm-info-checking" : "";
-  infoItems.push(
-    createElement("div", {
-      key: "romm-status",
-      className: `romm-info-item ${connExtraClass}`.trim(),
-    },
-      createElement("div", { className: "romm-info-header" }, "RomM"),
+    infoItems.push(
       createElement("div", {
-        className: "romm-info-value",
-        style: { display: "flex", alignItems: "center", gap: "6px" },
+        key: "achievements",
+        className: "romm-info-item romm-cheevo-badge",
+        onClick: () => {
+          window.dispatchEvent(new CustomEvent("romm_tab_switch", { detail: { tab: "achievements" } }));
+        },
       },
-        createElement("span", {
-          className: `romm-status-dot ${connectionState === "checking" ? "romm-status-dot-pulse" : ""}`.trim(),
-          style: { backgroundColor: connColor },
-        }),
-        connLabel,
+        createElement("div", { className: "romm-info-header" }, "ACHIEVEMENTS"),
+        createElement("div", {
+          className: "romm-cheevo-badge-sparkle",
+        },
+          // Trophy icon with sparkle container
+          createElement("span", { style: { position: "relative", display: "inline-block" } },
+            createElement("span", {
+              className: hasEarned ? "romm-cheevo-trophy" : "romm-cheevo-trophy-none",
+            }, "\uD83C\uDFC6"),
+            hasEarned ? createElement("span", { className: "romm-sparkle-container" }, ...sparkleDots) : null,
+          ),
+          createElement("span", { className: "romm-cheevo-count" }, countLabel),
+        ),
       ),
-    ),
-  );
+    );
+  }
+
+  // Save Sync moved to dedicated tab — no longer shown here
+
+  // BIOS warning (only when files are missing — OK status moved to tab)
+  if (info.biosNeeded && info.biosStatus && info.biosStatus !== "ok") {
+    const biosColor = info.biosStatus === "partial" ? "#d4a72c" : "#d94126";
+    infoItems.push(
+      createElement("div", {
+        key: "bios",
+        className: "romm-info-item",
+        onClick: () => {
+          window.dispatchEvent(new CustomEvent("romm_tab_switch", { detail: { tab: "bios" } }));
+        },
+        style: { cursor: "pointer" },
+      },
+        createElement("div", { className: "romm-info-header" }, "BIOS"),
+        createElement("div", {
+          className: "romm-info-value",
+          style: { display: "flex", alignItems: "center", gap: "6px" },
+        },
+          createElement("span", {
+            className: "romm-status-dot",
+            style: { backgroundColor: biosColor },
+          }),
+          info.biosLabel,
+        ),
+      ),
+    );
+  }
 
   return createElement(Focusable, {
     "data-romm": "true",

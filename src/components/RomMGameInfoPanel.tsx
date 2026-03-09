@@ -14,7 +14,7 @@
  */
 
 import { useState, useEffect, useRef, FC, createElement } from "react";
-import { DialogButton } from "@decky/ui";
+import { DialogButton, Focusable, GamepadButton, ScrollPanelGroup } from "@decky/ui";
 // DialogButton is natively focusable by Steam's gamepad engine (unlike Focusable
 // wrappers around non-interactive content, which don't register in this injection
 // context). Style as content sections, not buttons.
@@ -27,9 +27,11 @@ import {
   getSaveStatus,
   getPendingConflicts,
   getArtworkBase64,
+  getAchievements,
+  getAchievementProgress,
   debugLog,
 } from "../api/backend";
-import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict } from "../types";
+import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict, Achievement, AchievementProgress, EarnedAchievement } from "../types";
 import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 
 interface RomMGameInfoPanelProps {
@@ -51,6 +53,11 @@ interface PanelState {
   saveStatus: SaveStatus | null;
   conflicts: PendingConflict[];
   error: boolean;
+  activeTab: string;
+  achievements: Achievement[];
+  achievementProgress: AchievementProgress | null;
+  achievementsLoading: boolean;
+  raId: number | null;
 }
 
 /** Format a Unix timestamp (seconds) as a release date string (e.g. "15 Mar 2003") */
@@ -92,6 +99,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     saveStatus: null,
     conflicts: [],
     error: false,
+    activeTab: "info",
+    achievements: [],
+    achievementProgress: null,
+    achievementsLoading: false,
+    raId: null,
   });
   const romIdRef = useRef<number | null>(null);
   const [migrationPending, setMigrationPending] = useState(getMigrationState().pending);
@@ -177,6 +189,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             created_at: c.detected_at,
           })) as PendingConflict[];
 
+        // Store ra_id for tab visibility
+        const raId = (cached as any).ra_id ?? null;
+
         // Render immediately with cached data (metadata may be null — that's OK)
         setState({
           loading: false,
@@ -193,6 +208,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           saveStatus,
           conflicts,
           error: false,
+          activeTab: "info",
+          achievements: [],
+          achievementProgress: null,
+          achievementsLoading: false,
+          raId,
         });
 
         // Phase 2: Background fetch for data not available in cache
@@ -315,10 +335,17 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     };
     window.addEventListener("romm_data_changed", onDataChanged);
 
+    const onTabSwitch = (e: Event) => {
+      const tab = (e as CustomEvent).detail?.tab;
+      if (tab) setState((prev) => ({ ...prev, activeTab: tab }));
+    };
+    window.addEventListener("romm_tab_switch", onTabSwitch);
+
     return () => {
       cancelled = true;
       window.removeEventListener("romm_rom_uninstalled", onUninstall);
       window.removeEventListener("romm_data_changed", onDataChanged);
+      window.removeEventListener("romm_tab_switch", onTabSwitch);
     };
   }, [appId]);
 
@@ -333,6 +360,42 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       });
     }
   }, [state.loading, state.error, state.romId]);
+
+  // Lazy-load achievements when the achievements tab becomes active
+  const achievementsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (state.activeTab !== "achievements" || !state.raId || !state.romId) return;
+    if (achievementsLoadedRef.current) return;
+    achievementsLoadedRef.current = true;
+
+    let cancelled = false;
+    setState((prev) => ({ ...prev, achievementsLoading: true }));
+
+    async function loadAchievements() {
+      try {
+        const [listResult, progressResult] = await Promise.all([
+          getAchievements(state.romId!),
+          getAchievementProgress(state.romId!),
+        ]);
+        if (cancelled) return;
+        setState((prev) => ({
+          ...prev,
+          achievements: listResult.success ? listResult.achievements : [],
+          achievementProgress: progressResult.success ? progressResult : null,
+          achievementsLoading: false,
+        }));
+      } catch (e) {
+        debugLog(`Failed to load achievements: ${e}`);
+        if (!cancelled) {
+          achievementsLoadedRef.current = false;
+          setState((prev) => ({ ...prev, achievementsLoading: false }));
+        }
+      }
+    }
+
+    loadAchievements();
+    return () => { cancelled = true; };
+  }, [state.activeTab, state.raId, state.romId]);
 
   // --- Render helpers ---
 
@@ -756,6 +819,219 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     saveSyncSection = section("save-sync", "Save Sync", ...saveSyncChildren);
   }
 
+  // --- Tab bar ---
+  const tabs: { id: string; label: string; visible: boolean }[] = [
+    { id: "info", label: "GAME INFO", visible: true },
+    { id: "achievements", label: "ACHIEVEMENTS", visible: !!state.raId },
+    { id: "saves", label: "SAVES", visible: state.saveSyncEnabled },
+    { id: "bios", label: "BIOS", visible: !!state.biosStatus },
+  ];
+
+  const tabBar = createElement(Focusable as any, {
+    className: "romm-tab-bar",
+    "flow-children": "right",
+    "data-romm": "true",
+  },
+    ...tabs.filter((t) => t.visible).map((t) =>
+      createElement(DialogButton as any, {
+        key: `tab-${t.id}`,
+        className: `romm-tab ${state.activeTab === t.id ? "romm-tab-active" : ""}`,
+        onClick: () => setState((prev) => ({ ...prev, activeTab: t.id })),
+        style: {
+          background: "transparent",
+          border: "none",
+          borderBottom: state.activeTab === t.id ? "2px solid #1a9fff" : "2px solid transparent",
+          padding: "10px 16px",
+          minWidth: "auto",
+          width: "auto",
+        },
+        noFocusRing: false,
+      }, t.label),
+    ),
+  );
+
+  // --- Achievements tab content ---
+  let achievementsContent: ReturnType<typeof createElement> | null = null;
+  if (state.activeTab === "achievements") {
+    if (state.achievementsLoading) {
+      achievementsContent = createElement("div", { className: "romm-panel-loading" }, "Loading achievements...");
+    } else if (state.achievements.length === 0) {
+      achievementsContent = createElement("div", { className: "romm-panel-muted" }, "No achievements found for this game");
+    } else {
+      const progress = state.achievementProgress;
+      const earned = progress?.earned ?? 0;
+      const total = progress?.total ?? state.achievements.length;
+
+      // Build map from badge_id -> earned data (id in earned_achievements is badge_id)
+      const earnedMap = new Map<string, EarnedAchievement>();
+      for (const ea of (progress?.earned_achievements ?? [])) {
+        earnedMap.set(ea.id, ea);
+      }
+
+      // Sort: earned first, then by display_order
+      const sorted = [...state.achievements].sort((a, b) => {
+        const aEarned = earnedMap.has(a.badge_id) ? 0 : 1;
+        const bEarned = earnedMap.has(b.badge_id) ? 0 : 1;
+        if (aEarned !== bEarned) return aEarned - bEarned;
+        return (a.display_order || 0) - (b.display_order || 0);
+      });
+
+      const earnedList = sorted.filter((a) => earnedMap.has(a.badge_id));
+      const lockedList = sorted.filter((a) => !earnedMap.has(a.badge_id));
+
+      const formatCheevoDate = (dateStr: string) => {
+        // "2025-02-14 15:45:38" -> "2025-02-14 15:45"
+        return dateStr.replace(/:\d{2}$/, "");
+      };
+
+      // Generate unique sparkle positions per achievement using a simple seed hash
+      const makeHcSparkles = (seed: number) => {
+        // Simple deterministic pseudo-random from seed
+        const rng = (i: number) => {
+          let x = Math.sin(seed * 9301 + i * 4973) * 49297;
+          return x - Math.floor(x);
+        };
+        // 4 sparkles, positions along edges/corners with some spread outside
+        return Array.from({ length: 4 }, (_, i) => ({
+          top: `${Math.round(rng(i * 3) * 100)}%`,
+          left: `${Math.round(rng(i * 3 + 1) * 100)}%`,
+          dur: 2.2 + rng(i * 3 + 2) * 1.8, // 2.2–4.0s
+          delay: rng(i * 7 + 5) * 2.0,      // 0–2.0s
+        }));
+      };
+
+      const renderCheevoRow = (a: Achievement) => {
+        const earnedData = earnedMap.get(a.badge_id);
+        const isEarned = !!earnedData;
+        const isHardcore = !!(earnedData?.date_hardcore);
+
+        const rowClasses = [
+          "romm-cheevo-row",
+          isEarned ? "romm-cheevo-row-earned" : "",
+        ].filter(Boolean).join(" ");
+
+        const imgClasses = [
+          "romm-cheevo-badge-img",
+          isHardcore ? "romm-cheevo-badge-img-hc" : "",
+        ].filter(Boolean).join(" ");
+
+        // Date column for earned achievements — show both normal and HC dates
+        const dateChildren: ReturnType<typeof createElement>[] = [];
+        if (earnedData?.date) {
+          dateChildren.push(
+            createElement("span", { key: "date", className: "romm-cheevo-date" },
+              formatCheevoDate(earnedData.date)),
+          );
+        }
+        if (isHardcore && earnedData?.date_hardcore) {
+          dateChildren.push(
+            createElement("span", {
+              key: "hc-row",
+              style: { display: "inline-flex", alignItems: "center", gap: "4px" },
+            },
+              createElement("span", { className: "romm-cheevo-date" },
+                formatCheevoDate(earnedData.date_hardcore)),
+              createElement("span", { className: "romm-cheevo-hc-badge" }, "HC"),
+            ),
+          );
+        }
+
+        // Badge image — wrapped with sparkle container for HC achievements
+        const imgEl = createElement("img", {
+          className: imgClasses,
+          src: isEarned ? a.badge_url : (a.badge_url_lock || a.badge_url),
+          style: isEarned ? {} : { filter: "grayscale(0.7) opacity(0.6)" },
+        });
+
+        const badgeElement = isHardcore
+          ? createElement("div", { className: "romm-cheevo-img-wrap" },
+              imgEl,
+              createElement("span", { className: "romm-cheevo-img-sparkles" },
+                ...makeHcSparkles(a.ra_id).map((sp, i) =>
+                  createElement("span", {
+                    key: `hc-sp-${i}`,
+                    className: "romm-cheevo-img-sparkle-dot",
+                    style: {
+                      "--romm-sparkle-top": sp.top,
+                      "--romm-sparkle-left": sp.left,
+                      "--romm-sparkle-delay": `${sp.delay.toFixed(1)}s`,
+                      "--romm-sparkle-dur": `${sp.dur.toFixed(1)}s`,
+                    } as any,
+                  }),
+                ),
+              ),
+            )
+          : imgEl;
+
+        return createElement("div", {
+          key: `cheevo-${a.ra_id}`,
+          className: rowClasses,
+        },
+          badgeElement,
+          createElement("div", { className: "romm-cheevo-details" },
+            createElement("div", { className: "romm-cheevo-title" }, a.title),
+            createElement("div", { className: "romm-cheevo-desc" }, a.description),
+            a.num_awarded > 0
+              ? createElement("div", { className: "romm-cheevo-rarity" },
+                  `${a.num_awarded} players earned this`)
+              : null,
+          ),
+          dateChildren.length > 0
+            ? createElement("div", { className: "romm-cheevo-dates" }, ...dateChildren)
+            : null,
+          createElement("div", {
+            className: `romm-cheevo-points ${isEarned ? "" : "romm-cheevo-points-locked"}`,
+          }, `${a.points} pts`),
+        );
+      };
+
+      const cheevoChildren: ReturnType<typeof createElement>[] = [];
+
+      // Summary bar
+      cheevoChildren.push(
+        createElement("div", { key: "summary", className: "romm-cheevo-summary" },
+          createElement("span", { className: "romm-cheevo-summary-text" },
+            `${earned} / ${total} Achievements`),
+          progress?.earned_hardcore
+            ? createElement("span", { className: "romm-cheevo-summary-sub" },
+                `${progress.earned_hardcore} hardcore`)
+            : null,
+        ),
+      );
+
+      // Progress bar
+      const pct = total > 0 ? (earned / total) * 100 : 0;
+      cheevoChildren.push(
+        createElement("div", { key: "progress-bar", className: "romm-cheevo-progress-bar" },
+          createElement("div", {
+            className: "romm-cheevo-progress-fill",
+            style: { width: `${pct}%` },
+          }),
+        ),
+      );
+
+      // Earned section
+      if (earnedList.length > 0) {
+        cheevoChildren.push(
+          createElement("div", { key: "earned-title", className: "romm-cheevo-section-title" },
+            `Earned (${earnedList.length})`),
+        );
+        earnedList.forEach((a) => cheevoChildren.push(renderCheevoRow(a)));
+      }
+
+      // Locked section
+      if (lockedList.length > 0) {
+        cheevoChildren.push(
+          createElement("div", { key: "locked-title", className: "romm-cheevo-section-title" },
+            `Locked (${lockedList.length})`),
+        );
+        lockedList.forEach((a) => cheevoChildren.push(renderCheevoRow(a)));
+      }
+
+      achievementsContent = createElement("div", { className: "romm-cheevo-list" }, ...cheevoChildren);
+    }
+  }
+
   // --- Migration warning (when path change pending) ---
   const migrationWarning = migrationPending
     ? createElement("div", {
@@ -777,17 +1053,41 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       )
     : null;
 
-  // --- Assemble panel ---
-  // Root is a plain div — DialogButton sections inside are individually focusable.
-  return createElement("div", {
-    "data-romm": "true",
-    className: "romm-panel-container",
-    style: { paddingBottom: "48px" },
-  },
+  // --- Determine active tab content ---
+  let activeTabContent: ReturnType<typeof createElement> | null = null;
+  if (state.activeTab === "info") {
+    activeTabContent = createElement("div", { key: "tab-info" },
+      gameInfoSection,
+      romFileSection,
+    );
+  } else if (state.activeTab === "achievements") {
+    activeTabContent = achievementsContent
+      ? section("achievements", null, achievementsContent)
+      : null;
+  } else if (state.activeTab === "saves") {
+    activeTabContent = saveSyncSection;
+  } else if (state.activeTab === "bios") {
+    activeTabContent = biosSection;
+  }
+
+  return createElement("div", { "data-romm": "true" },
     migrationWarning,
-    gameInfoSection,
-    romFileSection,
-    saveSyncSection,
-    biosSection,
+    tabBar,
+    createElement(ScrollPanelGroup as any, {
+      focusable: false,
+      style: { flex: 1, minHeight: 0 },
+    },
+      createElement(Focusable as any, {
+        noFocusRing: true,
+        actionDescriptionMap: {
+          [GamepadButton.DIR_UP]: "Scroll Up",
+          [GamepadButton.DIR_DOWN]: "Scroll Down",
+        },
+        className: "romm-tab-content",
+        style: { paddingBottom: "48px" },
+      },
+        activeTabContent,
+      ),
+    ),
   );
 };

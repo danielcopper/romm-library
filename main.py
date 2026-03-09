@@ -14,13 +14,14 @@ from lib.steam_config import SteamConfigMixin
 from lib.firmware import FirmwareMixin
 from lib.metadata import MetadataMixin
 from lib.sgdb import SgdbMixin
+from lib.achievements import AchievementsMixin
 from lib.downloads import DownloadMixin
 from lib.sync import SyncMixin
 from lib.save_sync import SaveSyncMixin
 from lib import retrodeck_config
 
 
-class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareMixin, MetadataMixin, DownloadMixin, SyncMixin, SaveSyncMixin):
+class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareMixin, MetadataMixin, AchievementsMixin, DownloadMixin, SyncMixin, SaveSyncMixin):
     settings: dict
     loop: asyncio.AbstractEventLoop
 
@@ -51,6 +52,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._download_queue = {}   # rom_id -> DownloadItem dict
         self._download_in_progress = set()  # rom_ids currently being processed
         self._metadata_cache = {}
+        self._achievements_cache = {}
         self._load_state()
         self._load_bios_registry()
         self._load_metadata_cache()
@@ -492,6 +494,22 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             except Exception as e:
                 decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
 
+        # Achievement summary (for badge rendering)
+        ra_id = entry.get("ra_id")
+        achievement_summary = None
+        if ra_id and self._get_ra_username():
+            # Try cache first for quick badge rendering
+            cached_progress = self._get_progress_cache_entry(rom_id_str)
+            if cached_progress:
+                achievement_summary = {
+                    "earned": cached_progress.get("earned", 0),
+                    "total": cached_progress.get("total", 0),
+                    "earned_hardcore": cached_progress.get("earned_hardcore", 0),
+                }
+            else:
+                # Return None — frontend will fetch on demand
+                achievement_summary = None
+
         return {
             "found": True,
             "rom_id": rom_id,
@@ -505,6 +523,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             "metadata": metadata,
             "bios_status": bios_status,
             "rom_file": rom_file,
+            "ra_id": ra_id,
+            "achievement_summary": achievement_summary,
         }
 
     async def get_available_cores(self, platform_slug):

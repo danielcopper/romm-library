@@ -5,9 +5,166 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md.
 
 ---
 
+## Phase 7: RetroAchievements + Game Detail Tabs
+
+**Goal**: Display RetroAchievements data from RomM and restructure the game detail page into a tabbed layout matching Steam's native pattern.
+
+### 7A — Backend: RA Data Extraction & Caching
+
+**Extract `ra_id` during sync:**
+- Add `ra_id` to ROM data extraction in `sync.py` (alongside `igdb_id`, `sgdb_id`)
+- Store `ra_id` in shortcut registry per ROM
+- On every sync, re-fetch `ra_id` from RomM — if RA gets configured in RomM between syncs, new IDs appear automatically
+
+**New backend module: `py_modules/lib/achievements.py`:**
+- `get_achievements(rom_id)` callable — fetch `ra_metadata` from RomM ROM detail, return achievement list (title, description, points, badge URLs, type, display_order)
+- `get_user_achievement_progress(rom_id)` callable — fetch user's earned achievements for the game's `ra_id` from RomM. Returns earned/total counts + per-achievement earned status with dates
+- `sync_achievements_after_session(rom_id)` callable — post-session refresh: fetch latest user progress for a single game from RomM (which in turn queries RA API)
+- Cache achievement data in `_metadata_cache` or new `_achievements_cache` with TTL (achievement lists rarely change, user progress refreshed post-session)
+- `get_cached_game_detail()` extended to include `ra_id` and achievement summary (earned/total) for badge rendering without a separate fetch
+
+**RomM API integration:**
+- ROM detail (`GET /api/roms/{id}`) returns `ra_id`, `ra_metadata` (achievement list with badge URLs), `merged_ra_metadata`
+- User progression: research which RomM endpoint exposes per-game user progress (likely via user schema's `ra_progression` field or dedicated endpoint)
+- Badge image URLs from RomM: `https://media.retroachievements.org/Badge/{badge_id}.png` (locked: `{badge_id}_lock.png`)
+
+### 7B — QAM Settings: RA Configuration
+
+**New "RetroAchievements" section in ConnectionSettings:**
+- RA username text field (stored in `settings.json` as `ra_username`)
+- Note/disclaimer: "This only displays achievement progress. To earn achievements during gameplay, configure RetroAchievements in RetroDECK or RetroArch."
+- Similar disclaimer added to SGDB API key section: "Requires IGDB metadata to be configured in RomM for artwork matching."
+- Badge + tab hidden when `ra_username` is empty
+- No API key needed on our side — RomM handles RA API calls with its own key
+
+### 7C — Game Detail Page: Tab Restructure
+
+**Replace flat layout with tabbed layout:**
+
+Current:
+```
+[PlaySection: Play button + info items row]
+[GameInfoPanel: description, genres, developer, release date]
+```
+
+New:
+```
+[PlaySection: Play button + compact info row (last played, playtime, achievements badge)]
+[Tab Bar: GAME INFO | ACHIEVEMENTS | SAVES | BIOS]
+[Tab Content]
+```
+
+**Tab definitions:**
+- **GAME INFO** (default): Current `RomMGameInfoPanel` content — description, genres, developer/publisher, release date, game modes, rating
+- **ACHIEVEMENTS**: Full achievement list with icons (badge images), names, descriptions, points. Earned achievements shown with unlocked badge + earned date. Unearned shown with locked badge (greyed). Progress bar at top. Sorted by `display_order`. Achievement `type` shown as label (progression, win_condition, missable)
+- **SAVES**: Current save sync info item content expanded — save file status, last sync time, sync button, conflict indicator. Moved from PlaySection info row
+- **BIOS**: Current BIOS info item content expanded — per-file status with dot colors, download buttons, core annotations. Moved from PlaySection info row
+
+**Tab visibility rules:**
+- GAME INFO: always shown
+- ACHIEVEMENTS: shown only when `ra_id` exists for the ROM AND `ra_username` is configured in settings
+- SAVES: shown only when save sync is enabled
+- BIOS: shown only when the platform needs BIOS files
+
+**Implementation:**
+- New component: `src/components/GameDetailTabs.tsx` — tab bar + content switching
+- Extract save/BIOS content from `RomMPlaySection` into standalone tab components
+- `RomMPlaySection` keeps: Play button + compact info row (last played, playtime, achievements badge)
+- Tab state persisted per-page-visit (not across navigations)
+
+### 7D — Achievements Badge (PlaySection Info Item)
+
+**Compact badge in info row:**
+- Shows `"3 / 24"` (earned / total) or `"100%"` when mastered
+- Gold sparkle animation: tiny golden dots (CSS particles) appearing and disappearing around the badge
+- Hidden when: no `ra_username` in settings OR no `ra_id` on the ROM
+- Clickable: switches to ACHIEVEMENTS tab when tapped
+- Data source: achievement summary from `get_cached_game_detail()` (no extra fetch needed for badge)
+
+**Post-session refresh:**
+- When game session ends, call `sync_achievements_after_session(rom_id)` alongside save sync and playtime upload
+- Update badge with new earned/total counts
+- If achievements were earned during session, badge updates immediately
+
+### 7E — Achievements Tab (Full View)
+
+**Achievement list layout:**
+- Progress bar at top: `15 / 23 achievements (65%)` with filled bar
+- Hardcore indicator if user has hardcore unlocks
+- List items:
+  - Badge icon (40x40, from `badge_url` or `badge_url_lock`)
+  - Title + description
+  - Points value
+  - Type label (progression / win_condition / missable) as colored chip
+  - Earned date (if earned) or locked state
+- Earned achievements sorted first, then unearned
+- Within each group, sorted by `display_order`
+
+**Caching strategy:**
+- Achievement list (game metadata): cached with 24h TTL (achievement definitions rarely change)
+- User progress: cached with 1h TTL, force-refreshed post-session
+- Badge images: loaded from RA CDN URLs directly (browser/Steam handles caching)
+
+### Implementation Order
+
+1. Backend: `ra_id` extraction during sync + registry storage
+2. Backend: `achievements.py` module with callables
+3. Frontend: `GameDetailTabs.tsx` component + tab bar
+4. Frontend: Move save/BIOS content into tab components
+5. Frontend: Achievements tab component
+6. Frontend: Achievement badge with gold sparkle animation
+7. Frontend: Post-session achievement refresh in `sessionManager.ts`
+8. QAM: RA username settings + disclaimers
+9. Tests: Backend achievement callables + sync integration
+
 ---
 
-## Phase 7: Multi-Emulator Support (Deferred)
+## Phase 8: Save Sync v2 — RomM 4.7.0 Migration
+
+**Goal**: Migrate save sync to RomM 4.7.0's device-based sync architecture. Simplify conflict detection, remove workarounds for 4.6.1 bugs.
+
+### Key RomM 4.7.0 Changes
+
+**Device registration:**
+- `POST /api/devices` — register with hostname/MAC fingerprint, returns `device_id`
+- Pass `device_id` on all save operations for proper sync tracking
+- Replace our hostname-based `register_device()` with RomM's native device API
+
+**Save endpoint improvements:**
+- `GET /api/saves/{id}/content` **now works** — remove `download_path` workaround
+- `content_hash` in SaveSchema — remove download-and-hash workaround
+- `POST /api/saves` returns **409 Conflict** on stale sync — server-side conflict detection
+- `device_syncs[]` array per save — per-device sync status tracking
+- New endpoints: `POST /api/saves/{id}/track`, `POST /api/saves/{id}/untrack`
+- Slot support: `slot` parameter on save endpoints
+- Bulk delete: `POST /api/saves/delete` with ID list
+
+**Backwards compatibility strategy:**
+Not all users upgrade RomM at the same time. Hard-requiring 4.7.0 would break existing users.
+
+- **Version detection**: On connection test / first sync, probe RomM API version (check for 4.7.0 device endpoints — `GET /api/devices` returns 200 vs 404/405). Cache detected version.
+- **Dual-path approach**: Keep existing 4.6.x save sync code as fallback. When RomM ≥ 4.7.0 detected, use new device-based endpoints. When < 4.7.0, use current workarounds.
+- **Graceful degradation**: Features that require 4.7.0 (device registration, server-side conflict detection, `content_hash`) simply don't activate on older servers. Core save sync still works.
+- **Settings indicator**: Show RomM version in connection settings. If < 4.7.0, show info note: "Upgrade RomM to 4.7.0+ for improved save sync."
+- **Migration timeline**: After ~2-3 releases with dual support, consider dropping 4.6.x support with a deprecation notice in release notes.
+
+**Migration plan (4.7.0 path):**
+1. Add RomM version detection to connection test
+2. Register device via `POST /api/devices` (replace custom device registration)
+3. Use `content_hash` from save responses (remove `_get_server_save_hash()` download-and-hash)
+4. Use `GET /api/saves/{id}/content` directly (remove `download_path` URL construction)
+5. Handle 409 responses from `POST /api/saves` as conflict signal (complement client-side detection)
+6. Track device sync status via `device_syncs[]` (know which devices are in sync)
+7. Consider removing `pending_conflicts` persistence (see save sync conflict architecture refactor in Future Improvements)
+
+**Other 4.7.0 features to leverage:**
+- `last_played` auto-updated on save upload — could complement our playtime tracking
+- `RomUserSchema` fields: `backlogged`, `now_playing`, `hidden`, `rating`, `completion`, `status` — future UI features
+- New ROM identifier fields: `moby_id`, `ss_id`, `hltb_id`, `launchbox_id` — future metadata enrichment
+
+---
+
+## Phase 9: Multi-Emulator Support (Deferred)
 
 **Goal**: Support EmuDeck, standalone RetroArch, and manual emulator installs beyond RetroDECK. Extends save sync to standalone emulators.
 
@@ -42,7 +199,7 @@ Extends Phase 5 to standalone emulator save formats:
 
 ---
 
-## Phase 8: Polish & Advanced Features (Deferred)
+## Phase 10: Polish & Advanced Features (Deferred)
 
 - **Multi-version/language ROM selector**: Dropdown when multiple versions exist
 - **Auto sync interval**: Configurable background re-sync
@@ -102,13 +259,13 @@ Only `save_sync_state.json` has a `"version"` field. `state.json`, `settings.jso
 ## Future Improvements (nice-to-have)
 
 - **Concurrent download queue**: Multiple queued downloads
-- **RomM native device sync**: Migrate to RomM v4.7+ server-side conflict detection when available
+- ~~**RomM native device sync**~~: → Promoted to Phase 8
 - **Download queue priority/reordering**
 - **Developer vs Publisher distinction**: RomM's `companies` is flat — research IGDB's `involved_companies` relationship for proper split
-- **RetroAchievements integration**: Show/track via RomM's RA data, direct API, or existing Decky plugin
 - **Sync completion notification accuracy**: Track new vs updated vs unchanged shortcuts, show accurate breakdown (cancel notifications already show correct count)
 - **Library home playtime display**: Non-Steam shortcuts show "Never Played" despite tracked playtime. Steam doesn't persist `minutes_playtime_forever` for shortcuts. No known solution — all similar plugins have same limitation. Our game detail page shows accurate playtime.
 - **Playtime sync between RomM and Steam**: Bidirectional cross-device playtime merging
+- **Boot-time server playtime fetch**: `get_all_playtime()` at plugin load reads local state only. If a second device uploaded playtime since last boot, Steam shows stale local totals until next session end triggers a sync. Fix: fetch server playtime on boot and merge with local before applying to Steam UI.
 - **UI settings page**: Machine-scoped collections toggle, device labels toggle, custom device name
 - **Per-game sync selection**: Select/deselect individual games within a platform
 - **Translations / i18n**: Adapt to user's Steam language (reference: Unifideck `src/i18n/`)

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         settings: dict
         _state: dict
         _metadata_cache: dict
+        _achievements_cache: dict
 
 
 class StateMixin:

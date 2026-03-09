@@ -5,6 +5,8 @@ const ROMM_FOCUS_STYLES_ID = "romm-focus-styles";
 const ROMM_INFO_ITEMS_ID = "romm-info-items-styles";
 const ROMM_GAME_INFO_PANEL_ID = "romm-game-info-panel-styles";
 const ROMM_GEAR_BUTTONS_ID = "romm-gear-btn-styles";
+const ROMM_TABS_ID = "romm-tabs-styles";
+const ROMM_ACHIEVEMENTS_ID = "romm-achievements-styles";
 
 export function hideNativePlaySection(playSectionClass: string) {
   const sp = findSP();
@@ -378,6 +380,279 @@ export function hideNativePlaySection(playSectionClass: string) {
 }`;
     sp.window.document.head.appendChild(gearStyle);
   }
+
+  // Tab bar styles for game detail page tabs (GAME INFO | ACHIEVEMENTS | SAVES | BIOS)
+  if (!sp.window.document.getElementById(ROMM_TABS_ID)) {
+    const tabStyle = sp.window.document.createElement("style");
+    tabStyle.id = ROMM_TABS_ID;
+    tabStyle.textContent = `
+.romm-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 0 2.8vw;
+  background: rgba(14, 20, 27, 0.33);
+}
+.romm-tab {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8f98a0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  background: transparent;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  white-space: nowrap;
+}
+.romm-tab:hover {
+  color: #dcdedf !important;
+}
+.romm-tab.gpfocus,
+.romm-tab:focus,
+.romm-tab.Focusable.gpfocus {
+  color: #dcdedf !important;
+  background: rgba(255,255,255,0.06) !important;
+  outline: none;
+  border-bottom-color: #1a9fff;
+}
+.romm-tab-active {
+  color: #dcdedf !important;
+  border-bottom-color: #1a9fff;
+}
+.romm-tab-content {
+  padding: 16px 2.8vw;
+  background: rgba(14, 20, 27, 0.33);
+}`;
+    sp.window.document.head.appendChild(tabStyle);
+  }
+
+  // Achievement badge sparkle + achievements tab styles
+  if (!sp.window.document.getElementById(ROMM_ACHIEVEMENTS_ID)) {
+    const cheevoStyle = sp.window.document.createElement("style");
+    cheevoStyle.id = ROMM_ACHIEVEMENTS_ID;
+    cheevoStyle.textContent = `
+@keyframes romm-gold-sparkle {
+  0%, 100% { opacity: 0; transform: scale(0); }
+  15% { opacity: 1; transform: scale(1.2); }
+  30% { opacity: 0.9; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1); }
+  80% { opacity: 0.4; transform: scale(0.6); }
+}
+.romm-cheevo-badge {
+  position: relative;
+  cursor: pointer;
+}
+.romm-cheevo-badge-sparkle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.romm-sparkle-container {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  pointer-events: none;
+  overflow: visible;
+}
+.romm-sparkle-dot {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #fff8dc;
+  box-shadow: 0 0 2px 1px #ffd700, 0 0 4px 1px rgba(255, 215, 0, 0.5);
+  animation: romm-gold-sparkle var(--romm-sparkle-dur, 2s) ease-in-out infinite;
+  animation-delay: var(--romm-sparkle-delay, 0s);
+  top: var(--romm-sparkle-top, 50%);
+  left: var(--romm-sparkle-left, 50%);
+}
+.romm-cheevo-trophy {
+  color: #ffd700;
+  font-size: 14px;
+  filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.5));
+}
+.romm-cheevo-trophy-none {
+  color: #8f98a0;
+  font-size: 14px;
+  filter: none;
+}
+.romm-cheevo-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: #dcdedf;
+}
+.romm-cheevo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.romm-cheevo-progress-bar {
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 8px 0 16px 0;
+}
+.romm-cheevo-progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, #ffd700, #ffaa00);
+  border-radius: 3px;
+  transition: width 0.4s ease-out;
+}
+.romm-cheevo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+  border-left: 3px solid transparent;
+}
+.romm-cheevo-row-earned {
+  background: rgba(255, 215, 0, 0.06);
+  border-left-color: #ffd700;
+}
+.romm-cheevo-img-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+}
+.romm-cheevo-img-sparkles {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  right: -5px;
+  bottom: -5px;
+  pointer-events: none;
+  overflow: visible;
+}
+.romm-cheevo-img-sparkle-dot {
+  position: absolute;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: #fff8dc;
+  box-shadow: 0 0 2px 1px #ffd700, 0 0 5px 1px rgba(255, 215, 0, 0.5);
+  animation: romm-gold-sparkle var(--romm-sparkle-dur, 2.5s) ease-in-out infinite;
+  animation-delay: var(--romm-sparkle-delay, 0s);
+  top: var(--romm-sparkle-top, 50%);
+  left: var(--romm-sparkle-left, 50%);
+}
+.romm-cheevo-badge-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: rgba(255,255,255,0.05);
+}
+.romm-cheevo-details {
+  flex: 1;
+  min-width: 0;
+}
+.romm-cheevo-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #dcdedf;
+  line-height: 1.3;
+}
+.romm-cheevo-desc {
+  font-size: 12px;
+  color: #8f98a0;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.romm-cheevo-points {
+  font-size: 11px;
+  color: #ffd700;
+  font-weight: 600;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: rgba(255, 215, 0, 0.1);
+  border-radius: 3px;
+}
+.romm-cheevo-points-locked {
+  color: #8f98a0;
+  background: rgba(255,255,255,0.05);
+}
+.romm-cheevo-earned-label {
+  font-size: 10px;
+  color: #5ba32b;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.romm-cheevo-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8f98a0;
+  margin: 12px 0 8px 0;
+}
+.romm-cheevo-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.romm-cheevo-summary-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #dcdedf;
+}
+.romm-cheevo-summary-sub {
+  font-size: 12px;
+  color: #8f98a0;
+}
+.romm-cheevo-rarity {
+  font-size: 10px;
+  color: #8f98a0;
+  white-space: nowrap;
+}
+.romm-cheevo-dates {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.romm-cheevo-date {
+  font-size: 10px;
+  color: #8f98a0;
+  white-space: nowrap;
+  padding: 2px 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+}
+.romm-cheevo-hc-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ffd700;
+  padding: 1px 5px;
+  background: rgba(255, 215, 0, 0.15);
+  border-radius: 3px;
+  box-shadow: 0 0 4px rgba(255, 215, 0, 0.3), 0 0 8px rgba(255, 215, 0, 0.15);
+  text-shadow: 0 0 4px rgba(255, 215, 0, 0.5);
+}
+.romm-cheevo-badge-img-hc {
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.4), 0 0 12px rgba(255, 215, 0, 0.2);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+}`;
+    sp.window.document.head.appendChild(cheevoStyle);
+  }
 }
 
 export function showNativePlaySection() {
@@ -388,4 +663,6 @@ export function showNativePlaySection() {
   sp.window.document.getElementById(ROMM_INFO_ITEMS_ID)?.remove();
   sp.window.document.getElementById(ROMM_GAME_INFO_PANEL_ID)?.remove();
   sp.window.document.getElementById(ROMM_GEAR_BUTTONS_ID)?.remove();
+  sp.window.document.getElementById(ROMM_TABS_ID)?.remove();
+  sp.window.document.getElementById(ROMM_ACHIEVEMENTS_ID)?.remove();
 }
