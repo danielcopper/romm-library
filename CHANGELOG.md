@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.10.1...decky-romm-sync-v0.11.0) (2026-03-09)
+
+
+### Features
+
+* compact inline status display in QAM main page ([#82](https://github.com/danielcopper/decky-romm-sync/issues/82)) ([d505eb1](https://github.com/danielcopper/decky-romm-sync/commit/d505eb10438ef7b13c8d6d91b02cdfa44d03b548))
+
 ## [0.10.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.10.0...decky-romm-sync-v0.10.1) (2026-03-09)
 
 
