@@ -65,6 +65,49 @@ export function hideNativePlaySection(playSectionClass: string) {
   border-radius: 50%;
   animation: romm-spin 0.8s linear infinite;
   flex-shrink: 0;
+}
+@keyframes romm-dl-pulse {
+  0%, 100% { box-shadow: 0 0 4px var(--romm-pulse-color, rgba(26,159,255,0.3)); }
+  50% { box-shadow: 0 0 20px var(--romm-pulse-color, rgba(26,159,255,0.7)); }
+}
+@keyframes romm-dl-complete {
+  0% { box-shadow: 0 0 0px rgba(112,214,29,0); filter: brightness(1); transform: scale(1); }
+  12% { box-shadow: 0 0 50px rgba(112,214,29,1), inset 0 0 25px rgba(255,255,255,0.4); filter: brightness(2.2); transform: scale(1.06); }
+  30% { box-shadow: 0 0 30px rgba(112,214,29,0.7), inset 0 0 12px rgba(255,255,255,0.2); filter: brightness(1.5); transform: scale(1.02); }
+  60% { box-shadow: 0 0 15px rgba(112,214,29,0.4), inset 0 0 5px rgba(255,255,255,0.08); filter: brightness(1.2); transform: scale(1); }
+  100% { box-shadow: 0 0 0px rgba(112,214,29,0); filter: brightness(1.2); transform: scale(1); }
+}
+.romm-btn-download {
+  position: relative;
+  overflow: hidden;
+}
+.romm-dl-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  transition: width 0.4s ease-out;
+  pointer-events: none;
+  z-index: 0;
+}
+.romm-dl-active {
+  animation: romm-dl-pulse 2s ease-in-out infinite;
+}
+.romm-dl-label {
+  position: relative;
+  z-index: 2;
+}
+.romm-dl-complete-flash {
+  animation: romm-dl-complete 1s ease-out forwards;
+}
+@keyframes romm-dl-uninstall {
+  0% { box-shadow: 0 0 0px rgba(26,159,255,0); filter: brightness(0.4); transform: scale(0.95); }
+  40% { box-shadow: 0 0 35px rgba(26,159,255,0.8); filter: brightness(1.5); transform: scale(1.03); }
+  100% { box-shadow: 0 0 0px rgba(26,159,255,0); filter: brightness(1.3); transform: scale(1); }
+}
+.romm-dl-uninstall-flash {
+  animation: romm-dl-uninstall 0.5s ease-out forwards;
 }`;
     sp.window.document.head.appendChild(focusStyle);
   }
