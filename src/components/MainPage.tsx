@@ -5,16 +5,17 @@ import {
   ButtonItem,
   Field,
   ProgressBarWithInfo,
-  DropdownItem,
   ToggleField,
   Spinner,
+  DialogButton,
+  ConfirmModal,
+  showModal,
 } from "@decky/ui";
 import {
   testConnection,
   cancelSync,
   getSyncStats,
   getSettings,
-  saveLogLevel,
   fixRetroarchInputDriver,
   syncPreview,
   syncApplyDelta,
@@ -22,15 +23,23 @@ import {
   clearSyncCache,
 } from "../api/backend";
 import { getSyncProgress } from "../utils/syncProgress";
+import { getDownloadState } from "../utils/downloadStore";
 import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 import { requestSyncCancel } from "../utils/syncManager";
-import type { SyncProgress, SyncStats, SyncPreview } from "../types";
+import type { SyncProgress, SyncStats, SyncPreview, DownloadItem } from "../types";
 import type { MigrationStatus } from "../api/backend";
 
-type Page = "connection" | "platforms" | "danger" | "downloads" | "bios" | "savesync";
+type Page = "settings" | "platforms" | "data" | "downloads";
 
 interface MainPageProps {
   onNavigate: (page: Page) => void;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
@@ -42,12 +51,12 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
   const [preview, setPreview] = useState<SyncPreview | null>(null);
   const [skipPreview, setSkipPreview] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [logLevel, setLogLevel] = useState("warn");
   const [retroarchWarning, setRetroarchWarning] = useState<{ warning: boolean; current?: string } | null>(null);
-  const [retroarchFixStatus, setRetroarchFixStatus] = useState("");
   const [migration, setMigration] = useState<MigrationStatus>(getMigrationState());
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const downloadPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = () => {
     if (pollRef.current) {
@@ -79,7 +88,6 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     getSyncStats().then(setStats);
     testConnection().then((r) => setConnected(r.success));
     getSettings().then((s) => {
-      setLogLevel(s.log_level ?? "warn");
       if (s.retroarch_input_check) {
         setRetroarchWarning(s.retroarch_input_check);
       }
@@ -94,11 +102,17 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
       startPolling();
     }
 
+    // Poll download state for inline display
+    downloadPollRef.current = setInterval(() => {
+      setDownloads([...getDownloadState()]);
+    }, 1000);
+
     const unsubMigration = onMigrationChange(() => setMigration(getMigrationState()));
     return () => {
       stopPolling();
       unsubMigration();
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+      if (downloadPollRef.current) clearInterval(downloadPollRef.current);
     };
   }, []);
 
@@ -232,6 +246,10 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const activeDownloads = downloads.filter(d => d.status === "queued" || d.status === "downloading");
+  const completedDownloads = downloads.filter(d => d.status === "completed" || d.status === "failed" || d.status === "cancelled");
+  const hasDownloads = activeDownloads.length > 0 || completedDownloads.length > 0;
+
   return (
     <>
       <PanelSection title="Status">
@@ -269,8 +287,29 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
           <PanelSectionRow>
             <Field
               label="RetroArch: input_driver issue"
-              description={`Using "${retroarchWarning.current}" — controllers may not work in menus. See Warning section below.`}
-            />
+              description={`Using "${retroarchWarning.current}"`}
+            >
+              <DialogButton onClick={() => showModal(
+                <ConfirmModal
+                  strTitle="Fix RetroArch input_driver?"
+                  strDescription="This will change input_driver to sdl2 in your RetroArch config. Controllers should work better in RetroArch menus after this change."
+                  strOKButtonText="Apply Fix"
+                  strCancelButtonText="Cancel"
+                  onOK={async () => {
+                    try {
+                      const result = await fixRetroarchInputDriver();
+                      if (result.success) {
+                        setRetroarchWarning(null);
+                      }
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                />
+              )}>
+                Fix
+              </DialogButton>
+            </Field>
           </PanelSectionRow>
         )}
         {migration.pending && (
@@ -286,7 +325,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
               </div>
             </PanelSectionRow>
             <PanelSectionRow>
-              <ButtonItem layout="below" onClick={() => onNavigate("connection")}>
+              <ButtonItem layout="below" onClick={() => onNavigate("settings")}>
                 Go to Settings
               </ButtonItem>
             </PanelSectionRow>
@@ -374,7 +413,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
           </>
         ) : (
           <>
-            {syncProgress && syncProgress.phase === "applying" ? (
+            {syncProgress && syncProgress.step && syncProgress.totalSteps ? (
               <PanelSectionRow>
                 <ProgressBarWithInfo
                   indeterminate={progressFraction === undefined}
@@ -408,10 +447,40 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
         )}
       </PanelSection>
 
+      {hasDownloads && (
+        <PanelSection title="Downloads">
+          {activeDownloads.slice(0, 2).map((item) => (
+            <PanelSectionRow key={item.rom_id}>
+              <ProgressBarWithInfo
+                nProgress={item.total_bytes > 0 ? (item.bytes_downloaded / item.total_bytes) * 100 : undefined}
+                indeterminate={item.total_bytes === 0}
+                sOperationText={item.rom_name}
+                sTimeRemaining={item.total_bytes > 0 ? `${formatBytes(item.bytes_downloaded)} / ${formatBytes(item.total_bytes)}` : formatBytes(item.bytes_downloaded)}
+              />
+            </PanelSectionRow>
+          ))}
+          {activeDownloads.length > 2 && (
+            <PanelSectionRow>
+              <Field label={`+${activeDownloads.length - 2} more downloading`} />
+            </PanelSectionRow>
+          )}
+          {completedDownloads.length > 0 && (
+            <PanelSectionRow>
+              <Field label={`${completedDownloads.length} completed`} />
+            </PanelSectionRow>
+          )}
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => onNavigate("downloads")}>
+              View All
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
+      )}
+
       <PanelSection title="Settings">
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("connection")}>
-            Connection Settings
+          <ButtonItem layout="below" onClick={() => onNavigate("settings")}>
+            Settings
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
@@ -420,85 +489,9 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("savesync")}>
-            Save Sync
+          <ButtonItem layout="below" onClick={() => onNavigate("data")}>
+            Data Management
           </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("downloads")}>
-            Downloads
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("bios")}>
-            BIOS Files
-          </ButtonItem>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("danger")}>
-            Danger Zone
-          </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection>
-
-      {retroarchWarning && retroarchWarning.warning && (
-        <PanelSection title="Warning">
-          <PanelSectionRow>
-            <Field
-              label={`RetroArch input_driver: "${retroarchWarning.current}"`}
-              description="Controller navigation in RetroArch menus may not work with this setting."
-            />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={async () => {
-                setRetroarchFixStatus("Applying...");
-                try {
-                  const result = await fixRetroarchInputDriver();
-                  setRetroarchFixStatus(result.message);
-                  if (result.success) {
-                    setRetroarchWarning(null);
-                  }
-                } catch {
-                  setRetroarchFixStatus("Failed to apply fix");
-                }
-              }}
-            >
-              Change to sdl2
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <Field
-              label=""
-              description="This modifies your RetroArch config. Use with caution — if controllers stop working, revert manually."
-            />
-          </PanelSectionRow>
-          {retroarchFixStatus && (
-            <PanelSectionRow>
-              <Field label={retroarchFixStatus} />
-            </PanelSectionRow>
-          )}
-        </PanelSection>
-      )}
-
-      <PanelSection title="Advanced">
-        <PanelSectionRow>
-          <DropdownItem
-            label="Log Level"
-            description="Controls which frontend messages are written to the plugin log file"
-            rgOptions={[
-              { data: "error", label: "Error" },
-              { data: "warn", label: "Warn" },
-              { data: "info", label: "Info" },
-              { data: "debug", label: "Debug" },
-            ]}
-            selectedOption={logLevel}
-            onChange={(option) => {
-              setLogLevel(option.data);
-              saveLogLevel(option.data);
-            }}
-          />
         </PanelSectionRow>
       </PanelSection>
     </>

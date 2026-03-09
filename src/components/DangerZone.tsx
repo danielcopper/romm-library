@@ -7,6 +7,9 @@ import {
   TextField,
   ToggleField,
   Spinner,
+  ModalRoot,
+  DialogButton,
+  showModal,
 } from "@decky/ui";
 import {
   getRegistryPlatforms,
@@ -24,6 +27,36 @@ import { removeShortcut } from "../utils/steamShortcuts";
 import { clearPlatformCollection, clearAllRomMCollections } from "../utils/collections";
 import type { RegistryPlatform } from "../types";
 
+const PlatformActionModal: FC<{
+  platform: RegistryPlatform;
+  closeModal?: () => void;
+  onRemoveShortcuts: () => void;
+  onDeleteSaves: () => void;
+  onDeleteBios: () => void;
+}> = ({ platform, closeModal, onRemoveShortcuts, onDeleteSaves, onDeleteBios }) => (
+  <ModalRoot closeModal={closeModal}>
+    <div style={{ padding: "16px", minWidth: "320px" }}>
+      <div style={{ fontSize: "16px", fontWeight: "bold", color: "#fff", marginBottom: "16px" }}>
+        Actions for {platform.name}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <DialogButton onClick={() => { closeModal?.(); onRemoveShortcuts(); }}>
+          Remove Shortcuts ({platform.count} game{platform.count !== 1 ? "s" : ""})
+        </DialogButton>
+        <DialogButton onClick={() => { closeModal?.(); onDeleteSaves(); }}>
+          Delete Save Files
+        </DialogButton>
+        <DialogButton onClick={() => { closeModal?.(); onDeleteBios(); }}>
+          Delete BIOS Files
+        </DialogButton>
+        <DialogButton onClick={() => closeModal?.()} style={{ opacity: 0.5 }}>
+          Cancel
+        </DialogButton>
+      </div>
+    </div>
+  </ModalRoot>
+);
+
 interface DangerZoneProps {
   onBack: () => void;
 }
@@ -36,15 +69,11 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
   const [whitelist, setWhitelist] = useState<Set<number>>(new Set());
   const [nonSteamApps, setNonSteamApps] = useState<{ appId: number; name: string }[]>([]);
   const [confirmRemoveAllRomm, setConfirmRemoveAllRomm] = useState(false);
-  const [confirmPlatformSlug, setConfirmPlatformSlug] = useState<string | null>(null);
   const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
   const [confirmRetrodeck, setConfirmRetrodeck] = useState(false);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [uninstallStatus, setUninstallStatus] = useState("");
-  const [confirmSaveSlug, setConfirmSaveSlug] = useState<string | null>(null);
-  const [saveDeleteStatus, setSaveDeleteStatus] = useState("");
-  const [confirmBiosSlug, setConfirmBiosSlug] = useState<string | null>(null);
-  const [biosDeleteStatus, setBiosDeleteStatus] = useState("");
+  const [actionStatus, setActionStatus] = useState("");
   const [whitelistSearch, setWhitelistSearch] = useState("");
 
   const refreshPlatforms = async () => {
@@ -126,6 +155,44 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
     loadNonSteamApps();
   }, []);
 
+  const handleRemoveShortcuts = async (p: RegistryPlatform) => {
+    setActionStatus(`Removing ${p.name} shortcuts...`);
+    const result = await removePlatformShortcuts(p.slug);
+    if (result.app_ids) {
+      for (const appId of result.app_ids) {
+        removeShortcut(appId);
+      }
+    }
+    if (result.rom_ids?.length) {
+      await reportRemovalResults(result.rom_ids);
+    }
+    await clearPlatformCollection(result.platform_name || p.name);
+    setActionStatus(`Removed ${p.count} ${p.name} game${p.count !== 1 ? "s" : ""}`);
+    await refreshPlatforms();
+    loadNonSteamApps();
+  };
+
+  const handleDeleteSaves = async (p: RegistryPlatform) => {
+    setActionStatus(`Deleting ${p.name} saves...`);
+    try {
+      const result = await deletePlatformSaves(p.slug);
+      setActionStatus(result.message);
+      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
+    } catch {
+      setActionStatus("Failed to delete saves");
+    }
+  };
+
+  const handleDeleteBios = async (p: RegistryPlatform) => {
+    setActionStatus(`Deleting ${p.name} BIOS...`);
+    try {
+      const result = await deletePlatformBios(p.slug);
+      setActionStatus(result.message);
+    } catch {
+      setActionStatus("Failed to delete BIOS files");
+    }
+  };
+
   return (
     <>
       <PanelSection>
@@ -136,52 +203,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
         </PanelSectionRow>
       </PanelSection>
 
-      <PanelSection title="Remove by Platform">
-        {loading ? (
-          <PanelSectionRow>
-            <Spinner />
-          </PanelSectionRow>
-        ) : platforms.length === 0 ? (
-          <PanelSectionRow>
-            <Field label="No synced platforms" />
-          </PanelSectionRow>
-        ) : (
-          platforms.map((p) => (
-            <PanelSectionRow key={p.slug || p.name}>
-              <ButtonItem
-                layout="below"
-                onClick={async () => {
-                  if (confirmPlatformSlug !== p.slug) {
-                    setConfirmPlatformSlug(p.slug);
-                    return;
-                  }
-                  setConfirmPlatformSlug(null);
-                  setStatus(`Removing ${p.name}...`);
-                  const result = await removePlatformShortcuts(p.slug);
-                  if (result.app_ids) {
-                    for (const appId of result.app_ids) {
-                      removeShortcut(appId);
-                    }
-                  }
-                  if (result.rom_ids?.length) {
-                    await reportRemovalResults(result.rom_ids);
-                  }
-                  await clearPlatformCollection(result.platform_name || p.name);
-                  setStatus(`Removed ${p.count} ${p.name} game${p.count !== 1 ? "s" : ""}`);
-                  await refreshPlatforms();
-                  loadNonSteamApps();
-                }}
-              >
-                {confirmPlatformSlug === p.slug
-                  ? <span style={{ color: "#ff8800" }}>Confirm: remove {p.count} {p.name} game{p.count !== 1 ? "s" : ""}?</span>
-                  : `${p.name} (${p.count})`}
-              </ButtonItem>
-            </PanelSectionRow>
-          ))
-        )}
-      </PanelSection>
-
-      <PanelSection title="Remove All RomM Games">
+      <PanelSection title="Remove Shortcuts">
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -215,6 +237,43 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
         {status && (
           <PanelSectionRow>
             <Field label={status} />
+          </PanelSectionRow>
+        )}
+      </PanelSection>
+
+      <PanelSection title="Per-Platform Actions">
+        {loading ? (
+          <PanelSectionRow>
+            <Spinner />
+          </PanelSectionRow>
+        ) : platforms.length === 0 ? (
+          <PanelSectionRow>
+            <Field label="No synced platforms" />
+          </PanelSectionRow>
+        ) : (
+          platforms.map((p) => (
+            <PanelSectionRow key={p.slug || p.name}>
+              <ButtonItem
+                layout="below"
+                onClick={() => {
+                  showModal(
+                    <PlatformActionModal
+                      platform={p}
+                      onRemoveShortcuts={() => handleRemoveShortcuts(p)}
+                      onDeleteSaves={() => handleDeleteSaves(p)}
+                      onDeleteBios={() => handleDeleteBios(p)}
+                    />
+                  );
+                }}
+              >
+                {p.name} ({p.count})
+              </ButtonItem>
+            </PanelSectionRow>
+          ))
+        )}
+        {actionStatus && (
+          <PanelSectionRow>
+            <Field label={actionStatus} />
           </PanelSectionRow>
         )}
       </PanelSection>
@@ -253,98 +312,6 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
         {uninstallStatus && (
           <PanelSectionRow>
             <Field label={uninstallStatus} />
-          </PanelSectionRow>
-        )}
-      </PanelSection>
-
-      <PanelSection title="Delete Save Files">
-        {loading ? (
-          <PanelSectionRow>
-            <Spinner />
-          </PanelSectionRow>
-        ) : platforms.length === 0 ? (
-          <PanelSectionRow>
-            <Field label="No synced platforms" />
-          </PanelSectionRow>
-        ) : (
-          platforms.map((p) => (
-            <PanelSectionRow key={`saves-${p.slug || p.name}`}>
-              <ButtonItem
-                layout="below"
-                onClick={async () => {
-                  if (confirmSaveSlug !== p.slug) {
-                    setConfirmSaveSlug(p.slug);
-                    return;
-                  }
-                  setConfirmSaveSlug(null);
-                  setSaveDeleteStatus(`Deleting ${p.name} saves...`);
-                  try {
-                    const result = await deletePlatformSaves(p.slug);
-                    setSaveDeleteStatus(result.message);
-                    window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
-                  } catch {
-                    setSaveDeleteStatus("Failed to delete saves");
-                  }
-                }}
-              >
-                {confirmSaveSlug === p.slug
-                  ? <span style={{ color: "#ff8800" }}>Confirm: delete save files for {p.count} {p.name} game{p.count !== 1 ? "s" : ""}?</span>
-                  : `${p.name} (${p.count})`}
-              </ButtonItem>
-            </PanelSectionRow>
-          ))
-        )}
-        {confirmSaveSlug && (
-          <PanelSectionRow>
-            <Field label={<span style={{ color: "#ff8800" }}>Make sure saves are synced to RomM. Unsynced saves will be lost.</span>} />
-          </PanelSectionRow>
-        )}
-        {saveDeleteStatus && (
-          <PanelSectionRow>
-            <Field label={saveDeleteStatus} />
-          </PanelSectionRow>
-        )}
-      </PanelSection>
-
-      <PanelSection title="Delete BIOS Files">
-        {loading ? (
-          <PanelSectionRow>
-            <Spinner />
-          </PanelSectionRow>
-        ) : platforms.length === 0 ? (
-          <PanelSectionRow>
-            <Field label="No synced platforms" />
-          </PanelSectionRow>
-        ) : (
-          platforms.map((p) => (
-            <PanelSectionRow key={`bios-${p.slug || p.name}`}>
-              <ButtonItem
-                layout="below"
-                onClick={async () => {
-                  if (confirmBiosSlug !== p.slug) {
-                    setConfirmBiosSlug(p.slug);
-                    return;
-                  }
-                  setConfirmBiosSlug(null);
-                  setBiosDeleteStatus(`Deleting ${p.name} BIOS...`);
-                  try {
-                    const result = await deletePlatformBios(p.slug);
-                    setBiosDeleteStatus(result.message);
-                  } catch {
-                    setBiosDeleteStatus("Failed to delete BIOS files");
-                  }
-                }}
-              >
-                {confirmBiosSlug === p.slug
-                  ? <span style={{ color: "#ff8800" }}>Confirm: delete BIOS files for {p.name}?</span>
-                  : `${p.name}`}
-              </ButtonItem>
-            </PanelSectionRow>
-          ))
-        )}
-        {biosDeleteStatus && (
-          <PanelSectionRow>
-            <Field label={biosDeleteStatus} />
           </PanelSectionRow>
         )}
       </PanelSection>

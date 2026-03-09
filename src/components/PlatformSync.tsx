@@ -1,63 +1,319 @@
-import { useState, useEffect, FC } from "react";
+import { useState, useEffect, useRef, FC } from "react";
 import {
   PanelSection,
   PanelSectionRow,
   ButtonItem,
   ToggleField,
   Spinner,
+  DialogButton,
+  DropdownItem,
+  Field,
+  Focusable,
 } from "@decky/ui";
 import {
   getPlatforms,
   savePlatformSync,
   setAllPlatformsSync,
+  getFirmwareStatus,
+  downloadAllFirmware,
+  downloadRequiredFirmware,
+  setSystemCore,
 } from "../api/backend";
-import type { PlatformSyncSetting } from "../types";
+import type { PlatformSyncSetting, FirmwarePlatformExt } from "../types";
 
 interface PlatformSyncProps {
   onBack: () => void;
 }
 
 export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
-  const [platforms, setPlatforms] = useState<PlatformSyncSetting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [activeTab, setActiveTab] = useState<"sync" | "bios">("sync");
 
+  // --- Sync tab state ---
+  const [syncPlatforms, setSyncPlatforms] = useState<PlatformSyncSetting[]>([]);
+  const [syncLoading, setSyncLoading] = useState(true);
+  const [syncError, setSyncError] = useState(false);
+
+  // --- BIOS tab state ---
+  const [biosPlatforms, setBiosPlatforms] = useState<FirmwarePlatformExt[]>([]);
+  const [biosLoading, setBiosLoading] = useState(true);
+  const [biosError, setBiosError] = useState("");
+  const [serverOffline, setServerOffline] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [biosStatus, setBiosStatus] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const biosLoaded = useRef(false);
+
+  // Load sync platforms on mount
   useEffect(() => {
     getPlatforms()
       .then((result) => {
         if (result.success) {
-          setPlatforms(result.platforms);
+          setSyncPlatforms(result.platforms);
         } else {
-          setError(true);
+          setSyncError(true);
         }
       })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+      .catch(() => setSyncError(true))
+      .finally(() => setSyncLoading(false));
   }, []);
 
+  // Load BIOS data lazily on first switch to BIOS tab
+  useEffect(() => {
+    if (activeTab === "bios" && !biosLoaded.current) {
+      biosLoaded.current = true;
+      refreshBios();
+    }
+  }, [activeTab]);
+
+  const refreshBios = async () => {
+    setBiosLoading(true);
+    setBiosError("");
+    try {
+      const result = await getFirmwareStatus();
+      if (result.success) {
+        setBiosPlatforms(result.platforms);
+        setServerOffline(result.server_offline ?? false);
+      } else {
+        setBiosError(result.message || "Failed to fetch firmware status");
+      }
+    } catch (e) {
+      setBiosError(`Failed to fetch firmware status: ${e}`);
+    }
+    setBiosLoading(false);
+  };
+
+  // --- Sync tab handlers ---
   const handleToggle = async (id: number, enabled: boolean) => {
-    setPlatforms((prev) =>
+    setSyncPlatforms((prev) =>
       prev.map((p) => (p.id === id ? { ...p, sync_enabled: enabled } : p))
     );
     try {
       await savePlatformSync(id, enabled);
     } catch {
-      setPlatforms((prev) =>
+      setSyncPlatforms((prev) =>
         prev.map((p) => (p.id === id ? { ...p, sync_enabled: !enabled } : p))
       );
     }
   };
 
   const handleSetAll = async (enabled: boolean) => {
-    const previous = platforms.map((p) => ({ ...p }));
-    setPlatforms((prev) => prev.map((p) => ({ ...p, sync_enabled: enabled })));
+    const previous = syncPlatforms.map((p) => ({ ...p }));
+    setSyncPlatforms((prev) => prev.map((p) => ({ ...p, sync_enabled: enabled })));
     try {
       await setAllPlatformsSync(enabled);
     } catch {
-      setPlatforms(previous);
+      setSyncPlatforms(previous);
     }
   };
 
+  // --- BIOS tab handlers ---
+  const handleDownloadAll = async (platformSlug: string) => {
+    setDownloading(platformSlug);
+    setBiosStatus("");
+    try {
+      const result = await downloadAllFirmware(platformSlug);
+      if (result.success) {
+        setBiosStatus(result.message || `Downloaded ${result.downloaded} files`);
+        await refreshBios();
+      } else {
+        setBiosStatus(result.message || "Download failed");
+      }
+    } catch (e) {
+      setBiosStatus(`Download failed: ${e}`);
+    }
+    setDownloading(null);
+  };
+
+  const handleDownloadRequired = async (platformSlug: string) => {
+    setDownloading(platformSlug);
+    setBiosStatus("");
+    try {
+      const result = await downloadRequiredFirmware(platformSlug);
+      if (result.success) {
+        setBiosStatus(result.message || `Downloaded ${result.downloaded} required files`);
+        await refreshBios();
+      } else {
+        setBiosStatus(result.message || "Download failed");
+      }
+    } catch (e) {
+      setBiosStatus(`Download failed: ${e}`);
+    }
+    setDownloading(null);
+  };
+
+  // --- BIOS tab: platform rendering ---
+  const withGames = biosPlatforms.filter((p) => p.has_games);
+  const withoutGames = biosPlatforms.filter((p) => !p.has_games);
+
+  const renderBiosPlatform = (platform: FirmwarePlatformExt) => {
+    const total = platform.files.length;
+    const done = platform.files.filter((f) => f.downloaded).length;
+    const allDone = done === total;
+    const isDownloading = downloading === platform.platform_slug;
+    const isExpanded = expanded[platform.platform_slug] ?? false;
+
+    const requiredFiles = platform.files.filter((f) => f.classification === "required");
+    const optionalFiles = platform.files.filter((f) => f.classification === "optional");
+    const unknownFiles = platform.files.filter((f) => f.classification === "unknown");
+    const requiredCount = requiredFiles.length;
+    const requiredDone = requiredFiles.filter((f) => f.downloaded).length;
+    const allRequiredDone = requiredDone === requiredCount;
+    const optionalDone = optionalFiles.filter((f) => f.downloaded).length;
+    const optionalMissing = optionalFiles.length - optionalDone;
+
+    const needsAttention = platform.has_games && !allRequiredDone;
+
+    let summaryLabel: string;
+    let summaryDescription: string;
+    if (requiredCount > 0) {
+      if (allRequiredDone) {
+        summaryLabel = `${requiredDone} / ${requiredCount} required`;
+        summaryDescription = optionalMissing > 0
+          ? `All required ready (${optionalMissing} optional missing)`
+          : "All required ready";
+      } else {
+        summaryLabel = `${requiredDone} / ${requiredCount} required`;
+        summaryDescription = `${requiredCount - requiredDone} required missing — games may not launch`;
+      }
+    } else {
+      summaryLabel = `${done} / ${total} files`;
+      summaryDescription = allDone ? "All downloaded" : `${total - done} missing`;
+    }
+
+    const hashIndicator = (hv: boolean | null) =>
+      hv === true ? " \u2713" : hv === false ? " \u26A0" : " \u2014";
+
+    const hasRequiredMissing = requiredCount > 0 && !allRequiredDone;
+    const hasOptionalMissing = optionalMissing > 0;
+
+    return (
+      <PanelSection
+        key={platform.platform_slug}
+        title={`${platform.platform_slug}${needsAttention ? " — BIOS needed" : ""}`}
+      >
+        <PanelSectionRow>
+          <Field
+            label={summaryLabel}
+            description={summaryDescription}
+          />
+        </PanelSectionRow>
+        {platform.available_cores && platform.available_cores.length > 1 && (
+          <PanelSectionRow>
+            <DropdownItem
+              label="Active Core"
+              rgOptions={[
+                ...platform.available_cores.map((c) => ({
+                  data: c.label,
+                  label: c.is_default ? `${c.label} (default)` : c.label,
+                })),
+              ]}
+              selectedOption={platform.active_core_label || platform.available_cores.find((c) => c.is_default)?.label || ""}
+              onChange={async (option: { data: string }) => {
+                const defaultCore = platform.available_cores?.find((c) => c.is_default);
+                const label = defaultCore && option.data === defaultCore.label ? "" : option.data;
+                const result = await setSystemCore(platform.platform_slug, label);
+                if (result.success) {
+                  await refreshBios();
+                  window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "core_changed", platform_slug: platform.platform_slug } }));
+                }
+              }}
+            />
+          </PanelSectionRow>
+        )}
+        {platform.active_core_label && (!platform.available_cores || platform.available_cores.length <= 1) && (
+          <PanelSectionRow>
+            <Field
+              label="Core"
+              description={platform.active_core_label}
+            />
+          </PanelSectionRow>
+        )}
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={() => setExpanded((prev) => ({
+              ...prev,
+              [platform.platform_slug]: !prev[platform.platform_slug],
+            }))}
+          >
+            {isExpanded ? "Hide Files" : `Show Files (${total})`}
+          </ButtonItem>
+        </PanelSectionRow>
+        {isExpanded && (
+          <Focusable>
+            {platform.files.map((file) => {
+              let dotColor: string;
+              if (file.classification === "unknown") {
+                dotColor = "#d4a72c";
+              } else if (file.downloaded) {
+                dotColor = "#5ba32b";
+              } else if (file.classification === "required") {
+                dotColor = "#d94126";
+              } else {
+                dotColor = "#8f98a0";
+              }
+              return (
+                <PanelSectionRow key={file.id}>
+                  <Field
+                    label={
+                      <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{
+                          display: "inline-block",
+                          width: "8px",
+                          height: "8px",
+                          borderRadius: "50%",
+                          backgroundColor: dotColor,
+                          flexShrink: 0,
+                        }} />
+                        {`${file.description || file.file_name} (${file.classification})`}
+                      </span>
+                    }
+                    description={
+                      file.downloaded
+                        ? `${file.file_name}${hashIndicator(file.hash_valid)}`
+                        : `${file.file_name} — Missing`
+                    }
+                  />
+                </PanelSectionRow>
+              );
+            })}
+            {unknownFiles.length > 0 && (
+              <PanelSectionRow>
+                <Field
+                  label={`${unknownFiles.length} file(s) not recognized`}
+                  description="Report at github.com/danielcopper/decky-romm-sync/issues if needed."
+                />
+              </PanelSectionRow>
+            )}
+          </Focusable>
+        )}
+        {hasRequiredMissing && !serverOffline && (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={() => handleDownloadRequired(platform.platform_slug)}
+              disabled={isDownloading}
+            >
+              {isDownloading ? "Downloading..." : "Download Required"}
+            </ButtonItem>
+          </PanelSectionRow>
+        )}
+        {!allDone && (hasOptionalMissing || hasRequiredMissing) && !serverOffline && (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={() => handleDownloadAll(platform.platform_slug)}
+              disabled={isDownloading}
+            >
+              {isDownloading ? "Downloading..." : "Download All"}
+            </ButtonItem>
+          </PanelSectionRow>
+        )}
+      </PanelSection>
+    );
+  };
+
+  // --- Render ---
   return (
     <>
       <PanelSection>
@@ -67,44 +323,106 @@ export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
-      <PanelSection title="Platforms">
-        {loading ? (
-          <PanelSectionRow>
-            <Spinner />
-          </PanelSectionRow>
-        ) : error ? (
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={onBack}>
-              Failed to load platforms
-            </ButtonItem>
-          </PanelSectionRow>
-        ) : (
-          <>
+      <Focusable
+        flow-children="horizontal"
+        style={{ display: "flex", gap: "4px", padding: "0 16px 12px" }}
+      >
+        <DialogButton
+          style={{ flex: 1, minWidth: 0, padding: "10px 0", opacity: activeTab === "sync" ? 1 : 0.5, borderBottom: activeTab === "sync" ? "2px solid #1a9fff" : "2px solid transparent" }}
+          onClick={() => setActiveTab("sync")}
+        >
+          Sync
+        </DialogButton>
+        <DialogButton
+          style={{ flex: 1, minWidth: 0, padding: "10px 0", opacity: activeTab === "bios" ? 1 : 0.5, borderBottom: activeTab === "bios" ? "2px solid #1a9fff" : "2px solid transparent" }}
+          onClick={() => setActiveTab("bios")}
+        >
+          BIOS
+        </DialogButton>
+      </Focusable>
+
+      {activeTab === "sync" && (
+        <PanelSection title="Platforms">
+          {syncLoading ? (
             <PanelSectionRow>
-              <ButtonItem layout="below" onClick={() => handleSetAll(true)}>
-                Enable All
+              <Spinner />
+            </PanelSectionRow>
+          ) : syncError ? (
+            <PanelSectionRow>
+              <ButtonItem layout="below" onClick={onBack}>
+                Failed to load platforms
               </ButtonItem>
             </PanelSectionRow>
-            <PanelSectionRow>
-              <ButtonItem layout="below" onClick={() => handleSetAll(false)}>
-                Disable All
-              </ButtonItem>
-            </PanelSectionRow>
-            {platforms.map((platform) => (
-              <PanelSectionRow key={platform.id}>
-                <ToggleField
-                  label={platform.name}
-                  description={`${platform.rom_count} ROMs`}
-                  checked={platform.sync_enabled}
-                  onChange={(value: boolean) =>
-                    handleToggle(platform.id, value)
-                  }
+          ) : (
+            <>
+              <PanelSectionRow>
+                <ButtonItem layout="below" onClick={() => handleSetAll(true)}>
+                  Enable All
+                </ButtonItem>
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <ButtonItem layout="below" onClick={() => handleSetAll(false)}>
+                  Disable All
+                </ButtonItem>
+              </PanelSectionRow>
+              {syncPlatforms.map((platform) => (
+                <PanelSectionRow key={platform.id}>
+                  <ToggleField
+                    label={platform.name}
+                    description={`${platform.rom_count} ROMs`}
+                    checked={platform.sync_enabled}
+                    onChange={(value: boolean) =>
+                      handleToggle(platform.id, value)
+                    }
+                  />
+                </PanelSectionRow>
+              ))}
+            </>
+          )}
+        </PanelSection>
+      )}
+
+      {activeTab === "bios" && (
+        <>
+          <PanelSection title="BIOS Files">
+            {biosLoading && (
+              <PanelSectionRow>
+                <Field label="Loading firmware status..." />
+              </PanelSectionRow>
+            )}
+
+            {biosError && (
+              <PanelSectionRow>
+                <Field label="Error" description={biosError} />
+              </PanelSectionRow>
+            )}
+
+            {serverOffline && (
+              <PanelSectionRow>
+                <Field
+                  label="Server offline"
+                  description="RomM server is unreachable. Downloads unavailable, but core switching still works."
                 />
               </PanelSectionRow>
-            ))}
-          </>
-        )}
-      </PanelSection>
+            )}
+
+            {!biosLoading && !biosError && biosPlatforms.length === 0 && (
+              <PanelSectionRow>
+                <Field label="No firmware files found" />
+              </PanelSectionRow>
+            )}
+
+            {biosStatus && (
+              <PanelSectionRow>
+                <Field label={biosStatus} />
+              </PanelSectionRow>
+            )}
+          </PanelSection>
+
+          {withGames.map(renderBiosPlatform)}
+          {withoutGames.map(renderBiosPlatform)}
+        </>
+      )}
     </>
   );
 };
