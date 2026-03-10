@@ -107,6 +107,8 @@ class SyncMixin:
         return {"success": True, "message": "Sync started"}
 
     async def cancel_sync(self):
+        if self._sync_state != SyncState.RUNNING:
+            return {"success": True, "message": "No sync in progress"}
         self._sync_state = SyncState.CANCELLING
         return {"success": True, "message": "Sync cancelling..."}
 

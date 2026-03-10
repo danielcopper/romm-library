@@ -222,6 +222,8 @@ class RommClientMixin:
         """PUT JSON to RomM API, return parsed response."""
         return self._romm_json_request(path, data, method="PUT")
 
+    # Intentionally skips _with_retry: POST uploads may not be idempotent.
+    # (RomM saves endpoint upserts by filename, but we err on the side of caution.)
     def _romm_upload_multipart(self, path, file_path, method="POST"):
         """Upload a file via multipart/form-data to RomM API."""
         boundary = uuid.uuid4().hex
