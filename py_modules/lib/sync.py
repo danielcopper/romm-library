@@ -58,6 +58,10 @@ class SyncMixin:
             _code, _msg = classify_error(e)
             return {"success": False, "message": _msg, "error_code": _code}
 
+        if not isinstance(platforms, list):
+            decky.logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
+            return {"success": False, "message": "Invalid server response", "error_code": "api_error"}
+
         enabled = self.settings.get("enabled_platforms", {})
         result = []
         for p in platforms:
@@ -258,26 +262,7 @@ class SyncMixin:
         )
 
         # Heartbeat safety timeout
-        self._sync_last_heartbeat = time.monotonic()
-        heartbeat_timeout_sec = 30
-
-        async def _safety_timeout():
-            while self._sync_progress.get("running"):
-                await asyncio.sleep(10)
-                elapsed = time.monotonic() - self._sync_last_heartbeat
-                if elapsed > heartbeat_timeout_sec:
-                    decky.logger.warning(
-                        f"Sync safety timeout: no heartbeat for {elapsed:.0f}s"
-                    )
-                    stats = self._state.get("sync_stats", {})
-                    await self._emit_progress("done",
-                        current=stats.get("roms", 0),
-                        total=stats.get("roms", 0),
-                        message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
-                        running=False)
-                    self._sync_state = SyncState.IDLE
-                    return
-        self.loop.create_task(_safety_timeout())
+        self._start_safety_timeout()
 
         return {"success": True, "message": "Applying changes"}
 
@@ -297,6 +282,28 @@ class SyncMixin:
             "totalSteps": total_steps,
         }
         await decky.emit("sync_progress", self._sync_progress)
+
+    def _start_safety_timeout(self, heartbeat_timeout_sec=30):
+        """Launch a background task that auto-completes sync if no heartbeat arrives."""
+        self._sync_last_heartbeat = time.monotonic()
+
+        async def _safety_timeout():
+            while self._sync_progress.get("running"):
+                await asyncio.sleep(10)
+                elapsed = time.monotonic() - self._sync_last_heartbeat
+                if elapsed > heartbeat_timeout_sec:
+                    decky.logger.warning(
+                        f"Sync safety timeout: no heartbeat for {elapsed:.0f}s"
+                    )
+                    stats = self._state.get("sync_stats", {})
+                    await self._emit_progress("done",
+                        current=stats.get("roms", 0),
+                        total=stats.get("roms", 0),
+                        message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
+                        running=False)
+                    self._sync_state = SyncState.IDLE
+                    return
+        self.loop.create_task(_safety_timeout())
 
     def _classify_roms(self, shortcuts_data, fetched_platform_names):
         """Classify each ROM as new/changed/unchanged/stale."""
@@ -341,6 +348,9 @@ class SyncMixin:
         platforms = await self.loop.run_in_executor(
             None, self._romm_request, "/api/platforms"
         )
+        if not isinstance(platforms, list):
+            decky.logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
+            platforms = []
 
         if self._sync_state == SyncState.CANCELLING:
             raise asyncio.CancelledError("Sync cancelled")
@@ -391,13 +401,8 @@ class SyncMixin:
                     )
                     server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
 
-                    # Also check total ROM count without updated_after (for stale detection)
-                    count_resp = await self.loop.run_in_executor(
-                        None,
-                        self._romm_request,
-                        f"/api/roms?platform_ids={platform_id}&limit=1&offset=0",
-                    )
-                    platform_total = count_resp.get("total", 0) if isinstance(count_resp, dict) else 0
+                    # Use rom_count from platform list instead of a separate API call
+                    platform_total = platform.get("rom_count", 0)
 
                     if server_total == 0 and platform_total == registry_count:
                         # Nothing changed, nothing deleted — reconstruct from registry
@@ -603,25 +608,7 @@ class SyncMixin:
             if self._sync_progress.get("phase") == "error":
                 pass
             elif self._sync_progress.get("running"):
-                self._sync_last_heartbeat = time.monotonic()
-                heartbeat_timeout_sec = 30
-
-                async def _safety_timeout():
-                    while self._sync_progress.get("running"):
-                        await asyncio.sleep(10)
-                        elapsed = time.monotonic() - self._sync_last_heartbeat
-                        if elapsed > heartbeat_timeout_sec:
-                            decky.logger.warning(
-                                f"Sync safety timeout: no heartbeat for {elapsed:.0f}s"
-                            )
-                            stats = self._state.get("sync_stats", {})
-                            await self._emit_progress("done",
-                                current=stats.get("roms", 0),
-                                total=stats.get("roms", 0),
-                                message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
-                                running=False)
-                            return
-                self.loop.create_task(_safety_timeout())
+                self._start_safety_timeout()
 
     async def _finish_sync(self, message):
         self._sync_progress = {

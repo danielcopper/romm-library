@@ -41,6 +41,22 @@ class MetadataMixin:
             "cached_at": time.time(),
         }
 
+    _metadata_dirty_count = 0
+    _METADATA_FLUSH_INTERVAL = 50
+
+    def _mark_metadata_dirty(self):
+        """Track metadata cache changes and flush to disk periodically."""
+        self._metadata_dirty_count += 1
+        if self._metadata_dirty_count >= self._METADATA_FLUSH_INTERVAL:
+            self._save_metadata_cache()
+            self._metadata_dirty_count = 0
+
+    def _flush_metadata_if_dirty(self):
+        """Flush metadata cache to disk if any pending writes."""
+        if self._metadata_dirty_count > 0:
+            self._save_metadata_cache()
+            self._metadata_dirty_count = 0
+
     async def get_rom_metadata(self, rom_id):
         """Return cached metadata for a ROM, fetching from API if stale/missing."""
         rom_id = int(rom_id)
@@ -48,7 +64,7 @@ class MetadataMixin:
         CACHE_TTL = 7 * 24 * 3600  # 7 days
 
         cached = self._metadata_cache.get(rom_id_str)
-        if cached:
+        if isinstance(cached, dict) and cached:
             age = time.time() - cached.get("cached_at", 0)
             if age < CACHE_TTL:
                 self._log_debug(f"Metadata cache hit for rom_id={rom_id}")

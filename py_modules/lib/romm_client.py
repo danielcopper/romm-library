@@ -81,6 +81,8 @@ class RommClientMixin:
         # HTTPError first (most specific HTTP-level error)
         if isinstance(exc, urllib.error.HTTPError):
             msg = f"HTTP {exc.code}: {exc.reason} ({method} {url})"
+            if exc.code == 400:
+                return RommApiError(f"Bad request ({method} {url})", url=url, method=method)
             if exc.code == 401:
                 return RommAuthError(msg, url=url, method=method)
             if exc.code == 403:
@@ -89,6 +91,11 @@ class RommClientMixin:
                 return RommNotFoundError(msg, url=url, method=method)
             if exc.code == 409:
                 return RommConflictError(msg, url=url, method=method)
+            if exc.code == 429:
+                return RommServerError(
+                    f"Rate limited — too many requests ({method} {url})",
+                    status_code=429, url=url, method=method,
+                )
             if exc.code >= 500:
                 return RommServerError(msg, status_code=exc.code, url=url, method=method)
             return RommApiError(msg, url=url, method=method)

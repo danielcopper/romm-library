@@ -77,6 +77,12 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         if not current_home:
             return
 
+        if not os.path.isdir(current_home):
+            decky.logger.warning(
+                f"RetroDECK home path does not exist, skipping: {current_home}"
+            )
+            return
+
         if stored_home == current_home:
             return
 

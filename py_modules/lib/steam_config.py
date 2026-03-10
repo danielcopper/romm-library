@@ -27,9 +27,13 @@ class SteamConfigMixin:
                 users = [d for d in os.listdir(base) if d.isdigit()]
                 if len(users) == 1:
                     return os.path.join(base, users[0])
-                # If multiple users, prefer most recently modified
-                for u in users:
-                    return os.path.join(base, u)
+                if len(users) > 1:
+                    # Sort by mtime descending — most recently modified first
+                    users.sort(
+                        key=lambda u: os.path.getmtime(os.path.join(base, u)),
+                        reverse=True,
+                    )
+                    return os.path.join(base, users[0])
         return None
 
     def _shortcuts_vdf_path(self):

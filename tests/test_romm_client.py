@@ -279,12 +279,19 @@ class TestTranslateHttpError:
         assert isinstance(result, RommServerError)
         assert result.status_code == 502
 
-    def test_other_4xx_becomes_generic_api_error(self, plugin):
+    def test_429_becomes_server_error(self, plugin):
         exc = urllib.error.HTTPError("url", 429, "Too Many Requests", {}, None)
+        result = plugin._translate_http_error(exc, "http://romm.local/api/x")
+        assert isinstance(result, RommServerError)
+        assert result.status_code == 429
+        assert "Rate limited" in str(result)
+
+    def test_other_4xx_becomes_generic_api_error(self, plugin):
+        exc = urllib.error.HTTPError("url", 418, "I'm a Teapot", {}, None)
         result = plugin._translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommApiError)
         assert not isinstance(result, RommServerError)
-        assert "429" in str(result)
+        assert "418" in str(result)
 
     def test_url_error_plain_becomes_connection_error(self, plugin):
         exc = urllib.error.URLError("Connection refused")

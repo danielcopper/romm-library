@@ -42,11 +42,14 @@ class TestPathChangeDetection:
 
         plugin.loop = MagicMock()
 
+        fake_home = str(tmp_path / "retrodeck")
+        os.makedirs(fake_home, exist_ok=True)
+
         with patch("lib.retrodeck_config.get_retrodeck_home",
-                    return_value="/run/media/deck/SD/retrodeck"):
+                    return_value=fake_home):
             plugin._detect_retrodeck_path_change()
 
-        assert plugin._state["retrodeck_home_path"] == "/run/media/deck/SD/retrodeck"
+        assert plugin._state["retrodeck_home_path"] == fake_home
         # No event emitted on first run
         plugin.loop.create_task.assert_not_called()
 
@@ -57,11 +60,13 @@ class TestPathChangeDetection:
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin._state["retrodeck_home_path"] = "/run/media/deck/SD/retrodeck"
+        fake_home = str(tmp_path / "retrodeck")
+        os.makedirs(fake_home, exist_ok=True)
+        plugin._state["retrodeck_home_path"] = fake_home
         plugin.loop = MagicMock()
 
         with patch("lib.retrodeck_config.get_retrodeck_home",
-                    return_value="/run/media/deck/SD/retrodeck"):
+                    return_value=fake_home):
             plugin._detect_retrodeck_path_change()
 
         plugin.loop.create_task.assert_not_called()
@@ -73,7 +78,11 @@ class TestPathChangeDetection:
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin._state["retrodeck_home_path"] = "/home/deck/retrodeck"
+        old_home = str(tmp_path / "old_retrodeck")
+        new_home = str(tmp_path / "new_retrodeck")
+        os.makedirs(new_home, exist_ok=True)
+
+        plugin._state["retrodeck_home_path"] = old_home
         plugin.loop = MagicMock()
         _create_task_calls = []
         def _close_coro_task(coro):
@@ -83,11 +92,11 @@ class TestPathChangeDetection:
         plugin.loop.create_task = _close_coro_task
 
         with patch("lib.retrodeck_config.get_retrodeck_home",
-                    return_value="/run/media/deck/SD/retrodeck"):
+                    return_value=new_home):
             plugin._detect_retrodeck_path_change()
 
-        assert plugin._state["retrodeck_home_path"] == "/run/media/deck/SD/retrodeck"
-        assert plugin._state["retrodeck_home_path_previous"] == "/home/deck/retrodeck"
+        assert plugin._state["retrodeck_home_path"] == new_home
+        assert plugin._state["retrodeck_home_path_previous"] == old_home
         assert len(_create_task_calls) == 1
 
     def test_empty_current_home_no_action(self, plugin, tmp_path):

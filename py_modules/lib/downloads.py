@@ -181,6 +181,15 @@ class DownloadMixin:
         rom_name = rom_detail.get("name", file_name)
         platform_name = rom_detail.get("platform_name", platform_slug)
 
+        try:
+            task = self.loop.create_task(
+                self._do_download(rom_id, rom_detail, target_path, system)
+            )
+        except Exception as e:
+            self._download_in_progress.discard(rom_id)
+            decky.logger.error(f"Failed to start download task for ROM {rom_id}: {e}")
+            return {"success": False, "message": "Failed to start download"}
+
         self._download_queue[rom_id] = {
             "rom_id": rom_id,
             "rom_name": rom_name,
@@ -191,10 +200,6 @@ class DownloadMixin:
             "bytes_downloaded": 0,
             "total_bytes": file_size,
         }
-
-        task = self.loop.create_task(
-            self._do_download(rom_id, rom_detail, target_path, system)
-        )
         self._download_tasks[rom_id] = task
         return {"success": True, "message": "Download started"}
 
@@ -397,23 +402,26 @@ class DownloadMixin:
         return extract_dir
 
     def _cleanup_partial_download(self, target_path, has_multiple, file_name):
-        """Clean up partial download files."""
-        try:
-            tmp_zip = target_path + ".zip.tmp"
-            if os.path.exists(tmp_zip):
-                os.remove(tmp_zip)
-            tmp_single = target_path + ".tmp"
-            if os.path.exists(tmp_single):
-                os.remove(tmp_single)
-            if os.path.exists(target_path):
-                os.remove(target_path)
-            if has_multiple:
-                rom_dir_name = os.path.splitext(file_name)[0]
-                extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
+        """Clean up partial download files. Each step is independent so one failure doesn't block others."""
+        paths_to_remove = [
+            target_path + ".zip.tmp",
+            target_path + ".tmp",
+            target_path,
+        ]
+        for path in paths_to_remove:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as e:
+                decky.logger.warning(f"Cleanup failed for {path}: {e}")
+        if has_multiple:
+            rom_dir_name = os.path.splitext(file_name)[0]
+            extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
+            try:
                 if os.path.isdir(extract_dir):
                     shutil.rmtree(extract_dir)
-        except Exception as e:
-            decky.logger.warning(f"Cleanup error: {e}")
+            except Exception as e:
+                decky.logger.warning(f"Cleanup failed for directory {extract_dir}: {e}")
 
     async def cancel_download(self, rom_id):
         rom_id = int(rom_id)

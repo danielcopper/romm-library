@@ -335,7 +335,8 @@ class SaveSyncMixin:
         """Download a server save to temp and compute its MD5 hash.
 
         Used for slow-path conflict detection when no content_hash is available.
-        Returns hash string or None on error.
+        Returns hash string or None on non-retryable error.
+        Raises on retryable errors so the caller can retry.
         """
         save_id = server_save.get("id")
         if not save_id:
@@ -344,10 +345,12 @@ class SaveSyncMixin:
         try:
             fd, tmp_path = tempfile.mkstemp(suffix=".tmp")
             os.close(fd)
-            self._with_retry(self._romm_download_save, save_id, tmp_path)
+            self._romm_download_save(save_id, tmp_path)
             return self._file_md5(tmp_path)
         except Exception as e:
             self._log_debug(f"Failed to hash server save {save_id}: {e}")
+            if self._is_retryable(e):
+                raise
             return None
         finally:
             if tmp_path:
@@ -375,7 +378,10 @@ class SaveSyncMixin:
         # Never synced before — state recovery
         if not last_sync_hash:
             if local_hash:
-                server_hash = self._get_server_save_hash(server_save)
+                try:
+                    server_hash = self._with_retry(self._get_server_save_hash, server_save)
+                except Exception:
+                    server_hash = None
                 if server_hash is None:
                     return "conflict"  # Can't verify, ask user
                 return "skip" if local_hash == server_hash else "conflict"
@@ -391,13 +397,16 @@ class SaveSyncMixin:
         server_size = server_save.get("file_size_bytes")
 
         if stored_updated_at and server_updated_at == stored_updated_at:
-            if stored_size is None or server_size == stored_size:
+            if stored_size is None or server_size is None or server_size == stored_size:
                 server_changed = False  # fast path: unchanged
             else:
                 server_changed = True  # size changed
         else:
             # Timestamp changed or no stored timestamp → slow path
-            server_hash = self._get_server_save_hash(server_save)
+            try:
+                server_hash = self._with_retry(self._get_server_save_hash, server_save)
+            except Exception:
+                server_hash = None
             if server_hash and server_hash != last_sync_hash:
                 server_changed = True
             else:
@@ -452,19 +461,24 @@ class SaveSyncMixin:
         except (ValueError, TypeError):
             return "ask"
 
-    def _add_pending_conflict(self, rom_id, filename, local_path, server_save):
-        """Add a conflict to the pending queue (no duplicates)."""
+    def _add_pending_conflict(self, rom_id, filename, local_path, server_save, local_hash=None):
+        """Add a conflict to the pending queue (no duplicates).
+
+        Pass local_hash if already computed to avoid re-hashing.
+        """
         rom_id = int(rom_id)
         for c in self._save_sync_state["pending_conflicts"]:
             if c.get("rom_id") == rom_id and c.get("filename") == filename:
                 return
 
+        if local_hash is None and os.path.isfile(local_path):
+            local_hash = self._file_md5(local_path)
         local_mtime = os.path.getmtime(local_path) if os.path.isfile(local_path) else None
         self._save_sync_state["pending_conflicts"].append({
             "rom_id": rom_id,
             "filename": filename,
             "local_path": local_path,
-            "local_hash": self._file_md5(local_path) if os.path.isfile(local_path) else None,
+            "local_hash": local_hash,
             "local_mtime": (
                 datetime.fromtimestamp(local_mtime, tz=timezone.utc).isoformat()
                 if local_mtime else None
@@ -609,7 +623,7 @@ class SaveSyncMixin:
 
                 if resolution == "ask":
                     if local:
-                        self._add_pending_conflict(rom_id, filename, local["path"], server)
+                        self._add_pending_conflict(rom_id, filename, local["path"], server, local_hash=local_hash)
                     continue
                 action = resolution
 
@@ -630,7 +644,7 @@ class SaveSyncMixin:
             except RommConflictError:
                 if local and server:
                     # Server has newer save — queue as conflict
-                    self._add_pending_conflict(rom_id, filename, local["path"], server)
+                    self._add_pending_conflict(rom_id, filename, local["path"], server, local_hash=local_hash if local and server else None)
                 else:
                     errors.append(f"{filename}: conflict without matching local+server")
             except RommApiError as e:

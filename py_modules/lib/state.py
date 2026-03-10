@@ -68,14 +68,22 @@ class StateMixin:
         if self.LOG_LEVELS.get("debug", 0) >= self.LOG_LEVELS.get(configured, 2):
             decky.logger.info(msg)
 
+    _STATE_VERSION = 1
+
     def _load_state(self):
         state_path = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "state.json")
         try:
             with open(state_path, "r") as f:
                 saved = json.load(f)
+            if not isinstance(saved, dict):
+                saved = {}
+            # Migrate: add version key if missing
+            if "version" not in saved:
+                saved["version"] = self._STATE_VERSION
             self._state.update(saved)
         except (FileNotFoundError, json.JSONDecodeError):
             pass
+        self._state.setdefault("version", self._STATE_VERSION)
 
     def _prune_stale_installed_roms(self):
         """Remove installed_roms entries whose files no longer exist on disk."""
@@ -114,19 +122,28 @@ class StateMixin:
         lock_fd = os.open(state_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            with open(tmp_path, "w") as f:
+            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 json.dump(self._state, f, indent=2)
             os.replace(tmp_path, state_path)
         finally:
             os.close(lock_fd)
 
+    _METADATA_CACHE_VERSION = 1
+
     def _load_metadata_cache(self):
         cache_path = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "metadata_cache.json")
         try:
             with open(cache_path, "r") as f:
-                self._metadata_cache = json.load(f)
+                loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                loaded = {}
+            # Migrate: add version key if missing
+            if "version" not in loaded:
+                loaded["version"] = self._METADATA_CACHE_VERSION
+            self._metadata_cache = loaded
         except (FileNotFoundError, json.JSONDecodeError):
-            self._metadata_cache = {}
+            self._metadata_cache = {"version": self._METADATA_CACHE_VERSION}
 
     def _save_metadata_cache(self):
         cache_dir = decky.DECKY_PLUGIN_RUNTIME_DIR
@@ -136,7 +153,8 @@ class StateMixin:
         lock_fd = os.open(cache_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            with open(tmp_path, "w") as f:
+            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 json.dump(self._metadata_cache, f, indent=2)
             os.replace(tmp_path, cache_path)
         finally:

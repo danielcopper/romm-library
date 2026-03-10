@@ -1880,7 +1880,7 @@ class TestRetryMRO:
         assert len(result["files"]) >= 1
 
     def test_retry_in_get_server_save_hash(self, plugin, tmp_path):
-        """_get_server_save_hash retries transient download failures."""
+        """_get_server_save_hash retries transient download failures via caller _with_retry."""
         call_count = [0]
         def flaky_download(save_id, dest):
             call_count[0] += 1
@@ -1892,7 +1892,8 @@ class TestRetryMRO:
         server = _server_save()
         with patch.object(plugin, "_romm_download_save", side_effect=flaky_download), \
              patch("time.sleep"):
-            result = plugin._get_server_save_hash(server)
+            # _get_server_save_hash raises retryable errors; caller wraps with _with_retry
+            result = plugin._with_retry(plugin._get_server_save_hash, server)
 
         assert call_count[0] == 2  # retried once
         assert result is not None  # should return a valid hash
@@ -3261,11 +3262,16 @@ class TestGetServerSaveHash:
 
         assert result == expected_hash
 
-    def test_returns_none_on_download_failure(self, plugin):
-        """Download failure returns None (not exception)."""
+    def test_raises_on_retryable_download_failure(self, plugin):
+        """Retryable download failure raises so caller can retry."""
         with patch.object(plugin, "_romm_download_save", side_effect=ConnectionError("offline")):
-            result = plugin._get_server_save_hash({"id": 100})
+            with pytest.raises(ConnectionError):
+                plugin._get_server_save_hash({"id": 100})
 
+    def test_returns_none_on_non_retryable_failure(self, plugin):
+        """Non-retryable download failure returns None."""
+        with patch.object(plugin, "_romm_download_save", side_effect=ValueError("bad data")):
+            result = plugin._get_server_save_hash({"id": 100})
         assert result is None
 
     def test_returns_none_for_save_without_id(self, plugin):
@@ -3291,7 +3297,7 @@ class TestGetServerSaveHash:
         assert not os.path.exists(created_paths[0])
 
     def test_cleans_up_temp_file_on_failure(self, plugin, tmp_path):
-        """Temp file is removed even after download failure (retries exhausted)."""
+        """Temp file is removed even after download failure (retryable raises)."""
         created_paths = []
 
         def fake_download(save_id, dest):
@@ -3301,12 +3307,12 @@ class TestGetServerSaveHash:
                 f.write(b"partial")
             raise ConnectionError("mid-download failure")
 
-        with patch.object(plugin, "_romm_download_save", side_effect=fake_download), \
-             patch("time.sleep"):
-            plugin._get_server_save_hash({"id": 100})
+        with patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+            with pytest.raises(ConnectionError):
+                plugin._get_server_save_hash({"id": 100})
 
-        # _with_retry retries 3 times for transient errors (ConnectionError)
-        assert len(created_paths) == 3
+        # Function is called once (caller handles retry)
+        assert len(created_paths) == 1
         assert not os.path.exists(created_paths[0])
 
 

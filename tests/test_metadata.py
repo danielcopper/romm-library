@@ -338,7 +338,9 @@ class TestLoadMetadataCache:
             json.dump(cache_data, f)
 
         plugin._load_metadata_cache()
-        assert plugin._metadata_cache == cache_data
+        # version key is auto-added during load
+        assert plugin._metadata_cache["42"] == cache_data["42"]
+        assert "version" in plugin._metadata_cache
 
     def test_empty_when_file_missing(self, plugin, tmp_path):
         import decky
@@ -346,7 +348,9 @@ class TestLoadMetadataCache:
 
         plugin._metadata_cache = {"old": "data"}
         plugin._load_metadata_cache()
-        assert plugin._metadata_cache == {}
+        # Only version key should remain (no ROM entries)
+        assert "old" not in plugin._metadata_cache
+        assert plugin._metadata_cache.get("version") == 1
 
     def test_empty_when_malformed_json(self, plugin, tmp_path):
         import decky
@@ -357,7 +361,10 @@ class TestLoadMetadataCache:
             f.write("not valid json{{{")
 
         plugin._load_metadata_cache()
-        assert plugin._metadata_cache == {}
+        # Only version key should remain (no ROM entries)
+        assert "version" in plugin._metadata_cache
+        rom_keys = [k for k in plugin._metadata_cache if k != "version"]
+        assert rom_keys == []
 
 
 class TestSyncMetadataCapture:
