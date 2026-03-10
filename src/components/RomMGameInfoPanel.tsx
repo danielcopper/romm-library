@@ -916,9 +916,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
               key: "hc-row",
               style: { display: "inline-flex", alignItems: "center", gap: "4px" },
             },
+              createElement("span", { className: "romm-cheevo-hc-badge" }, "HC"),
               createElement("span", { className: "romm-cheevo-date" },
                 formatCheevoDate(earnedData.date_hardcore)),
-              createElement("span", { className: "romm-cheevo-hc-badge" }, "HC"),
             ),
           );
         }
