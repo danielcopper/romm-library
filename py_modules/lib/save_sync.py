@@ -1,3 +1,4 @@
+import fcntl
 import os
 import json
 import hashlib
@@ -81,9 +82,14 @@ class SaveSyncMixin:
         os.makedirs(state_dir, exist_ok=True)
         path = os.path.join(state_dir, "save_sync_state.json")
         tmp = path + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(self._save_sync_state, f, indent=2)
-        os.replace(tmp, path)
+        lock_fd = os.open(path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            with open(tmp, "w") as f:
+                json.dump(self._save_sync_state, f, indent=2)
+            os.replace(tmp, path)
+        finally:
+            os.close(lock_fd)
 
     def _prune_orphaned_save_sync_state(self):
         """Remove save sync state entries for rom_ids no longer in shortcut registry."""

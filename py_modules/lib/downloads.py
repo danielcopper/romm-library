@@ -213,7 +213,7 @@ class DownloadMixin:
             real_extract = os.path.realpath(extract_dir)
             for member in zf.namelist():
                 member_path = os.path.realpath(os.path.join(extract_dir, member))
-                if not member_path.startswith(real_extract + os.sep) and member_path != real_extract:
+                if not member_path.startswith(real_extract + os.sep):
                     raise ValueError(f"ZIP member {member} would extract outside target directory")
             zf.extractall(extract_dir)
         os.remove(tmp_zip)

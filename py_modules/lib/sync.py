@@ -6,7 +6,14 @@ import time
 import uuid
 import urllib.parse
 from datetime import datetime, timezone
+from enum import Enum
 from typing import TYPE_CHECKING, Any
+
+
+class SyncState(Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    CANCELLING = "cancelling"
 
 import decky
 
@@ -18,8 +25,7 @@ if TYPE_CHECKING:
     class _SyncDeps(Protocol):
         settings: dict
         _state: dict
-        _sync_running: bool
-        _sync_cancel: bool
+        _sync_state: SyncState
         _sync_progress: dict
         _sync_last_heartbeat: float
         _pending_sync: dict
@@ -93,16 +99,15 @@ class SyncMixin:
         return {"success": True}
 
     async def start_sync(self):
-        if self._sync_running:
+        if self._sync_state != SyncState.IDLE:
             return {"success": False, "message": "Sync already in progress"}
-        self._sync_running = True
-        self._sync_cancel = False
+        self._sync_state = SyncState.RUNNING
         self._sync_last_heartbeat = time.monotonic()
         self.loop.create_task(self._do_sync())
         return {"success": True, "message": "Sync started"}
 
     async def cancel_sync(self):
-        self._sync_cancel = True
+        self._sync_state = SyncState.CANCELLING
         return {"success": True, "message": "Sync cancelling..."}
 
     async def get_sync_progress(self):
@@ -114,10 +119,9 @@ class SyncMixin:
         return {"success": True}
 
     async def sync_preview(self):
-        if self._sync_running:
+        if self._sync_state != SyncState.IDLE:
             return {"success": False, "message": "Sync already in progress"}
-        self._sync_running = True
-        self._sync_cancel = False
+        self._sync_state = SyncState.RUNNING
         self._sync_last_heartbeat = time.monotonic()
         try:
             all_roms, shortcuts_data, platforms = await self._fetch_and_prepare()
@@ -168,7 +172,7 @@ class SyncMixin:
             await self._emit_progress("error", message=_msg, running=False)
             return {"success": False, "message": _msg, "error_code": _code}
         finally:
-            self._sync_running = False
+            self._sync_state = SyncState.IDLE
 
     async def sync_apply_delta(self, preview_id):
         if not self._pending_delta or self._pending_delta["preview_id"] != preview_id:
@@ -176,8 +180,7 @@ class SyncMixin:
                     "error_code": "stale_preview"}
         delta = self._pending_delta
         self._pending_delta = None
-        self._sync_running = True
-        self._sync_cancel = False
+        self._sync_state = SyncState.RUNNING
         self._sync_last_heartbeat = time.monotonic()
 
         # Build collection_platform_app_ids from registry (unchanged)
@@ -270,7 +273,7 @@ class SyncMixin:
                         total=stats.get("roms", 0),
                         message=f"Sync complete: {stats.get('roms', 0)} games from {stats.get('platforms', 0)} platforms",
                         running=False)
-                    self._sync_running = False
+                    self._sync_state = SyncState.IDLE
                     return
         self.loop.create_task(_safety_timeout())
 
@@ -337,7 +340,7 @@ class SyncMixin:
             None, self._romm_request, "/api/platforms"
         )
 
-        if self._sync_cancel:
+        if self._sync_state == SyncState.CANCELLING:
             raise asyncio.CancelledError("Sync cancelled")
 
         # Filter platforms by enabled_platforms setting
@@ -360,7 +363,7 @@ class SyncMixin:
         all_roms = []
         total_platforms = len(platforms)
         for pi, platform in enumerate(platforms, 1):
-            if self._sync_cancel:
+            if self._sync_state == SyncState.CANCELLING:
                 raise asyncio.CancelledError("Sync cancelled")
 
             platform_id = platform["id"]
@@ -430,7 +433,7 @@ class SyncMixin:
                 message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})")
 
             while True:
-                if self._sync_cancel:
+                if self._sync_state == SyncState.CANCELLING:
                     raise asyncio.CancelledError("Sync cancelled")
 
                 try:
@@ -463,7 +466,7 @@ class SyncMixin:
                     break
                 offset += limit
 
-        if self._sync_cancel:
+        if self._sync_state == SyncState.CANCELLING:
             raise asyncio.CancelledError("Sync cancelled")
 
         decky.logger.info(
@@ -491,7 +494,7 @@ class SyncMixin:
                 "cover_path": "",
             })
 
-        if self._sync_cancel:
+        if self._sync_state == SyncState.CANCELLING:
             raise asyncio.CancelledError("Sync cancelled")
 
         # Cache metadata from sync response
@@ -514,7 +517,7 @@ class SyncMixin:
                 decky.logger.error(f"Failed to fetch platforms: {e}")
                 _code, _msg = classify_error(e)
                 await self._emit_progress("error", message=_msg, running=False)
-                self._sync_running = False
+                self._sync_state = SyncState.IDLE
                 return
 
             # Calculate step plan for full sync
@@ -540,7 +543,7 @@ class SyncMixin:
             else:
                 cover_paths = {}
 
-            if self._sync_cancel:
+            if self._sync_state == SyncState.CANCELLING:
                 await self._finish_sync("Sync cancelled")
                 return
 
@@ -594,7 +597,7 @@ class SyncMixin:
             }
             self.loop.create_task(decky.emit("sync_progress", self._sync_progress))
         finally:
-            self._sync_running = False
+            self._sync_state = SyncState.IDLE
             if self._sync_progress.get("phase") == "error":
                 pass
             elif self._sync_progress.get("running"):
@@ -627,7 +630,7 @@ class SyncMixin:
             "message": message,
         }
         await decky.emit("sync_progress", self._sync_progress)
-        self._sync_running = False
+        self._sync_state = SyncState.IDLE
         decky.logger.info(message)
 
     def _report_sync_results_io(self, rom_id_to_app_id, removed_rom_ids):
@@ -721,7 +724,7 @@ class SyncMixin:
                 message=f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
                 running=False)
             decky.logger.info(f"Sync results reported: {total} games")
-        self._sync_running = False
+        self._sync_state = SyncState.IDLE
         return {"success": True}
 
     # Deprecated: VDF-based shortcut creation (replaced by frontend SteamClient API)
@@ -821,7 +824,7 @@ class SyncMixin:
         total = len(all_roms)
 
         for i, rom in enumerate(all_roms):
-            if self._sync_cancel:
+            if self._sync_state == SyncState.CANCELLING:
                 return cover_paths
 
             await self._emit_progress("applying", current=i + 1, total=total,
