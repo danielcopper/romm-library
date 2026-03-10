@@ -8,6 +8,7 @@ import { updateSyncProgress } from "./syncProgress";
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 let _cancelRequested = false;
+let _isSyncRunning = false;
 
 /** Request cancellation of the frontend shortcut processing loop. */
 export function requestSyncCancel(): void {
@@ -20,6 +21,12 @@ export function requestSyncCancel(): void {
  */
 export function initSyncManager(): ReturnType<typeof addEventListener> {
   return addEventListener("sync_apply", async (data: SyncApplyData) => {
+    if (_isSyncRunning) {
+      logInfo("sync_apply: already running, ignoring duplicate event");
+      return;
+    }
+    _isSyncRunning = true;
+    try {
     const isDelta = Array.isArray(data.changed_shortcuts);
     logInfo(`sync_apply received: ${data.shortcuts.length} new, ${isDelta ? data.changed_shortcuts!.length + " changed, " : ""}${data.remove_rom_ids.length} remove${isDelta ? " (delta)" : ""}`);
 
@@ -172,8 +179,8 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
         const appId = existing.get(romId);
         if (appId) {
           removeShortcut(appId);
-          removedRomIds.push(romId);
         }
+        removedRomIds.push(romId);
         updateSyncProgress({
           current: i + 1,
           message: `Removing shortcuts ${i + 1}/${totalRemovals}`,
@@ -263,5 +270,8 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       : "Sync complete";
     updateSyncProgress({ running: false, phase: "done", message: doneMsg });
     logInfo(`sync_apply ${cancelled ? "cancelled" : "complete"}: ${Object.keys(romIdToAppId).length} added/updated, ${removedRomIds.length} removed`);
+    } finally {
+      _isSyncRunning = false;
+    }
   });
 }
