@@ -324,9 +324,11 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         }));
 
         // Auto-apply SGDB artwork on first visit (fire-and-forget)
+        // Only mark as applied after success so transient failures allow retry on next visit
         if (!artworkApplied.has(appId)) {
-          artworkApplied.add(appId);
-          applyArtwork(romId, appId).catch((e) => debugLog(`Auto-artwork error: ${e}`));
+          applyArtwork(romId, appId)
+            .then(() => { artworkApplied.add(appId); })
+            .catch((e) => debugLog(`Auto-artwork error: ${e}`));
         }
 
         // Background: fetch metadata if missing or stale (>7 days)
@@ -358,6 +360,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
 
     // Listen for conflict resolution / save sync changes from sibling components
     const onDataChanged = async (e: Event) => {
+      try {
       const detail = (e as CustomEvent).detail;
 
       // Handle save sync settings toggle (show/hide save sync info item)
@@ -407,6 +410,9 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
       const { status: saveSyncStatus, label: saveSyncLabel } = computeSaveSyncDisplay(saveStatus);
       setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel }));
+      } catch (err) {
+        debugLog(`RomMPlaySection: onDataChanged error: ${err}`);
+      }
     };
     window.addEventListener("romm_data_changed", onDataChanged);
 

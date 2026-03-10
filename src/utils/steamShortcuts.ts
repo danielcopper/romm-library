@@ -16,12 +16,21 @@ export async function getExistingRomMShortcuts(): Promise<Map<number, number>> {
 
   const appIds = Array.from(collectionStore.deckDesktopApps.apps.keys());
 
-  for (const appId of appIds) {
-    const launchOptions = await getLaunchOptions(appId);
-    if (launchOptions && launchOptions.includes(ROMM_MARKER)) {
-      const match = launchOptions.match(/romm:(\d+)/);
-      if (match) {
-        result.set(Number(match[1]), appId);
+  // Fire up to 10 RegisterForAppDetails calls in parallel to avoid 2s-per-shortcut overhead
+  const CONCURRENCY = 10;
+  for (let i = 0; i < appIds.length; i += CONCURRENCY) {
+    const batch = appIds.slice(i, i + CONCURRENCY);
+    const entries = await Promise.all(
+      batch.map((appId) =>
+        getLaunchOptions(appId).then((launchOptions) => ({ appId, launchOptions }))
+      )
+    );
+    for (const { appId, launchOptions } of entries) {
+      if (launchOptions && launchOptions.includes(ROMM_MARKER)) {
+        const match = launchOptions.match(/romm:(\d+)/);
+        if (match) {
+          result.set(Number(match[1]), appId);
+        }
       }
     }
   }

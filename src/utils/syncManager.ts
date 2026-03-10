@@ -27,6 +27,15 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
     }
     _isSyncRunning = true;
     try {
+      // Defensive checks against malformed event data
+      if (!Array.isArray(data.shortcuts)) {
+        logError("sync_apply: data.shortcuts is not an array, aborting");
+        return;
+      }
+      if (!Array.isArray(data.remove_rom_ids)) {
+        logError("sync_apply: data.remove_rom_ids is not an array, aborting");
+        return;
+      }
       const isDelta = Array.isArray(data.changed_shortcuts);
       logInfo(`sync_apply received: ${data.shortcuts.length} new, ${isDelta ? data.changed_shortcuts!.length + " changed, " : ""}${data.remove_rom_ids.length} remove${isDelta ? " (delta)" : ""}`);
   
@@ -38,6 +47,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       const existing = await getExistingRomMShortcuts();
       const romIdToAppId: Record<string, number> = {};
       const removedRomIds: number[] = [];
+      const artworkTargets: Array<{ appId: number; romId: number; name: string }> = [];
   
       // Step plan from backend
       let currentStep = data.next_step ?? 1;
@@ -90,15 +100,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
             }
   
             if (appId) {
-              try {
-                const artResult = await getArtworkBase64(item.rom_id);
-                if (artResult.base64) {
-                  await SteamClient.Apps.SetCustomArtworkForApp(appId, artResult.base64, "png", 0);
-                  logInfo(`Set cover artwork for ${item.name} (appId=${appId})`);
-                }
-              } catch (artErr) {
-                logError(`Failed to fetch/set artwork for ${item.name}: ${artErr}`);
-              }
+              artworkTargets.push({ appId, romId: item.rom_id, name: item.name });
             }
           } catch (e) {
             logError(`Failed to process shortcut for rom ${item.rom_id}: ${e}`);
@@ -135,15 +137,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
               SteamClient.Apps.SetAppLaunchOptions(appId, item.launch_options);
               romIdToAppId[String(item.rom_id)] = appId;
   
-              try {
-                const artResult = await getArtworkBase64(item.rom_id);
-                if (artResult.base64) {
-                  await SteamClient.Apps.SetCustomArtworkForApp(appId, artResult.base64, "png", 0);
-                  logInfo(`Updated cover artwork for ${item.name} (appId=${appId})`);
-                }
-              } catch (artErr) {
-                logError(`Failed to fetch/set artwork for ${item.name}: ${artErr}`);
-              }
+              artworkTargets.push({ appId, romId: item.rom_id, name: item.name });
             } catch (e) {
               logError(`Failed to update shortcut for rom ${item.rom_id}: ${e}`);
             }
@@ -164,7 +158,31 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
   
         currentStep++;
       }
-  
+
+      // --- Batch artwork fetch (parallel, up to 8 at a time) ---
+      if (!cancelled && artworkTargets.length > 0) {
+        const ART_CONCURRENCY = 8;
+        for (let i = 0; i < artworkTargets.length; i += ART_CONCURRENCY) {
+          if (_cancelRequested) {
+            logInfo("Cancel requested during artwork fetching");
+            cancelled = true;
+            break;
+          }
+          const batch = artworkTargets.slice(i, i + ART_CONCURRENCY);
+          await Promise.all(batch.map(async ({ appId, romId, name }) => {
+            try {
+              const artResult = await getArtworkBase64(romId);
+              if (artResult.base64) {
+                await SteamClient.Apps.SetCustomArtworkForApp(appId, artResult.base64, "png", 0);
+                logInfo(`Set cover artwork for ${name} (appId=${appId})`);
+              }
+            } catch (artErr) {
+              logError(`Failed to fetch/set artwork for ${name}: ${artErr}`);
+            }
+          }));
+        }
+      }
+
       // --- Step: Remove shortcuts ---
       if (!cancelled && data.remove_rom_ids.length > 0) {
         const totalRemovals = data.remove_rom_ids.length;

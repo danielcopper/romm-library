@@ -273,6 +273,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     window.addEventListener("romm_rom_uninstalled", onUninstall);
 
     const onDataChanged = async (e: Event) => {
+      try {
       const detail = (e as CustomEvent).detail;
       if (!romIdRef.current) return;
 
@@ -332,6 +333,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       } else if (detail?.type === "metadata" && detail.rom_id === romIdRef.current) {
         const meta = await getRomMetadata(romIdRef.current).catch((): RomMetadata | null => null);
         setState((prev) => ({ ...prev, metadata: meta }));
+      }
+      } catch (err) {
+        debugLog(`RomMGameInfoPanel: onDataChanged error: ${err}`);
       }
     };
     window.addEventListener("romm_data_changed", onDataChanged);
