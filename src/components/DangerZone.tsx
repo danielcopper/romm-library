@@ -157,19 +157,23 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
 
   const handleRemoveShortcuts = async (p: RegistryPlatform) => {
     setActionStatus(`Removing ${p.name} shortcuts...`);
-    const result = await removePlatformShortcuts(p.slug);
-    if (result.app_ids) {
-      for (const appId of result.app_ids) {
-        removeShortcut(appId);
+    try {
+      const result = await removePlatformShortcuts(p.slug);
+      if (result.app_ids) {
+        for (const appId of result.app_ids) {
+          removeShortcut(appId);
+        }
       }
+      if (result.rom_ids?.length) {
+        await reportRemovalResults(result.rom_ids);
+      }
+      await clearPlatformCollection(result.platform_name || p.name);
+      setActionStatus(`Removed ${p.count} ${p.name} game${p.count !== 1 ? "s" : ""}`);
+      await refreshPlatforms();
+      loadNonSteamApps();
+    } catch {
+      setActionStatus("Failed to remove shortcuts");
     }
-    if (result.rom_ids?.length) {
-      await reportRemovalResults(result.rom_ids);
-    }
-    await clearPlatformCollection(result.platform_name || p.name);
-    setActionStatus(`Removed ${p.count} ${p.name} game${p.count !== 1 ? "s" : ""}`);
-    await refreshPlatforms();
-    loadNonSteamApps();
   };
 
   const handleDeleteSaves = async (p: RegistryPlatform) => {

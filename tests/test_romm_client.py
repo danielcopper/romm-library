@@ -3,6 +3,8 @@ import io
 import socket
 import ssl
 import urllib.error
+
+from lib.sync import SyncState
 from unittest.mock import MagicMock, patch
 
 # conftest.py patches decky before this import
@@ -24,8 +26,7 @@ from lib.errors import (
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._sync_running = False
-    p._sync_cancel = False
+    p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._pending_sync = {}
@@ -333,10 +334,11 @@ class TestTranslateHttpError:
         result = plugin._translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommConnectionError)
 
-    def test_unknown_exception_returned_unchanged(self, plugin):
+    def test_unknown_exception_wrapped_in_romm_api_error(self, plugin):
         exc = ValueError("bad value")
         result = plugin._translate_http_error(exc, "http://romm.local/api/x")
-        assert result is exc  # Same object, not wrapped
+        assert isinstance(result, RommApiError)
+        assert "Unexpected error: bad value" in str(result)
 
 
 # ============================================================================

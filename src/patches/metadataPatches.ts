@@ -144,7 +144,7 @@ export function unregisterMetadataPatches() {
  * actual play time instead of "Never Played" for RomM shortcuts.
  * Returns true if the write succeeded, false if the overview wasn't available.
  */
-export function updatePlaytimeDisplay(appId: number, totalSeconds: number): boolean {
+export function updatePlaytimeDisplay(appId: number, totalSeconds: number, updateLastPlayed = true): boolean {
   const overview = appStore.GetAppOverviewByAppID(appId);
   if (!overview) {
     debugLog(`updatePlaytimeDisplay: appId=${appId} overview=null, skipping`);
@@ -158,7 +158,9 @@ export function updatePlaytimeDisplay(appId: number, totalSeconds: number): bool
   const prevLastPlayed = overview.rt_last_time_played;
   stateTransaction(() => {
     overview.minutes_playtime_forever = totalMinutes;
-    overview.rt_last_time_played = Math.floor(Date.now() / 1000);
+    if (updateLastPlayed) {
+      overview.rt_last_time_played = Math.floor(Date.now() / 1000);
+    }
   });
   debugLog(`updatePlaytimeDisplay: appId=${appId} wrote ${totalMinutes}min (was ${prevMinutes}), rt_last_time_played was ${prevLastPlayed}`);
   return true;
@@ -202,7 +204,7 @@ export async function applyAllPlaytime(
 
     const failed: typeof pending = [];
     for (const item of pending) {
-      if (!updatePlaytimeDisplay(item.appId, item.totalSeconds)) {
+      if (!updatePlaytimeDisplay(item.appId, item.totalSeconds, false)) {
         failed.push(item);
       }
     }

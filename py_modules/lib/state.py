@@ -1,3 +1,4 @@
+import fcntl
 import os
 import json
 import time
@@ -110,9 +111,14 @@ class StateMixin:
         os.makedirs(state_dir, exist_ok=True)
         state_path = os.path.join(state_dir, "state.json")
         tmp_path = state_path + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(self._state, f, indent=2)
-        os.replace(tmp_path, state_path)
+        lock_fd = os.open(state_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            with open(tmp_path, "w") as f:
+                json.dump(self._state, f, indent=2)
+            os.replace(tmp_path, state_path)
+        finally:
+            os.close(lock_fd)
 
     def _load_metadata_cache(self):
         cache_path = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "metadata_cache.json")
@@ -127,6 +133,11 @@ class StateMixin:
         os.makedirs(cache_dir, exist_ok=True)
         cache_path = os.path.join(cache_dir, "metadata_cache.json")
         tmp_path = cache_path + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(self._metadata_cache, f, indent=2)
-        os.replace(tmp_path, cache_path)
+        lock_fd = os.open(cache_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            with open(tmp_path, "w") as f:
+                json.dump(self._metadata_cache, f, indent=2)
+            os.replace(tmp_path, cache_path)
+        finally:
+            os.close(lock_fd)

@@ -3,6 +3,8 @@ import json
 import os
 import asyncio
 import hashlib
+
+from lib.sync import SyncState
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone, timedelta
@@ -21,8 +23,7 @@ def plugin(tmp_path):
         "enabled_platforms": {},
         "log_level": "warn",
     }
-    p._sync_running = False
-    p._sync_cancel = False
+    p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {
         "shortcut_registry": {},

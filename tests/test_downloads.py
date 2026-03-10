@@ -4,6 +4,8 @@ import os
 import asyncio
 from unittest.mock import patch, MagicMock
 
+from lib.sync import SyncState
+
 # conftest.py patches decky before this import
 from main import Plugin
 
@@ -12,8 +14,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._sync_running = False
-    p._sync_cancel = False
+    p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._pending_sync = {}

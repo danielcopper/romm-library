@@ -5,14 +5,14 @@ import asyncio
 
 # conftest.py patches decky before this import
 from main import Plugin
+from lib.sync import SyncState
 
 
 @pytest.fixture
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._sync_running = False
-    p._sync_cancel = False
+    p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._pending_sync = {}
@@ -584,7 +584,7 @@ class TestShortcutDataFormat:
         ])
         plugin._download_artwork = AsyncMock(return_value={})
         plugin._emit_progress = AsyncMock()
-        plugin._sync_cancel = False
+        plugin._sync_state = SyncState.IDLE
 
         # Mock decky.emit to capture the shortcuts
         import decky
@@ -1024,7 +1024,7 @@ class TestSyncPreview:
 
     @pytest.mark.asyncio
     async def test_returns_error_when_sync_running(self, plugin):
-        plugin._sync_running = True
+        plugin._sync_state = SyncState.RUNNING
         result = await plugin.sync_preview()
         assert result["success"] is False
         assert "already in progress" in result["message"]
@@ -1049,7 +1049,7 @@ class TestSyncPreview:
         plugin._emit_progress = AsyncMock()
 
         await plugin.sync_preview()
-        assert plugin._sync_running is False
+        assert plugin._sync_state == SyncState.IDLE
 
 
 class TestSyncApplyDelta:

@@ -107,7 +107,7 @@ class RommClientMixin:
             return RommTimeoutError(str(exc), url=url, method=method)
         if isinstance(exc, (ConnectionError, OSError)):
             return RommConnectionError(str(exc), url=url, method=method)
-        return exc  # Unknown — don't wrap
+        return RommApiError(f"Unexpected error: {exc}", url=url, method=method)
 
     @staticmethod
     def _is_retryable(exc):
@@ -145,60 +145,74 @@ class RommClientMixin:
 
     def _romm_request(self, path):
         url = self.settings["romm_url"].rstrip("/") + path
-        req = urllib.request.Request(url, method="GET")
-        req.add_header("Authorization", self._romm_auth_header())
-        try:
-            with urllib.request.urlopen(req, context=self._romm_ssl_context(), timeout=30) as resp:
-                return json.loads(resp.read().decode())
-        except RommApiError:
-            raise
-        except Exception as exc:
-            raise self._translate_http_error(exc, url, "GET") from exc
+
+        def _do_request():
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("Authorization", self._romm_auth_header())
+            try:
+                with urllib.request.urlopen(req, context=self._romm_ssl_context(), timeout=30) as resp:
+                    return json.loads(resp.read().decode())
+            except RommApiError:
+                raise
+            except Exception as exc:
+                raise self._translate_http_error(exc, url, "GET") from exc
+
+        return self._with_retry(_do_request)
 
     def _romm_download(self, path, dest, progress_callback=None):
         encoded_path = urllib.parse.quote(path, safe="/:?=&@")
         url = self.settings["romm_url"].rstrip("/") + encoded_path
-        req = urllib.request.Request(url, method="GET")
-        req.add_header("Authorization", self._romm_auth_header())
-        ctx = self._romm_ssl_context()
         dest_path = Path(dest)
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                total = resp.headers.get("Content-Length")
-                total = int(total) if total else 0
-                downloaded = 0
-                block_size = 8192
-                with open(dest_path, "wb") as f:
-                    while True:
-                        chunk = resp.read(block_size)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback and total:
-                            progress_callback(downloaded, total)
-            if total > 0 and downloaded != total:
-                raise IOError(f"Download incomplete: got {downloaded} bytes, expected {total}")
-        except RommApiError:
-            raise
-        except Exception as exc:
-            raise self._translate_http_error(exc, url, "GET") from exc
+
+        def _do_download():
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("Authorization", self._romm_auth_header())
+            ctx = self._romm_ssl_context()
+            try:
+                with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+                    total = resp.headers.get("Content-Length")
+                    total = int(total) if total else 0
+                    downloaded = 0
+                    block_size = 8192
+                    with open(dest_path, "wb") as f:
+                        while True:
+                            chunk = resp.read(block_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total:
+                                progress_callback(downloaded, total)
+                if total > 0 and downloaded != total:
+                    raise IOError(f"Download incomplete: got {downloaded} bytes, expected {total}")
+                if total == 0 and downloaded == 0:
+                    raise IOError("Download produced 0 bytes (no Content-Length header and no data received)")
+            except RommApiError:
+                raise
+            except Exception as exc:
+                raise self._translate_http_error(exc, url, "GET") from exc
+
+        return self._with_retry(_do_download)
 
     def _romm_json_request(self, path, data, method="POST"):
         """Send a JSON request (POST/PUT) to RomM API, return parsed response."""
         url = self.settings["romm_url"].rstrip("/") + path
-        body = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(url, data=body, method=method)
-        req.add_header("Content-Type", "application/json")
-        req.add_header("Authorization", self._romm_auth_header())
-        try:
-            with urllib.request.urlopen(req, context=self._romm_ssl_context(), timeout=30) as resp:
-                return json.loads(resp.read().decode())
-        except RommApiError:
-            raise
-        except Exception as exc:
-            raise self._translate_http_error(exc, url, method) from exc
+
+        def _do_json_request():
+            body = json.dumps(data).encode("utf-8")
+            req = urllib.request.Request(url, data=body, method=method)
+            req.add_header("Content-Type", "application/json")
+            req.add_header("Authorization", self._romm_auth_header())
+            try:
+                with urllib.request.urlopen(req, context=self._romm_ssl_context(), timeout=30) as resp:
+                    return json.loads(resp.read().decode())
+            except RommApiError:
+                raise
+            except Exception as exc:
+                raise self._translate_http_error(exc, url, method) from exc
+
+        return self._with_retry(_do_json_request)
 
     def _romm_post_json(self, path, data):
         """POST JSON to RomM API, return parsed response."""
@@ -208,6 +222,8 @@ class RommClientMixin:
         """PUT JSON to RomM API, return parsed response."""
         return self._romm_json_request(path, data, method="PUT")
 
+    # Intentionally skips _with_retry: POST uploads may not be idempotent.
+    # (RomM saves endpoint upserts by filename, but we err on the side of caution.)
     def _romm_upload_multipart(self, path, file_path, method="POST"):
         """Upload a file via multipart/form-data to RomM API."""
         boundary = uuid.uuid4().hex

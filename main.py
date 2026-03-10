@@ -16,7 +16,7 @@ from lib.metadata import MetadataMixin
 from lib.sgdb import SgdbMixin
 from lib.achievements import AchievementsMixin
 from lib.downloads import DownloadMixin
-from lib.sync import SyncMixin
+from lib.sync import SyncMixin, SyncState
 from lib.save_sync import SaveSyncMixin
 from lib import retrodeck_config
 
@@ -28,8 +28,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
     async def _main(self):
         self.loop = asyncio.get_event_loop()
         self._load_settings()
-        self._sync_running = False
-        self._sync_cancel = False
+        self._sync_state = SyncState.IDLE
         self._sync_last_heartbeat = 0.0
         self._sync_progress = {
             "running": False,
@@ -157,6 +156,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                 new_file = os.path.join(new_bios, firmware_path)
                 if not os.path.exists(old_file):
                     continue
+                # No-op updater: these BIOS files predate state tracking, so there
+                # is no downloaded_bios entry to update after migration.
                 items.append((file_name, old_file, new_file, lambda: None, "bios"))
 
         # --- Saves (scan old saves directory) ---
@@ -319,8 +320,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         )
 
     async def _unload(self):
-        if self._sync_running:
-            self._sync_cancel = True
+        if self._sync_state == SyncState.RUNNING:
+            self._sync_state = SyncState.CANCELLING
         # Cancel all active downloads
         for rom_id, task in list(self._download_tasks.items()):
             task.cancel()
