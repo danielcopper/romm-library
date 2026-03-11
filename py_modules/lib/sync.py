@@ -37,6 +37,8 @@ if TYPE_CHECKING:
         def _save_settings_to_disk(self) -> None: ...
         def _save_state(self) -> None: ...
         def _save_metadata_cache(self) -> None: ...
+        def _mark_metadata_dirty(self) -> None: ...
+        def _flush_metadata_if_dirty(self) -> None: ...
         def _log_debug(self, msg: str) -> None: ...
         def _extract_metadata(self, rom: dict) -> dict: ...
         def _grid_dir(self) -> Optional[str]: ...
@@ -508,7 +510,8 @@ class SyncMixin:
         for rom in all_roms:
             rom_id_str = str(rom["id"])
             self._metadata_cache[rom_id_str] = self._extract_metadata(rom)
-        self._save_metadata_cache()
+            self._mark_metadata_dirty()
+        self._flush_metadata_if_dirty()
         self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
         return all_roms, shortcuts_data, platforms
@@ -604,6 +607,7 @@ class SyncMixin:
             }
             self.loop.create_task(decky.emit("sync_progress", self._sync_progress))
         finally:
+            self._flush_metadata_if_dirty()
             self._sync_state = SyncState.IDLE
             if self._sync_progress.get("phase") == "error":
                 pass
