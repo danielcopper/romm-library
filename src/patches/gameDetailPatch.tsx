@@ -17,7 +17,7 @@ import type { RoutePatch } from "@decky/api";
 const rommAppIds = new Set<number>();
 
 // Tracks which appIds have already had their tree dumped (once per page load)
-const dumpedAppIds = new Set<number>();
+let treeDumped = false;
 
 /**
  * Recursively walk a React element tree and log each node.
@@ -114,8 +114,8 @@ export function registerGameDetailPatch() {
 
             // Diagnostic tree dump — runs once per appId per plugin load.
             // Logs the full InnerContainer structure for debugging tree changes.
-            if (isRomM && !dumpedAppIds.has(appId)) {
-              dumpedAppIds.add(appId);
+            if (isRomM && !treeDumped) {
+              treeDumped = true;
               debugLog(`===== DEEP TREE DUMP for appId=${appId} =====`);
               debugLog(`InnerContainer className: ${container.props.className}`);
 

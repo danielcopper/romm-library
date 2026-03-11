@@ -34,6 +34,9 @@ let sessionStartTime: number | null = null;
 let suspendedAt: number | null = null;
 let totalPausedMs = 0;
 
+// Serialization chain — ensures lifecycle events don't interleave
+let lifecycleChain: Promise<void> = Promise.resolve();
+
 // Hook handles for cleanup
 let lifetimeHook: { unregister: () => void } | null = null;
 let suspendHook: { unregister: () => void } | null = null;
@@ -193,21 +196,27 @@ export async function initSessionManager(): Promise<void> {
 
   // Game lifecycle notifications
   lifetimeHook = SteamClient.GameSessions.RegisterForAppLifetimeNotifications(
-    async (update) => {
-      if (update.bRunning) {
-        // Game started — wait for Router.MainRunningApp to populate
-        await delay(500);
-        const running = typeof Router !== "undefined" ? Router.MainRunningApp : null;
-        const appId = running?.appid ?? update.unAppID;
-        if (appId) {
-          // Refresh map in case a sync happened since init
-          await refreshAppIdMap();
-          await handleGameStart(appId);
-        }
-      } else {
-        // Game stopped
-        await handleGameStop();
-      }
+    (update) => {
+      lifecycleChain = lifecycleChain
+        .then(async () => {
+          if (update.bRunning) {
+            // Game started — wait for Router.MainRunningApp to populate
+            await delay(500);
+            const running = typeof Router !== "undefined" ? Router.MainRunningApp : null;
+            const appId = running?.appid ?? update.unAppID;
+            if (appId) {
+              // Refresh map in case a sync happened since init
+              await refreshAppIdMap();
+              await handleGameStart(appId);
+            }
+          } else {
+            // Game stopped
+            await handleGameStop();
+          }
+        })
+        .catch((e) => {
+          logError(`Lifecycle event error: ${e}`);
+        });
     },
   );
 
@@ -240,6 +249,7 @@ export function destroySessionManager(): void {
   sessionStartTime = null;
   suspendedAt = null;
   totalPausedMs = 0;
+  lifecycleChain = Promise.resolve();
 
   logInfo("Session manager destroyed");
 }

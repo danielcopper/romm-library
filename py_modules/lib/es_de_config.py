@@ -7,9 +7,13 @@ import re
 import decky  # for DECKY_USER_HOME and logging
 
 
-# Module-level caches
+# Module-level caches (with mtime tracking for external-change invalidation)
 _es_systems_cache = None  # dict or None
+_es_systems_mtime = None  # float or None — mtime when cache was loaded
+_es_systems_path = None  # str or None — path that was cached
 _core_defaults_cache = None  # dict or None
+_core_defaults_mtime = None  # float or None
+_core_defaults_path = None  # str or None
 
 _CORE_SO_RE = re.compile(r"%CORE_RETROARCH%/([\w-]+_libretro)\.so")
 
@@ -24,9 +28,14 @@ _ES_SYSTEMS_CANDIDATES = [
 
 def _reset_cache():
     """Reset caches (for testing)."""
-    global _es_systems_cache, _core_defaults_cache
+    global _es_systems_cache, _es_systems_mtime, _es_systems_path
+    global _core_defaults_cache, _core_defaults_mtime, _core_defaults_path
     _es_systems_cache = None
+    _es_systems_mtime = None
+    _es_systems_path = None
     _core_defaults_cache = None
+    _core_defaults_mtime = None
+    _core_defaults_path = None
 
 
 def find_es_systems_xml():
@@ -152,16 +161,28 @@ def parse_es_systems(xml_path):
 
 
 def _load_core_defaults():
-    """Load the static core_defaults.json fallback."""
-    global _core_defaults_cache
-    if _core_defaults_cache is not None:
-        return _core_defaults_cache
+    """Load the static core_defaults.json fallback.
+
+    Re-reads from disk if the file's mtime has changed (handles plugin updates).
+    """
+    global _core_defaults_cache, _core_defaults_mtime, _core_defaults_path
 
     # Check plugin root first (Decky CLI moves defaults/ contents to root),
     # then defaults/ subdirectory (dev deploys via mise run deploy)
     root_path = os.path.join(decky.DECKY_PLUGIN_DIR, "core_defaults.json")
     dev_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "core_defaults.json")
     defaults_path = root_path if os.path.exists(root_path) else dev_path
+
+    try:
+        current_mtime = os.path.getmtime(defaults_path)
+    except OSError:
+        current_mtime = None
+
+    if (_core_defaults_cache is not None
+            and _core_defaults_path == defaults_path
+            and _core_defaults_mtime == current_mtime):
+        return _core_defaults_cache
+
     try:
         with open(defaults_path, "r") as f:
             data = json.load(f)
@@ -170,21 +191,39 @@ def _load_core_defaults():
         decky.logger.warning("es_de_config: failed to load core_defaults.json: %s", e)
         _core_defaults_cache = {}
 
+    _core_defaults_path = defaults_path
+    _core_defaults_mtime = current_mtime
     return _core_defaults_cache
 
 
 def _load_es_systems():
-    """Load and cache es_systems.xml parse result."""
-    global _es_systems_cache
-    if _es_systems_cache is not None:
-        return _es_systems_cache
+    """Load and cache es_systems.xml parse result.
+
+    Re-reads from disk if the file's mtime has changed (handles flatpak updates).
+    """
+    global _es_systems_cache, _es_systems_mtime, _es_systems_path
 
     xml_path = find_es_systems_xml()
     if xml_path:
+        try:
+            current_mtime = os.path.getmtime(xml_path)
+        except OSError:
+            current_mtime = None
+
+        if (_es_systems_cache is not None
+                and _es_systems_path == xml_path
+                and _es_systems_mtime == current_mtime):
+            return _es_systems_cache
+
         _es_systems_cache = parse_es_systems(xml_path)
+        _es_systems_path = xml_path
+        _es_systems_mtime = current_mtime
     else:
-        decky.logger.info("es_de_config: es_systems.xml not found, using core_defaults.json fallback")
+        if _es_systems_cache is None:
+            decky.logger.info("es_de_config: es_systems.xml not found, using core_defaults.json fallback")
         _es_systems_cache = {}
+        _es_systems_path = None
+        _es_systems_mtime = None
 
     return _es_systems_cache
 
