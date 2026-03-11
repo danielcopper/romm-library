@@ -1,13 +1,13 @@
-import os
-import json
 import base64
+import json
+import os
 import socket
 import ssl
 import time
-import uuid
+import urllib.error
 import urllib.parse
 import urllib.request
-import urllib.error
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,18 +20,21 @@ from lib.errors import (
     RommConnectionError,
     RommForbiddenError,
     RommNotFoundError,
-    RommSSLError,
     RommServerError,
+    RommSSLError,
     RommTimeoutError,
 )
 
 try:
     import certifi
+
     def _ca_bundle():
         return certifi.where()
 except ImportError:
+
     def _ca_bundle():
         return None
+
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -52,7 +55,7 @@ class RommClientMixin:
         return config.get("platform_map", {})
 
     def _resolve_system(self, platform_slug, platform_fs_slug=None):
-        if not hasattr(self, '_platform_map'):
+        if not hasattr(self, "_platform_map"):
             self._platform_map = self._load_platform_map()
         platform_map = self._platform_map
         if platform_slug in platform_map:
@@ -71,9 +74,7 @@ class RommClientMixin:
 
     def _romm_auth_header(self):
         """Base64-encoded Basic Auth header value for RomM."""
-        credentials = base64.b64encode(
-            f"{self.settings['romm_user']}:{self.settings['romm_pass']}".encode()
-        ).decode()
+        credentials = base64.b64encode(f"{self.settings['romm_user']}:{self.settings['romm_pass']}".encode()).decode()
         return f"Basic {credentials}"
 
     def _translate_http_error(self, exc, url, method="GET"):
@@ -94,7 +95,9 @@ class RommClientMixin:
             if exc.code == 429:
                 return RommServerError(
                     f"Rate limited — too many requests ({method} {url})",
-                    status_code=429, url=url, method=method,
+                    status_code=429,
+                    url=url,
+                    method=method,
                 )
             if exc.code >= 500:
                 return RommServerError(msg, status_code=exc.code, url=url, method=method)
@@ -141,10 +144,8 @@ class RommClientMixin:
             except Exception as exc:
                 last_exc = exc
                 if attempt < max_attempts - 1 and self._is_retryable(exc):
-                    delay = base_delay * (3 ** attempt)
-                    decky.logger.debug(
-                        f"Retry {attempt + 1}/{max_attempts} after {delay}s: {exc}"
-                    )
+                    delay = base_delay * (3**attempt)
+                    decky.logger.debug(f"Retry {attempt + 1}/{max_attempts} after {delay}s: {exc}")
                     time.sleep(delay)
                 else:
                     raise
@@ -235,7 +236,7 @@ class RommClientMixin:
         """Upload a file via multipart/form-data to RomM API."""
         boundary = uuid.uuid4().hex
         filename = os.path.basename(file_path)
-        safe_filename = filename.replace('"', '\\"')
+        safe_filename = filename.replace("\r", "").replace("\n", "").replace("\0", "").replace('"', '\\"')
 
         with open(file_path, "rb") as f:
             file_data = f.read()

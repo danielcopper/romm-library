@@ -447,7 +447,7 @@ class Plugin(
                 entry = reg
                 break
 
-        if rom_id is None:
+        if rom_id is None or entry is None:
             return {"found": False}
 
         rom_id_str = str(rom_id)

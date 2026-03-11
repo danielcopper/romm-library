@@ -34,8 +34,10 @@ export function getCachedGameDetail(appId: number): Promise<CachedGameDetail> {
   if (entry && now - entry.ts < CACHE_TTL_MS) return entry.promise;
   const promise = _cachedGameDetailRaw(appId);
   _cachedGameDetailCache[appId] = { promise, ts: now };
-  promise.finally(() => {
+  promise.then(() => {
     setTimeout(() => { delete _cachedGameDetailCache[appId]; }, CACHE_TTL_MS);
+  }, () => {
+    delete _cachedGameDetailCache[appId];
   });
   return promise;
 }

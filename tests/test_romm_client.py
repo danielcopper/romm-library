@@ -1,14 +1,10 @@
-import pytest
-import io
 import socket
 import ssl
 import urllib.error
-
-from lib.sync import SyncState
 from unittest.mock import MagicMock, patch
 
-# conftest.py patches decky before this import
-from main import Plugin
+import pytest
+
 from lib.errors import (
     RommApiError,
     RommAuthError,
@@ -16,10 +12,14 @@ from lib.errors import (
     RommConnectionError,
     RommForbiddenError,
     RommNotFoundError,
-    RommSSLError,
     RommServerError,
+    RommSSLError,
     RommTimeoutError,
 )
+from lib.sync import SyncState
+
+# conftest.py patches decky before this import
+from main import Plugin
 
 
 @pytest.fixture
@@ -78,6 +78,7 @@ class TestRommSslContext:
     def test_default_verifies_ssl(self, plugin):
         """Default setting (False) should produce a context that verifies certs."""
         import ssl
+
         plugin.settings["romm_allow_insecure_ssl"] = False
         ctx = plugin._romm_ssl_context()
         assert ctx.check_hostname is True
@@ -86,6 +87,7 @@ class TestRommSslContext:
     def test_insecure_disables_verification(self, plugin):
         """When romm_allow_insecure_ssl=True, certs should not be verified."""
         import ssl
+
         plugin.settings["romm_allow_insecure_ssl"] = True
         ctx = plugin._romm_ssl_context()
         assert ctx.check_hostname is False
@@ -94,6 +96,7 @@ class TestRommSslContext:
     def test_missing_setting_defaults_secure(self, plugin):
         """Missing setting should default to secure."""
         import ssl
+
         plugin.settings.pop("romm_allow_insecure_ssl", None)
         ctx = plugin._romm_ssl_context()
         assert ctx.check_hostname is True
@@ -103,6 +106,7 @@ class TestRommSslContext:
 class TestRommAuthHeader:
     def test_basic_auth_format(self, plugin):
         import base64
+
         plugin.settings["romm_user"] = "admin"
         plugin.settings["romm_pass"] = "secret"
         header = plugin._romm_auth_header()
@@ -112,6 +116,7 @@ class TestRommAuthHeader:
 
     def test_special_characters_in_password(self, plugin):
         import base64
+
         plugin.settings["romm_user"] = "user"
         plugin.settings["romm_pass"] = "p@ss:w0rd!"
         header = plugin._romm_auth_header()
@@ -121,8 +126,8 @@ class TestRommAuthHeader:
 
 class TestRommRequest:
     def test_uses_auth_header(self, plugin):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.settings["romm_url"] = "http://romm.local"
         plugin.settings["romm_user"] = "user"
@@ -144,8 +149,8 @@ class TestRommRequest:
 
 class TestRommJsonRequest:
     def test_post_json(self, plugin):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.settings["romm_url"] = "http://romm.local"
         plugin.settings["romm_user"] = "user"
@@ -167,8 +172,8 @@ class TestRommJsonRequest:
         assert "Basic " in req.get_header("Authorization")
 
     def test_put_json(self, plugin):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.settings["romm_url"] = "http://romm.local"
         plugin.settings["romm_user"] = "user"
@@ -189,8 +194,8 @@ class TestRommJsonRequest:
 
 class TestRommUploadMultipart:
     def test_upload_sends_multipart(self, plugin, tmp_path):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.settings["romm_url"] = "http://romm.local"
         plugin.settings["romm_user"] = "user"
@@ -213,6 +218,44 @@ class TestRommUploadMultipart:
         assert "multipart/form-data" in req.get_header("Content-type")
         assert b"save data here" in req.data
         assert "Basic " in req.get_header("Authorization")
+
+    def test_upload_strips_control_chars_from_filename(self, plugin, tmp_path):
+        """Filenames with CRLF/null bytes must not inject multipart headers."""
+        import json as _json
+        from unittest.mock import MagicMock, patch
+
+        plugin.settings["romm_url"] = "http://romm.local"
+        plugin.settings["romm_user"] = "user"
+        plugin.settings["romm_pass"] = "pass"
+        plugin.settings["romm_allow_insecure_ssl"] = False
+
+        # Create a file whose basename contains injected control chars
+        evil_name = "evil\r\nInjected-Header: bad\0.srm"
+        safe_dir = tmp_path / "sub"
+        safe_dir.mkdir()
+        # We can't create a file with \r\n\0 in the name on most FS,
+        # so patch os.path.basename to return the evil name.
+        save_file = safe_dir / "normal.srm"
+        save_file.write_bytes(b"data")
+
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = _json.dumps({"id": 1}).encode()
+        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+        fake_resp.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch("urllib.request.urlopen", return_value=fake_resp) as mock_open,
+            patch("os.path.basename", return_value=evil_name),
+        ):
+            plugin._romm_upload_multipart("/api/saves", str(save_file))
+
+        req = mock_open.call_args[0][0]
+        body = req.data
+        # Control characters must be stripped from the Content-Disposition header
+        assert b"\r\nInjected-Header:" not in body
+        assert b"\0" not in body.split(b"\r\n\r\n")[0]  # not in headers
+        # The sanitized filename should still appear
+        assert b'filename="evilInjected-Header: bad.srm"' in body
 
 
 class TestPlatformMap:
@@ -358,9 +401,7 @@ class TestRommRequestErrors:
 
     def test_401_raises_auth_error(self, plugin):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError(
-            "http://romm.local/api/test", 401, "Unauthorized", {}, None
-        )
+        exc = urllib.error.HTTPError("http://romm.local/api/test", 401, "Unauthorized", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommAuthError) as exc_info:
                 plugin._romm_request("/api/test")
@@ -380,9 +421,7 @@ class TestRommRequestErrors:
 
     def test_500_raises_server_error(self, plugin):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError(
-            "http://romm.local/api/test", 500, "Internal Server Error", {}, None
-        )
+        exc = urllib.error.HTTPError("http://romm.local/api/test", 500, "Internal Server Error", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommServerError) as exc_info:
                 plugin._romm_request("/api/test")
@@ -411,9 +450,7 @@ class TestRommJsonRequestErrors:
 
     def test_404_raises_not_found(self, plugin):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError(
-            "http://romm.local/api/saves", 404, "Not Found", {}, None
-        )
+        exc = urllib.error.HTTPError("http://romm.local/api/saves", 404, "Not Found", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommNotFoundError):
                 plugin._romm_post_json("/api/saves", {"data": 1})
@@ -430,9 +467,7 @@ class TestRommDownloadErrors:
 
     def test_403_raises_forbidden(self, plugin, tmp_path):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError(
-            "http://romm.local/assets/rom.zip", 403, "Forbidden", {}, None
-        )
+        exc = urllib.error.HTTPError("http://romm.local/assets/rom.zip", 403, "Forbidden", {}, None)
         dest = str(tmp_path / "rom.zip")
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommForbiddenError):
@@ -446,9 +481,7 @@ class TestRommUploadMultipartErrors:
         _setup_plugin(plugin)
         save_file = tmp_path / "test.srm"
         save_file.write_bytes(b"data")
-        exc = urllib.error.HTTPError(
-            "http://romm.local/api/saves", 409, "Conflict", {}, None
-        )
+        exc = urllib.error.HTTPError("http://romm.local/api/saves", 409, "Conflict", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommConflictError):
                 plugin._romm_upload_multipart("/api/saves", str(save_file))
@@ -551,14 +584,12 @@ class TestRetryLogic:
 
     def test_retry_delays_exponential(self, plugin):
         """Delays follow base_delay * 3^attempt pattern."""
-        fn = MagicMock(side_effect=[
-            ConnectionError("1"), ConnectionError("2"), "ok"
-        ])
+        fn = MagicMock(side_effect=[ConnectionError("1"), ConnectionError("2"), "ok"])
         with patch("time.sleep") as mock_sleep:
             plugin._with_retry(fn, max_attempts=3, base_delay=1)
         assert mock_sleep.call_count == 2
-        mock_sleep.assert_any_call(1)   # 1 * 3^0
-        mock_sleep.assert_any_call(3)   # 1 * 3^1
+        mock_sleep.assert_any_call(1)  # 1 * 3^0
+        mock_sleep.assert_any_call(3)  # 1 * 3^1
 
     def test_retry_no_retry_on_romm_auth_error(self, plugin):
         """RommAuthError raises immediately without retry."""
@@ -605,6 +636,7 @@ class TestTestConnectionErrors:
     async def test_auth_error_on_401(self, plugin):
         """Returns auth_error when platforms endpoint returns 401."""
         import asyncio
+
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         # Heartbeat succeeds, platforms raises auth error
@@ -619,6 +651,7 @@ class TestTestConnectionErrors:
     async def test_connection_error_on_refused(self, plugin):
         """Returns connection_error when server is unreachable."""
         import asyncio
+
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         with patch.object(plugin, "_romm_request", side_effect=RommConnectionError("refused")):
@@ -631,6 +664,7 @@ class TestTestConnectionErrors:
     async def test_ssl_error(self, plugin):
         """Returns ssl_error on SSL certificate failure."""
         import asyncio
+
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         with patch.object(plugin, "_romm_request", side_effect=RommSSLError("cert fail")):
@@ -643,6 +677,7 @@ class TestTestConnectionErrors:
     async def test_success_on_happy_path(self, plugin):
         """Returns success when both heartbeat and platforms succeed."""
         import asyncio
+
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         with patch.object(plugin, "_romm_request", return_value={"status": "ok"}):
@@ -654,10 +689,13 @@ class TestTestConnectionErrors:
     async def test_server_reachable_but_api_failed(self, plugin):
         """When heartbeat succeeds but platforms fails with non-auth error, message is prefixed."""
         import asyncio
+
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         heartbeat_response = {"status": "ok"}
-        with patch.object(plugin, "_romm_request", side_effect=[heartbeat_response, RommServerError("500", status_code=500)]):
+        with patch.object(
+            plugin, "_romm_request", side_effect=[heartbeat_response, RommServerError("500", status_code=500)]
+        ):
             result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "server_error"
@@ -667,6 +705,7 @@ class TestTestConnectionErrors:
     async def test_timeout_error(self, plugin):
         """Returns timeout_error on request timeout."""
         import asyncio
+
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         with patch.object(plugin, "_romm_request", side_effect=RommTimeoutError("timed out")):

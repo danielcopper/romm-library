@@ -93,12 +93,20 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
   const [isOffline, setIsOffline] = useState(getRommConnectionState() === "offline");
   const romIdRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Hide the native PlaySection via CSS while this component is mounted
   useEffect(() => {
     const cls = basicAppDetailsSectionStylerClasses?.PlaySection;
     if (cls) hideNativePlaySection(cls);
     return () => { showNativePlaySection(); };
+  }, []);
+
+  // Clear transition timers (dl_complete→play, uninstalling→download) on unmount
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
+    };
   }, []);
 
   // Initial load: determine ROM status from cache (instant, no network calls)
@@ -171,7 +179,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         setDlProgress(null);
         setActionPending(false);
         setState("dl_complete");
-        setTimeout(() => setState("play"), 1100);
+        transitionTimerRef.current = setTimeout(() => setState("play"), 1100);
       },
     );
 
@@ -350,7 +358,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         toaster.toast({ title: "RomM Sync", body: `${romName || "ROM"} uninstalled` });
         // Dark pulse transition before showing Download button
         setState("uninstalling");
-        setTimeout(() => setState("download"), 500);
+        transitionTimerRef.current = setTimeout(() => setState("download"), 500);
         return;
       } else {
         toaster.toast({ title: "RomM Sync", body: result.message || "Uninstall failed" });
