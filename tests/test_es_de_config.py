@@ -583,3 +583,60 @@ class TestGetActiveCoreWithGameOverride:
             # rom_filename provided but no per-game override: system override wins
             result = es_de_config.get_active_core("gba", rom_filename="Pokemon.gba")
             assert result == ("vbam_libretro", "VBA-M")
+
+
+class TestMtimeInvalidation:
+    """Test that caches invalidate when underlying files change on disk."""
+
+    def setup_method(self):
+        es_de_config._reset_cache()
+
+    def test_es_systems_reloads_on_mtime_change(self):
+        """_load_es_systems should re-parse if es_systems.xml mtime changes."""
+        xml_v1 = """\
+<?xml version="1.0"?>
+<systemList>
+  <system>
+    <name>gba</name>
+    <command label="mGBA">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/mgba_libretro.so %ROM%</command>
+  </system>
+</systemList>
+"""
+        xml_v2 = """\
+<?xml version="1.0"?>
+<systemList>
+  <system>
+    <name>gba</name>
+    <command label="mGBA">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/mgba_libretro.so %ROM%</command>
+    <command label="gpSP">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/gpsp_libretro.so %ROM%</command>
+  </system>
+</systemList>
+"""
+        path = _write_temp_xml(xml_v1)
+        try:
+            with mock.patch("lib.es_de_config.find_es_systems_xml", return_value=path):
+                result1 = es_de_config._load_es_systems()
+                assert len(result1["gba"]["cores"]) == 1
+
+                # Overwrite file (changes mtime)
+                import time
+                time.sleep(0.05)  # ensure mtime differs
+                with open(path, "w") as f:
+                    f.write(xml_v2)
+
+                result2 = es_de_config._load_es_systems()
+                assert len(result2["gba"]["cores"]) == 2
+        finally:
+            os.unlink(path)
+
+    def test_es_systems_cache_hit_when_unchanged(self):
+        """_load_es_systems should return cached result if mtime unchanged."""
+        path = _write_temp_xml(SAMPLE_ES_SYSTEMS_XML)
+        try:
+            with mock.patch("lib.es_de_config.find_es_systems_xml", return_value=path):
+                result1 = es_de_config._load_es_systems()
+                result2 = es_de_config._load_es_systems()
+                # Same object reference means cache was used
+                assert result1 is result2
+        finally:
+            os.unlink(path)

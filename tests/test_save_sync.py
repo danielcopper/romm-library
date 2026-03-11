@@ -2149,8 +2149,9 @@ class TestGetRetrodeckSavesPath:
         expected = os.path.join(str(tmp_path), "retrodeck", "saves")
         assert result == expected
 
-    def test_not_cached(self, plugin, tmp_path):
-        """Reads fresh every call (not cached)."""
+    def test_picks_up_changes_after_cache_reset(self, plugin, tmp_path):
+        """Reads fresh after TTL cache is reset."""
+        from lib import retrodeck_config as rc
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
         config_file = config_dir / "retrodeck.json"
@@ -2159,6 +2160,7 @@ class TestGetRetrodeckSavesPath:
         assert plugin._get_retrodeck_saves_path() == "/first/path"
 
         config_file.write_text(json.dumps({"paths": {"saves_path": "/second/path"}}))
+        rc._reset_cache()
         assert plugin._get_retrodeck_saves_path() == "/second/path"
 
 

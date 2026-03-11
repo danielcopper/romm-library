@@ -1,12 +1,28 @@
 """Centralized RetroDECK path resolution.
 
 Reads paths from retrodeck.json config, with fallback to ~/retrodeck/{subdir}.
-Each call reads fresh from disk (no caching) to handle config changes.
+Uses a 30-second TTL cache to avoid re-reading disk on every call during
+batch operations (e.g. 50-ROM save sync).
 """
 import json
 import os
+import time
 
 import decky
+
+_CACHE_TTL = 30  # seconds
+
+_cached_config = None
+_cache_time = 0.0
+_cache_config_path = None
+
+
+def _reset_cache():
+    """Reset the TTL cache (for testing)."""
+    global _cached_config, _cache_time, _cache_config_path
+    _cached_config = None
+    _cache_time = 0.0
+    _cache_config_path = None
 
 
 def _config_path():
@@ -18,16 +34,36 @@ def _config_path():
     )
 
 
+def _load_config():
+    """Load retrodeck.json with TTL caching."""
+    global _cached_config, _cache_time, _cache_config_path
+    config_path = _config_path()
+    now = time.monotonic()
+    if (_cached_config is not None
+            and _cache_config_path == config_path
+            and (now - _cache_time) < _CACHE_TTL):
+        return _cached_config
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        _cached_config = config
+        _cache_time = now
+        _cache_config_path = config_path
+        return config
+    except (OSError, json.JSONDecodeError):
+        _cached_config = None
+        _cache_config_path = config_path
+        _cache_time = now
+        return None
+
+
 def get_retrodeck_path(key, fallback_subdir):
     """Read a path from retrodeck.json paths.{key}, fallback to ~/retrodeck/{subdir}."""
-    try:
-        with open(_config_path(), "r") as f:
-            config = json.load(f)
+    config = _load_config()
+    if config:
         path = config.get("paths", {}).get(key, "")
         if path:
             return path
-    except (OSError, json.JSONDecodeError):
-        pass
     return os.path.join(decky.DECKY_USER_HOME, "retrodeck", fallback_subdir)
 
 

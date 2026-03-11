@@ -110,11 +110,6 @@ class SgdbMixin:
                     pass
             return None
 
-    async def save_steamgriddb_key(self, api_key):
-        self.settings["steamgriddb_api_key"] = api_key
-        self._save_settings_to_disk()
-        return {"success": True}
-
     async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
         rom_id = int(rom_id)
         asset_type_num = int(asset_type_num)

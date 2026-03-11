@@ -37,7 +37,18 @@ export const DownloadQueue: FC<DownloadQueueProps> = ({ onBack }) => {
   const startPolling = () => {
     stopPolling();
     pollRef.current = setInterval(() => {
-      setLocalDownloads([...getDownloadState()]);
+      const current = getDownloadState();
+      // Un-clear rom_ids that have new active downloads (re-download case)
+      setCleared((prev) => {
+        const restarted = current.filter(
+          (d) => (d.status === "downloading" || d.status === "queued") && prev.has(d.rom_id),
+        );
+        if (restarted.length === 0) return prev;
+        const next = new Set(prev);
+        restarted.forEach((d) => next.delete(d.rom_id));
+        return next;
+      });
+      setLocalDownloads([...current]);
     }, 500);
   };
 
