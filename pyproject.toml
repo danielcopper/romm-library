@@ -1,0 +1,23 @@
+[tool.basedpyright]
+pythonVersion = "3.12"
+extraPaths = ["py_modules"]
+stubPath = "typings"
+typeCheckingMode = "basic"
+reportMissingModuleSource = "none"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["lib"]
+known-third-party = ["decky"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

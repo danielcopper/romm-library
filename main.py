@@ -1,6 +1,6 @@
+import asyncio
 import os
 import sys
-import asyncio
 
 plugin_dir = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(plugin_dir, "py_modules"))
@@ -8,20 +8,31 @@ sys.path.insert(0, plugin_dir)
 
 import decky
 
-from lib.state import StateMixin
-from lib.romm_client import RommClientMixin
-from lib.steam_config import SteamConfigMixin
-from lib.firmware import FirmwareMixin
-from lib.metadata import MetadataMixin
-from lib.sgdb import SgdbMixin
+from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
 from lib.downloads import DownloadMixin
-from lib.sync import SyncMixin, SyncState
+from lib.firmware import FirmwareMixin
+from lib.metadata import MetadataMixin
+from lib.romm_client import RommClientMixin
 from lib.save_sync import SaveSyncMixin
-from lib import retrodeck_config
+from lib.sgdb import SgdbMixin
+from lib.state import StateMixin
+from lib.steam_config import SteamConfigMixin
+from lib.sync import SyncMixin, SyncState
 
 
-class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareMixin, MetadataMixin, AchievementsMixin, DownloadMixin, SyncMixin, SaveSyncMixin):
+class Plugin(
+    StateMixin,
+    RommClientMixin,
+    SgdbMixin,
+    SteamConfigMixin,
+    FirmwareMixin,
+    MetadataMixin,
+    AchievementsMixin,
+    DownloadMixin,
+    SyncMixin,
+    SaveSyncMixin,
+):
     settings: dict
     loop: asyncio.AbstractEventLoop
 
@@ -47,8 +58,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         }
         self._pending_sync = {}
         self._pending_delta = None
-        self._download_tasks = {}   # rom_id -> asyncio.Task
-        self._download_queue = {}   # rom_id -> DownloadItem dict
+        self._download_tasks = {}  # rom_id -> asyncio.Task
+        self._download_queue = {}  # rom_id -> DownloadItem dict
         self._download_in_progress = set()  # rom_ids currently being processed
         self._metadata_cache = {}
         self._achievements_cache = {}
@@ -58,12 +69,12 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._init_save_sync_state()
         self._load_save_sync_state()
         # ── Startup state healing ──
-        self._prune_stale_installed_roms()      # lib/state.py
-        self._prune_stale_registry()             # lib/state.py
-        self._prune_orphaned_save_sync_state()   # lib/save_sync.py
-        self._prune_orphaned_artwork_cache()     # lib/sgdb.py
-        self._prune_orphaned_staging_artwork()   # lib/sync.py
-        self._cleanup_leftover_tmp_files()       # lib/downloads.py
+        self._prune_stale_installed_roms()  # lib/state.py
+        self._prune_stale_registry()  # lib/state.py
+        self._prune_orphaned_save_sync_state()  # lib/save_sync.py
+        self._prune_orphaned_artwork_cache()  # lib/sgdb.py
+        self._prune_orphaned_staging_artwork()  # lib/sync.py
+        self._cleanup_leftover_tmp_files()  # lib/downloads.py
         # ── RetroDECK path change detection ──
         self._detect_retrodeck_path_change()
         self.loop.create_task(self._poll_download_requests())
@@ -78,9 +89,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             return
 
         if not os.path.isdir(current_home):
-            decky.logger.warning(
-                f"RetroDECK home path does not exist, skipping: {current_home}"
-            )
+            decky.logger.warning(f"RetroDECK home path does not exist, skipping: {current_home}")
             return
 
         if stored_home == current_home:
@@ -98,14 +107,15 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         self._state["retrodeck_home_path_previous"] = old_home
         self._state["retrodeck_home_path"] = current_home
         self._save_state()
-        decky.logger.warning(
-            f"RetroDECK home path changed: {old_home} -> {current_home}"
-        )
+        decky.logger.warning(f"RetroDECK home path changed: {old_home} -> {current_home}")
         self.loop.create_task(
-            decky.emit("retrodeck_path_changed", {
-                "old_path": old_home,
-                "new_path": current_home,
-            })
+            decky.emit(
+                "retrodeck_path_changed",
+                {
+                    "old_path": old_home,
+                    "new_path": current_home,
+                },
+            )
         )
 
     def _collect_migration_items(self, old_home, new_home):
@@ -114,7 +124,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         Returns list of (label, old_path, new_path, state_update_fn) tuples.
         state_update_fn is called after a successful move/skip to update state.
         """
-        import shutil
+
         items = []
 
         # --- ROMs (tracked in installed_roms state) ---
@@ -124,16 +134,22 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
                 if not path or not path.startswith(old_home + os.sep):
                     continue
                 new_path = os.path.join(new_home, os.path.relpath(path, old_home))
+
                 def make_rom_updater(e, k, np):
-                    def update(): e[k] = np
+                    def update():
+                        e[k] = np
+
                     return update
-                items.append((
-                    os.path.basename(path),
-                    path,
-                    new_path,
-                    make_rom_updater(entry, key, new_path),
-                    "rom" if key == "file_path" else "rom_dir",
-                ))
+
+                items.append(
+                    (
+                        os.path.basename(path),
+                        path,
+                        new_path,
+                        make_rom_updater(entry, key, new_path),
+                        "rom" if key == "file_path" else "rom_dir",
+                    )
+                )
 
         # --- BIOS (tracked in downloaded_bios state) ---
         for file_name, bios_entry in list(self._state.get("downloaded_bios", {}).items()):
@@ -141,14 +157,22 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             if not file_path or not file_path.startswith(old_home + os.sep):
                 continue
             new_path = os.path.join(new_home, os.path.relpath(file_path, old_home))
+
             def make_bios_updater(be, np):
-                def update(): be["file_path"] = np
+                def update():
+                    be["file_path"] = np
+
                 return update
-            items.append((
-                file_name, file_path, new_path,
-                make_bios_updater(bios_entry, new_path),
-                "bios",
-            ))
+
+            items.append(
+                (
+                    file_name,
+                    file_path,
+                    new_path,
+                    make_bios_updater(bios_entry, new_path),
+                    "bios",
+                )
+            )
 
         # --- BIOS (untracked — downloaded before state tracking) ---
         old_bios = os.path.join(old_home, "bios")
@@ -321,9 +345,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         if not old_home or not new_home or old_home == new_home:
             return {"pending": False}
 
-        return await self.loop.run_in_executor(
-            None, self._get_migration_status_io, old_home, new_home
-        )
+        return await self.loop.run_in_executor(None, self._get_migration_status_io, old_home, new_home)
 
     async def _unload(self):
         if self._sync_state == SyncState.RUNNING:
@@ -336,20 +358,17 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
 
     async def test_connection(self):
         from lib.errors import error_response
+
         if not self.settings.get("romm_url"):
             return {"success": False, "message": "No server URL configured", "error_code": "config_error"}
         # Test basic connectivity (heartbeat may not require auth)
         try:
-            await self.loop.run_in_executor(
-                None, self._romm_request, "/api/heartbeat"
-            )
+            await self.loop.run_in_executor(None, self._romm_request, "/api/heartbeat")
         except Exception as e:
             return error_response(e)
         # Test authenticated access
         try:
-            await self.loop.run_in_executor(
-                None, self._romm_request, "/api/platforms"
-            )
+            await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
         except Exception as e:
             resp = error_response(e)
             if resp["error_code"] not in ("auth_error", "forbidden_error"):
@@ -402,9 +421,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         return {"success": True}
 
     async def get_settings(self):
-        has_credentials = bool(
-            self.settings.get("romm_user") and self.settings.get("romm_pass")
-        )
+        has_credentials = bool(self.settings.get("romm_user") and self.settings.get("romm_pass"))
         return {
             "romm_url": self.settings.get("romm_url", ""),
             "romm_user": self.settings.get("romm_user", ""),
@@ -439,9 +456,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         installed = rom_id_str in self._state["installed_roms"]
 
         # Save sync
-        save_sync_enabled = self._save_sync_state.get("settings", {}).get(
-            "save_sync_enabled", False
-        )
+        save_sync_enabled = self._save_sync_state.get("settings", {}).get("save_sync_enabled", False)
         raw_save = self._save_sync_state.get("saves", {}).get(rom_id_str)
         save_status = None
         if raw_save:
@@ -449,9 +464,11 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             raw_files = raw_save.get("files", {})
             if isinstance(raw_files, dict):
                 files_list = [
-                    {"filename": fn,
-                     "status": "synced" if fdata.get("last_sync_hash") else "unknown",
-                     "last_sync_at": fdata.get("last_sync_at")}
+                    {
+                        "filename": fn,
+                        "status": "synced" if fdata.get("last_sync_hash") else "unknown",
+                        "last_sync_at": fdata.get("last_sync_at"),
+                    }
                     for fn, fdata in raw_files.items()
                 ]
             else:
@@ -462,10 +479,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             }
 
         # Pending conflicts for this rom
-        pending_conflicts = [
-            c for c in self._save_sync_state.get("pending_conflicts", [])
-            if c.get("rom_id") == rom_id
-        ]
+        pending_conflicts = [c for c in self._save_sync_state.get("pending_conflicts", []) if c.get("rom_id") == rom_id]
 
         # Metadata from cache
         metadata = self._metadata_cache.get(rom_id_str)
@@ -537,6 +551,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
     async def get_available_cores(self, platform_slug):
         """Return available RetroArch cores for a platform."""
         from lib import es_de_config
+
         cores = es_de_config.get_available_cores(platform_slug)
         active_core_so, active_core_label = es_de_config.get_active_core(platform_slug)
         return {
@@ -549,9 +564,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
     def _set_system_core_io(retrodeck_home, platform_slug, core_label):
         """Sync helper for set_system_core — XML read/parse/write in executor."""
         from lib import es_de_config
-        es_de_config.set_system_override(
-            retrodeck_home, platform_slug, core_label or None
-        )
+
+        es_de_config.set_system_override(retrodeck_home, platform_slug, core_label or None)
         es_de_config._reset_cache()
 
     async def set_system_core(self, platform_slug, core_label):
@@ -560,9 +574,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
         if not retrodeck_home:
             return {"success": False, "message": "RetroDECK home not found"}
         try:
-            await self.loop.run_in_executor(
-                None, self._set_system_core_io, retrodeck_home, platform_slug, core_label
-            )
+            await self.loop.run_in_executor(None, self._set_system_core_io, retrodeck_home, platform_slug, core_label)
             bios = await self.check_platform_bios(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
@@ -573,9 +585,8 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
     def _set_game_core_io(retrodeck_home, platform_slug, rom_path, core_label):
         """Sync helper for set_game_core — XML read/parse/write in executor."""
         from lib import es_de_config
-        es_de_config.set_game_override(
-            retrodeck_home, platform_slug, rom_path, core_label or None
-        )
+
+        es_de_config.set_game_override(retrodeck_home, platform_slug, rom_path, core_label or None)
         es_de_config._reset_cache()
 
     async def set_game_core(self, platform_slug, rom_path, core_label):
@@ -585,8 +596,7 @@ class Plugin(StateMixin, RommClientMixin, SgdbMixin, SteamConfigMixin, FirmwareM
             return {"success": False, "message": "RetroDECK home not found"}
         try:
             await self.loop.run_in_executor(
-                None, self._set_game_core_io,
-                retrodeck_home, platform_slug, rom_path, core_label
+                None, self._set_game_core_io, retrodeck_home, platform_slug, rom_path, core_label
             )
             # Extract rom filename from path for per-game core detection
             rom_filename = rom_path.lstrip("./") if rom_path else None
