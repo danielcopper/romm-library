@@ -1,6 +1,7 @@
-import pytest
 import json
 import os
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -40,6 +41,7 @@ class TestSettings:
     @pytest.mark.asyncio
     async def test_save_settings_skips_masked_password(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         plugin.settings["romm_pass"] = "original"
         await plugin.save_settings("http://example.com", "user", "••••")
@@ -48,6 +50,7 @@ class TestSettings:
     @pytest.mark.asyncio
     async def test_save_settings_updates_real_password(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         plugin.settings["romm_pass"] = "old"
         await plugin.save_settings("http://example.com", "user", "newpass")
@@ -58,7 +61,9 @@ class TestLogLevel:
     def test_log_debug_enabled(self, plugin):
         """_log_debug logs when log_level is 'debug'."""
         from unittest.mock import patch
+
         import decky
+
         plugin.settings["log_level"] = "debug"
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
@@ -67,7 +72,9 @@ class TestLogLevel:
     def test_log_debug_disabled_at_warn(self, plugin):
         """_log_debug does not log when log_level is 'warn' (default)."""
         from unittest.mock import patch
+
         import decky
+
         plugin.settings["log_level"] = "warn"
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
@@ -76,7 +83,9 @@ class TestLogLevel:
     def test_log_debug_disabled_at_info(self, plugin):
         """_log_debug does not log when log_level is 'info'."""
         from unittest.mock import patch
+
         import decky
+
         plugin.settings["log_level"] = "info"
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
@@ -85,7 +94,9 @@ class TestLogLevel:
     def test_log_debug_disabled_at_error(self, plugin):
         """_log_debug does not log when log_level is 'error'."""
         from unittest.mock import patch
+
         import decky
+
         plugin.settings["log_level"] = "error"
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
@@ -94,7 +105,9 @@ class TestLogLevel:
     def test_log_debug_missing_setting_defaults_warn(self, plugin):
         """_log_debug does not log when log_level key is missing (defaults to warn)."""
         from unittest.mock import patch
+
         import decky
+
         plugin.settings.pop("log_level", None)
         with patch.object(decky.logger, "info") as mock_info:
             plugin._log_debug("test message")
@@ -103,6 +116,7 @@ class TestLogLevel:
     @pytest.mark.asyncio
     async def test_save_log_level_valid(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         for level in ("debug", "info", "warn", "error"):
             result = await plugin.save_log_level(level)
@@ -112,6 +126,7 @@ class TestLogLevel:
     @pytest.mark.asyncio
     async def test_save_log_level_invalid(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         plugin.settings["log_level"] = "warn"
         result = await plugin.save_log_level("verbose")
@@ -134,12 +149,15 @@ class TestLogLevel:
     async def test_frontend_log_respects_level(self, plugin):
         """frontend_log only logs when message level >= configured level."""
         from unittest.mock import patch
+
         import decky
 
         plugin.settings["log_level"] = "warn"
-        with patch.object(decky.logger, "info") as mock_info, \
-             patch.object(decky.logger, "warning") as mock_warning, \
-             patch.object(decky.logger, "error") as mock_error:
+        with (
+            patch.object(decky.logger, "info") as mock_info,
+            patch.object(decky.logger, "warning") as mock_warning,
+            patch.object(decky.logger, "error") as mock_error,
+        ):
             await plugin.frontend_log("debug", "debug msg")
             await plugin.frontend_log("info", "info msg")
             await plugin.frontend_log("warn", "warn msg")
@@ -152,12 +170,15 @@ class TestLogLevel:
     async def test_frontend_log_debug_level_logs_all(self, plugin):
         """With log_level=debug, all levels are logged."""
         from unittest.mock import patch
+
         import decky
 
         plugin.settings["log_level"] = "debug"
-        with patch.object(decky.logger, "info") as mock_info, \
-             patch.object(decky.logger, "warning") as mock_warning, \
-             patch.object(decky.logger, "error") as mock_error:
+        with (
+            patch.object(decky.logger, "info") as mock_info,
+            patch.object(decky.logger, "warning") as mock_warning,
+            patch.object(decky.logger, "error") as mock_error,
+        ):
             await plugin.frontend_log("debug", "d")
             await plugin.frontend_log("info", "i")
             await plugin.frontend_log("warn", "w")
@@ -170,6 +191,7 @@ class TestLogLevel:
     async def test_debug_log_backward_compat(self, plugin):
         """debug_log callable delegates to frontend_log('debug', ...)."""
         from unittest.mock import patch
+
         import decky
 
         plugin.settings["log_level"] = "debug"
@@ -180,6 +202,7 @@ class TestLogLevel:
     def test_migration_debug_logging_true(self, plugin, tmp_path):
         """Old debug_logging=True migrates to log_level='debug'."""
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         # Write old-format settings
         settings_path = os.path.join(str(tmp_path), "settings.json")
@@ -193,6 +216,7 @@ class TestLogLevel:
     def test_migration_debug_logging_false(self, plugin, tmp_path):
         """Old debug_logging=False migrates to log_level='warn' (default)."""
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         settings_path = os.path.join(str(tmp_path), "settings.json")
         os.makedirs(str(tmp_path), exist_ok=True)
@@ -206,7 +230,9 @@ class TestLogLevel:
     async def test_sgdb_artwork_silent_when_debug_off(self, plugin, tmp_path):
         """SGDB artwork info calls should not log when log_level is 'warn'."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["log_level"] = "warn"
@@ -220,7 +246,9 @@ class TestLogLevel:
     async def test_sgdb_artwork_logs_when_debug_enabled(self, plugin, tmp_path):
         """SGDB artwork info calls should log when log_level is 'debug'."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["log_level"] = "debug"
@@ -236,6 +264,7 @@ class TestLogLevel:
 class TestInsecureSslSetting:
     def test_load_settings_defaults_false(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         settings_path = os.path.join(str(tmp_path), "settings.json")
         os.makedirs(str(tmp_path), exist_ok=True)
@@ -259,6 +288,7 @@ class TestInsecureSslSetting:
     @pytest.mark.asyncio
     async def test_save_settings_with_insecure_ssl(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         await plugin.save_settings("https://romm.local", "user", "pass", True)
         assert plugin.settings["romm_allow_insecure_ssl"] is True
@@ -266,6 +296,7 @@ class TestInsecureSslSetting:
     @pytest.mark.asyncio
     async def test_save_settings_without_param_preserves(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         plugin.settings["romm_allow_insecure_ssl"] = True
         await plugin.save_settings("https://romm.local", "user", "pass")
@@ -274,6 +305,7 @@ class TestInsecureSslSetting:
     @pytest.mark.asyncio
     async def test_save_settings_explicit_false(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         plugin.settings["romm_allow_insecure_ssl"] = True
         await plugin.save_settings("https://romm.local", "user", "pass", False)
@@ -283,6 +315,7 @@ class TestInsecureSslSetting:
 class TestSettingsFilePermissions:
     def test_save_settings_creates_file_with_0600(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         plugin.settings = {"romm_url": "http://example.com"}
         plugin._save_settings_to_disk()
@@ -292,9 +325,11 @@ class TestSettingsFilePermissions:
 
     def test_load_settings_fixes_permissions(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
         settings_path = tmp_path / "settings.json"
         import json as _json
+
         with open(settings_path, "w") as f:
             _json.dump({"romm_url": "http://example.com"}, f)
         os.chmod(settings_path, 0o644)
@@ -306,6 +341,7 @@ class TestSettingsFilePermissions:
 class TestPruneStaleState:
     def test_prunes_missing_files(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["installed_roms"] = {
@@ -317,6 +353,7 @@ class TestPruneStaleState:
 
     def test_keeps_existing_files(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         rom_file = tmp_path / "game.z64"
@@ -331,6 +368,7 @@ class TestPruneStaleState:
 
     def test_keeps_existing_rom_dir(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         rom_dir = tmp_path / "FF7"
@@ -350,6 +388,7 @@ class TestPruneStaleState:
 
     def test_saves_state_only_when_pruned(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         rom_file = tmp_path / "game.z64"
@@ -366,6 +405,7 @@ class TestPruneStaleState:
 
     def test_prunes_mixed(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         rom_file = tmp_path / "game.z64"
@@ -386,6 +426,7 @@ class TestPruneStaleStateEdgeCases:
 
     def test_empty_installed_roms_no_crash(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["installed_roms"] = {}
@@ -396,6 +437,7 @@ class TestPruneStaleStateEdgeCases:
 
     def test_all_entries_stale(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["installed_roms"] = {
@@ -414,6 +456,7 @@ class TestPruneStaleStateEdgeCases:
 class TestAtomicSettingsWrite:
     def test_settings_written_atomically(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
 
         plugin.settings = {"romm_url": "http://example.com", "romm_user": "user"}
@@ -427,6 +470,7 @@ class TestAtomicSettingsWrite:
 
     def test_settings_no_tmp_left_after_write(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
 
         plugin.settings = {"romm_url": "http://example.com"}
@@ -437,7 +481,9 @@ class TestAtomicSettingsWrite:
 
     def test_settings_crash_preserves_original(self, plugin, tmp_path):
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
 
         # Write initial settings
@@ -460,6 +506,7 @@ class TestAtomicSettingsWrite:
 class TestPruneStaleRegistry:
     def test_prunes_missing_app_id(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -470,6 +517,7 @@ class TestPruneStaleRegistry:
 
     def test_prunes_zero_app_id(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -480,6 +528,7 @@ class TestPruneStaleRegistry:
 
     def test_prunes_non_int_app_id(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -490,6 +539,7 @@ class TestPruneStaleRegistry:
 
     def test_keeps_valid_entry(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -500,6 +550,7 @@ class TestPruneStaleRegistry:
 
     def test_saves_only_when_pruned(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -512,6 +563,7 @@ class TestPruneStaleRegistry:
 
     def test_empty_registry_no_crash(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {}

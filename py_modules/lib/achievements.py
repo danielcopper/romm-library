@@ -12,16 +12,17 @@ if TYPE_CHECKING:
         _metadata_cache: dict
         _achievements_cache: dict
         loop: asyncio.AbstractEventLoop
+
         def _log_debug(self, msg: str) -> None: ...
         def _romm_request(self, path: str) -> Any: ...
 
 
-class AchievementsMixin:
+class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
     """RetroAchievements data fetching via RomM server."""
 
     ACHIEVEMENTS_CACHE_TTL = 24 * 3600  # 24h for achievement definitions
-    PROGRESS_CACHE_TTL = 3600           # 1h for user progress
-    RA_USERNAME_CACHE_TTL = 3600        # 1h for RA username detection
+    PROGRESS_CACHE_TTL = 3600  # 1h for user progress
+    RA_USERNAME_CACHE_TTL = 3600  # 1h for RA username detection
 
     def _get_ra_username(self):
         """Get RA username from RomM user profile (cached).
@@ -39,9 +40,7 @@ class AchievementsMixin:
     async def _fetch_ra_username(self):
         """Fetch RA username from RomM user profile and cache it."""
         try:
-            user_data = await self.loop.run_in_executor(
-                None, self._romm_request, "/api/users/me"
-            )
+            user_data = await self.loop.run_in_executor(None, self._romm_request, "/api/users/me")
             ra_username = (user_data.get("ra_username") or "").strip()
             self._achievements_cache["_ra_user"] = {
                 "username": ra_username,
@@ -119,9 +118,7 @@ class AchievementsMixin:
 
         # Fetch ROM detail from RomM (includes ra_metadata)
         try:
-            rom_data = await self.loop.run_in_executor(
-                None, self._romm_request, f"/api/roms/{rom_id}"
-            )
+            rom_data = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
             achievements = self._extract_achievements_from_rom(rom_data)
 
             # Cache it
@@ -137,7 +134,12 @@ class AchievementsMixin:
             # Return stale cache if available
             stale = self._achievements_cache.get(rom_id_str, {})
             if stale.get("achievements"):
-                return {"success": True, "achievements": stale["achievements"], "total": len(stale["achievements"]), "stale": True}
+                return {
+                    "success": True,
+                    "achievements": stale["achievements"],
+                    "total": len(stale["achievements"]),
+                    "stale": True,
+                }
             return {"success": False, "achievements": [], "total": 0, "message": str(e)}
 
     async def get_achievement_progress(self, rom_id):
@@ -177,9 +179,7 @@ class AchievementsMixin:
         try:
             # Fetch user profile from RomM — includes ra_progression and ra_username
             # RomM 4.2+ has ra_progression on user schema
-            user_data = await self.loop.run_in_executor(
-                None, self._romm_request, "/api/users/me"
-            )
+            user_data = await self.loop.run_in_executor(None, self._romm_request, "/api/users/me")
             # Cache ra_username from this response to avoid separate fetch next time
             fetched_username = (user_data.get("ra_username") or "").strip()
             if fetched_username:

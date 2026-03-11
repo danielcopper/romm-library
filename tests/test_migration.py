@@ -1,7 +1,7 @@
-import pytest
-import json
-import os
 import asyncio
+import os
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -15,7 +15,14 @@ def plugin():
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
-    p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}, "downloaded_bios": {}, "retrodeck_home_path": ""}
+    p._state = {
+        "shortcut_registry": {},
+        "installed_roms": {},
+        "last_sync": None,
+        "sync_stats": {},
+        "downloaded_bios": {},
+        "retrodeck_home_path": "",
+    }
     p._pending_sync = {}
     p._download_tasks = {}
     p._download_queue = {}
@@ -35,8 +42,10 @@ async def _set_event_loop(plugin):
 class TestPathChangeDetection:
     def test_first_run_stores_path(self, plugin, tmp_path):
         """First run (empty stored path) stores current path, no event."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -45,8 +54,7 @@ class TestPathChangeDetection:
         fake_home = str(tmp_path / "retrodeck")
         os.makedirs(fake_home, exist_ok=True)
 
-        with patch("lib.retrodeck_config.get_retrodeck_home",
-                    return_value=fake_home):
+        with patch("lib.retrodeck_config.get_retrodeck_home", return_value=fake_home):
             plugin._detect_retrodeck_path_change()
 
         assert plugin._state["retrodeck_home_path"] == fake_home
@@ -55,8 +63,10 @@ class TestPathChangeDetection:
 
     def test_no_change_no_notification(self, plugin, tmp_path):
         """Same path as stored — no event, no state change."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -65,16 +75,17 @@ class TestPathChangeDetection:
         plugin._state["retrodeck_home_path"] = fake_home
         plugin.loop = MagicMock()
 
-        with patch("lib.retrodeck_config.get_retrodeck_home",
-                    return_value=fake_home):
+        with patch("lib.retrodeck_config.get_retrodeck_home", return_value=fake_home):
             plugin._detect_retrodeck_path_change()
 
         plugin.loop.create_task.assert_not_called()
 
     def test_path_change_emits_event(self, plugin, tmp_path):
         """Path changed — stores both old and new, emits event."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -85,14 +96,15 @@ class TestPathChangeDetection:
         plugin._state["retrodeck_home_path"] = old_home
         plugin.loop = MagicMock()
         _create_task_calls = []
+
         def _close_coro_task(coro):
             coro.close()
             _create_task_calls.append(coro)
             return MagicMock()
+
         plugin.loop.create_task = _close_coro_task
 
-        with patch("lib.retrodeck_config.get_retrodeck_home",
-                    return_value=new_home):
+        with patch("lib.retrodeck_config.get_retrodeck_home", return_value=new_home):
             plugin._detect_retrodeck_path_change()
 
         assert plugin._state["retrodeck_home_path"] == new_home
@@ -101,8 +113,10 @@ class TestPathChangeDetection:
 
     def test_empty_current_home_no_action(self, plugin, tmp_path):
         """If retrodeck_config returns empty string, do nothing."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         plugin.loop = MagicMock()
@@ -119,6 +133,7 @@ class TestMigrateRetroDeckFiles:
     async def test_no_migration_needed(self, plugin, tmp_path):
         """No previous path — nothing to migrate."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         result = await plugin.migrate_retrodeck_files()
@@ -129,6 +144,7 @@ class TestMigrateRetroDeckFiles:
     async def test_migrate_roms(self, plugin, tmp_path):
         """Moves ROM files from old to new path, updates state."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -162,6 +178,7 @@ class TestMigrateRetroDeckFiles:
     async def test_migrate_bios(self, plugin, tmp_path):
         """Moves tracked BIOS files from old to new path."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -194,6 +211,7 @@ class TestMigrateRetroDeckFiles:
     async def test_migrate_conflicts_need_confirmation(self, plugin, tmp_path):
         """Destination file already exists — first call returns conflicts for user decision."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -211,9 +229,7 @@ class TestMigrateRetroDeckFiles:
 
         plugin._state["retrodeck_home_path_previous"] = old_home
         plugin._state["retrodeck_home_path"] = new_home
-        plugin._state["installed_roms"] = {
-            "1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}
-        }
+        plugin._state["installed_roms"] = {"1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}}
 
         # First call with no strategy returns conflicts
         result = await plugin.migrate_retrodeck_files()
@@ -230,6 +246,7 @@ class TestMigrateRetroDeckFiles:
     async def test_migrate_conflict_overwrite(self, plugin, tmp_path):
         """Overwrite strategy replaces destination with source."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -247,9 +264,7 @@ class TestMigrateRetroDeckFiles:
 
         plugin._state["retrodeck_home_path_previous"] = old_home
         plugin._state["retrodeck_home_path"] = new_home
-        plugin._state["installed_roms"] = {
-            "1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}
-        }
+        plugin._state["installed_roms"] = {"1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}}
 
         result = await plugin.migrate_retrodeck_files("overwrite")
         assert result["success"] is True
@@ -262,6 +277,7 @@ class TestMigrateRetroDeckFiles:
     async def test_migrate_conflict_skip(self, plugin, tmp_path):
         """Skip strategy keeps destination file, updates state path."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -279,9 +295,7 @@ class TestMigrateRetroDeckFiles:
 
         plugin._state["retrodeck_home_path_previous"] = old_home
         plugin._state["retrodeck_home_path"] = new_home
-        plugin._state["installed_roms"] = {
-            "1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}
-        }
+        plugin._state["installed_roms"] = {"1": {"rom_id": 1, "file_path": old_rom, "system": "n64"}}
 
         result = await plugin.migrate_retrodeck_files("skip")
         assert result["success"] is True
@@ -296,6 +310,7 @@ class TestMigrateRetroDeckFiles:
     async def test_migrate_source_missing(self, plugin, tmp_path):
         """Source file gone — skip silently."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -316,6 +331,7 @@ class TestMigrateRetroDeckFiles:
     async def test_migrate_creates_subdirs(self, plugin, tmp_path):
         """Target subdirectories are created as needed."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -346,6 +362,7 @@ class TestMigrateRetroDeckFiles:
     async def test_clears_previous_on_success(self, plugin, tmp_path):
         """After successful migration, retrodeck_home_path_previous is cleared."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -368,6 +385,7 @@ class TestMigrateSaveFiles:
     async def test_migrate_saves(self, plugin, tmp_path):
         """Save files are moved from old to new saves directory."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -384,8 +402,8 @@ class TestMigrateSaveFiles:
         plugin._state["retrodeck_home_path"] = new_home
 
         from unittest.mock import patch
-        with patch("lib.retrodeck_config.get_saves_path",
-                    return_value=os.path.join(new_home, "saves")):
+
+        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files()
 
         assert result["success"] is True
@@ -399,6 +417,7 @@ class TestMigrateSaveFiles:
     async def test_save_conflict_needs_confirmation(self, plugin, tmp_path):
         """Save files at both locations trigger conflict confirmation."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -418,8 +437,8 @@ class TestMigrateSaveFiles:
         plugin._state["retrodeck_home_path"] = new_home
 
         from unittest.mock import patch
-        with patch("lib.retrodeck_config.get_saves_path",
-                    return_value=os.path.join(new_home, "saves")):
+
+        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files()
 
         assert result["needs_confirmation"] is True
@@ -430,6 +449,7 @@ class TestMigrateSaveFiles:
     async def test_save_conflict_overwrite(self, plugin, tmp_path):
         """Overwrite strategy replaces destination save with source."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -449,8 +469,8 @@ class TestMigrateSaveFiles:
         plugin._state["retrodeck_home_path"] = new_home
 
         from unittest.mock import patch
-        with patch("lib.retrodeck_config.get_saves_path",
-                    return_value=os.path.join(new_home, "saves")):
+
+        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files("overwrite")
 
         assert result["success"] is True
@@ -462,6 +482,7 @@ class TestMigrateSaveFiles:
     async def test_save_conflict_skip(self, plugin, tmp_path):
         """Skip strategy keeps destination save file."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -481,8 +502,8 @@ class TestMigrateSaveFiles:
         plugin._state["retrodeck_home_path"] = new_home
 
         from unittest.mock import patch
-        with patch("lib.retrodeck_config.get_saves_path",
-                    return_value=os.path.join(new_home, "saves")):
+
+        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files("skip")
 
         assert result["success"] is True
@@ -494,6 +515,7 @@ class TestMigrateSaveFiles:
     async def test_hidden_dirs_skipped(self, plugin, tmp_path):
         """Hidden directories like .romm-backup are not migrated."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -513,8 +535,8 @@ class TestMigrateSaveFiles:
         plugin._state["retrodeck_home_path"] = new_home
 
         from unittest.mock import patch
-        with patch("lib.retrodeck_config.get_saves_path",
-                    return_value=os.path.join(new_home, "saves")):
+
+        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files()
 
         assert result["saves_moved"] == 1  # only the real save, not the backup
@@ -523,6 +545,7 @@ class TestMigrateSaveFiles:
     async def test_status_includes_saves_count(self, plugin, tmp_path):
         """get_migration_status includes saves_count."""
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -538,8 +561,8 @@ class TestMigrateSaveFiles:
         plugin._state["retrodeck_home_path"] = new_home
 
         from unittest.mock import patch
-        with patch("lib.retrodeck_config.get_saves_path",
-                    return_value=os.path.join(new_home, "saves")):
+
+        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             status = await plugin.get_migration_status()
 
         assert status["pending"] is True

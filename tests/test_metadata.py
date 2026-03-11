@@ -1,7 +1,8 @@
-import pytest
+import asyncio
 import json
 import os
-import asyncio
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -107,6 +108,7 @@ class TestGetRomMetadata:
     async def test_cache_hit(self, plugin):
         """Returns cached data without API call when cache is fresh."""
         import time
+
         plugin._metadata_cache["42"] = {
             "summary": "Cached summary",
             "genres": ["RPG"],
@@ -126,7 +128,9 @@ class TestGetRomMetadata:
     async def test_cache_miss_fetches_from_api(self, plugin, tmp_path):
         """Cache miss fetches from RomM API, caches to disk."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
@@ -165,9 +169,11 @@ class TestGetRomMetadata:
     @pytest.mark.asyncio
     async def test_cache_expired_refetches(self, plugin, tmp_path):
         """Re-fetches when cached_at is older than 7 days."""
-        from unittest.mock import patch
         import time
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
@@ -246,7 +252,9 @@ class TestGetRomMetadata:
     async def test_rom_missing_metadatum_from_api(self, plugin, tmp_path):
         """ROM exists in API but has no metadatum — returns empty fields."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
@@ -264,8 +272,9 @@ class TestGetRomMetadata:
     @pytest.mark.asyncio
     async def test_debug_logging_on_cache_hit(self, plugin):
         """Verify _log_debug is called during cache hit."""
-        from unittest.mock import patch
         import time
+        from unittest.mock import patch
+
         import decky
 
         plugin.settings["log_level"] = "debug"
@@ -289,7 +298,9 @@ class TestGetRomMetadata:
     async def test_debug_logging_on_cache_miss(self, plugin, tmp_path):
         """Verify _log_debug is called during cache miss."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.loop = asyncio.get_event_loop()
@@ -297,8 +308,10 @@ class TestGetRomMetadata:
 
         romm_response = {"id": 42, "summary": "test", "metadatum": {}}
 
-        with patch.object(plugin, "_romm_request", return_value=romm_response), \
-             patch.object(decky.logger, "info") as mock_info:
+        with (
+            patch.object(plugin, "_romm_request", return_value=romm_response),
+            patch.object(decky.logger, "info") as mock_info,
+        ):
             await plugin.get_rom_metadata(42)
             logged = [str(c) for c in mock_info.call_args_list]
             assert any("cache miss" in m.lower() for m in logged)
@@ -330,6 +343,7 @@ class TestLoadMetadataCache:
 
     def test_loads_from_disk(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         cache_data = {"42": {"summary": "test", "cached_at": 100}}
@@ -344,6 +358,7 @@ class TestLoadMetadataCache:
 
     def test_empty_when_file_missing(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._metadata_cache = {"old": "data"}
@@ -354,6 +369,7 @@ class TestLoadMetadataCache:
 
     def test_empty_when_malformed_json(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         cache_path = os.path.join(str(tmp_path), "metadata_cache.json")
@@ -373,6 +389,7 @@ class TestSyncMetadataCapture:
     def test_extract_metadata_during_sync(self, plugin, tmp_path):
         """Verify that _extract_metadata produces correct cache entries for ROM list items."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         roms = [
@@ -431,6 +448,7 @@ class TestSyncMetadataCapture:
     def test_sync_preserves_existing_cache(self, plugin, tmp_path):
         """Pre-existing cache entries for other ROMs are preserved after sync adds new ones."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         # Pre-existing cache entry
@@ -487,8 +505,8 @@ class TestGetRomMetadata404:
     @pytest.mark.asyncio
     async def test_rom_not_found_returns_defaults(self, plugin):
         """API 404 with no cache returns empty defaults."""
-        from unittest.mock import patch
         import urllib.error
+        from unittest.mock import patch
 
         plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
@@ -513,8 +531,8 @@ class TestGetRomMetadata404:
     @pytest.mark.asyncio
     async def test_rom_not_found_returns_stale_cache(self, plugin):
         """API 404 with stale cache returns cached data."""
-        from unittest.mock import patch
         import urllib.error
+        from unittest.mock import patch
 
         plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"

@@ -1,6 +1,7 @@
-import pytest
-import os
 import asyncio
+import os
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -14,7 +15,14 @@ def plugin():
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
-    p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}, "downloaded_bios": {}, "retrodeck_home_path": ""}
+    p._state = {
+        "shortcut_registry": {},
+        "installed_roms": {},
+        "last_sync": None,
+        "sync_stats": {},
+        "downloaded_bios": {},
+        "retrodeck_home_path": "",
+    }
     p._pending_sync = {}
     p._download_tasks = {}
     p._download_queue = {}
@@ -37,11 +45,12 @@ class TestFirmwareDestPath:
     def test_flat_default_no_registry(self, plugin, tmp_path):
         """File not in registry goes flat in bios root."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        with patch("lib.retrodeck_config.get_bios_path",
-                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
             fw = {"file_name": "bios.bin", "file_path": "bios/n64/bios.bin"}
             dest = plugin._firmware_dest_path(fw)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "bios.bin")
@@ -49,7 +58,9 @@ class TestFirmwareDestPath:
     def test_dreamcast_subfolder_from_registry(self, plugin, tmp_path):
         """Registry firmware_path with subdirectory places file correctly."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         plugin._bios_files_index["dc_boot.bin"] = {
@@ -59,8 +70,7 @@ class TestFirmwareDestPath:
             "platform": "dc",
         }
 
-        with patch("lib.retrodeck_config.get_bios_path",
-                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
             fw = {"file_name": "dc_boot.bin", "file_path": "bios/dc/dc_boot.bin"}
             dest = plugin._firmware_dest_path(fw)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "dc", "dc_boot.bin")
@@ -68,7 +78,9 @@ class TestFirmwareDestPath:
     def test_psx_flat_from_registry(self, plugin, tmp_path):
         """Registry firmware_path without subdirectory goes flat."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         plugin._bios_files_index["scph5501.bin"] = {
@@ -78,8 +90,7 @@ class TestFirmwareDestPath:
             "platform": "psx",
         }
 
-        with patch("lib.retrodeck_config.get_bios_path",
-                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
             fw = {"file_name": "scph5501.bin", "file_path": "bios/ps/scph5501.bin"}
             dest = plugin._firmware_dest_path(fw)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "scph5501.bin")
@@ -97,11 +108,12 @@ class TestFirmwareDestPath:
     def test_unknown_file_flat_fallback(self, plugin, tmp_path):
         """File not in registry falls back to flat in bios root."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        with patch("lib.retrodeck_config.get_bios_path",
-                    return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
             fw = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
             dest = plugin._firmware_dest_path(fw)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "fw.bin")
@@ -111,13 +123,33 @@ class TestGetFirmwareStatus:
     @pytest.mark.asyncio
     async def test_returns_grouped_platforms(self, plugin, tmp_path):
         from unittest.mock import AsyncMock, MagicMock
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
-            {"id": 1, "file_name": "bios_dc.bin", "file_path": "bios/dc/bios_dc.bin", "file_size_bytes": 2048, "md5_hash": "abc123"},
-            {"id": 2, "file_name": "flash_dc.bin", "file_path": "bios/dc/flash_dc.bin", "file_size_bytes": 1024, "md5_hash": "def456"},
-            {"id": 3, "file_name": "scph.bin", "file_path": "bios/ps2/scph.bin", "file_size_bytes": 4096, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "bios_dc.bin",
+                "file_path": "bios/dc/bios_dc.bin",
+                "file_size_bytes": 2048,
+                "md5_hash": "abc123",
+            },
+            {
+                "id": 2,
+                "file_name": "flash_dc.bin",
+                "file_path": "bios/dc/flash_dc.bin",
+                "file_size_bytes": 1024,
+                "md5_hash": "def456",
+            },
+            {
+                "id": 3,
+                "file_name": "scph.bin",
+                "file_path": "bios/ps2/scph.bin",
+                "file_size_bytes": 4096,
+                "md5_hash": "",
+            },
         ]
 
         plugin.loop = MagicMock()
@@ -134,7 +166,9 @@ class TestGetFirmwareStatus:
     @pytest.mark.asyncio
     async def test_detects_downloaded_files(self, plugin, tmp_path):
         from unittest.mock import AsyncMock, MagicMock
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         # File goes flat in bios root (not in registry, no firmware_path)
@@ -143,7 +177,13 @@ class TestGetFirmwareStatus:
         (bios_dir / "bios_dc.bin").write_bytes(b"\x00" * 100)
 
         firmware_list = [
-            {"id": 1, "file_name": "bios_dc.bin", "file_path": "bios/dc/bios_dc.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "bios_dc.bin",
+                "file_path": "bios/dc/bios_dc.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
         ]
 
         plugin.loop = MagicMock()
@@ -169,9 +209,11 @@ class TestGetFirmwareStatus:
 class TestDownloadFirmware:
     @pytest.mark.asyncio
     async def test_downloads_and_verifies_md5(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
         import hashlib
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -192,8 +234,10 @@ class TestDownloadFirmware:
 
         plugin.loop = asyncio.get_event_loop()
 
-        with patch.object(plugin, "_romm_request", return_value=fw_detail), \
-             patch.object(plugin, "_romm_download", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_request", return_value=fw_detail),
+            patch.object(plugin, "_romm_download", side_effect=fake_download),
+        ):
             result = await plugin.download_firmware(10)
 
         assert result["success"] is True
@@ -205,8 +249,10 @@ class TestDownloadFirmware:
 
     @pytest.mark.asyncio
     async def test_handles_download_error(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         fw_detail = {
@@ -219,8 +265,10 @@ class TestDownloadFirmware:
 
         plugin.loop = asyncio.get_event_loop()
 
-        with patch.object(plugin, "_romm_request", return_value=fw_detail), \
-             patch.object(plugin, "_romm_download", side_effect=IOError("Connection reset")):
+        with (
+            patch.object(plugin, "_romm_request", return_value=fw_detail),
+            patch.object(plugin, "_romm_download", side_effect=IOError("Connection reset")),
+        ):
             result = await plugin.download_firmware(10)
 
         assert result["success"] is False
@@ -230,8 +278,10 @@ class TestDownloadFirmware:
 class TestDownloadAllFirmware:
     @pytest.mark.asyncio
     async def test_downloads_missing_only(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         # Pre-create one file so it's skipped (flat in bios root, not in registry)
@@ -240,8 +290,20 @@ class TestDownloadAllFirmware:
         (bios_dir / "existing.bin").write_bytes(b"\x00" * 50)
 
         firmware_list = [
-            {"id": 1, "file_name": "existing.bin", "file_path": "bios/dc/existing.bin", "file_size_bytes": 50, "md5_hash": ""},
-            {"id": 2, "file_name": "missing.bin", "file_path": "bios/dc/missing.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "existing.bin",
+                "file_path": "bios/dc/existing.bin",
+                "file_size_bytes": 50,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "missing.bin",
+                "file_path": "bios/dc/missing.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
         ]
 
         plugin.loop = asyncio.get_event_loop()
@@ -252,8 +314,10 @@ class TestDownloadAllFirmware:
             download_called_ids.append(fw_id)
             return {"success": True}
 
-        with patch.object(plugin, "_romm_request", return_value=firmware_list), \
-             patch.object(plugin, "download_firmware", side_effect=fake_download_firmware):
+        with (
+            patch.object(plugin, "_romm_request", return_value=firmware_list),
+            patch.object(plugin, "download_firmware", side_effect=fake_download_firmware),
+        ):
             result = await plugin.download_all_firmware("dc")
 
         assert result["success"] is True
@@ -266,8 +330,8 @@ class TestDeletePlatformBios:
     @pytest.mark.asyncio
     async def test_delete_platform_bios_happy_path(self, plugin, tmp_path):
         """Deleting platform BIOS removes downloaded files and state entries."""
-        from unittest.mock import AsyncMock
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
@@ -292,6 +356,7 @@ class TestDeletePlatformBios:
                 "all_downloaded": True,
                 "files": [{"file_name": "scph5501.bin", "downloaded": True, "local_path": str(bios_file)}],
             }
+
         plugin.check_platform_bios = mock_check
 
         result = await plugin.delete_platform_bios("psx")
@@ -304,8 +369,10 @@ class TestDeletePlatformBios:
     @pytest.mark.asyncio
     async def test_delete_platform_bios_no_files(self, plugin):
         """Deleting BIOS when none exist returns success with 0."""
+
         async def mock_check(slug):
             return {"needs_bios": False}
+
         plugin.check_platform_bios = mock_check
 
         result = await plugin.delete_platform_bios("snes")
@@ -315,8 +382,8 @@ class TestDeletePlatformBios:
     @pytest.mark.asyncio
     async def test_delete_platform_bios_skips_not_downloaded(self, plugin, tmp_path):
         """Only files with downloaded=True are deleted."""
-        from unittest.mock import AsyncMock
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         async def mock_check(slug):
@@ -330,6 +397,7 @@ class TestDeletePlatformBios:
                     {"file_name": "bios2.bin", "downloaded": False, "local_path": "/fake/path2"},
                 ],
             }
+
         plugin.check_platform_bios = mock_check
 
         result = await plugin.delete_platform_bios("psx")
@@ -371,7 +439,8 @@ class TestBiosRegistry:
         registry_file = defaults_dir / "bios_registry.json"
         registry_file.write_text(json.dumps(registry_data))
 
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         # _load_bios_registry uses decky.DECKY_PLUGIN_DIR to locate bios_registry.json
         mock_decky = MagicMock()
         mock_decky.DECKY_PLUGIN_DIR = str(tmp_path)
@@ -393,7 +462,7 @@ class TestBiosRegistry:
 
     def test_load_bios_registry_missing_file(self, plugin):
         """When registry file doesn't exist, returns empty dict."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         mock_decky = MagicMock()
         mock_decky.DECKY_PLUGIN_DIR = "/nonexistent"
@@ -636,13 +705,33 @@ class TestCheckPlatformBiosRequired:
     async def test_required_counts(self, plugin, tmp_path):
         """check_platform_bios includes required_count/required_downloaded."""
         from unittest.mock import AsyncMock, MagicMock
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
-            {"id": 1, "file_name": "required1.bin", "file_path": "bios/dc/required1.bin", "file_size_bytes": 100, "md5_hash": ""},
-            {"id": 2, "file_name": "required2.bin", "file_path": "bios/dc/required2.bin", "file_size_bytes": 200, "md5_hash": ""},
-            {"id": 3, "file_name": "optional1.bin", "file_path": "bios/dc/optional1.bin", "file_size_bytes": 300, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "required1.bin",
+                "file_path": "bios/dc/required1.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "required2.bin",
+                "file_path": "bios/dc/required2.bin",
+                "file_size_bytes": 200,
+                "md5_hash": "",
+            },
+            {
+                "id": 3,
+                "file_name": "optional1.bin",
+                "file_path": "bios/dc/optional1.bin",
+                "file_size_bytes": 300,
+                "md5_hash": "",
+            },
         ]
 
         plugin._bios_registry = {
@@ -673,7 +762,9 @@ class TestCheckPlatformBiosRequired:
     async def test_all_required_downloaded(self, plugin, tmp_path):
         """When all required files are downloaded, counts reflect this."""
         from unittest.mock import AsyncMock, MagicMock
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         # Create downloaded required files (flat in bios root, no firmware_path in registry)
@@ -684,9 +775,27 @@ class TestCheckPlatformBiosRequired:
         # Leave optional1.bin not downloaded
 
         firmware_list = [
-            {"id": 1, "file_name": "required1.bin", "file_path": "bios/dc/required1.bin", "file_size_bytes": 100, "md5_hash": ""},
-            {"id": 2, "file_name": "required2.bin", "file_path": "bios/dc/required2.bin", "file_size_bytes": 200, "md5_hash": ""},
-            {"id": 3, "file_name": "optional1.bin", "file_path": "bios/dc/optional1.bin", "file_size_bytes": 300, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "required1.bin",
+                "file_path": "bios/dc/required1.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "required2.bin",
+                "file_path": "bios/dc/required2.bin",
+                "file_size_bytes": 200,
+                "md5_hash": "",
+            },
+            {
+                "id": 3,
+                "file_name": "optional1.bin",
+                "file_path": "bios/dc/optional1.bin",
+                "file_size_bytes": 300,
+                "md5_hash": "",
+            },
         ]
 
         plugin._bios_registry = {
@@ -719,7 +828,9 @@ class TestCheckPlatformBiosRequired:
     async def test_per_file_required_and_description(self, plugin, tmp_path):
         """Individual files include required and description from registry."""
         from unittest.mock import AsyncMock, MagicMock
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
@@ -748,13 +859,33 @@ class TestCheckPlatformBiosRequired:
     async def test_check_platform_bios_unknown_count(self, plugin, tmp_path):
         """RomM has files not in registry -> unknown_count > 0."""
         from unittest.mock import AsyncMock, MagicMock
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
-            {"id": 1, "file_name": "known.bin", "file_path": "bios/dc/known.bin", "file_size_bytes": 100, "md5_hash": ""},
-            {"id": 2, "file_name": "mystery.bin", "file_path": "bios/dc/mystery.bin", "file_size_bytes": 200, "md5_hash": ""},
-            {"id": 3, "file_name": "alien.bin", "file_path": "bios/dc/alien.bin", "file_size_bytes": 300, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "known.bin",
+                "file_path": "bios/dc/known.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "mystery.bin",
+                "file_path": "bios/dc/mystery.bin",
+                "file_size_bytes": 200,
+                "md5_hash": "",
+            },
+            {
+                "id": 3,
+                "file_name": "alien.bin",
+                "file_path": "bios/dc/alien.bin",
+                "file_size_bytes": 300,
+                "md5_hash": "",
+            },
         ]
 
         # Only "known.bin" is in the registry
@@ -786,13 +917,27 @@ class TestDownloadRequiredFirmware:
     @pytest.mark.asyncio
     async def test_downloads_required_only(self, plugin, tmp_path):
         """Only downloads files marked required, skips optional."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
-            {"id": 1, "file_name": "required.bin", "file_path": "bios/dc/required.bin", "file_size_bytes": 100, "md5_hash": ""},
-            {"id": 2, "file_name": "optional.bin", "file_path": "bios/dc/optional.bin", "file_size_bytes": 200, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "required.bin",
+                "file_path": "bios/dc/required.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "optional.bin",
+                "file_path": "bios/dc/optional.bin",
+                "file_size_bytes": 200,
+                "md5_hash": "",
+            },
         ]
 
         plugin._bios_registry = {
@@ -816,8 +961,10 @@ class TestDownloadRequiredFirmware:
             download_called_ids.append(fw_id)
             return {"success": True}
 
-        with patch.object(plugin, "_romm_request", return_value=firmware_list), \
-             patch.object(plugin, "download_firmware", side_effect=fake_download_firmware):
+        with (
+            patch.object(plugin, "_romm_request", return_value=firmware_list),
+            patch.object(plugin, "download_firmware", side_effect=fake_download_firmware),
+        ):
             result = await plugin.download_required_firmware("dc")
 
         assert result["success"] is True
@@ -828,8 +975,10 @@ class TestDownloadRequiredFirmware:
     @pytest.mark.asyncio
     async def test_skips_already_downloaded_required(self, plugin, tmp_path):
         """Skips required files that are already downloaded."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         # Pre-create one required file so it's skipped (flat in bios root)
@@ -838,8 +987,20 @@ class TestDownloadRequiredFirmware:
         (bios_dir / "existing.bin").write_bytes(b"\x00" * 100)
 
         firmware_list = [
-            {"id": 1, "file_name": "existing.bin", "file_path": "bios/dc/existing.bin", "file_size_bytes": 100, "md5_hash": ""},
-            {"id": 2, "file_name": "missing.bin", "file_path": "bios/dc/missing.bin", "file_size_bytes": 200, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "existing.bin",
+                "file_path": "bios/dc/existing.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "missing.bin",
+                "file_path": "bios/dc/missing.bin",
+                "file_size_bytes": 200,
+                "md5_hash": "",
+            },
         ]
 
         plugin._bios_registry = {
@@ -863,8 +1024,10 @@ class TestDownloadRequiredFirmware:
             download_called_ids.append(fw_id)
             return {"success": True}
 
-        with patch.object(plugin, "_romm_request", return_value=firmware_list), \
-             patch.object(plugin, "download_firmware", side_effect=fake_download_firmware):
+        with (
+            patch.object(plugin, "_romm_request", return_value=firmware_list),
+            patch.object(plugin, "download_firmware", side_effect=fake_download_firmware),
+        ):
             result = await plugin.download_required_firmware("dc")
 
         assert result["success"] is True
@@ -880,7 +1043,9 @@ class TestCheckPlatformBiosOffline:
     async def test_offline_fallback_with_registry(self, plugin, tmp_path):
         """API fails but registry has entries — returns registry-based status."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         bios_dir = tmp_path / "bios"
@@ -914,8 +1079,10 @@ class TestCheckPlatformBiosOffline:
             for fname, entry in files.items():
                 plugin._bios_files_index[fname] = {**entry, "platform": plat}
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("offline")), \
-             patch("lib.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+        with (
+            patch.object(plugin, "_romm_request", side_effect=Exception("offline")),
+            patch("lib.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+        ):
             result = await plugin.check_platform_bios("psx")
 
         assert result["needs_bios"] is True
@@ -929,14 +1096,18 @@ class TestCheckPlatformBiosOffline:
     async def test_offline_no_registry_entries(self, plugin, tmp_path):
         """API fails and no registry entries — returns needs_bios False."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         plugin._bios_registry = {"platforms": {}}
         plugin._bios_files_index = {}
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("offline")), \
-             patch("lib.retrodeck_config.get_bios_path", return_value=str(tmp_path / "bios")):
+        with (
+            patch.object(plugin, "_romm_request", side_effect=Exception("offline")),
+            patch("lib.retrodeck_config.get_bios_path", return_value=str(tmp_path / "bios")),
+        ):
             result = await plugin.check_platform_bios("n64")
 
         assert result["needs_bios"] is False
@@ -945,7 +1116,9 @@ class TestCheckPlatformBiosOffline:
     async def test_offline_all_required_downloaded(self, plugin, tmp_path):
         """API fails, all required files present — all_downloaded True."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         bios_dir = tmp_path / "bios"
@@ -974,8 +1147,10 @@ class TestCheckPlatformBiosOffline:
             for fname, entry in files.items():
                 plugin._bios_files_index[fname] = {**entry, "platform": plat}
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("offline")), \
-             patch("lib.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+        with (
+            patch.object(plugin, "_romm_request", side_effect=Exception("offline")),
+            patch("lib.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+        ):
             result = await plugin.check_platform_bios("dc")
 
         assert result["needs_bios"] is True
@@ -1068,28 +1243,57 @@ class TestPerCoreFiltering:
     async def test_check_platform_bios_filters_by_core(self, plugin, tmp_path):
         """check_platform_bios returns all files but marks used_by_active correctly."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
-            {"id": 1, "file_name": "gba_bios.bin", "file_path": "bios/gba/gba_bios.bin", "file_size_bytes": 100, "md5_hash": ""},
-            {"id": 2, "file_name": "gb_bios.bin", "file_path": "bios/gba/gb_bios.bin", "file_size_bytes": 200, "md5_hash": ""},
-            {"id": 3, "file_name": "sgb_bios.bin", "file_path": "bios/gba/sgb_bios.bin", "file_size_bytes": 300, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "gba_bios.bin",
+                "file_path": "bios/gba/gba_bios.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "gb_bios.bin",
+                "file_path": "bios/gba/gb_bios.bin",
+                "file_size_bytes": 200,
+                "md5_hash": "",
+            },
+            {
+                "id": 3,
+                "file_name": "sgb_bios.bin",
+                "file_path": "bios/gba/sgb_bios.bin",
+                "file_size_bytes": 300,
+                "md5_hash": "",
+            },
         ]
 
         plugin._bios_registry = {
             "platforms": {
                 "gba": {
                     "gba_bios.bin": {
-                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "description": "GBA BIOS",
+                        "required": True,
+                        "firmware_path": "gba_bios.bin",
+                        "md5": "",
                         "cores": {"mgba_libretro": {"required": False}, "gpsp_libretro": {"required": True}},
                     },
                     "gb_bios.bin": {
-                        "description": "GB BIOS", "required": False, "firmware_path": "gb_bios.bin", "md5": "",
+                        "description": "GB BIOS",
+                        "required": False,
+                        "firmware_path": "gb_bios.bin",
+                        "md5": "",
                         "cores": {"gambatte_libretro": {"required": False}, "mgba_libretro": {"required": False}},
                     },
                     "sgb_bios.bin": {
-                        "description": "SGB BIOS", "required": False, "firmware_path": "sgb_bios.bin", "md5": "",
+                        "description": "SGB BIOS",
+                        "required": False,
+                        "firmware_path": "sgb_bios.bin",
+                        "md5": "",
                         "cores": {"mgba_libretro": {"required": False}},
                     },
                 },
@@ -1105,8 +1309,10 @@ class TestPerCoreFiltering:
         plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
         # gpSP only uses gba_bios.bin — all files returned but gb/sgb marked as not used by active
-        with patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")), \
-             patch("lib.es_de_config.get_available_cores", return_value=[]):
+        with (
+            patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")),
+            patch("lib.es_de_config.get_available_cores", return_value=[]),
+        ):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
@@ -1134,28 +1340,57 @@ class TestPerCoreFiltering:
     async def test_check_platform_bios_mgba_all_optional(self, plugin, tmp_path):
         """mGBA shows files it uses but all as optional."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
-            {"id": 1, "file_name": "gba_bios.bin", "file_path": "bios/gba/gba_bios.bin", "file_size_bytes": 100, "md5_hash": ""},
-            {"id": 2, "file_name": "gb_bios.bin", "file_path": "bios/gba/gb_bios.bin", "file_size_bytes": 200, "md5_hash": ""},
-            {"id": 3, "file_name": "sgb_bios.bin", "file_path": "bios/gba/sgb_bios.bin", "file_size_bytes": 300, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "gba_bios.bin",
+                "file_path": "bios/gba/gba_bios.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
+            {
+                "id": 2,
+                "file_name": "gb_bios.bin",
+                "file_path": "bios/gba/gb_bios.bin",
+                "file_size_bytes": 200,
+                "md5_hash": "",
+            },
+            {
+                "id": 3,
+                "file_name": "sgb_bios.bin",
+                "file_path": "bios/gba/sgb_bios.bin",
+                "file_size_bytes": 300,
+                "md5_hash": "",
+            },
         ]
 
         plugin._bios_registry = {
             "platforms": {
                 "gba": {
                     "gba_bios.bin": {
-                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "description": "GBA BIOS",
+                        "required": True,
+                        "firmware_path": "gba_bios.bin",
+                        "md5": "",
                         "cores": {"mgba_libretro": {"required": False}, "gpsp_libretro": {"required": True}},
                     },
                     "gb_bios.bin": {
-                        "description": "GB BIOS", "required": False, "firmware_path": "gb_bios.bin", "md5": "",
+                        "description": "GB BIOS",
+                        "required": False,
+                        "firmware_path": "gb_bios.bin",
+                        "md5": "",
                         "cores": {"mgba_libretro": {"required": False}},
                     },
                     "sgb_bios.bin": {
-                        "description": "SGB BIOS", "required": False, "firmware_path": "sgb_bios.bin", "md5": "",
+                        "description": "SGB BIOS",
+                        "required": False,
+                        "firmware_path": "sgb_bios.bin",
+                        "md5": "",
                         "cores": {"mgba_libretro": {"required": False}},
                     },
                 },
@@ -1171,8 +1406,10 @@ class TestPerCoreFiltering:
         plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
         # mGBA uses all 3 files, all optional
-        with patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro", "mGBA")), \
-             patch("lib.es_de_config.get_available_cores", return_value=[]):
+        with (
+            patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro", "mGBA")),
+            patch("lib.es_de_config.get_available_cores", return_value=[]),
+        ):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
@@ -1186,18 +1423,29 @@ class TestPerCoreFiltering:
     async def test_check_platform_bios_no_core_shows_all(self, plugin, tmp_path):
         """When core resolution fails, shows all files with OR-logic."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         firmware_list = [
-            {"id": 1, "file_name": "gba_bios.bin", "file_path": "bios/gba/gba_bios.bin", "file_size_bytes": 100, "md5_hash": ""},
+            {
+                "id": 1,
+                "file_name": "gba_bios.bin",
+                "file_path": "bios/gba/gba_bios.bin",
+                "file_size_bytes": 100,
+                "md5_hash": "",
+            },
         ]
 
         plugin._bios_registry = {
             "platforms": {
                 "gba": {
                     "gba_bios.bin": {
-                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "description": "GBA BIOS",
+                        "required": True,
+                        "firmware_path": "gba_bios.bin",
+                        "md5": "",
                         "cores": {"mgba_libretro": {"required": False}},
                     },
                 },
@@ -1211,8 +1459,10 @@ class TestPerCoreFiltering:
         plugin.loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
         # Core resolution fails
-        with patch("lib.es_de_config.get_active_core", return_value=(None, None)), \
-             patch("lib.es_de_config.get_available_cores", return_value=[]):
+        with (
+            patch("lib.es_de_config.get_active_core", return_value=(None, None)),
+            patch("lib.es_de_config.get_available_cores", return_value=[]),
+        ):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
@@ -1225,7 +1475,9 @@ class TestPerCoreFiltering:
     async def test_offline_fallback_includes_all_with_used_by_active(self, plugin, tmp_path):
         """Offline registry fallback returns all files with used_by_active flag."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         bios_dir = tmp_path / "bios"
@@ -1236,11 +1488,17 @@ class TestPerCoreFiltering:
             "platforms": {
                 "gba": {
                     "gba_bios.bin": {
-                        "description": "GBA BIOS", "required": True, "firmware_path": "gba_bios.bin", "md5": "",
+                        "description": "GBA BIOS",
+                        "required": True,
+                        "firmware_path": "gba_bios.bin",
+                        "md5": "",
                         "cores": {"gpsp_libretro": {"required": True}},
                     },
                     "gb_bios.bin": {
-                        "description": "GB BIOS", "required": False, "firmware_path": "gb_bios.bin", "md5": "",
+                        "description": "GB BIOS",
+                        "required": False,
+                        "firmware_path": "gb_bios.bin",
+                        "md5": "",
                         "cores": {"mgba_libretro": {"required": False}},
                     },
                 },
@@ -1251,9 +1509,11 @@ class TestPerCoreFiltering:
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("offline"))
 
-        with patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")), \
-             patch("lib.es_de_config.get_available_cores", return_value=[]), \
-             patch("lib.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+        with (
+            patch("lib.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")),
+            patch("lib.es_de_config.get_available_cores", return_value=[]),
+            patch("lib.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+        ):
             result = await plugin.check_platform_bios("gba")
 
         assert result["needs_bios"] is True

@@ -1,5 +1,6 @@
-import pytest
 import asyncio
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -31,9 +32,9 @@ async def _set_event_loop(plugin):
 class TestSgdbSslVerification:
     def test_sgdb_request_verifies_ssl(self, plugin):
         """SGDB requests should always verify SSL certificates."""
-        from unittest.mock import MagicMock, patch
-        import ssl
         import json as _json
+        import ssl
+        from unittest.mock import MagicMock, patch
 
         plugin.settings["steamgriddb_api_key"] = "test-key"
 
@@ -45,15 +46,16 @@ class TestSgdbSslVerification:
         with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
             plugin._sgdb_request("/test")
 
-        ctx = mock_open.call_args[1].get("context") or mock_open.call_args[0][1] if len(mock_open.call_args[0]) > 1 else mock_open.call_args[1]["context"]
+        args = mock_open.call_args
+        ctx = args[1].get("context") or args[0][1] if len(args[0]) > 1 else args[1]["context"]
         assert ctx.check_hostname is True
         assert ctx.verify_mode == ssl.CERT_REQUIRED
 
     def test_sgdb_ignores_romm_insecure_setting(self, plugin):
         """SGDB should verify SSL even when romm_allow_insecure_ssl is True."""
-        from unittest.mock import MagicMock, patch
-        import ssl
         import json as _json
+        import ssl
+        from unittest.mock import MagicMock, patch
 
         plugin.settings["steamgriddb_api_key"] = "test-key"
         plugin.settings["romm_allow_insecure_ssl"] = True
@@ -66,7 +68,8 @@ class TestSgdbSslVerification:
         with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
             plugin._sgdb_request("/test")
 
-        ctx = mock_open.call_args[1].get("context") or mock_open.call_args[0][1] if len(mock_open.call_args[0]) > 1 else mock_open.call_args[1]["context"]
+        args = mock_open.call_args
+        ctx = args[1].get("context") or args[0][1] if len(args[0]) > 1 else args[1]["context"]
         assert ctx.check_hostname is True
         assert ctx.verify_mode == ssl.CERT_REQUIRED
 
@@ -74,8 +77,8 @@ class TestSgdbSslVerification:
 class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_valid_api_key(self, plugin):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.loop = asyncio.get_event_loop()
 
@@ -92,14 +95,15 @@ class TestVerifySgdbApiKey:
 
     @pytest.mark.asyncio
     async def test_invalid_api_key_401(self, plugin):
-        from unittest.mock import patch
         import urllib.error
+        from unittest.mock import patch
 
         plugin.loop = asyncio.get_event_loop()
 
-        with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-            "https://steamgriddb.com", 401, "Unauthorized", {}, None
-        )):
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.HTTPError("https://steamgriddb.com", 401, "Unauthorized", {}, None),
+        ):
             result = await plugin.verify_sgdb_api_key("bad-key")
 
         assert result["success"] is False
@@ -107,14 +111,15 @@ class TestVerifySgdbApiKey:
 
     @pytest.mark.asyncio
     async def test_invalid_api_key_403(self, plugin):
-        from unittest.mock import patch
         import urllib.error
+        from unittest.mock import patch
 
         plugin.loop = asyncio.get_event_loop()
 
-        with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-            "https://steamgriddb.com", 403, "Forbidden", {}, None
-        )):
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.HTTPError("https://steamgriddb.com", 403, "Forbidden", {}, None),
+        ):
             result = await plugin.verify_sgdb_api_key("bad-key")
 
         assert result["success"] is False
@@ -122,8 +127,8 @@ class TestVerifySgdbApiKey:
 
     @pytest.mark.asyncio
     async def test_empty_string_falls_back_to_saved_key(self, plugin):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.loop = asyncio.get_event_loop()
         plugin.settings["steamgriddb_api_key"] = "saved-key-456"
@@ -143,8 +148,8 @@ class TestVerifySgdbApiKey:
 
     @pytest.mark.asyncio
     async def test_masked_value_falls_back_to_saved_key(self, plugin):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.loop = asyncio.get_event_loop()
         plugin.settings["steamgriddb_api_key"] = "saved-key-789"
@@ -190,8 +195,8 @@ class TestVerifySgdbApiKey:
 
     @pytest.mark.asyncio
     async def test_sgdb_rejects_key(self, plugin):
-        from unittest.mock import MagicMock, patch
         import json as _json
+        from unittest.mock import MagicMock, patch
 
         plugin.loop = asyncio.get_event_loop()
 
@@ -208,14 +213,15 @@ class TestVerifySgdbApiKey:
 
     @pytest.mark.asyncio
     async def test_http_500_error(self, plugin):
-        from unittest.mock import patch
         import urllib.error
+        from unittest.mock import patch
 
         plugin.loop = asyncio.get_event_loop()
 
-        with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-            "https://steamgriddb.com", 500, "Internal Server Error", {}, None
-        )):
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.HTTPError("https://steamgriddb.com", 500, "Internal Server Error", {}, None),
+        ):
             result = await plugin.verify_sgdb_api_key("some-key")
 
         assert result["success"] is False
@@ -226,7 +232,9 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_cached_artwork_returns_base64(self, plugin, tmp_path):
         import base64
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -246,6 +254,7 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_no_api_key_returns_no_api_key_true(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         # No API key in settings
@@ -258,6 +267,7 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_invalid_asset_type(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -269,9 +279,11 @@ class TestGetSgdbArtworkBase64:
 
     @pytest.mark.asyncio
     async def test_no_igdb_id_fetched_from_romm(self, plugin, tmp_path):
-        from unittest.mock import patch, MagicMock
         import base64
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -279,7 +291,9 @@ class TestGetSgdbArtworkBase64:
 
         # ROM in registry but without igdb_id
         plugin._state["shortcut_registry"]["42"] = {
-            "app_id": 100001, "name": "Zelda", "platform_name": "N64",
+            "app_id": 100001,
+            "name": "Zelda",
+            "platform_name": "N64",
         }
 
         # RomM API returns igdb_id
@@ -303,9 +317,11 @@ class TestGetSgdbArtworkBase64:
             art_file.write_bytes(b"hero artwork")
             return str(art_file)
 
-        with patch.object(plugin, "_romm_request", return_value=romm_response), \
-             patch.object(plugin, "_get_sgdb_game_id", return_value=9999), \
-             patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb):
+        with (
+            patch.object(plugin, "_romm_request", return_value=romm_response),
+            patch.object(plugin, "_get_sgdb_game_id", return_value=9999),
+            patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb),
+        ):
             result = await plugin.get_sgdb_artwork_base64(42, 1)
 
         assert result["base64"] is not None
@@ -317,7 +333,9 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_no_igdb_id_anywhere(self, plugin, tmp_path):
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -325,7 +343,9 @@ class TestGetSgdbArtworkBase64:
 
         # ROM in registry without igdb_id
         plugin._state["shortcut_registry"]["42"] = {
-            "app_id": 100001, "name": "Zelda", "platform_name": "N64",
+            "app_id": 100001,
+            "name": "Zelda",
+            "platform_name": "N64",
         }
 
         # RomM API also returns no igdb_id
@@ -338,7 +358,9 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_sgdb_game_lookup_no_match(self, plugin, tmp_path):
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -346,7 +368,9 @@ class TestGetSgdbArtworkBase64:
 
         # ROM with igdb_id in registry
         plugin._state["shortcut_registry"]["42"] = {
-            "app_id": 100001, "name": "Zelda", "platform_name": "N64",
+            "app_id": 100001,
+            "name": "Zelda",
+            "platform_name": "N64",
             "igdb_id": 1234,
         }
 
@@ -360,15 +384,20 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_download_fails_returns_null(self, plugin, tmp_path):
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
         plugin.loop = asyncio.get_event_loop()
 
         plugin._state["shortcut_registry"]["42"] = {
-            "app_id": 100001, "name": "Zelda", "platform_name": "N64",
-            "igdb_id": 1234, "sgdb_id": 9999,
+            "app_id": 100001,
+            "name": "Zelda",
+            "platform_name": "N64",
+            "igdb_id": 1234,
+            "sgdb_id": 9999,
         }
 
         # Download returns None (failed)
@@ -380,9 +409,11 @@ class TestGetSgdbArtworkBase64:
 
     @pytest.mark.asyncio
     async def test_igdb_id_from_pending_sync(self, plugin, tmp_path):
-        from unittest.mock import patch
         import base64
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -390,7 +421,9 @@ class TestGetSgdbArtworkBase64:
 
         # Not in registry, but in pending sync
         plugin._pending_sync[42] = {
-            "name": "Zelda", "platform_name": "N64", "igdb_id": 5678,
+            "name": "Zelda",
+            "platform_name": "N64",
+            "igdb_id": 5678,
         }
 
         art_dir = tmp_path / "artwork"
@@ -401,8 +434,10 @@ class TestGetSgdbArtworkBase64:
             art_file.write_bytes(b"logo data")
             return str(art_file)
 
-        with patch.object(plugin, "_get_sgdb_game_id", return_value=9999), \
-             patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb):
+        with (
+            patch.object(plugin, "_get_sgdb_game_id", return_value=9999),
+            patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb),
+        ):
             result = await plugin.get_sgdb_artwork_base64(42, 2)  # 2 = logo
 
         assert result["base64"] is not None
@@ -411,7 +446,9 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_romm_api_fetch_fails_gracefully(self, plugin, tmp_path):
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -427,7 +464,9 @@ class TestGetSgdbArtworkBase64:
     @pytest.mark.asyncio
     async def test_sgdb_id_cached_in_registry(self, plugin, tmp_path):
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -435,8 +474,11 @@ class TestGetSgdbArtworkBase64:
 
         # ROM with both igdb_id and sgdb_id already cached
         plugin._state["shortcut_registry"]["42"] = {
-            "app_id": 100001, "name": "Zelda", "platform_name": "N64",
-            "igdb_id": 1234, "sgdb_id": 9999,
+            "app_id": 100001,
+            "name": "Zelda",
+            "platform_name": "N64",
+            "igdb_id": 1234,
+            "sgdb_id": 9999,
         }
 
         art_dir = tmp_path / "artwork"
@@ -449,8 +491,10 @@ class TestGetSgdbArtworkBase64:
             return str(art_file)
 
         # _get_sgdb_game_id should NOT be called since sgdb_id is cached
-        with patch.object(plugin, "_get_sgdb_game_id") as mock_lookup, \
-             patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb):
+        with (
+            patch.object(plugin, "_get_sgdb_game_id") as mock_lookup,
+            patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb),
+        ):
             result = await plugin.get_sgdb_artwork_base64(42, 3)  # 3 = grid
 
         mock_lookup.assert_not_called()
@@ -463,7 +507,6 @@ class TestIconSupport:
     @pytest.mark.asyncio
     async def test_icon_type_maps_to_icons_endpoint(self, plugin):
         """Asset type 'icon' should map to the SGDB /icons/ endpoint."""
-        type_map = {"hero": "heroes", "logo": "logos", "grid": "grids", "icon": "icons"}
         assert plugin._download_sgdb_artwork.__func__  # method exists
         # Verify the type_map includes icon by calling with a non-existent game
         # (will fail at API call, but won't fail at type_map lookup)
@@ -472,7 +515,9 @@ class TestIconSupport:
     async def test_icon_asset_type_num_is_4(self, plugin, tmp_path):
         """Asset type number 4 should map to 'icon'."""
         import base64
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
@@ -492,17 +537,22 @@ class TestIconSupport:
     @pytest.mark.asyncio
     async def test_icon_download_from_sgdb(self, plugin, tmp_path):
         """Icon should be downloadable from SGDB icons endpoint."""
-        from unittest.mock import patch
         import base64
+        from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin.settings["steamgriddb_api_key"] = "some-key"
         plugin.loop = asyncio.get_event_loop()
 
         plugin._state["shortcut_registry"]["42"] = {
-            "app_id": 100001, "name": "Zelda", "platform_name": "N64",
-            "igdb_id": 1234, "sgdb_id": 9999,
+            "app_id": 100001,
+            "name": "Zelda",
+            "platform_name": "N64",
+            "igdb_id": 1234,
+            "sgdb_id": 9999,
         }
 
         art_dir = tmp_path / "artwork"
@@ -523,8 +573,10 @@ class TestIconSupport:
 
     def test_download_sgdb_artwork_icon_endpoint(self, plugin, tmp_path):
         """_download_sgdb_artwork should use /icons/ endpoint for icon type."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         art_dir = tmp_path / "artwork"
@@ -532,6 +584,7 @@ class TestIconSupport:
 
         # Track which SGDB path was requested
         requested_paths = []
+
         def fake_sgdb_request(path):
             requested_paths.append(path)
             return {"success": True, "data": [{"url": "https://example.com/icon.png"}]}
@@ -543,9 +596,11 @@ class TestIconSupport:
             mock_resp.__exit__ = MagicMock(return_value=False)
             return mock_resp
 
-        with patch.object(plugin, "_sgdb_request", side_effect=fake_sgdb_request), \
-             patch("urllib.request.urlopen", side_effect=fake_urlopen):
-            result = plugin._download_sgdb_artwork(9999, 42, "icon")
+        with (
+            patch.object(plugin, "_sgdb_request", side_effect=fake_sgdb_request),
+            patch("urllib.request.urlopen", side_effect=fake_urlopen),
+        ):
+            plugin._download_sgdb_artwork(9999, 42, "icon")
 
         assert len(requested_paths) == 1
         assert "/icons/game/9999" in requested_paths[0]
@@ -555,6 +610,7 @@ class TestPruneOrphanedArtworkCache:
     def test_removes_orphan_artwork(self, plugin, tmp_path):
         """Artwork for rom_id not in registry should be deleted."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         art_dir = tmp_path / "artwork"
@@ -572,6 +628,7 @@ class TestPruneOrphanedArtworkCache:
     def test_keeps_artwork_in_registry(self, plugin, tmp_path):
         """Artwork for rom_id in registry should survive."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         art_dir = tmp_path / "artwork"
@@ -589,6 +646,7 @@ class TestPruneOrphanedArtworkCache:
     def test_removes_leftover_tmp(self, plugin, tmp_path):
         """Leftover .tmp files should always be removed regardless of rom_id."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         art_dir = tmp_path / "artwork"
@@ -606,6 +664,7 @@ class TestPruneOrphanedArtworkCache:
     def test_empty_artwork_dir(self, plugin, tmp_path):
         """No crash on empty artwork directory."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         art_dir = tmp_path / "artwork"
@@ -617,6 +676,7 @@ class TestPruneOrphanedArtworkCache:
     def test_no_artwork_dir(self, plugin, tmp_path):
         """No crash when artwork directory doesn't exist."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         # Don't create artwork dir
@@ -626,7 +686,9 @@ class TestPruneOrphanedArtworkCache:
     def test_handles_os_error(self, plugin, tmp_path):
         """OSError on os.remove should log warning, not crash."""
         from unittest.mock import patch
+
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         art_dir = tmp_path / "artwork"
@@ -665,6 +727,7 @@ class TestSaveShortcutIcon:
     def test_save_icon_to_grid_updates_vdf(self, plugin, tmp_path):
         """VDF icon field should be updated for the matching shortcut."""
         import struct
+
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         plugin._grid_dir = lambda: str(grid_dir)
@@ -674,8 +737,10 @@ class TestSaveShortcutIcon:
         signed_id = struct.unpack("i", struct.pack("I", app_id & 0xFFFFFFFF))[0]
 
         written_data = {}
+
         def mock_read():
             return {"shortcuts": {"0": {"appid": signed_id, "AppName": "Test"}}}
+
         def mock_write(data):
             written_data.update(data)
 
@@ -702,8 +767,10 @@ class TestSaveShortcutIcon:
         plugin._grid_dir = lambda: str(grid_dir)
 
         written_data = {}
+
         def mock_read():
             return {"shortcuts": {"0": {"appid": 999, "AppName": "Other"}}}
+
         def mock_write(data):
             written_data.update(data)
 
@@ -721,6 +788,7 @@ class TestSaveShortcutIcon:
     async def test_save_shortcut_icon_callable(self, plugin, tmp_path):
         """save_shortcut_icon callable should decode base64 and save."""
         import base64
+
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         plugin._grid_dir = lambda: str(grid_dir)

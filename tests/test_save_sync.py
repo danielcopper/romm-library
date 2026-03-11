@@ -1,13 +1,14 @@
-import pytest
-import json
-import os
 import asyncio
 import hashlib
+import json
+import os
+import time
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from lib.sync import SyncState
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -38,6 +39,7 @@ def plugin(tmp_path):
     p._metadata_cache = {}
 
     import decky
+
     decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
     decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -74,8 +76,9 @@ def _create_save(tmp_path, system="gba", rom_name="pokemon", content=b"\x00" * 1
     return save_file
 
 
-def _server_save(save_id=100, rom_id=42, filename="pokemon.srm",
-                 updated_at="2026-02-17T06:00:00Z", file_size_bytes=1024):
+def _server_save(
+    save_id=100, rom_id=42, filename="pokemon.srm", updated_at="2026-02-17T06:00:00Z", file_size_bytes=1024
+):
     """Helper: build a server save response dict (matches RomM 4.6.1 SaveSchema).
 
     Default updated_at is BEFORE the typical last_sync_at in tests (08:00)
@@ -363,9 +366,9 @@ class TestFileMd5:
 class TestDetectConflict:
     """Tests for _detect_conflict three-way logic."""
 
-    def _setup_sync_state(self, plugin, rom_id, filename, last_sync_hash,
-                          server_updated_at="2026-02-17T06:00:00Z",
-                          server_size=1024):
+    def _setup_sync_state(
+        self, plugin, rom_id, filename, last_sync_hash, server_updated_at="2026-02-17T06:00:00Z", server_size=1024
+    ):
         """Set up per-file sync state for a ROM."""
         rom_id_str = str(rom_id)
         plugin._save_sync_state["saves"][rom_id_str] = {
@@ -464,9 +467,9 @@ class TestDetectConflict:
 
     def test_server_size_change_fast_path(self, plugin):
         """Server updated_at matches but size differs → fast-path detects change."""
-        self._setup_sync_state(plugin, 42, "pokemon.srm", "abc123",
-                               server_updated_at="2026-02-17T06:00:00Z",
-                               server_size=1024)
+        self._setup_sync_state(
+            plugin, 42, "pokemon.srm", "abc123", server_updated_at="2026-02-17T06:00:00Z", server_size=1024
+        )
         # Same timestamp but different size → fast path detects change
         server = _server_save(updated_at="2026-02-17T06:00:00Z", file_size_bytes=2048)
 
@@ -582,8 +585,10 @@ class TestPreLaunchSync:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 1024)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download_save):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download_save),
+        ):
             result = await plugin.pre_launch_sync(42)
 
         assert result["synced"] >= 1
@@ -634,8 +639,10 @@ class TestPreLaunchSync:
 
         server = _server_save(updated_at="2026-02-17T12:00:00Z")
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="server_changed"):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="server_changed"),
+        ):
             result = await plugin.pre_launch_sync(42)
 
         assert len(plugin._save_sync_state["pending_conflicts"]) >= 1
@@ -672,8 +679,10 @@ class TestPreLaunchSync:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 1024)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download_save):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download_save),
+        ):
             result = await plugin.pre_launch_sync(42)
 
         assert result["conflicts"] == []
@@ -700,15 +709,21 @@ class TestPreLaunchSync:
             "system": "gba",
         }
         # Pre-existing conflict for a DIFFERENT ROM
-        plugin._save_sync_state["pending_conflicts"].append({
-            "rom_id": 999, "filename": "other.srm",
-            "local_path": "/tmp/other.srm", "local_hash": "abc",
-        })
+        plugin._save_sync_state["pending_conflicts"].append(
+            {
+                "rom_id": 999,
+                "filename": "other.srm",
+                "local_path": "/tmp/other.srm",
+                "local_hash": "abc",
+            }
+        )
 
         server = _server_save(updated_at="2026-02-17T12:00:00Z")
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="server_changed"):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="server_changed"),
+        ):
             result = await plugin.pre_launch_sync(42)
 
         # Should return conflict for ROM 42 only, not ROM 999
@@ -759,8 +774,10 @@ class TestPostExitSync:
         server = _server_save()
         upload_response = {"id": 200, "rom_id": 42, "file_name": "pokemon.srm", "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.post_exit_sync(42)
 
         assert result["synced"] >= 1
@@ -823,8 +840,10 @@ class TestPostExitSync:
         }
 
         # No server save → upload path
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", side_effect=ConnectionError("timeout")):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", side_effect=ConnectionError("timeout")),
+        ):
             result = await plugin.post_exit_sync(42)
 
         assert len(result.get("errors", [])) >= 1
@@ -858,9 +877,11 @@ class TestPostExitSync:
             method="POST",
         )
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_upload_save", side_effect=error_409):
-            result = await plugin.post_exit_sync(42)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_upload_save", side_effect=error_409),
+        ):
+            await plugin.post_exit_sync(42)
 
         assert len(plugin._save_sync_state["pending_conflicts"]) >= 1
 
@@ -893,8 +914,10 @@ class TestPostExitSync:
             with open(dest, "wb") as f:
                 f.write(b"\xaa" * 1024)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             result = await plugin.post_exit_sync(42)
 
         # Post-exit is bidirectional — server-newer save should be downloaded
@@ -954,7 +977,7 @@ class TestPlaytimeTracking:
             }
         }
 
-        result = await plugin.record_session_end(42)
+        await plugin.record_session_end(42)
 
         total = plugin._save_sync_state["playtime"]["42"]["total_seconds"]
         assert total >= 1290  # 1000 + ~300
@@ -1061,9 +1084,11 @@ class TestSyncPlaytimeToRomm:
             "session_count": 3,
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=None), \
-             patch.object(plugin, "_romm_create_playtime_note") as mock_create, \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", return_value=None),
+            patch.object(plugin, "_romm_create_playtime_note") as mock_create,
+            patch("time.sleep"),
+        ):
             plugin._sync_playtime_to_romm(42, 600)
 
         mock_create.assert_called_once()
@@ -1086,9 +1111,11 @@ class TestSyncPlaytimeToRomm:
             "content": '{"seconds": 1500, "device": "other"}',
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note), \
-             patch.object(plugin, "_romm_update_playtime_note") as mock_update, \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note),
+            patch.object(plugin, "_romm_update_playtime_note") as mock_update,
+            patch("time.sleep"),
+        ):
             plugin._sync_playtime_to_romm(42, 300)
 
         mock_update.assert_called_once()
@@ -1111,9 +1138,11 @@ class TestSyncPlaytimeToRomm:
             "content": '{"seconds": 5000}',
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note), \
-             patch.object(plugin, "_romm_update_playtime_note") as mock_update, \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note),
+            patch.object(plugin, "_romm_update_playtime_note") as mock_update,
+            patch("time.sleep"),
+        ):
             plugin._sync_playtime_to_romm(42, 120)
 
         data = mock_update.call_args[0][2]
@@ -1124,8 +1153,10 @@ class TestSyncPlaytimeToRomm:
         """Network error during sync is logged, not raised."""
         plugin._save_sync_state["playtime"]["42"] = {"total_seconds": 100}
 
-        with patch.object(plugin, "_romm_get_playtime_note", side_effect=ConnectionError("offline")), \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", side_effect=ConnectionError("offline")),
+            patch("time.sleep"),
+        ):
             # Should not raise
             plugin._sync_playtime_to_romm(42, 60)
 
@@ -1153,8 +1184,7 @@ class TestGetServerPlaytime:
             "content": '{"seconds": 5000}',
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=note), \
-             patch("time.sleep"):
+        with patch.object(plugin, "_romm_get_playtime_note", return_value=note), patch("time.sleep"):
             result = await plugin.get_server_playtime(42)
 
         assert result["local_seconds"] == 3000
@@ -1169,8 +1199,10 @@ class TestGetServerPlaytime:
             "session_count": 3,
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", side_effect=ConnectionError("offline")), \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", side_effect=ConnectionError("offline")),
+            patch("time.sleep"),
+        ):
             result = await plugin.get_server_playtime(42)
 
         assert result["local_seconds"] == 2000
@@ -1180,8 +1212,7 @@ class TestGetServerPlaytime:
     @pytest.mark.asyncio
     async def test_no_playtime_anywhere(self, plugin):
         """No local or server playtime → all zeros."""
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=None), \
-             patch("time.sleep"):
+        with patch.object(plugin, "_romm_get_playtime_note", return_value=None), patch("time.sleep"):
             result = await plugin.get_server_playtime(42)
 
         assert result["local_seconds"] == 0
@@ -1191,8 +1222,7 @@ class TestGetServerPlaytime:
     @pytest.mark.asyncio
     async def test_no_note_found(self, plugin):
         """No playtime note on server → server_seconds=0."""
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=None), \
-             patch("time.sleep"):
+        with patch.object(plugin, "_romm_get_playtime_note", return_value=None), patch("time.sleep"):
             result = await plugin.get_server_playtime(42)
 
         assert result["server_seconds"] == 0
@@ -1310,9 +1340,11 @@ class TestSyncPlaytimeEdgeCases:
             "content": '{"seconds": 10000, "device": "desktop"}',
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note), \
-             patch.object(plugin, "_romm_update_playtime_note"), \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note),
+            patch.object(plugin, "_romm_update_playtime_note"),
+            patch("time.sleep"),
+        ):
             plugin._sync_playtime_to_romm(42, 600)
 
         # Local total should now be server+session = 10600
@@ -1326,9 +1358,11 @@ class TestSyncPlaytimeEdgeCases:
             "session_count": 1,
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=None), \
-             patch.object(plugin, "_romm_create_playtime_note") as mock_create, \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", return_value=None),
+            patch.object(plugin, "_romm_create_playtime_note") as mock_create,
+            patch("time.sleep"),
+        ):
             plugin._sync_playtime_to_romm(42, 500)
 
         data = mock_create.call_args[0][1]
@@ -1374,9 +1408,11 @@ class TestSyncPlaytimeEdgeCases:
             "session_count": 5,
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=None), \
-             patch.object(plugin, "_romm_create_playtime_note") as mock_create, \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", return_value=None),
+            patch.object(plugin, "_romm_create_playtime_note") as mock_create,
+            patch("time.sleep"),
+        ):
             plugin._sync_playtime_to_romm(42, 0)
 
         data = mock_create.call_args[0][1]
@@ -1425,10 +1461,12 @@ class TestSaveSyncSettings:
     @pytest.mark.asyncio
     async def test_update_changes_settings(self, plugin, tmp_path):
         """Updates and persists settings."""
-        result = await plugin.update_save_sync_settings({
-            "conflict_mode": "always_download",
-            "sync_before_launch": False,
-        })
+        result = await plugin.update_save_sync_settings(
+            {
+                "conflict_mode": "always_download",
+                "sync_before_launch": False,
+            }
+        )
 
         assert result["success"] is True
         assert result["settings"]["conflict_mode"] == "always_download"
@@ -1444,9 +1482,11 @@ class TestSaveSyncSettings:
     @pytest.mark.asyncio
     async def test_invalid_conflict_mode_ignored(self, plugin):
         """Unknown conflict mode is silently ignored."""
-        result = await plugin.update_save_sync_settings({
-            "conflict_mode": "invalid_mode",
-        })
+        result = await plugin.update_save_sync_settings(
+            {
+                "conflict_mode": "invalid_mode",
+            }
+        )
 
         assert result["success"] is True
         # Original value preserved
@@ -1455,10 +1495,12 @@ class TestSaveSyncSettings:
     @pytest.mark.asyncio
     async def test_unknown_keys_ignored(self, plugin):
         """Unknown settings keys are silently ignored."""
-        result = await plugin.update_save_sync_settings({
-            "unknown_key": "value",
-            "conflict_mode": "ask_me",
-        })
+        result = await plugin.update_save_sync_settings(
+            {
+                "unknown_key": "value",
+                "conflict_mode": "ask_me",
+            }
+        )
 
         assert result["success"] is True
         assert result["settings"]["conflict_mode"] == "ask_me"
@@ -1467,19 +1509,23 @@ class TestSaveSyncSettings:
     @pytest.mark.asyncio
     async def test_clock_skew_clamped_to_zero(self, plugin):
         """Negative clock_skew_tolerance_sec clamped to 0."""
-        result = await plugin.update_save_sync_settings({
-            "clock_skew_tolerance_sec": -10,
-        })
+        result = await plugin.update_save_sync_settings(
+            {
+                "clock_skew_tolerance_sec": -10,
+            }
+        )
 
         assert result["settings"]["clock_skew_tolerance_sec"] == 0
 
     @pytest.mark.asyncio
     async def test_boolean_coercion(self, plugin):
         """sync toggles coerced to bool."""
-        result = await plugin.update_save_sync_settings({
-            "sync_before_launch": 0,
-            "sync_after_exit": 1,
-        })
+        result = await plugin.update_save_sync_settings(
+            {
+                "sync_before_launch": 0,
+                "sync_after_exit": 1,
+            }
+        )
 
         assert result["settings"]["sync_before_launch"] is False
         assert result["settings"]["sync_after_exit"] is True
@@ -1505,8 +1551,10 @@ class TestSyncAllSaves:
 
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.sync_all_saves()
 
         assert result["success"] is True
@@ -1542,8 +1590,10 @@ class TestSyncAllSaves:
                 raise ConnectionError("Network error")
             return {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", side_effect=mock_upload):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", side_effect=mock_upload),
+        ):
             result = await plugin.sync_all_saves()
 
         assert result["roms_checked"] == 2
@@ -1559,15 +1609,19 @@ class TestSyncAllSaves:
 
         # ROM 2 is only in shortcut_registry (synced but not downloaded — no save info)
         plugin._state["shortcut_registry"]["2"] = {
-            "rom_id": 2, "app_id": 12345, "name": "Game B",
+            "rom_id": 2,
+            "app_id": 12345,
+            "name": "Game B",
         }
 
         plugin._save_sync_state["device_id"] = "dev-1"
 
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.sync_all_saves()
 
         # Only installed ROM should be checked
@@ -1605,8 +1659,10 @@ class TestSyncRomSaves:
 
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert result["success"] is True
@@ -1626,8 +1682,10 @@ class TestSyncRomSaves:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 1024)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert result["success"] is True
@@ -1641,8 +1699,10 @@ class TestSyncRomSaves:
 
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert result["success"] is True
@@ -1655,8 +1715,10 @@ class TestSyncRomSaves:
         _create_save(tmp_path)
         plugin._save_sync_state["device_id"] = "dev-1"
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", side_effect=ConnectionError("offline")):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", side_effect=ConnectionError("offline")),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert result["success"] is False
@@ -1707,20 +1769,24 @@ class TestPendingConflicts:
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(save_file),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "server_updated_at": "2026-02-17T06:00:00Z",
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(save_file),
+                "local_hash": "abc",
+                "server_save_id": 100,
+                "server_updated_at": "2026-02-17T06:00:00Z",
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_request", return_value={"id": 100}), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_request", return_value={"id": 100}),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
 
         assert result["success"] is True
@@ -1734,15 +1800,17 @@ class TestPendingConflicts:
         saves_dir.mkdir(parents=True, exist_ok=True)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(saves_dir / "pokemon.srm"),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "server_updated_at": "2026-02-17T06:00:00Z",
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(saves_dir / "pokemon.srm"),
+                "local_hash": "abc",
+                "server_save_id": 100,
+                "server_updated_at": "2026-02-17T06:00:00Z",
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         server_save = _server_save()
 
@@ -1750,8 +1818,10 @@ class TestPendingConflicts:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 1024)
 
-        with patch.object(plugin, "_romm_request", return_value=server_save), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_request", return_value=server_save),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             result = await plugin.resolve_conflict(42, "pokemon.srm", "download")
 
         assert result["success"] is True
@@ -1794,20 +1864,28 @@ class TestRommListSaves:
 
     def test_list_response_is_array(self, plugin):
         """API returns a plain list."""
-        with patch.object(plugin, "_romm_request", return_value=[
-            {"id": 1, "file_name": "a.srm"},
-            {"id": 2, "file_name": "b.srm"},
-        ]):
+        with patch.object(
+            plugin,
+            "_romm_request",
+            return_value=[
+                {"id": 1, "file_name": "a.srm"},
+                {"id": 2, "file_name": "b.srm"},
+            ],
+        ):
             result = plugin._romm_list_saves(42)
 
         assert len(result) == 2
 
     def test_list_response_non_array_returns_empty(self, plugin):
         """Non-array API response returns empty list (safety fallback)."""
-        with patch.object(plugin, "_romm_request", return_value={
-            "items": [{"id": 1, "file_name": "a.srm"}],
-            "total": 1,
-        }):
+        with patch.object(
+            plugin,
+            "_romm_request",
+            return_value={
+                "items": [{"id": 1, "file_name": "a.srm"}],
+                "total": 1,
+            },
+        ):
             result = plugin._romm_list_saves(42)
 
         assert result == []
@@ -1842,6 +1920,7 @@ class TestRetryMRO:
         plugin._save_sync_state["device_id"] = "dev-1"
 
         call_count = [0]
+
         def flaky_list(rom_id):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -1849,9 +1928,11 @@ class TestRetryMRO:
             return []
 
         upload_resp = {"id": 1, "updated_at": "2026-02-17T15:00:00Z"}
-        with patch.object(plugin, "_romm_list_saves", side_effect=flaky_list), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_resp), \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_list_saves", side_effect=flaky_list),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_resp),
+            patch("time.sleep"),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         assert call_count[0] == 2  # retried once
@@ -1864,17 +1945,15 @@ class TestRetryMRO:
         plugin._save_sync_state["device_id"] = "dev-1"
 
         call_count = [0]
+
         def flaky_list(rom_id):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise ConnectionError("transient")
             return [_server_save()]
 
-        with patch.object(plugin, "_romm_list_saves", side_effect=flaky_list), \
-             patch("time.sleep"):
-            result = asyncio.get_event_loop().run_until_complete(
-                plugin.get_save_status(42)
-            )
+        with patch.object(plugin, "_romm_list_saves", side_effect=flaky_list), patch("time.sleep"):
+            result = asyncio.get_event_loop().run_until_complete(plugin.get_save_status(42))
 
         assert call_count[0] == 2  # retried once
         assert len(result["files"]) >= 1
@@ -1882,6 +1961,7 @@ class TestRetryMRO:
     def test_retry_in_get_server_save_hash(self, plugin, tmp_path):
         """_get_server_save_hash retries transient download failures via caller _with_retry."""
         call_count = [0]
+
         def flaky_download(save_id, dest):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -1890,8 +1970,7 @@ class TestRetryMRO:
                 f.write(b"\x00" * 64)
 
         server = _server_save()
-        with patch.object(plugin, "_romm_download_save", side_effect=flaky_download), \
-             patch("time.sleep"):
+        with patch.object(plugin, "_romm_download_save", side_effect=flaky_download), patch("time.sleep"):
             # _get_server_save_hash raises retryable errors; caller wraps with _with_retry
             result = plugin._with_retry(plugin._get_server_save_hash, server)
 
@@ -1905,18 +1984,21 @@ class TestRetryMRO:
         saves_dir.mkdir(parents=True, exist_ok=True)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(saves_dir / "pokemon.srm"),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "server_updated_at": "2026-02-17T06:00:00Z",
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(saves_dir / "pokemon.srm"),
+                "local_hash": "abc",
+                "server_save_id": 100,
+                "server_updated_at": "2026-02-17T06:00:00Z",
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         call_count = [0]
         server = _server_save()
+
         def flaky_request(path):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -1927,12 +2009,12 @@ class TestRetryMRO:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 1024)
 
-        with patch.object(plugin, "_romm_request", side_effect=flaky_request), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download), \
-             patch("time.sleep"):
-            result = asyncio.get_event_loop().run_until_complete(
-                plugin.resolve_conflict(42, "pokemon.srm", "download")
-            )
+        with (
+            patch.object(plugin, "_romm_request", side_effect=flaky_request),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+            patch("time.sleep"),
+        ):
+            result = asyncio.get_event_loop().run_until_complete(plugin.resolve_conflict(42, "pokemon.srm", "download"))
 
         assert result["success"] is True
         assert call_count[0] == 2  # retried the metadata fetch
@@ -1943,17 +2025,20 @@ class TestRetryMRO:
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(save_file),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "server_updated_at": "2026-02-17T06:00:00Z",
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(save_file),
+                "local_hash": "abc",
+                "server_save_id": 100,
+                "server_updated_at": "2026-02-17T06:00:00Z",
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         call_count = [0]
+
         def flaky_request(path):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -1962,12 +2047,12 @@ class TestRetryMRO:
 
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_request", side_effect=flaky_request), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response), \
-             patch("time.sleep"):
-            result = asyncio.get_event_loop().run_until_complete(
-                plugin.resolve_conflict(42, "pokemon.srm", "upload")
-            )
+        with (
+            patch.object(plugin, "_romm_request", side_effect=flaky_request),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+            patch("time.sleep"),
+        ):
+            result = asyncio.get_event_loop().run_until_complete(plugin.resolve_conflict(42, "pokemon.srm", "upload"))
 
         assert result["success"] is True
         assert call_count[0] == 2  # retried the metadata fetch
@@ -2078,9 +2163,11 @@ class TestDownloadSaveBackup:
             with open(dest, "wb") as f:
                 f.write(b"new server save data")
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
-            result = await plugin.pre_launch_sync(42)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
+            await plugin.pre_launch_sync(42)
 
         # Backup directory should exist
         backup_dir = tmp_path / "retrodeck" / "saves" / "gba" / ".romm-backup"
@@ -2152,6 +2239,7 @@ class TestGetRetrodeckSavesPath:
     def test_picks_up_changes_after_cache_reset(self, plugin, tmp_path):
         """Reads fresh after TTL cache is reset."""
         from lib import retrodeck_config as rc
+
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
         config_file = config_dir / "retrodeck.json"
@@ -2257,9 +2345,11 @@ class TestEdgeCases:
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value={"id": 1, "updated_at": "2026-02-17T15:00:00Z"}):
-            result = await plugin.pre_launch_sync(42)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value={"id": 1, "updated_at": "2026-02-17T15:00:00Z"}),
+        ):
+            await plugin.pre_launch_sync(42)
 
         # Device ID should be auto-generated (UUID format)
         device_id = plugin._save_sync_state["device_id"]
@@ -2288,7 +2378,7 @@ class TestEdgeCases:
         # but we can verify the save file name sanitization
         filename = "game (save).srm"
         safe = filename.replace('"', '\\"')
-        assert safe == 'game (save).srm'
+        assert safe == "game (save).srm"
 
     @pytest.mark.asyncio
     async def test_update_file_sync_state(self, plugin, tmp_path):
@@ -2312,9 +2402,9 @@ class TestEdgeCases:
 class TestConflictDetectionFalseAlarm:
     """Timestamp changed but content identical → false alarm detection."""
 
-    def _setup_sync_state(self, plugin, rom_id, filename, last_sync_hash,
-                          server_updated_at="2026-02-17T06:00:00Z",
-                          server_size=1024):
+    def _setup_sync_state(
+        self, plugin, rom_id, filename, last_sync_hash, server_updated_at="2026-02-17T06:00:00Z", server_size=1024
+    ):
         rom_id_str = str(rom_id)
         plugin._save_sync_state["saves"][rom_id_str] = {
             "files": {
@@ -2404,9 +2494,9 @@ class TestConflictDetectionFalseAlarm:
 
     def test_fast_path_size_unchanged_timestamp_matches(self, plugin):
         """Fast path: both timestamp and size match stored values → skip."""
-        self._setup_sync_state(plugin, 42, "pokemon.srm", "abc123",
-                               server_updated_at="2026-02-17T06:00:00Z",
-                               server_size=1024)
+        self._setup_sync_state(
+            plugin, 42, "pokemon.srm", "abc123", server_updated_at="2026-02-17T06:00:00Z", server_size=1024
+        )
         server = _server_save(updated_at="2026-02-17T06:00:00Z", file_size_bytes=1024)
 
         result = plugin._detect_conflict(42, "pokemon.srm", "abc123", server)
@@ -2415,9 +2505,9 @@ class TestConflictDetectionFalseAlarm:
 
     def test_fast_path_stored_size_none_treated_as_unchanged(self, plugin):
         """Fast path: stored_size is None (legacy state), timestamp matches → skip."""
-        self._setup_sync_state(plugin, 42, "pokemon.srm", "abc123",
-                               server_updated_at="2026-02-17T06:00:00Z",
-                               server_size=1024)
+        self._setup_sync_state(
+            plugin, 42, "pokemon.srm", "abc123", server_updated_at="2026-02-17T06:00:00Z", server_size=1024
+        )
         # Overwrite with None to simulate legacy state
         plugin._save_sync_state["saves"]["42"]["files"]["pokemon.srm"]["last_sync_server_size"] = None
         server = _server_save(updated_at="2026-02-17T06:00:00Z", file_size_bytes=2048)
@@ -2449,9 +2539,11 @@ class TestFirstSyncConflictResolution:
         server = _server_save()
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         # Should auto-upload, not queue conflict
@@ -2471,9 +2563,11 @@ class TestFirstSyncConflictResolution:
         server = _server_save()
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         # Local is newer → should auto-upload, not queue conflict
@@ -2491,9 +2585,11 @@ class TestFirstSyncConflictResolution:
 
         server = _server_save()
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"):
-            result = await plugin.sync_rom_saves(42)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+        ):
+            await plugin.sync_rom_saves(42)
 
         assert len(plugin._save_sync_state["pending_conflicts"]) == 1
         conflict = plugin._save_sync_state["pending_conflicts"][0]
@@ -2515,9 +2611,11 @@ class TestFirstSyncConflictResolution:
             with open(dest, "wb") as f:
                 f.write(b"server save data")
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         # Should auto-download, not queue conflict
@@ -2540,9 +2638,11 @@ class TestFirstSyncConflictResolution:
             with open(dest, "wb") as f:
                 f.write(b"server save data")
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         # Server is newer → should auto-download
@@ -2561,8 +2661,10 @@ class TestFirstSyncConflictResolution:
 
         server = _server_save()
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value=local_hash):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value=local_hash),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert len(plugin._save_sync_state["pending_conflicts"]) == 0
@@ -2578,8 +2680,10 @@ class TestFirstSyncConflictResolution:
 
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response) as mock_upload:
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response) as mock_upload,
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert result["synced"] == 1
@@ -2600,8 +2704,10 @@ class TestFirstSyncConflictResolution:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 1024)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert result["synced"] == 1
@@ -2675,9 +2781,11 @@ class TestUploadUpsertBehavior:
         server = _server_save(save_id=100)
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response) as mock_upload:
-            result = await plugin.post_exit_sync(42)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response) as mock_upload,
+        ):
+            await plugin.post_exit_sync(42)
 
         mock_upload.assert_called_once()
         # save_id should be 100 (from server save) → PUT path
@@ -2707,8 +2815,10 @@ class TestUploadSpecialChars:
             "file_name": f"{rom_name}.srm",
         }
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response) as mock_upload:
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response) as mock_upload,
+        ):
             result = await plugin.sync_rom_saves(42)
 
         assert result["synced"] == 1
@@ -2745,8 +2855,10 @@ class TestDownloadUrlEncoding:
             "download_path": "/saves/Final Fantasy (USA).srm",
         }
 
-        with patch.object(plugin, "_romm_request", return_value=metadata), \
-             patch.object(plugin, "_romm_download") as mock_download:
+        with (
+            patch.object(plugin, "_romm_request", return_value=metadata),
+            patch.object(plugin, "_romm_download") as mock_download,
+        ):
             plugin._romm_download_save(100, "/tmp/dest.srm")
 
         encoded = mock_download.call_args.args[0]
@@ -2759,8 +2871,10 @@ class TestDownloadUrlEncoding:
             "download_path": "/api/saves/files/game.srm",
         }
 
-        with patch.object(plugin, "_romm_request", return_value=metadata), \
-             patch.object(plugin, "_romm_download") as mock_download:
+        with (
+            patch.object(plugin, "_romm_request", return_value=metadata),
+            patch.object(plugin, "_romm_download") as mock_download,
+        ):
             plugin._romm_download_save(100, "/tmp/dest.srm")
 
         encoded = mock_download.call_args.args[0]
@@ -2781,8 +2895,10 @@ class TestDownloadUrlEncoding:
             "download_path": "/saves/ポケモン.srm",
         }
 
-        with patch.object(plugin, "_romm_request", return_value=metadata), \
-             patch.object(plugin, "_romm_download") as mock_download:
+        with (
+            patch.object(plugin, "_romm_request", return_value=metadata),
+            patch.object(plugin, "_romm_download") as mock_download,
+        ):
             plugin._romm_download_save(100, "/tmp/dest.srm")
 
         encoded = mock_download.call_args.args[0]
@@ -2812,9 +2928,11 @@ class TestDownloadFailureHandling:
         plugin._save_sync_state["device_id"] = "dev-1"
         server = _server_save()
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=Exception("download failed")), \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=Exception("download failed")),
+            patch("time.sleep"),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         assert len(errors) >= 1
@@ -2848,8 +2966,10 @@ class TestDownloadFailureHandling:
             with open(dest, "wb") as f:
                 f.write(b"new server save")
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             await plugin.pre_launch_sync(42)
 
         backup_dir = tmp_path / "retrodeck" / "saves" / "gba" / ".romm-backup"
@@ -2929,9 +3049,11 @@ class TestPlaytimeNoteIdRecovery:
             "content": '{"seconds": 300}',
         }
 
-        with patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note), \
-             patch.object(plugin, "_romm_update_playtime_note") as mock_update, \
-             patch("time.sleep"):
+        with (
+            patch.object(plugin, "_romm_get_playtime_note", return_value=existing_note),
+            patch.object(plugin, "_romm_update_playtime_note") as mock_update,
+            patch("time.sleep"),
+        ):
             plugin._sync_playtime_to_romm(42, 200)
 
         # Should have used the discovered note_id for update (not create)
@@ -3006,9 +3128,11 @@ class TestStateRecovery:
         server = _server_save()
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         assert synced == 1
@@ -3026,8 +3150,10 @@ class TestStateRecovery:
 
         server = _server_save()
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         assert synced == 0
@@ -3048,8 +3174,10 @@ class TestStateRecovery:
 
         server = _server_save()
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value=local_hash):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value=local_hash),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         assert synced == 0
@@ -3090,9 +3218,11 @@ class TestStateRecovery:
                 return [server_zelda]
             return []
 
-        with patch.object(plugin, "_romm_list_saves", side_effect=mock_list), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_zelda_hash"):
-            result = await plugin.sync_all_saves()
+        with (
+            patch.object(plugin, "_romm_list_saves", side_effect=mock_list),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_zelda_hash"),
+        ):
+            await plugin.sync_all_saves()
 
         # ROM 42: unchanged on both sides → skip
         # ROM 43: first sync, different content, default ask_me → conflict queued
@@ -3111,8 +3241,10 @@ class TestStateRecovery:
 
         server = _server_save()
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_get_server_save_hash", return_value=None):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value=None),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         # Can't verify → conflict
@@ -3151,9 +3283,11 @@ class TestSyncAllEdgeCases:
                 return [server_b]
             return []
 
-        with patch.object(plugin, "_romm_list_saves", side_effect=mock_list), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response), \
-             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"):
+        with (
+            patch.object(plugin, "_romm_list_saves", side_effect=mock_list),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+        ):
             result = await plugin.sync_all_saves()
 
         assert result["roms_checked"] == 3
@@ -3193,8 +3327,10 @@ class TestBidirectionalSync:
         plugin._save_sync_state["device_id"] = "dev-1"
 
         upload_response = {"id": 300, "updated_at": "2026-02-17T15:00:00Z"}
-        with patch.object(plugin, "_romm_list_saves", return_value=[]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         assert synced == 1
@@ -3212,8 +3348,10 @@ class TestBidirectionalSync:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 512)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         assert synced == 1
@@ -3233,9 +3371,11 @@ class TestBidirectionalSync:
             with open(dest, "wb") as f:
                 f.write(b"\xff" * 512)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[server_zelda]), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response), \
-             patch.object(plugin, "_romm_download_save", side_effect=fake_download):
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server_zelda]),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+            patch.object(plugin, "_romm_download_save", side_effect=fake_download),
+        ):
             synced, errors = plugin._sync_rom_saves(42)
 
         # pokemon.srm uploaded + zelda.srm downloaded
@@ -3333,15 +3473,17 @@ class TestResolveConflictEdgeCases:
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(save_file),
-            "local_hash": "abc",
-            "server_save_id": None,  # No server save ID (state lost)
-            "server_updated_at": "",
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(save_file),
+                "local_hash": "abc",
+                "server_save_id": None,  # No server save ID (state lost)
+                "server_updated_at": "",
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
 
@@ -3357,13 +3499,15 @@ class TestResolveConflictEdgeCases:
         """Resolving download when server_save_id is missing fails gracefully."""
         _install_rom(plugin, tmp_path)
 
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
-            "server_save_id": None,
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
+                "server_save_id": None,
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         result = await plugin.resolve_conflict(42, "pokemon.srm", "download")
 
@@ -3376,14 +3520,16 @@ class TestResolveConflictEdgeCases:
         _install_rom(plugin, tmp_path)
         # Note: no save file created on disk
 
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
+                "local_hash": "abc",
+                "server_save_id": 100,
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
 
@@ -3418,8 +3564,10 @@ class TestResolveConflictEdgeCases:
 
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_request", return_value={"id": 100}), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_request", return_value={"id": 100}),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
 
         assert result["success"] is True
@@ -3678,8 +3826,10 @@ class TestResolveConflictFailurePreservation:
         }
         plugin._save_sync_state["pending_conflicts"] = [conflict_entry.copy()]
 
-        with patch.object(plugin, "_romm_upload_save", side_effect=Exception("upload failed")), \
-             patch.object(plugin, "_romm_request", return_value={"id": 100}):
+        with (
+            patch.object(plugin, "_romm_upload_save", side_effect=Exception("upload failed")),
+            patch.object(plugin, "_romm_request", return_value={"id": 100}),
+        ):
             result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
 
         assert result["success"] is False
@@ -3694,19 +3844,23 @@ class TestResolveConflictFailurePreservation:
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [{
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(save_file),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "created_at": "2026-02-17T12:00:00Z",
-        }]
+        plugin._save_sync_state["pending_conflicts"] = [
+            {
+                "rom_id": 42,
+                "filename": "pokemon.srm",
+                "local_path": str(save_file),
+                "local_hash": "abc",
+                "server_save_id": 100,
+                "created_at": "2026-02-17T12:00:00Z",
+            }
+        ]
 
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
-        with patch.object(plugin, "_romm_request", return_value={"id": 100}), \
-             patch.object(plugin, "_romm_upload_save", return_value=upload_response):
+        with (
+            patch.object(plugin, "_romm_request", return_value={"id": 100}),
+            patch.object(plugin, "_romm_upload_save", return_value=upload_response),
+        ):
             result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
 
         assert result["success"] is True

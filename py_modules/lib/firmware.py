@@ -1,6 +1,6 @@
+import hashlib
 import json
 import os
-import hashlib
 import urllib.parse
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -18,12 +18,13 @@ if TYPE_CHECKING:
         _state: dict
         _bios_registry: dict
         loop: asyncio.AbstractEventLoop
+
         def _romm_request(self, path: str) -> Any: ...
         def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
         def _save_state(self) -> None: ...
 
 
-class FirmwareMixin:
+class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
     def _load_bios_registry(self):
         self._bios_registry = {}
         self._bios_files_index = {}
@@ -111,9 +112,7 @@ class FirmwareMixin:
         """
         server_offline = False
         try:
-            firmware_list = await self.loop.run_in_executor(
-                None, self._romm_request, "/api/firmware"
-            )
+            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
         except Exception as e:
             decky.logger.warning(f"Failed to fetch firmware from server: {e}")
             server_offline = True
@@ -166,6 +165,7 @@ class FirmwareMixin:
 
         # Resolve active core per platform and enrich files with core-specific required values
         from lib import es_de_config
+
         for plat in platforms_map.values():
             slug = plat["platform_slug"]
             core_so, core_label = es_de_config.get_active_core(slug)
@@ -236,9 +236,7 @@ class FirmwareMixin:
         """Download a single firmware file from RomM."""
         firmware_id = int(firmware_id)
         try:
-            fw = await self.loop.run_in_executor(
-                None, self._romm_request, f"/api/firmware/{firmware_id}"
-            )
+            fw = await self.loop.run_in_executor(None, self._romm_request, f"/api/firmware/{firmware_id}")
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
             return error_response(e)
@@ -250,9 +248,7 @@ class FirmwareMixin:
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             download_path = f"/api/firmware/{firmware_id}/content/{urllib.parse.quote(file_name, safe='')}"
-            await self.loop.run_in_executor(
-                None, self._romm_download, download_path, tmp_path
-            )
+            await self.loop.run_in_executor(None, self._romm_download, download_path, tmp_path)
         except Exception as e:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -269,9 +265,7 @@ class FirmwareMixin:
     async def download_all_firmware(self, platform_slug):
         """Download all firmware for a given platform slug."""
         try:
-            firmware_list = await self.loop.run_in_executor(
-                None, self._romm_request, "/api/firmware"
-            )
+            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -306,9 +300,7 @@ class FirmwareMixin:
     async def download_required_firmware(self, platform_slug):
         """Download only required firmware for a given platform slug."""
         try:
-            firmware_list = await self.loop.run_in_executor(
-                None, self._romm_request, "/api/firmware"
-            )
+            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -319,6 +311,7 @@ class FirmwareMixin:
 
         # Resolve active core to filter by core-specific required status
         from lib import es_de_config
+
         core_so, _ = es_de_config.get_active_core(platform_slug)
 
         platform_firmware = []
@@ -363,6 +356,7 @@ class FirmwareMixin:
 
         # Resolve active core for per-core filtering
         from lib import es_de_config
+
         active_core_so, active_core_label = es_de_config.get_active_core(platform_slug, rom_filename=rom_filename)
 
         # Build combined registry entries for this platform from all mapped slugs
@@ -371,9 +365,7 @@ class FirmwareMixin:
             registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
 
         try:
-            firmware_list = await self.loop.run_in_executor(
-                None, self._romm_request, "/api/firmware"
-            )
+            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
             for fw in firmware_list:
                 fw_slug = self._firmware_slug(fw.get("file_path", ""))
                 if not fw_slug:
@@ -419,16 +411,18 @@ class FirmwareMixin:
                     downloaded = os.path.exists(dest)
                     if downloaded:
                         local_count += 1
-                    files.append({
-                        "file_name": file_name,
-                        "downloaded": downloaded,
-                        "local_path": dest,
-                        "required": is_required,
-                        "description": description,
-                        "classification": classification,
-                        "cores": cores_info,
-                        "used_by_active": used_by_active,
-                    })
+                    files.append(
+                        {
+                            "file_name": file_name,
+                            "downloaded": downloaded,
+                            "local_path": dest,
+                            "required": is_required,
+                            "description": description,
+                            "classification": classification,
+                            "cores": cores_info,
+                            "used_by_active": used_by_active,
+                        }
+                    )
         except Exception:
             # Server unreachable — fall back to registry-based check
             if not registry_platform:
@@ -461,16 +455,18 @@ class FirmwareMixin:
                 server_count += 1
                 if downloaded:
                     local_count += 1
-                files.append({
-                    "file_name": file_name,
-                    "downloaded": downloaded,
-                    "local_path": dest,
-                    "required": is_required,
-                    "description": reg_entry.get("description", file_name),
-                    "classification": "required" if is_required else "optional",
-                    "cores": cores_info,
-                    "used_by_active": used_by_active,
-                })
+                files.append(
+                    {
+                        "file_name": file_name,
+                        "downloaded": downloaded,
+                        "local_path": dest,
+                        "required": is_required,
+                        "description": reg_entry.get("description", file_name),
+                        "classification": "required" if is_required else "optional",
+                        "cores": cores_info,
+                        "used_by_active": used_by_active,
+                    }
+                )
 
         if server_count == 0:
             return {"needs_bios": False}
@@ -524,10 +520,12 @@ class FirmwareMixin:
         if not bios_status.get("needs_bios") or not bios_status.get("files"):
             return {"success": True, "deleted_count": 0, "message": "No BIOS files for this platform"}
 
-        deleted, errors = await self.loop.run_in_executor(
-            None, self._delete_platform_bios_io, bios_status["files"]
-        )
+        deleted, errors = await self.loop.run_in_executor(None, self._delete_platform_bios_io, bios_status["files"])
 
         if errors:
-            return {"success": False, "deleted_count": deleted, "message": f"Deleted {deleted} file(s), {len(errors)} error(s)"}
+            return {
+                "success": False,
+                "deleted_count": deleted,
+                "message": f"Deleted {deleted} file(s), {len(errors)} error(s)",
+            }
         return {"success": True, "deleted_count": deleted, "message": f"Deleted {deleted} BIOS file(s)"}

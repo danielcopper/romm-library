@@ -1,7 +1,6 @@
 import fcntl
-import os
 import json
-import time
+import os
 from typing import TYPE_CHECKING
 
 import decky
@@ -16,11 +15,9 @@ if TYPE_CHECKING:
         _achievements_cache: dict
 
 
-class StateMixin:
+class StateMixin(_StateDeps if TYPE_CHECKING else object):
     def _load_settings(self):
-        settings_path = os.path.join(
-            decky.DECKY_PLUGIN_SETTINGS_DIR, "settings.json"
-        )
+        settings_path = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "settings.json")
         try:
             with open(settings_path, "r") as f:
                 self.settings = json.load(f)

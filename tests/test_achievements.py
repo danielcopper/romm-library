@@ -1,7 +1,8 @@
-import pytest
-import time
 import asyncio
-from unittest.mock import patch, MagicMock
+import time
+from unittest.mock import patch
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -548,8 +549,8 @@ class TestGetAchievementProgress:
         with patch.object(plugin, "_romm_request") as mock_req:
             mock_req.side_effect = [
                 {"ra_username": "RetroPlayer"},  # _fetch_ra_username
-                rom_data,                         # get_achievements
-                user_data_with_username,           # progression fetch
+                rom_data,  # get_achievements
+                user_data_with_username,  # progression fetch
             ]
             result = await plugin.get_achievement_progress(42)
 
@@ -615,7 +616,10 @@ class TestGetAchievementProgress:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         # User data has progression for a different game
-        user_data = {"ra_username": "RetroPlayer", "ra_progression": {"results": [{"rom_ra_id": 1111, "num_awarded": 5}]}}
+        user_data = {
+            "ra_username": "RetroPlayer",
+            "ra_progression": {"results": [{"rom_ra_id": 1111, "num_awarded": 5}]},
+        }
 
         with patch.object(plugin, "_romm_request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
@@ -869,8 +873,10 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin, "get_achievement_progress", side_effect=spy_get_progress), \
-             patch.object(plugin, "_romm_request", return_value=user_data):
+        with (
+            patch.object(plugin, "get_achievement_progress", side_effect=spy_get_progress),
+            patch.object(plugin, "_romm_request", return_value=user_data),
+        ):
             await plugin.sync_achievements_after_session(42)
 
         assert call_order == [True], "user_progress should have been deleted before refetch"

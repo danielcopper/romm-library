@@ -1,8 +1,4 @@
 import time
-import json
-import ssl
-import urllib.request
-import urllib.error
 from typing import TYPE_CHECKING, Any
 
 import decky
@@ -15,12 +11,13 @@ if TYPE_CHECKING:
         _metadata_cache: dict
         _state: dict
         loop: asyncio.AbstractEventLoop
+
         def _log_debug(self, msg: str) -> None: ...
         def _romm_request(self, path: str) -> Any: ...
         def _save_metadata_cache(self) -> None: ...
 
 
-class MetadataMixin:
+class MetadataMixin(_MetadataDeps if TYPE_CHECKING else object):
     def _extract_metadata(self, rom):
         """Extract metadata fields from a ROM dict into cache format."""
         metadatum = rom.get("metadatum") or {}
@@ -73,9 +70,7 @@ class MetadataMixin:
         # Cache miss or stale — fetch from RomM API
         self._log_debug(f"Metadata cache miss for rom_id={rom_id}, fetching from API")
         try:
-            rom_data = await self.loop.run_in_executor(
-                None, self._romm_request, f"/api/roms/{rom_id}"
-            )
+            rom_data = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
             metadata = self._extract_metadata(rom_data)
             self._metadata_cache[rom_id_str] = metadata
             self._save_metadata_cache()

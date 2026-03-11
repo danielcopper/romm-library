@@ -1,22 +1,25 @@
-import os
-import json
 import base64
-import struct
+import json
+import os
 import ssl
+import struct
+import urllib.error
 import urllib.parse
 import urllib.request
-import urllib.error
 from typing import TYPE_CHECKING, Any
 
 import decky
 
 try:
     import certifi
+
     def _ca_bundle():
         return certifi.where()
 except ImportError:
+
     def _ca_bundle():
         return None
+
 
 if TYPE_CHECKING:
     import asyncio
@@ -27,6 +30,7 @@ if TYPE_CHECKING:
         _state: dict
         _pending_sync: dict
         loop: asyncio.AbstractEventLoop
+
         def _save_settings_to_disk(self) -> None: ...
         def _log_debug(self, msg: str) -> None: ...
         def _romm_request(self, path: str) -> Any: ...
@@ -36,7 +40,7 @@ if TYPE_CHECKING:
         def _write_shortcuts(self, data: dict) -> None: ...
 
 
-class SgdbMixin:
+class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
     def _sgdb_artwork_dir(self):
         art_dir = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "artwork")
         os.makedirs(art_dir, exist_ok=True)
@@ -152,7 +156,9 @@ class SgdbMixin:
                 if rom_data:
                     sgdb_id = rom_data.get("sgdb_id")
                     igdb_id = igdb_id or rom_data.get("igdb_id")
-                self._log_debug(f"SGDB artwork: fetched sgdb_id={sgdb_id}, igdb_id={igdb_id} from RomM for rom_id={rom_id}")
+                self._log_debug(
+                    f"SGDB artwork: fetched sgdb_id={sgdb_id}, igdb_id={igdb_id} from RomM for rom_id={rom_id}"
+                )
                 if str(rom_id) in self._state["shortcut_registry"]:
                     if sgdb_id:
                         self._state["shortcut_registry"][str(rom_id)]["sgdb_id"] = sgdb_id
@@ -164,9 +170,7 @@ class SgdbMixin:
 
         # Fallback: look up SGDB via IGDB ID if we have igdb_id but no sgdb_id
         if not sgdb_id and igdb_id:
-            sgdb_id = await self.loop.run_in_executor(
-                None, self._get_sgdb_game_id, igdb_id
-            )
+            sgdb_id = await self.loop.run_in_executor(None, self._get_sgdb_game_id, igdb_id)
             if sgdb_id and str(rom_id) in self._state["shortcut_registry"]:
                 self._state["shortcut_registry"][str(rom_id)]["sgdb_id"] = sgdb_id
                 self._save_state()
@@ -175,9 +179,7 @@ class SgdbMixin:
             self._log_debug(f"SGDB artwork skipped: no SGDB game found for rom_id={rom_id}")
             return {"base64": None, "no_api_key": False}
 
-        path = await self.loop.run_in_executor(
-            None, self._download_sgdb_artwork, sgdb_id, rom_id, asset_type
-        )
+        path = await self.loop.run_in_executor(None, self._download_sgdb_artwork, sgdb_id, rom_id, asset_type)
         if path and os.path.exists(path):
             self._log_debug(f"SGDB artwork download success: rom_id={rom_id}, asset_type={asset_type}")
             try:
@@ -207,9 +209,7 @@ class SgdbMixin:
         if not api_key:
             return {"success": False, "message": "No API key configured"}
         try:
-            data = await self.loop.run_in_executor(
-                None, self._verify_sgdb_api_key_io, api_key
-            )
+            data = await self.loop.run_in_executor(None, self._verify_sgdb_api_key_io, api_key)
             if data.get("success"):
                 return {"success": True, "message": "API key is valid"}
             return {"success": False, "message": "API key rejected by SteamGridDB"}
@@ -308,7 +308,5 @@ class SgdbMixin:
             decky.logger.error(f"Failed to decode icon base64: {e}")
             return {"success": False}
 
-        success = await self.loop.run_in_executor(
-            None, self._save_icon_to_grid, app_id, icon_bytes
-        )
+        success = await self.loop.run_in_executor(None, self._save_icon_to_grid, app_id, icon_bytes)
         return {"success": success}

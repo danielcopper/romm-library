@@ -7,8 +7,8 @@ from lib.errors import (
     RommConnectionError,
     RommForbiddenError,
     RommNotFoundError,
-    RommSSLError,
     RommServerError,
+    RommSSLError,
     RommTimeoutError,
     classify_error,
     error_response,
@@ -21,21 +21,37 @@ class TestExceptionHierarchy:
     def test_romm_api_error_is_exception(self):
         assert issubclass(RommApiError, Exception)
 
-    @pytest.mark.parametrize("cls", [
-        RommAuthError, RommForbiddenError, RommNotFoundError,
-        RommConflictError, RommServerError, RommConnectionError,
-        RommTimeoutError, RommSSLError,
-    ])
+    @pytest.mark.parametrize(
+        "cls",
+        [
+            RommAuthError,
+            RommForbiddenError,
+            RommNotFoundError,
+            RommConflictError,
+            RommServerError,
+            RommConnectionError,
+            RommTimeoutError,
+            RommSSLError,
+        ],
+    )
     def test_subclass_is_romm_api_error(self, cls):
         exc = cls("test") if cls is not RommServerError else cls("test", status_code=500)
         assert isinstance(exc, RommApiError)
         assert isinstance(exc, Exception)
 
-    @pytest.mark.parametrize("cls", [
-        RommAuthError, RommForbiddenError, RommNotFoundError,
-        RommConflictError, RommServerError, RommConnectionError,
-        RommTimeoutError, RommSSLError,
-    ])
+    @pytest.mark.parametrize(
+        "cls",
+        [
+            RommAuthError,
+            RommForbiddenError,
+            RommNotFoundError,
+            RommConflictError,
+            RommServerError,
+            RommConnectionError,
+            RommTimeoutError,
+            RommSSLError,
+        ],
+    )
     def test_subclass_caught_by_romm_api_error(self, cls):
         exc = cls("test") if cls is not RommServerError else cls("test", status_code=502)
         with pytest.raises(RommApiError):

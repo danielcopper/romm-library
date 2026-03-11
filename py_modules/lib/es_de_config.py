@@ -6,7 +6,6 @@ import re
 
 import decky  # for DECKY_USER_HOME and logging
 
-
 # Module-level caches (with mtime tracking for external-change invalidation)
 _es_systems_cache = None  # dict or None
 _es_systems_mtime = None  # float or None — mtime when cache was loaded
@@ -17,7 +16,10 @@ _core_defaults_path = None  # str or None
 
 _CORE_SO_RE = re.compile(r"%CORE_RETROARCH%/([\w-]+_libretro)\.so")
 
-_FLATPAK_SYSTEMS_DIR = "/var/lib/flatpak/app/net.retrodeck.retrodeck/current/active/files/retrodeck/components/es-de/share/es-de/resources/systems"
+_FLATPAK_SYSTEMS_DIR = (
+    "/var/lib/flatpak/app/net.retrodeck.retrodeck/current/active"
+    "/files/retrodeck/components/es-de/share/es-de/resources/systems"
+)
 
 # Prefer linux/ (RetroDECK-customized, more complete), then unix/ as fallback.
 _ES_SYSTEMS_CANDIDATES = [
@@ -83,8 +85,8 @@ def parse_es_systems(xml_path):
 
     systems = {}
     state = {
-        "path": [],       # element name stack
-        "text": "",       # accumulated character data
+        "path": [],  # element name stack
+        "text": "",  # accumulated character data
         "root_tag": None,
         "current_system": None,
         "current_label": "",
@@ -178,9 +180,11 @@ def _load_core_defaults():
     except OSError:
         current_mtime = None
 
-    if (_core_defaults_cache is not None
-            and _core_defaults_path == defaults_path
-            and _core_defaults_mtime == current_mtime):
+    if (
+        _core_defaults_cache is not None
+        and _core_defaults_path == defaults_path
+        and _core_defaults_mtime == current_mtime
+    ):
         return _core_defaults_cache
 
     try:
@@ -210,9 +214,7 @@ def _load_es_systems():
         except OSError:
             current_mtime = None
 
-        if (_es_systems_cache is not None
-                and _es_systems_path == xml_path
-                and _es_systems_mtime == current_mtime):
+        if _es_systems_cache is not None and _es_systems_path == xml_path and _es_systems_mtime == current_mtime:
             return _es_systems_cache
 
         _es_systems_cache = parse_es_systems(xml_path)
@@ -260,10 +262,12 @@ def get_system_override(retrodeck_home, system_name):
 
     def end_element(name):
         text = state["text"].strip()
-        if (len(state["path"]) >= 2
-                and state["path"][-1] == "label"
-                and state["path"][-2] == "alternativeEmulator"
-                and text):
+        if (
+            len(state["path"]) >= 2
+            and state["path"][-1] == "label"
+            and state["path"][-2] == "alternativeEmulator"
+            and text
+        ):
             result["label"] = text
         state["path"].pop()
         state["text"] = ""
@@ -348,6 +352,7 @@ def get_active_core(system_name, rom_filename=None):
 
     try:
         from lib import retrodeck_config
+
         retrodeck_home = retrodeck_config.get_retrodeck_home()
         if retrodeck_home:
             # Try per-game override first (if rom_filename provided)
@@ -356,7 +361,12 @@ def get_active_core(system_name, rom_filename=None):
                 if game_label:
                     resolved = _resolve_label(game_label)
                     if resolved:
-                        decky.logger.debug("es_de_config: per-game override for %s/%s -> %s", system_name, rom_filename, game_label)
+                        decky.logger.debug(
+                            "es_de_config: per-game override for %s/%s -> %s",
+                            system_name,
+                            rom_filename,
+                            game_label,
+                        )
                         return resolved
 
             # Try per-system override
@@ -397,7 +407,11 @@ def get_available_cores(system_name):
             {"core_so": core_so, "label": label, "is_default": core_so == default_core}
             for core_so, label in system_info["cores"].items()
         ]
-        decky.logger.debug("es_de_config: get_available_cores(%s) -> %d cores from es_systems.xml", system_name, len(cores))
+        decky.logger.debug(
+            "es_de_config: get_available_cores(%s) -> %d cores from es_systems.xml",
+            system_name,
+            len(cores),
+        )
         return cores
 
     # Fallback to core_defaults.json
@@ -409,7 +423,11 @@ def get_available_cores(system_name):
             {"core_so": core_so, "label": label, "is_default": core_so == default_core}
             for core_so, label in default_info["cores"].items()
         ]
-        decky.logger.debug("es_de_config: get_available_cores(%s) -> %d cores from core_defaults.json (fallback)", system_name, len(cores))
+        decky.logger.debug(
+            "es_de_config: get_available_cores(%s) -> %d cores from core_defaults.json (fallback)",
+            system_name,
+            len(cores),
+        )
         return cores
 
     decky.logger.debug("es_de_config: get_available_cores(%s) -> no cores found", system_name)
@@ -502,11 +520,13 @@ def _parse_gamelist_preserving(data):
             if name == "game" and len(state["path"]) == state["game_depth"]:
                 # Close game element
                 state["game_xml_parts"].append("</game>")
-                result["games"].append({
-                    "path": state["game_path"],
-                    "altemulator": state["game_altemulator"],
-                    "raw_xml": "".join(state["game_xml_parts"]),
-                })
+                result["games"].append(
+                    {
+                        "path": state["game_path"],
+                        "altemulator": state["game_altemulator"],
+                        "raw_xml": "".join(state["game_xml_parts"]),
+                    }
+                )
                 state["in_game"] = False
             else:
                 # Inside game: capture text and closing tag
@@ -520,10 +540,12 @@ def _parse_gamelist_preserving(data):
                     state["game_altemulator"] = text
         else:
             # Outside game: look for alternativeEmulator/label
-            if (len(state["path"]) >= 2
-                    and state["path"][-1] == "label"
-                    and state["path"][-2] == "alternativeEmulator"
-                    and text):
+            if (
+                len(state["path"]) >= 2
+                and state["path"][-1] == "label"
+                and state["path"][-2] == "alternativeEmulator"
+                and text
+            ):
                 result["alt_emulator_label"] = text
 
         state["path"].pop()
@@ -547,11 +569,7 @@ def _parse_gamelist_preserving(data):
 
 def _escape_xml(text):
     """Escape special XML characters."""
-    return (text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;"))
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 def _reconstruct_gamelist(alt_label, games_xml_list):
@@ -562,7 +580,9 @@ def _reconstruct_gamelist(alt_label, games_xml_list):
     """
     parts = ['<?xml version="1.0"?>\n<gameList>']
     if alt_label:
-        parts.append(f"\n  <alternativeEmulator>\n    <label>{_escape_xml(alt_label)}</label>\n  </alternativeEmulator>")
+        parts.append(
+            f"\n  <alternativeEmulator>\n    <label>{_escape_xml(alt_label)}</label>\n  </alternativeEmulator>"
+        )
     for game_xml in games_xml_list:
         parts.append(f"\n  {game_xml}")
     parts.append("\n</gameList>\n")

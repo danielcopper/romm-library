@@ -1,8 +1,9 @@
-import pytest
+import asyncio
 import json
 import os
-import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -34,9 +35,10 @@ async def _set_event_loop(plugin):
 class TestStartDownload:
     @pytest.mark.asyncio
     async def test_starts_download_task(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_detail = {
@@ -51,10 +53,12 @@ class TestStartDownload:
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
         _create_task_calls = []
+
         def _close_coro_task(coro):
             coro.close()
             _create_task_calls.append(coro)
             return MagicMock()
+
         plugin.loop.create_task = _close_coro_task
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
@@ -74,12 +78,10 @@ class TestStartDownload:
 
     @pytest.mark.asyncio
     async def test_rejects_if_rom_not_found(self, plugin):
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
 
         plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(
-            side_effect=Exception("HTTP Error 404: Not Found")
-        )
+        plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("HTTP Error 404: Not Found"))
 
         result = await plugin.start_download(9999)
         assert result["success"] is False
@@ -87,9 +89,10 @@ class TestStartDownload:
 
     @pytest.mark.asyncio
     async def test_checks_disk_space(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_detail = {
@@ -141,7 +144,10 @@ class TestGetDownloadQueue:
     @pytest.mark.asyncio
     async def test_returns_active_downloads(self, plugin):
         plugin._download_queue[1] = {
-            "rom_id": 1, "rom_name": "Game A", "status": "downloading", "progress": 0.5,
+            "rom_id": 1,
+            "rom_name": "Game A",
+            "status": "downloading",
+            "progress": 0.5,
         }
         result = await plugin.get_download_queue()
         assert len(result["downloads"]) == 1
@@ -151,10 +157,16 @@ class TestGetDownloadQueue:
     @pytest.mark.asyncio
     async def test_returns_completed_downloads(self, plugin):
         plugin._download_queue[1] = {
-            "rom_id": 1, "rom_name": "Game A", "status": "downloading", "progress": 0.5,
+            "rom_id": 1,
+            "rom_name": "Game A",
+            "status": "downloading",
+            "progress": 0.5,
         }
         plugin._download_queue[2] = {
-            "rom_id": 2, "rom_name": "Game B", "status": "completed", "progress": 1.0,
+            "rom_id": 2,
+            "rom_name": "Game B",
+            "status": "completed",
+            "progress": 1.0,
         }
         result = await plugin.get_download_queue()
         assert len(result["downloads"]) == 2
@@ -166,7 +178,9 @@ class TestGetInstalledRom:
     @pytest.mark.asyncio
     async def test_returns_installed_rom(self, plugin):
         plugin._state["installed_roms"]["42"] = {
-            "rom_id": 42, "file_path": "/roms/n64/zelda.z64", "system": "n64",
+            "rom_id": 42,
+            "file_path": "/roms/n64/zelda.z64",
+            "system": "n64",
         }
         result = await plugin.get_installed_rom(42)
         assert result is not None
@@ -183,6 +197,7 @@ class TestRemoveRom:
     @pytest.mark.asyncio
     async def test_deletes_file_and_clears_state(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -191,7 +206,9 @@ class TestRemoveRom:
         rom_file.write_text("fake rom data")
 
         plugin._state["installed_roms"]["42"] = {
-            "rom_id": 42, "file_path": str(rom_file), "system": "n64",
+            "rom_id": 42,
+            "file_path": str(rom_file),
+            "system": "n64",
         }
         plugin._download_queue[42] = {"status": "completed"}
 
@@ -212,6 +229,7 @@ class TestUninstallAllRoms:
     @pytest.mark.asyncio
     async def test_removes_all_installed(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -236,6 +254,7 @@ class TestUninstallAllRoms:
     @pytest.mark.asyncio
     async def test_clears_state(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -249,6 +268,7 @@ class TestUninstallAllRoms:
     @pytest.mark.asyncio
     async def test_handles_missing_files(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -292,6 +312,7 @@ class TestDownloadRequestPolling:
         from unittest.mock import AsyncMock, patch
 
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         requests_path = tmp_path / "download_requests.json"
@@ -313,6 +334,7 @@ class TestDownloadRequestPolling:
     @pytest.mark.asyncio
     async def test_cleans_up_request_file(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         requests_path = tmp_path / "download_requests.json"
@@ -336,6 +358,7 @@ class TestMultiFileRomDeletion:
     async def test_remove_rom_deletes_rom_dir(self, plugin, tmp_path):
         """Multi-file ROM with rom_dir should delete the entire directory."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -362,6 +385,7 @@ class TestMultiFileRomDeletion:
     async def test_uninstall_all_deletes_rom_dirs(self, plugin, tmp_path):
         """uninstall_all_roms should delete multi-file ROM directories."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -455,9 +479,10 @@ class TestDoDownloadSingleFile:
 
     @pytest.mark.asyncio
     async def test_single_file_happy_path(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import patch
 
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
@@ -508,10 +533,11 @@ class TestDoDownloadMultiFile:
 
     @pytest.mark.asyncio
     async def test_multi_file_happy_path(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
         import zipfile as zf
+        from unittest.mock import patch
 
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
@@ -573,6 +599,7 @@ class TestPathTraversalDeleteRomFiles:
     @pytest.mark.asyncio
     async def test_rejects_rom_dir_outside_roms_base(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -589,7 +616,7 @@ class TestPathTraversalDeleteRomFiles:
             "system": "n64",
         }
 
-        result = await plugin.remove_rom(99)
+        await plugin.remove_rom(99)
         # The evil dir/file should NOT be deleted
         assert evil_dir.exists()
         assert evil_file.exists()
@@ -599,6 +626,7 @@ class TestPathTraversalDeleteRomFiles:
     @pytest.mark.asyncio
     async def test_rejects_file_path_outside_roms_base(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -612,7 +640,7 @@ class TestPathTraversalDeleteRomFiles:
             "system": "n64",
         }
 
-        result = await plugin.remove_rom(99)
+        await plugin.remove_rom(99)
         assert evil_file.exists()
         assert "99" not in plugin._state["installed_roms"]
 
@@ -622,9 +650,10 @@ class TestPathTraversalFsName:
 
     @pytest.mark.asyncio
     async def test_fs_name_traversal_sanitized(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_detail = {
@@ -638,9 +667,11 @@ class TestPathTraversalFsName:
 
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
+
         def _close_coro_task(coro):
             coro.close()
             return MagicMock()
+
         plugin.loop.create_task = _close_coro_task
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
@@ -698,6 +729,7 @@ class TestDoDownloadCancelled:
         from unittest.mock import patch
 
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -734,9 +766,9 @@ class TestDoDownloadZipFailure:
     @pytest.mark.asyncio
     async def test_zip_failure_sets_failed_and_cleans_up(self, plugin, tmp_path):
         from unittest.mock import patch
-        import zipfile as zf
 
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -774,9 +806,10 @@ class TestStartDownloadReDownload:
 
     @pytest.mark.asyncio
     async def test_re_download_after_completed(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, patch
 
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_detail = {
@@ -790,9 +823,11 @@ class TestStartDownloadReDownload:
 
         plugin.loop = MagicMock()
         plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
+
         def _close_coro_task(coro):
             coro.close()
             return MagicMock()
+
         plugin.loop.create_task = _close_coro_task
 
         # Set status to completed (previous download)
@@ -821,7 +856,7 @@ class TestMaybeGenerateM3uMixedFormats:
         lines = content.split("\n")
         assert len(lines) == 2
         # Should include both formats
-        exts = {os.path.splitext(l)[1] for l in lines}
+        exts = {os.path.splitext(line)[1] for line in lines}
         assert ".cue" in exts
         assert ".chd" in exts
 
@@ -856,6 +891,7 @@ class TestUninstallAllRomsMixedResults:
     @pytest.mark.asyncio
     async def test_mixed_success_and_failure(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -893,6 +929,7 @@ class TestRemoveRomFileAlreadyGone:
     @pytest.mark.asyncio
     async def test_file_already_gone_cleans_state(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -913,10 +950,11 @@ class TestUrlEncodedFilenameRename:
 
     @pytest.mark.asyncio
     async def test_renames_url_encoded_files_after_extract(self, plugin, tmp_path):
-        from unittest.mock import patch
         import zipfile as zf
+        from unittest.mock import patch
 
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
@@ -962,10 +1000,11 @@ class TestUrlEncodedFilenameRename:
 
     @pytest.mark.asyncio
     async def test_leaves_normal_filenames_alone(self, plugin, tmp_path):
-        from unittest.mock import patch
         import zipfile as zf
+        from unittest.mock import patch
 
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
@@ -1013,6 +1052,7 @@ class TestUrlEncodedFilenameRename:
 class TestCleanupLeftoverTmpFiles:
     def test_removes_tmp_file(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         system_dir = tmp_path / "retrodeck" / "roms" / "n64"
@@ -1025,6 +1065,7 @@ class TestCleanupLeftoverTmpFiles:
 
     def test_removes_zip_tmp_file(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         system_dir = tmp_path / "retrodeck" / "roms" / "psx"
@@ -1037,6 +1078,7 @@ class TestCleanupLeftoverTmpFiles:
 
     def test_keeps_real_rom_files(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         system_dir = tmp_path / "retrodeck" / "roms" / "n64"
@@ -1055,6 +1097,7 @@ class TestCleanupLeftoverTmpFiles:
 
     def test_removes_bios_tmp(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
@@ -1067,12 +1110,14 @@ class TestCleanupLeftoverTmpFiles:
 
     def test_no_roms_dir_no_crash(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
         # No retrodeck/roms directory exists — should not crash
         plugin._cleanup_leftover_tmp_files()
 
     def test_handles_permission_error(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_USER_HOME = str(tmp_path)
 
         system_dir = tmp_path / "retrodeck" / "roms" / "n64"
@@ -1091,6 +1136,7 @@ class TestRemoveRomCleansSaveSyncState:
     @pytest.mark.asyncio
     async def test_remove_rom_cleans_save_sync_state(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -1099,7 +1145,9 @@ class TestRemoveRomCleansSaveSyncState:
         rom_file.write_text("fake rom data")
 
         plugin._state["installed_roms"]["42"] = {
-            "rom_id": 42, "file_path": str(rom_file), "system": "n64",
+            "rom_id": 42,
+            "file_path": str(rom_file),
+            "system": "n64",
         }
         plugin._save_sync_state = {
             "saves": {"42": {"last_sync": "2024-01-01"}, "99": {"last_sync": "2024-02-01"}},
@@ -1124,6 +1172,7 @@ class TestRemoveRomCleansSaveSyncState:
     @pytest.mark.asyncio
     async def test_uninstall_all_cleans_save_sync_state(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 

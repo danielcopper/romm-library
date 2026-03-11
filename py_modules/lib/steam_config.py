@@ -1,7 +1,6 @@
+import binascii
 import os
 import struct
-import binascii
-import json
 from typing import TYPE_CHECKING
 
 import decky
@@ -15,7 +14,7 @@ if TYPE_CHECKING:
         _state: dict
 
 
-class SteamConfigMixin:
+class SteamConfigMixin(_SteamConfigDeps if TYPE_CHECKING else object):
     def _find_steam_user_dir(self):
         """Find the active Steam user's userdata directory."""
         steam_paths = [
@@ -144,11 +143,7 @@ class SteamConfigMixin:
     async def apply_steam_input_setting(self):
         """Apply current Steam Input setting to all existing ROM shortcuts."""
         mode = self.settings.get("steam_input_mode", "default")
-        app_ids = [
-            entry["app_id"]
-            for entry in self._state["shortcut_registry"].values()
-            if "app_id" in entry
-        ]
+        app_ids = [entry["app_id"] for entry in self._state["shortcut_registry"].values() if "app_id" in entry]
         if not app_ids:
             return {"success": True, "message": "No shortcuts to update"}
         try:

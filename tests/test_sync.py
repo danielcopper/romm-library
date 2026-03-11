@@ -1,11 +1,12 @@
-import pytest
-import json
-import os
 import asyncio
+import os
+
+import pytest
+
+from lib.sync import SyncState
 
 # conftest.py patches decky before this import
 from main import Plugin
-from lib.sync import SyncState
 
 
 @pytest.fixture
@@ -34,6 +35,7 @@ class TestReportSyncResults:
     @pytest.mark.asyncio
     async def test_updates_registry(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._pending_sync = {
@@ -55,6 +57,7 @@ class TestReportSyncResults:
     @pytest.mark.asyncio
     async def test_removes_stale_entries(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"]["99"] = {
@@ -71,6 +74,7 @@ class TestReportSyncResults:
     @pytest.mark.asyncio
     async def test_emits_sync_complete(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.emit.reset_mock()
 
@@ -88,6 +92,7 @@ class TestReportSyncResults:
     @pytest.mark.asyncio
     async def test_updates_last_sync(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._pending_sync = {}
@@ -97,6 +102,7 @@ class TestReportSyncResults:
     @pytest.mark.asyncio
     async def test_clears_pending_sync(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._pending_sync = {1: {"name": "X", "platform_name": "Y", "cover_path": ""}}
@@ -140,6 +146,7 @@ class TestReportRemovalResults:
     @pytest.mark.asyncio
     async def test_removes_entries_from_registry(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -154,6 +161,7 @@ class TestReportRemovalResults:
     @pytest.mark.asyncio
     async def test_cleans_up_artwork_cover_path(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -174,6 +182,7 @@ class TestReportRemovalResults:
     @pytest.mark.asyncio
     async def test_cleans_up_artwork_legacy_id(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         grid_dir = tmp_path / "grid"
@@ -193,6 +202,7 @@ class TestReportRemovalResults:
     @pytest.mark.asyncio
     async def test_partial_removal(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -233,6 +243,7 @@ class TestGetSyncStats:
     async def test_updates_after_removal(self, plugin, tmp_path):
         """Stats should reflect registry changes after report_removal_results."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -250,6 +261,7 @@ class TestGetSyncStats:
     async def test_report_removal_updates_sync_stats_state(self, plugin, tmp_path):
         """report_removal_results should update sync_stats in state."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         plugin._state["shortcut_registry"] = {
@@ -306,10 +318,12 @@ class TestRemovePlatformShortcuts:
         from unittest.mock import AsyncMock, MagicMock
 
         plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(return_value=[
-            {"id": 1, "slug": "n64", "name": "Nintendo 64"},
-            {"id": 2, "slug": "snes", "name": "Super Nintendo"},
-        ])
+        plugin.loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "slug": "n64", "name": "Nintendo 64"},
+                {"id": 2, "slug": "snes", "name": "Super Nintendo"},
+            ]
+        )
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64"},
@@ -328,9 +342,11 @@ class TestRemovePlatformShortcuts:
         from unittest.mock import AsyncMock, MagicMock
 
         plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(return_value=[
-            {"id": 1, "slug": "n64", "name": "Nintendo 64"},
-        ])
+        plugin.loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "slug": "n64", "name": "Nintendo 64"},
+            ]
+        )
 
         result = await plugin.remove_platform_shortcuts("nonexistent")
         assert result["success"] is False
@@ -343,9 +359,11 @@ class TestRemovePlatformShortcuts:
         from unittest.mock import AsyncMock, MagicMock
 
         plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(return_value=[
-            {"id": 1, "slug": "n64", "name": "Nintendo 64"},
-        ])
+        plugin.loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "slug": "n64", "name": "Nintendo 64"},
+            ]
+        )
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64"},
@@ -446,6 +464,7 @@ class TestArtworkRenameOnSync:
     @pytest.mark.asyncio
     async def test_renames_staged_to_app_id(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         grid_dir = tmp_path / "grid"
@@ -457,8 +476,7 @@ class TestArtworkRenameOnSync:
         staging.write_text("cover data")
 
         plugin._pending_sync = {
-            1: {"name": "Game A", "platform_name": "N64",
-                "cover_path": str(staging)},
+            1: {"name": "Game A", "platform_name": "N64", "cover_path": str(staging)},
         }
 
         await plugin.report_sync_results({"1": 100001}, [])
@@ -477,6 +495,7 @@ class TestArtworkRenameOnSync:
     async def test_handles_already_final_artwork(self, plugin, tmp_path):
         """If cover_path already points to the final file, don't error."""
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         grid_dir = tmp_path / "grid"
@@ -487,8 +506,7 @@ class TestArtworkRenameOnSync:
         final.write_text("cover data")
 
         plugin._pending_sync = {
-            1: {"name": "Game A", "platform_name": "N64",
-                "cover_path": str(final)},
+            1: {"name": "Game A", "platform_name": "N64", "cover_path": str(final)},
         }
 
         await plugin.report_sync_results({"1": 100001}, [])
@@ -504,6 +522,7 @@ class TestRemovalCleansUpAppIdArtwork:
     @pytest.mark.asyncio
     async def test_removes_app_id_artwork(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         grid_dir = tmp_path / "grid"
@@ -522,6 +541,7 @@ class TestRemovalCleansUpAppIdArtwork:
     @pytest.mark.asyncio
     async def test_removes_staging_leftover(self, plugin, tmp_path):
         import decky
+
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
         grid_dir = tmp_path / "grid"
@@ -542,10 +562,14 @@ class TestGetRomBySteamAppId:
     @pytest.mark.asyncio
     async def test_finds_rom_by_app_id(self, plugin):
         plugin._state["shortcut_registry"]["42"] = {
-            "app_id": 100001, "name": "Zelda", "platform_name": "N64", "platform_slug": "n64",
+            "app_id": 100001,
+            "name": "Zelda",
+            "platform_name": "N64",
+            "platform_slug": "n64",
         }
         plugin._state["installed_roms"]["42"] = {
-            "rom_id": 42, "file_path": "/roms/n64/zelda.z64",
+            "rom_id": 42,
+            "file_path": "/roms/n64/zelda.z64",
         }
         result = await plugin.get_rom_by_steam_app_id(100001)
         assert result is not None
@@ -574,24 +598,37 @@ class TestShortcutDataFormat:
         plugin.settings["romm_url"] = "http://romm.local"
         plugin.settings["enabled_platforms"] = {"gba": True}
         plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(side_effect=[
-            # _fetch_platforms
-            [{"id": 1, "slug": "gba", "name": "Game Boy Advance", "rom_count": 1}],
-            # _fetch_roms_for_platform
-            [{"id": 42, "name": "Test Game", "platform_name": "Game Boy Advance",
-              "platform_slug": "gba", "igdb_id": 100, "sgdb_id": 200,
-              "path_cover_large": "/cover.png"}],
-        ])
+        plugin.loop.run_in_executor = AsyncMock(
+            side_effect=[
+                # _fetch_platforms
+                [{"id": 1, "slug": "gba", "name": "Game Boy Advance", "rom_count": 1}],
+                # _fetch_roms_for_platform
+                [
+                    {
+                        "id": 42,
+                        "name": "Test Game",
+                        "platform_name": "Game Boy Advance",
+                        "platform_slug": "gba",
+                        "igdb_id": 100,
+                        "sgdb_id": 200,
+                        "path_cover_large": "/cover.png",
+                    }
+                ],
+            ]
+        )
         plugin._download_artwork = AsyncMock(return_value={})
         plugin._emit_progress = AsyncMock()
         plugin._sync_state = SyncState.IDLE
 
         # Mock decky.emit to capture the shortcuts
         import decky
+
         emitted_events = []
-        original_emit = getattr(decky, 'emit', None)
+        original_emit = getattr(decky, "emit", None)
+
         async def mock_emit(event, *args):
             emitted_events.append((event, args))
+
         decky.emit = mock_emit
 
         try:
@@ -612,8 +649,7 @@ class TestShortcutDataFormat:
                 break
 
         assert sync_items is not None, "sync_apply event should have been emitted"
-        required_fields = {"rom_id", "name", "exe", "start_dir", "launch_options",
-                           "platform_name", "platform_slug"}
+        required_fields = {"rom_id", "name", "exe", "start_dir", "launch_options", "platform_name", "platform_slug"}
         for item in sync_items.get("shortcuts", sync_items):
             for field in required_fields:
                 assert field in item, f"Missing field '{field}' in shortcut data"
@@ -626,21 +662,19 @@ class TestShortcutDataFormat:
         plugin.settings["romm_url"] = "http://romm.local"
         exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
 
-        assert exe.endswith("/bin/romm-launcher"), \
-            f"Exe path should end with /bin/romm-launcher, got: {exe}"
-        assert "decky-romm-sync" in exe, \
-            f"Exe path should contain plugin name, got: {exe}"
+        assert exe.endswith("/bin/romm-launcher"), f"Exe path should end with /bin/romm-launcher, got: {exe}"
+        assert "decky-romm-sync" in exe, f"Exe path should contain plugin name, got: {exe}"
 
     def test_launch_options_format(self, plugin):
         """Launch options must follow the romm:<rom_id> pattern."""
         import re
+
         pattern = r"^romm:\d+$"
 
         # Test valid formats
         for rom_id in [1, 42, 4409, 99999]:
             launch_opt = f"romm:{rom_id}"
-            assert re.match(pattern, launch_opt), \
-                f"Launch option '{launch_opt}' does not match expected pattern"
+            assert re.match(pattern, launch_opt), f"Launch option '{launch_opt}' does not match expected pattern"
 
     def test_start_dir_is_parent_of_exe(self, plugin):
         """Start dir must be the directory containing the launcher."""
@@ -649,8 +683,7 @@ class TestShortcutDataFormat:
         exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
         start_dir = os.path.join(decky.DECKY_PLUGIN_DIR, "bin")
 
-        assert start_dir == os.path.dirname(exe), \
-            f"start_dir ({start_dir}) should be parent of exe ({exe})"
+        assert start_dir == os.path.dirname(exe), f"start_dir ({start_dir}) should be parent of exe ({exe})"
 
     def test_artwork_id_generation_consistency(self, plugin):
         """Artwork ID must be deterministic for the same exe+name pair."""
@@ -747,8 +780,8 @@ class TestPruneOrphanedStagingArtwork:
 
     def test_handles_os_error(self, plugin, tmp_path, caplog):
         """OSError during os.remove should log warning and not crash."""
-        from unittest.mock import patch
         import logging
+        from unittest.mock import patch
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
@@ -771,9 +804,16 @@ class TestPruneOrphanedStagingArtwork:
 class TestClassifyRoms:
     """Tests for _classify_roms() delta classification."""
 
-    def _make_sd(self, rom_id, name="Game", platform_name="N64",
-                 platform_slug="n64", fs_name="game.z64",
-                 igdb_id=None, sgdb_id=None):
+    def _make_sd(
+        self,
+        rom_id,
+        name="Game",
+        platform_name="N64",
+        platform_slug="n64",
+        fs_name="game.z64",
+        igdb_id=None,
+        sgdb_id=None,
+    ):
         """Helper to build a shortcut_data dict matching _fetch_and_prepare output."""
         return {
             "rom_id": rom_id,
@@ -798,10 +838,20 @@ class TestClassifyRoms:
     def test_all_unchanged(self, plugin):
         """Registry matches all items -> all in unchanged_ids."""
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "gamea.z64"},
-            "2": {"app_id": 1002, "name": "Game B", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "gameb.z64"},
+            "1": {
+                "app_id": 1001,
+                "name": "Game A",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "gamea.z64",
+            },
+            "2": {
+                "app_id": 1002,
+                "name": "Game B",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "gameb.z64",
+            },
         }
         sd = [
             self._make_sd(1, "Game A", fs_name="gamea.z64"),
@@ -816,15 +866,25 @@ class TestClassifyRoms:
     def test_mixed_new_changed_unchanged(self, plugin):
         """Mix of new, changed, unchanged ROMs."""
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "gamea.z64"},
-            "2": {"app_id": 1002, "name": "Old Name", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "gameb.z64"},
+            "1": {
+                "app_id": 1001,
+                "name": "Game A",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "gamea.z64",
+            },
+            "2": {
+                "app_id": 1002,
+                "name": "Old Name",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "gameb.z64",
+            },
         }
         sd = [
-            self._make_sd(1, "Game A", fs_name="gamea.z64"),       # unchanged
-            self._make_sd(2, "New Name", fs_name="gameb.z64"),     # changed (name)
-            self._make_sd(3, "Game C", fs_name="gamec.z64"),       # new
+            self._make_sd(1, "Game A", fs_name="gamea.z64"),  # unchanged
+            self._make_sd(2, "New Name", fs_name="gameb.z64"),  # changed (name)
+            self._make_sd(3, "Game C", fs_name="gamec.z64"),  # new
         ]
         new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
         assert len(new) == 1
@@ -861,8 +921,13 @@ class TestClassifyRoms:
     def test_name_change_detected(self, plugin):
         """ROM name changed -> classified as changed with existing_app_id."""
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Old Title", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "game.z64"},
+            "1": {
+                "app_id": 1001,
+                "name": "Old Title",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "game.z64",
+            },
         }
         sd = [self._make_sd(1, "New Title")]
         new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
@@ -874,8 +939,13 @@ class TestClassifyRoms:
     def test_platform_name_change_detected(self, plugin):
         """Platform name changed -> classified as changed."""
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Game A", "platform_name": "Nintendo 64",
-                   "platform_slug": "n64", "fs_name": "game.z64"},
+            "1": {
+                "app_id": 1001,
+                "name": "Game A",
+                "platform_name": "Nintendo 64",
+                "platform_slug": "n64",
+                "fs_name": "game.z64",
+            },
         }
         sd = [self._make_sd(1, "Game A", platform_name="N64")]
         new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
@@ -885,8 +955,13 @@ class TestClassifyRoms:
     def test_fs_name_change_detected(self, plugin):
         """fs_name changed -> classified as changed."""
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "old.z64"},
+            "1": {
+                "app_id": 1001,
+                "name": "Game A",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "old.z64",
+            },
         }
         sd = [self._make_sd(1, "Game A", fs_name="new.z64")]
         new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
@@ -896,8 +971,13 @@ class TestClassifyRoms:
     def test_igdb_id_change_no_false_positive(self, plugin):
         """Only igdb_id/sgdb_id changed -> still unchanged."""
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "game.z64"},
+            "1": {
+                "app_id": 1001,
+                "name": "Game A",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "game.z64",
+            },
         }
         sd = [self._make_sd(1, "Game A", igdb_id=999, sgdb_id=888)]
         new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
@@ -929,8 +1009,13 @@ class TestClassifyRoms:
     def test_no_changes(self, plugin):
         """Exact match -> 0 new, 0 changed, 0 removed."""
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "game.z64"},
+            "1": {
+                "app_id": 1001,
+                "name": "Game A",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "fs_name": "game.z64",
+            },
         }
         sd = [self._make_sd(1, "Game A")]
         new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
@@ -957,7 +1042,8 @@ class TestSyncPreview:
 
     @pytest.mark.asyncio
     async def test_returns_correct_summary(self, plugin):
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
+
         import decky
 
         plugin.loop = asyncio.get_event_loop()
@@ -967,31 +1053,24 @@ class TestSyncPreview:
         platforms = [{"name": "N64", "slug": "n64"}]
         all_roms = [{"id": 1}, {"id": 2}, {"id": 3}]
         shortcuts_data = [
-            {"rom_id": 1, "name": "Game A", "platform_name": "N64",
-             "platform_slug": "n64", "fs_name": "a.z64"},
-            {"rom_id": 2, "name": "Game B", "platform_name": "N64",
-             "platform_slug": "n64", "fs_name": "b.z64"},
-            {"rom_id": 3, "name": "Game C", "platform_name": "N64",
-             "platform_slug": "n64", "fs_name": "c.z64"},
+            {"rom_id": 1, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
+            {"rom_id": 2, "name": "Game B", "platform_name": "N64", "platform_slug": "n64", "fs_name": "b.z64"},
+            {"rom_id": 3, "name": "Game C", "platform_name": "N64", "platform_slug": "n64", "fs_name": "c.z64"},
         ]
-        plugin._fetch_and_prepare = AsyncMock(
-            return_value=(all_roms, shortcuts_data, platforms)
-        )
+        plugin._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
         plugin._emit_progress = AsyncMock()
 
         # Set up registry: rom 1 unchanged, rom 2 changed name
         plugin._state["shortcut_registry"] = {
-            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "a.z64"},
-            "2": {"app_id": 1002, "name": "Old B", "platform_name": "N64",
-                   "platform_slug": "n64", "fs_name": "b.z64"},
+            "1": {"app_id": 1001, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
+            "2": {"app_id": 1002, "name": "Old B", "platform_name": "N64", "platform_slug": "n64", "fs_name": "b.z64"},
         }
 
         result = await plugin.sync_preview()
         assert result["success"] is True
         summary = result["summary"]
-        assert summary["new_count"] == 1      # rom 3 is new
-        assert summary["changed_count"] == 1   # rom 2 name changed
+        assert summary["new_count"] == 1  # rom 3 is new
+        assert summary["changed_count"] == 1  # rom 2 name changed
         assert summary["unchanged_count"] == 1  # rom 1 unchanged
         assert summary["remove_count"] == 0
         assert "preview_id" in result
@@ -999,6 +1078,7 @@ class TestSyncPreview:
     @pytest.mark.asyncio
     async def test_populates_pending_delta(self, plugin):
         from unittest.mock import AsyncMock
+
         import decky
 
         plugin.loop = asyncio.get_event_loop()
@@ -1007,12 +1087,9 @@ class TestSyncPreview:
         platforms = [{"name": "N64", "slug": "n64"}]
         all_roms = [{"id": 1}]
         shortcuts_data = [
-            {"rom_id": 1, "name": "Game A", "platform_name": "N64",
-             "platform_slug": "n64", "fs_name": "a.z64"},
+            {"rom_id": 1, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
         ]
-        plugin._fetch_and_prepare = AsyncMock(
-            return_value=(all_roms, shortcuts_data, platforms)
-        )
+        plugin._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
         plugin._emit_progress = AsyncMock()
 
         result = await plugin.sync_preview()
@@ -1032,6 +1109,7 @@ class TestSyncPreview:
     @pytest.mark.asyncio
     async def test_resets_sync_running_on_completion(self, plugin):
         from unittest.mock import AsyncMock
+
         import decky
 
         plugin.loop = asyncio.get_event_loop()
@@ -1040,12 +1118,9 @@ class TestSyncPreview:
         platforms = [{"name": "N64"}]
         all_roms = [{"id": 1}]
         shortcuts_data = [
-            {"rom_id": 1, "name": "Game A", "platform_name": "N64",
-             "platform_slug": "n64", "fs_name": "a.z64"},
+            {"rom_id": 1, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
         ]
-        plugin._fetch_and_prepare = AsyncMock(
-            return_value=(all_roms, shortcuts_data, platforms)
-        )
+        plugin._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
         plugin._emit_progress = AsyncMock()
 
         await plugin.sync_preview()
@@ -1060,13 +1135,25 @@ class TestSyncApplyDelta:
         plugin._pending_delta = {
             "preview_id": preview_id,
             "new": [
-                {"rom_id": 3, "name": "Game C", "platform_name": "N64",
-                 "platform_slug": "n64", "fs_name": "c.z64", "cover_path": ""},
+                {
+                    "rom_id": 3,
+                    "name": "Game C",
+                    "platform_name": "N64",
+                    "platform_slug": "n64",
+                    "fs_name": "c.z64",
+                    "cover_path": "",
+                },
             ],
             "changed": [
-                {"rom_id": 2, "name": "New B", "existing_app_id": 1002,
-                 "platform_name": "N64", "platform_slug": "n64",
-                 "fs_name": "b.z64", "cover_path": ""},
+                {
+                    "rom_id": 2,
+                    "name": "New B",
+                    "existing_app_id": 1002,
+                    "platform_name": "N64",
+                    "platform_slug": "n64",
+                    "fs_name": "b.z64",
+                    "cover_path": "",
+                },
             ],
             "unchanged_ids": [1],
             "remove_rom_ids": [99],
@@ -1096,6 +1183,7 @@ class TestSyncApplyDelta:
     @pytest.mark.asyncio
     async def test_emits_sync_apply_with_delta(self, plugin, tmp_path):
         from unittest.mock import AsyncMock
+
         import decky
 
         plugin.loop = asyncio.get_event_loop()
@@ -1115,17 +1203,17 @@ class TestSyncApplyDelta:
         assert result["success"] is True
 
         # Check decky.emit was called with sync_apply
-        emit_calls = [c for c in decky.emit.call_args_list
-                      if c[0][0] == "sync_apply"]
+        emit_calls = [c for c in decky.emit.call_args_list if c[0][0] == "sync_apply"]
         assert len(emit_calls) == 1
         payload = emit_calls[0][0][1]
-        assert len(payload["shortcuts"]) == 1      # new
+        assert len(payload["shortcuts"]) == 1  # new
         assert len(payload["changed_shortcuts"]) == 1  # changed
         assert payload["remove_rom_ids"] == [99]
 
     @pytest.mark.asyncio
     async def test_populates_pending_sync(self, plugin, tmp_path):
         from unittest.mock import AsyncMock
+
         import decky
 
         plugin.loop = asyncio.get_event_loop()
@@ -1148,6 +1236,7 @@ class TestSyncApplyDelta:
     @pytest.mark.asyncio
     async def test_clears_pending_delta(self, plugin, tmp_path):
         from unittest.mock import AsyncMock
+
         import decky
 
         plugin.loop = asyncio.get_event_loop()
@@ -1168,6 +1257,7 @@ class TestSyncApplyDelta:
     @pytest.mark.asyncio
     async def test_builds_collection_map_from_unchanged(self, plugin, tmp_path):
         from unittest.mock import AsyncMock
+
         import decky
 
         plugin.loop = asyncio.get_event_loop()
@@ -1198,8 +1288,7 @@ class TestSyncApplyDelta:
 
         await plugin.sync_apply_delta("test-preview-123")
 
-        emit_calls = [c for c in decky.emit.call_args_list
-                      if c[0][0] == "sync_apply"]
+        emit_calls = [c for c in decky.emit.call_args_list if c[0][0] == "sync_apply"]
         assert len(emit_calls) == 1
         collection_map = emit_calls[0][0][1]["collection_platform_app_ids"]
         assert 1001 in collection_map.get("N64", [])

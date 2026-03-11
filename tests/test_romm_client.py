@@ -186,7 +186,7 @@ class TestRommJsonRequest:
         fake_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            result = plugin._romm_put_json("/api/saves/1", {"filename": "test.srm"})
+            plugin._romm_put_json("/api/saves/1", {"filename": "test.srm"})
 
         req = mock_open.call_args[0][0]
         assert req.get_method() == "PUT"

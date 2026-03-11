@@ -1,7 +1,8 @@
-import pytest
-import os
 import asyncio
+import os
 from unittest.mock import patch
+
+import pytest
 
 from lib.sync import SyncState
 
@@ -29,6 +30,7 @@ def plugin(tmp_path):
     p._metadata_cache = {}
 
     import decky
+
     decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
     decky.DECKY_USER_HOME = str(tmp_path)
 
@@ -62,8 +64,9 @@ def _create_save(tmp_path, system="gba", rom_name="pokemon", content=b"\x00" * 1
     return save_file
 
 
-def _server_save(save_id=100, rom_id=42, filename="pokemon.srm",
-                 updated_at="2026-02-17T06:00:00Z", file_size_bytes=1024):
+def _server_save(
+    save_id=100, rom_id=42, filename="pokemon.srm", updated_at="2026-02-17T06:00:00Z", file_size_bytes=1024
+):
     """Helper: build a server save response dict."""
     return {
         "id": save_id,

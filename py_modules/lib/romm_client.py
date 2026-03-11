@@ -43,7 +43,7 @@ if TYPE_CHECKING:
         settings: dict
 
 
-class RommClientMixin:
+class RommClientMixin(_RommClientDeps if TYPE_CHECKING else object):
     def _load_platform_map(self):
         # Check plugin root first (Decky CLI moves defaults/ contents to root),
         # then defaults/ subdirectory (dev deploys via mise run deploy)
@@ -149,7 +149,7 @@ class RommClientMixin:
                     time.sleep(delay)
                 else:
                     raise
-        raise last_exc  # pragma: no cover
+        raise last_exc  # type: ignore[misc]  # pragma: no cover
 
     def _romm_request(self, path):
         url = self.settings["romm_url"].rstrip("/") + path

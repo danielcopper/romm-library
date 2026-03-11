@@ -1,8 +1,8 @@
-import sys
-import os
 import logging
+import os
+import sys
 import tempfile
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 # Mirror Decky's sys.path setup: add py_modules/ so `from lib.xxx import` works
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

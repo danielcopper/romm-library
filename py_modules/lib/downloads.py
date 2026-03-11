@@ -1,11 +1,11 @@
-import os
-import json
 import asyncio
 import fcntl
+import json
+import os
 import shutil
 import time
-import zipfile
 import urllib.parse
+import zipfile
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -23,16 +23,21 @@ if TYPE_CHECKING:
         _download_tasks: dict
         _state: dict
         loop: asyncio.AbstractEventLoop
+
         def _romm_request(self, path: str) -> Any: ...
         def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
         def _resolve_system(self, platform_slug: str, platform_fs_slug: Optional[str] = None) -> str: ...
         def _save_state(self) -> None: ...
 
+        _save_sync_state: dict
+
+        def _save_save_sync_state(self) -> None: ...
+
 
 _DOWNLOAD_QUEUE_MAX_TERMINAL = 50
 
 
-class DownloadMixin:
+class DownloadMixin(_DownloadDeps if TYPE_CHECKING else object):
     def _prune_download_queue(self):
         """Remove oldest completed/failed/cancelled items when over the limit.
 
@@ -41,7 +46,8 @@ class DownloadMixin:
         (by insertion order) when the count exceeds the limit.
         """
         terminal_ids = [
-            rid for rid, item in self._download_queue.items()
+            rid
+            for rid, item in self._download_queue.items()
             if item.get("status") in ("completed", "failed", "cancelled")
         ]
         excess = len(terminal_ids) - _DOWNLOAD_QUEUE_MAX_TERMINAL
@@ -55,7 +61,8 @@ class DownloadMixin:
     async def clear_completed_downloads(self):
         """Remove all completed/failed/cancelled items from the download queue."""
         terminal_ids = [
-            rid for rid, item in self._download_queue.items()
+            rid
+            for rid, item in self._download_queue.items()
             if item.get("status") in ("completed", "failed", "cancelled")
         ]
         for rid in terminal_ids:
@@ -118,15 +125,11 @@ class DownloadMixin:
 
     async def _poll_download_requests(self):
         """Poll for download requests from the launcher script."""
-        requests_path = os.path.join(
-            decky.DECKY_PLUGIN_RUNTIME_DIR, "download_requests.json"
-        )
+        requests_path = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "download_requests.json")
         while True:
             try:
                 await asyncio.sleep(2)
-                requests = await self.loop.run_in_executor(
-                    None, self._poll_download_requests_io, requests_path
-                )
+                requests = await self.loop.run_in_executor(None, self._poll_download_requests_io, requests_path)
                 if not requests:
                     continue
                 for req in requests:
@@ -145,9 +148,7 @@ class DownloadMixin:
 
         self._download_in_progress.add(rom_id)
         try:
-            rom_detail = await self.loop.run_in_executor(
-                None, self._romm_request, f"/api/roms/{rom_id}"
-            )
+            rom_detail = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
         except Exception as e:
             self._download_in_progress.discard(rom_id)
             decky.logger.error(f"Failed to fetch ROM {rom_id}: {e}")
@@ -182,9 +183,7 @@ class DownloadMixin:
         platform_name = rom_detail.get("platform_name", platform_slug)
 
         try:
-            task = self.loop.create_task(
-                self._do_download(rom_id, rom_detail, target_path, system)
-            )
+            task = self.loop.create_task(self._do_download(rom_id, rom_detail, target_path, system))
         except Exception as e:
             self._download_in_progress.discard(rom_id)
             decky.logger.error(f"Failed to start download task for ROM {rom_id}: {e}")
@@ -287,23 +286,28 @@ class DownloadMixin:
                 return
             last_emit[0] = now
             progress = downloaded / total if total else 0
-            self._download_queue[rom_id].update({
-                "progress": progress,
-                "bytes_downloaded": downloaded,
-                "total_bytes": total,
-            })
-            self.loop.call_soon_threadsafe(
-                self.loop.create_task,
-                decky.emit("download_progress", {
-                    "rom_id": rom_id,
-                    "rom_name": rom_name,
-                    "platform_name": platform_name,
-                    "file_name": file_name,
-                    "status": "downloading",
+            self._download_queue[rom_id].update(
+                {
                     "progress": progress,
                     "bytes_downloaded": downloaded,
                     "total_bytes": total,
-                })
+                }
+            )
+            self.loop.call_soon_threadsafe(
+                self.loop.create_task,
+                decky.emit(
+                    "download_progress",
+                    {
+                        "rom_id": rom_id,
+                        "rom_name": rom_name,
+                        "platform_name": platform_name,
+                        "file_name": file_name,
+                        "status": "downloading",
+                        "progress": progress,
+                        "bytes_downloaded": downloaded,
+                        "total_bytes": total,
+                    },
+                ),
             )
 
         try:
@@ -312,31 +316,28 @@ class DownloadMixin:
             if has_multiple:
                 # Multi-file ROM: API returns ZIP, download to temp then extract
                 tmp_zip = target_path + ".zip.tmp"
-                await self.loop.run_in_executor(
-                    None, self._romm_download, download_path, tmp_zip, progress_callback
-                )
+                await self.loop.run_in_executor(None, self._romm_download, download_path, tmp_zip, progress_callback)
                 final_path = await self.loop.run_in_executor(
-                    None, self._post_download_multi_io,
-                    rom_id, rom_detail, target_path, file_name, system
+                    None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
                 )
             else:
                 tmp_path = target_path + ".tmp"
-                await self.loop.run_in_executor(
-                    None, self._romm_download, download_path, tmp_path, progress_callback
-                )
+                await self.loop.run_in_executor(None, self._romm_download, download_path, tmp_path, progress_callback)
                 final_path = await self.loop.run_in_executor(
-                    None, self._post_download_single_io,
-                    rom_id, rom_detail, target_path, file_name, system
+                    None, self._post_download_single_io, rom_id, rom_detail, target_path, file_name, system
                 )
 
             self._download_queue[rom_id]["status"] = "completed"
             self._download_queue[rom_id]["progress"] = 1.0
-            await decky.emit("download_complete", {
-                "rom_id": rom_id,
-                "rom_name": rom_name,
-                "platform_name": platform_name,
-                "file_path": final_path,
-            })
+            await decky.emit(
+                "download_complete",
+                {
+                    "rom_id": rom_id,
+                    "rom_name": rom_name,
+                    "platform_name": platform_name,
+                    "file_path": final_path,
+                },
+            )
             decky.logger.info(f"Download complete: {rom_name} -> {final_path}")
 
         except asyncio.CancelledError:
@@ -480,7 +481,7 @@ class DownloadMixin:
 
         del self._state["installed_roms"][rom_id_str]
         # Clean save sync state for removed ROM
-        if hasattr(self, '_save_sync_state'):
+        if hasattr(self, "_save_sync_state"):
             save_changed = False
             if self._save_sync_state.get("saves", {}).pop(rom_id_str, None) is not None:
                 save_changed = True
@@ -497,9 +498,7 @@ class DownloadMixin:
             return {"success": False, "message": "ROM not installed"}
 
         try:
-            await self.loop.run_in_executor(
-                None, self._remove_rom_io, rom_id_str, installed
-            )
+            await self.loop.run_in_executor(None, self._remove_rom_io, rom_id_str, installed)
         except Exception as e:
             decky.logger.error(f"Failed to delete ROM files: {e}")
             return {"success": False, "message": "Failed to delete ROM files"}
@@ -524,7 +523,7 @@ class DownloadMixin:
         for rom_id_str in successfully_deleted:
             self._state["installed_roms"].pop(rom_id_str, None)
         # Clean save sync state for all removed ROMs
-        if hasattr(self, '_save_sync_state'):
+        if hasattr(self, "_save_sync_state"):
             save_changed = False
             for rom_id_str in successfully_deleted:
                 if self._save_sync_state.get("saves", {}).pop(rom_id_str, None) is not None:
@@ -537,9 +536,7 @@ class DownloadMixin:
         return count, errors
 
     async def uninstall_all_roms(self):
-        count, errors = await self.loop.run_in_executor(
-            None, self._uninstall_all_roms_io
-        )
+        count, errors = await self.loop.run_in_executor(None, self._uninstall_all_roms_io)
         self._download_queue.clear()
         msg = f"Removed {count} ROMs"
         if errors:

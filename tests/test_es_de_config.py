@@ -1,18 +1,14 @@
 """Tests for lib/es_de_config module."""
 
-import json
 import os
 import tempfile
 from unittest import mock
 
-import pytest
+from lib import es_de_config
 
 # conftest.py patches decky before this import
 # main.py adds py_modules to sys.path (provides vdf, etc.)
 from main import Plugin  # noqa: F401
-
-from lib import es_de_config
-
 
 # --- Helpers ---
 
@@ -620,6 +616,7 @@ class TestMtimeInvalidation:
 
                 # Overwrite file (changes mtime)
                 import time
+
                 time.sleep(0.05)  # ensure mtime differs
                 with open(path, "w") as f:
                     f.write(xml_v2)
