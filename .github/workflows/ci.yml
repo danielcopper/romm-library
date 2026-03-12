@@ -52,7 +52,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install lint dependencies
-        run: pip install import-linter
+        run: pip install import-linter ruff basedpyright
+
+      - name: Ruff check
+        run: ruff check .
+
+      - name: Basedpyright check
+        run: basedpyright
 
       - name: Check import boundaries
         run: PYTHONPATH=py_modules lint-imports
