@@ -49,32 +49,51 @@ export default definePlugin(() => {
   registerGameDetailPatch();
   registerLaunchInterceptor();
 
-  // Load metadata cache, register store patches, and populate RomM app ID set
-  (async () => {
+  // Load metadata cache, register store patches, and populate RomM app ID set.
+  // Retries with backoff if the backend isn't ready yet (e.g. boot without network).
+  const RETRY_DELAYS = [2000, 5000, 10000];
+  let initAttempt = 0;
+  let initDone = false;
+
+  async function loadAppIdsAndMetadata() {
+    const [cache, appIdMap] = await Promise.all([
+      getAllMetadataCache(),
+      getAppIdRomIdMap(),
+    ]);
+    registerMetadataPatches(cache, appIdMap);
+
+    for (const appIdStr of Object.keys(appIdMap)) {
+      const appId = parseInt(appIdStr, 10);
+      if (!isNaN(appId)) {
+        registerRomMAppId(appId);
+      }
+    }
+
     try {
-      const [cache, appIdMap] = await Promise.all([
-        getAllMetadataCache(),
-        getAppIdRomIdMap(),
-      ]);
-      registerMetadataPatches(cache, appIdMap);
-
-      // Populate the RomM app ID set for PlaySection hiding and launch interception
-      for (const appIdStr of Object.keys(appIdMap)) {
-        const appId = parseInt(appIdStr, 10);
-        if (!isNaN(appId)) {
-          registerRomMAppId(appId);
-        }
-      }
-
-      // Apply tracked playtime to Steam UI for all known apps
-      try {
-        const { playtime } = await getAllPlaytime();
-        applyAllPlaytime(playtime, appIdMap);
-      } catch (e) {
-        logError(`Failed to apply playtime: ${e}`);
-      }
+      const { playtime } = await getAllPlaytime();
+      applyAllPlaytime(playtime, appIdMap);
     } catch (e) {
-      logError(`Failed to load metadata cache: ${e}`);
+      logError(`Failed to apply playtime: ${e}`);
+    }
+
+    initDone = true;
+    logInfo(`App ID init succeeded (attempt ${initAttempt + 1})`);
+  }
+
+  (async () => {
+    while (!initDone && initAttempt <= RETRY_DELAYS.length) {
+      try {
+        await loadAppIdsAndMetadata();
+      } catch (e) {
+        if (initAttempt < RETRY_DELAYS.length) {
+          const delay = RETRY_DELAYS[initAttempt];
+          logError(`App ID init failed (attempt ${initAttempt + 1}), retrying in ${delay}ms: ${e}`);
+          await new Promise((r) => setTimeout(r, delay));
+        } else {
+          logError(`App ID init failed after ${initAttempt + 1} attempts, giving up: ${e}`);
+        }
+        initAttempt++;
+      }
     }
   })();
 
