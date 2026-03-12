@@ -10,6 +10,7 @@ reportRedeclaration = "none"
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+extend-exclude = ["py_modules/vdf", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
