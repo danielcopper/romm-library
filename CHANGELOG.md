@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.12.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.11.0...decky-romm-sync-v0.12.0) (2026-03-12)
+
+
+### Features
+
+* download button animation with progress fill and state transitions ([#84](https://github.com/danielcopper/decky-romm-sync/issues/84)) ([e70861a](https://github.com/danielcopper/decky-romm-sync/commit/e70861a1e15537bb770a612c737f28beb477ff76))
+* Phase 7 RetroAchievements - backend, frontend, and game detail tabs (WIP) ([#86](https://github.com/danielcopper/decky-romm-sync/issues/86)) ([3f6a6f7](https://github.com/danielcopper/decky-romm-sync/commit/3f6a6f71a0016b26044a7ee527afe1be599f49a7))
+
+
+### Bug Fixes
+
+* controller scrolling through injected game detail content ([#87](https://github.com/danielcopper/decky-romm-sync/issues/87)) ([cd8e4ce](https://github.com/danielcopper/decky-romm-sync/commit/cd8e4ce33e1ea872b8bbc23a73ee2a660f6aa056))
+* move HC badge before date in achievement list ([#88](https://github.com/danielcopper/decky-romm-sync/issues/88)) ([ded3ddc](https://github.com/danielcopper/decky-romm-sync/commit/ded3ddc0ae78c5521333064bf511e8108e55443f))
+* retry app ID init on boot when backend isn't ready ([#94](https://github.com/danielcopper/decky-romm-sync/issues/94)) ([3e24dc2](https://github.com/danielcopper/decky-romm-sync/commit/3e24dc2e5f9b9571c0ff19924f9796ba1b38dc37))
+* review cycle fixes — security, React cleanup, linting, type safety ([#93](https://github.com/danielcopper/decky-romm-sync/issues/93)) ([1ab7dea](https://github.com/danielcopper/decky-romm-sync/commit/1ab7dea319154c8a034ef10a5f5ebc9f0cbb7301))
+* Tier 1 bug fixes — correctness, security, state management ([#89](https://github.com/danielcopper/decky-romm-sync/issues/89)) ([6125343](https://github.com/danielcopper/decky-romm-sync/commit/6125343c0a92350605129dcc1b7ee992644a23f4))
+* Tier 2 robustness and performance improvements ([#90](https://github.com/danielcopper/decky-romm-sync/issues/90)) ([17bea27](https://github.com/danielcopper/decky-romm-sync/commit/17bea276c72034def77b2415e14c897af19ecce0))
+* Tier 3 improvements — caching, serialization, cleanup ([#91](https://github.com/danielcopper/decky-romm-sync/issues/91)) ([a8f93e3](https://github.com/danielcopper/decky-romm-sync/commit/a8f93e3dfd7fea4213da119beacb33cadacb2148))
+
 ## [0.11.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.10.1...decky-romm-sync-v0.11.0) (2026-03-09)
 
 
