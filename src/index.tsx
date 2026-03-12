@@ -51,15 +51,27 @@ export default definePlugin(() => {
 
   // Load metadata cache, register store patches, and populate RomM app ID set.
   // Retries with backoff if the backend isn't ready yet (e.g. boot without network).
-  const RETRY_DELAYS = [2000, 5000, 10000];
+  // callable() has no timeout — hangs forever if backend isn't ready — so we race
+  // each attempt against a deadline to ensure retries actually fire.
+  const RETRY_DELAYS = [2000, 5000, 10000, 15000, 20000];
+  const CALLABLE_TIMEOUT = 5000;
   let initAttempt = 0;
   let initDone = false;
 
-  async function loadAppIdsAndMetadata() {
-    const [cache, appIdMap] = await Promise.all([
-      getAllMetadataCache(),
-      getAppIdRomIdMap(),
+  function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`callable timed out after ${ms}ms`)), ms),
+      ),
     ]);
+  }
+
+  async function loadAppIdsAndMetadata() {
+    const [cache, appIdMap] = await withTimeout(
+      Promise.all([getAllMetadataCache(), getAppIdRomIdMap()]),
+      CALLABLE_TIMEOUT,
+    );
     registerMetadataPatches(cache, appIdMap);
 
     for (const appIdStr of Object.keys(appIdMap)) {
@@ -70,27 +82,30 @@ export default definePlugin(() => {
     }
 
     try {
-      const { playtime } = await getAllPlaytime();
+      const { playtime } = await withTimeout(getAllPlaytime(), CALLABLE_TIMEOUT);
       applyAllPlaytime(playtime, appIdMap);
     } catch (e) {
-      logError(`Failed to apply playtime: ${e}`);
+      // Use console — logError is a callable that may also hang
+      console.warn("[RomM] Failed to apply playtime:", e);
     }
 
     initDone = true;
-    logInfo(`App ID init succeeded (attempt ${initAttempt + 1})`);
+    // Backend is now reachable — log via callable so it appears in plugin log
+    const attempts = initAttempt + 1;
+    if (attempts > 1) {
+      logInfo(`App ID init succeeded after ${attempts} attempts (backend was slow to start)`);
+    } else {
+      logInfo(`App ID init succeeded (attempt 1)`);
+    }
   }
 
   (async () => {
-    while (!initDone && initAttempt <= RETRY_DELAYS.length) {
+    while (!initDone && initAttempt < RETRY_DELAYS.length + 1) {
       try {
         await loadAppIdsAndMetadata();
-      } catch (e) {
+      } catch {
         if (initAttempt < RETRY_DELAYS.length) {
-          const delay = RETRY_DELAYS[initAttempt];
-          logError(`App ID init failed (attempt ${initAttempt + 1}), retrying in ${delay}ms: ${e}`);
-          await new Promise((r) => setTimeout(r, delay));
-        } else {
-          logError(`App ID init failed after ${initAttempt + 1} attempts, giving up: ${e}`);
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS[initAttempt]));
         }
         initAttempt++;
       }
