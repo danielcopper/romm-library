@@ -133,6 +133,7 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
+  const [versionWarning, setVersionWarning] = useState("");
   const [loading, setLoading] = useState(false);
   const [allowInsecureSsl, setAllowInsecureSsl] = useState(false);
 
@@ -215,9 +216,13 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
   const handleTest = async () => {
     setLoading(true);
     setStatus("");
+    setVersionWarning("");
     try {
       const result = await testConnection();
       setStatus(result.message);
+      if (result.version_warning) {
+        setVersionWarning(result.version_warning);
+      }
     } catch {
       setStatus("Connection test failed");
     }
@@ -472,6 +477,11 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
         {status && (
           <PanelSectionRow>
             <Field label={status} />
+          </PanelSectionRow>
+        )}
+        {versionWarning && (
+          <PanelSectionRow>
+            <Field label={versionWarning} />
           </PanelSectionRow>
         )}
       </PanelSection>

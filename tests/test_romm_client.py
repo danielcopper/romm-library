@@ -680,10 +680,13 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        with patch.object(plugin, "_romm_request", return_value={"status": "ok"}):
+        heartbeat = {"SYSTEM": {"VERSION": "4.7.0"}, "status": "ok"}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat, {"platforms": []}]):
             result = await plugin.test_connection()
         assert result["success"] is True
-        assert "Connected" in result["message"]
+        assert "Connected to RomM 4.7.0" in result["message"]
+        assert result["romm_version"] == "4.7.0"
+        assert plugin._romm_version == "4.7.0"
 
     @pytest.mark.asyncio
     async def test_server_reachable_but_api_failed(self, plugin):
@@ -692,7 +695,7 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat_response = {"status": "ok"}
+        heartbeat_response = {"SYSTEM": {"VERSION": "4.7.0"}}
         with patch.object(
             plugin, "_romm_request", side_effect=[heartbeat_response, RommServerError("500", status_code=500)]
         ):
@@ -700,6 +703,107 @@ class TestTestConnectionErrors:
         assert result["success"] is False
         assert result["error_code"] == "server_error"
         assert "Server reachable but API request failed" in result["message"]
+
+
+class TestVersionDetection:
+    """test_connection detects and reports RomM server version."""
+
+    @pytest.mark.asyncio
+    async def test_version_extracted_from_heartbeat(self, plugin):
+        """Extracts version from SYSTEM.VERSION in heartbeat response."""
+        import asyncio
+
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        heartbeat = {"SYSTEM": {"VERSION": "4.7.0"}}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat, {"platforms": []}]):
+            result = await plugin.test_connection()
+        assert result["romm_version"] == "4.7.0"
+        assert plugin._romm_version == "4.7.0"
+
+    @pytest.mark.asyncio
+    async def test_version_warning_for_old_version(self, plugin):
+        """Shows warning when RomM version is below minimum tested."""
+        import asyncio
+
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        heartbeat = {"SYSTEM": {"VERSION": "4.5.0"}}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat, {"platforms": []}]):
+            result = await plugin.test_connection()
+        assert result["success"] is True
+        assert result["romm_version"] == "4.5.0"
+        assert "version_warning" in result
+        assert "not been tested" in result["version_warning"]
+        assert "4.6.1" in result["version_warning"]
+
+    @pytest.mark.asyncio
+    async def test_no_warning_for_supported_version(self, plugin):
+        """No warning for supported RomM versions."""
+        import asyncio
+
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        heartbeat = {"SYSTEM": {"VERSION": "4.6.1"}}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat, {"platforms": []}]):
+            result = await plugin.test_connection()
+        assert result["success"] is True
+        assert "version_warning" not in result
+
+    @pytest.mark.asyncio
+    async def test_development_version_no_warning(self, plugin):
+        """Development builds pass through without warning."""
+        import asyncio
+
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        heartbeat = {"SYSTEM": {"VERSION": "development"}}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat, {"platforms": []}]):
+            result = await plugin.test_connection()
+        assert result["success"] is True
+        assert result.get("romm_version") == "development"
+        assert "version_warning" not in result
+
+    @pytest.mark.asyncio
+    async def test_missing_version_in_heartbeat(self, plugin):
+        """Handles heartbeat without SYSTEM.VERSION gracefully."""
+        import asyncio
+
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        heartbeat = {"status": "ok"}
+        with patch.object(plugin, "_romm_request", side_effect=[heartbeat, {"platforms": []}]):
+            result = await plugin.test_connection()
+        assert result["success"] is True
+        assert plugin._romm_version is None
+        assert "version_warning" not in result
+
+    @pytest.mark.asyncio
+    async def test_version_cleared_on_connection_failure(self, plugin):
+        """Version is cleared when heartbeat fails."""
+        import asyncio
+
+        _setup_plugin(plugin)
+        plugin.loop = asyncio.get_event_loop()
+        plugin._romm_version = "4.7.0"  # previously detected
+        with patch.object(plugin, "_romm_request", side_effect=RommConnectionError("refused")):
+            result = await plugin.test_connection()
+        assert result["success"] is False
+        assert plugin._romm_version is None
+
+    @pytest.mark.asyncio
+    async def test_get_romm_version_returns_cached(self, plugin):
+        """get_romm_version returns the last detected version."""
+        plugin._romm_version = "4.7.0"
+        result = await plugin.get_romm_version()
+        assert result == {"version": "4.7.0"}
+
+    @pytest.mark.asyncio
+    async def test_get_romm_version_returns_none_before_connect(self, plugin):
+        """get_romm_version returns None before any connection."""
+        plugin._romm_version = None
+        result = await plugin.get_romm_version()
+        assert result == {"version": None}
 
     @pytest.mark.asyncio
     async def test_timeout_error(self, plugin):

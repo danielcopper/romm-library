@@ -5,118 +5,6 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md.
 
 ---
 
-## Phase 7: RetroAchievements + Game Detail Tabs
-
-**Goal**: Display RetroAchievements data from RomM and restructure the game detail page into a tabbed layout matching Steam's native pattern.
-
-### 7A — Backend: RA Data Extraction & Caching
-
-**Extract `ra_id` during sync:**
-- Add `ra_id` to ROM data extraction in `sync.py` (alongside `igdb_id`, `sgdb_id`)
-- Store `ra_id` in shortcut registry per ROM
-- On every sync, re-fetch `ra_id` from RomM — if RA gets configured in RomM between syncs, new IDs appear automatically
-
-**New backend module: `py_modules/lib/achievements.py`:**
-- `get_achievements(rom_id)` callable — fetch `ra_metadata` from RomM ROM detail, return achievement list (title, description, points, badge URLs, type, display_order)
-- `get_user_achievement_progress(rom_id)` callable — fetch user's earned achievements for the game's `ra_id` from RomM. Returns earned/total counts + per-achievement earned status with dates
-- `sync_achievements_after_session(rom_id)` callable — post-session refresh: fetch latest user progress for a single game from RomM (which in turn queries RA API)
-- Cache achievement data in `_metadata_cache` or new `_achievements_cache` with TTL (achievement lists rarely change, user progress refreshed post-session)
-- `get_cached_game_detail()` extended to include `ra_id` and achievement summary (earned/total) for badge rendering without a separate fetch
-
-**RomM API integration:**
-- ROM detail (`GET /api/roms/{id}`) returns `ra_id`, `ra_metadata` (achievement list with badge URLs), `merged_ra_metadata`
-- User progression: research which RomM endpoint exposes per-game user progress (likely via user schema's `ra_progression` field or dedicated endpoint)
-- Badge image URLs from RomM: `https://media.retroachievements.org/Badge/{badge_id}.png` (locked: `{badge_id}_lock.png`)
-
-### 7B — QAM Settings: RA Configuration
-
-**New "RetroAchievements" section in ConnectionSettings:**
-- RA username text field (stored in `settings.json` as `ra_username`)
-- Note/disclaimer: "This only displays achievement progress. To earn achievements during gameplay, configure RetroAchievements in RetroDECK or RetroArch."
-- Similar disclaimer added to SGDB API key section: "Requires IGDB metadata to be configured in RomM for artwork matching."
-- Badge + tab hidden when `ra_username` is empty
-- No API key needed on our side — RomM handles RA API calls with its own key
-
-### 7C — Game Detail Page: Tab Restructure
-
-**Replace flat layout with tabbed layout:**
-
-Current:
-```
-[PlaySection: Play button + info items row]
-[GameInfoPanel: description, genres, developer, release date]
-```
-
-New:
-```
-[PlaySection: Play button + compact info row (last played, playtime, achievements badge)]
-[Tab Bar: GAME INFO | ACHIEVEMENTS | SAVES | BIOS]
-[Tab Content]
-```
-
-**Tab definitions:**
-- **GAME INFO** (default): Current `RomMGameInfoPanel` content — description, genres, developer/publisher, release date, game modes, rating
-- **ACHIEVEMENTS**: Full achievement list with icons (badge images), names, descriptions, points. Earned achievements shown with unlocked badge + earned date. Unearned shown with locked badge (greyed). Progress bar at top. Sorted by `display_order`. Achievement `type` shown as label (progression, win_condition, missable)
-- **SAVES**: Current save sync info item content expanded — save file status, last sync time, sync button, conflict indicator. Moved from PlaySection info row
-- **BIOS**: Current BIOS info item content expanded — per-file status with dot colors, download buttons, core annotations. Moved from PlaySection info row
-
-**Tab visibility rules:**
-- GAME INFO: always shown
-- ACHIEVEMENTS: shown only when `ra_id` exists for the ROM AND `ra_username` is configured in settings
-- SAVES: shown only when save sync is enabled
-- BIOS: shown only when the platform needs BIOS files
-
-**Implementation:**
-- New component: `src/components/GameDetailTabs.tsx` — tab bar + content switching
-- Extract save/BIOS content from `RomMPlaySection` into standalone tab components
-- `RomMPlaySection` keeps: Play button + compact info row (last played, playtime, achievements badge)
-- Tab state persisted per-page-visit (not across navigations)
-
-### 7D — Achievements Badge (PlaySection Info Item)
-
-**Compact badge in info row:**
-- Shows `"3 / 24"` (earned / total) or `"100%"` when mastered
-- Gold sparkle animation: tiny golden dots (CSS particles) appearing and disappearing around the badge
-- Hidden when: no `ra_username` in settings OR no `ra_id` on the ROM
-- Clickable: switches to ACHIEVEMENTS tab when tapped
-- Data source: achievement summary from `get_cached_game_detail()` (no extra fetch needed for badge)
-
-**Post-session refresh:**
-- When game session ends, call `sync_achievements_after_session(rom_id)` alongside save sync and playtime upload
-- Update badge with new earned/total counts
-- If achievements were earned during session, badge updates immediately
-
-### 7E — Achievements Tab (Full View)
-
-**Achievement list layout:**
-- Progress bar at top: `15 / 23 achievements (65%)` with filled bar
-- Hardcore indicator if user has hardcore unlocks
-- List items:
-  - Badge icon (40x40, from `badge_url` or `badge_url_lock`)
-  - Title + description
-  - Points value
-  - Type label (progression / win_condition / missable) as colored chip
-  - Earned date (if earned) or locked state
-- Earned achievements sorted first, then unearned
-- Within each group, sorted by `display_order`
-
-**Caching strategy:**
-- Achievement list (game metadata): cached with 24h TTL (achievement definitions rarely change)
-- User progress: cached with 1h TTL, force-refreshed post-session
-- Badge images: loaded from RA CDN URLs directly (browser/Steam handles caching)
-
-### Implementation Order
-
-1. Backend: `ra_id` extraction during sync + registry storage
-2. Backend: `achievements.py` module with callables
-3. Frontend: `GameDetailTabs.tsx` component + tab bar
-4. Frontend: Move save/BIOS content into tab components
-5. Frontend: Achievements tab component
-6. Frontend: Achievement badge with gold sparkle animation
-7. Frontend: Post-session achievement refresh in `sessionManager.ts`
-8. QAM: RA username settings + disclaimers
-9. Tests: Backend achievement callables + sync integration
-
 ---
 
 ## Phase 8: Save Sync v2 — RomM 4.7.0 Migration
@@ -284,6 +172,15 @@ Only `save_sync_state.json` has a `"version"` field. `state.json`, `settings.jso
 - **CI: Decky build smoke test on PRs**: Decky CLI plugin build only runs during release workflow, not on PRs. A packaging regression won't surface until release time. Add decky build step to CI.
 - **CI: Decky CLI SHA256 verification**: `release.yml` downloads decky CLI via plain curl with no integrity check. Pin a SHA256 hash and verify after download.
 - **RomM M3U validation**: RomM bundles M3U files in ZIP archives that may list `.bin` track files (e.g. Tomb Raider lists 57 `.bin` tracks + 1 `.cue`). RetroArch expects M3U to list `.cue` files only. Need to test whether these RomM-bundled M3Us actually break launching. If they do: post-extraction validation to strip `.bin` entries or delete bad M3Us. If they work: drop this item. Our own `_maybe_generate_m3u()` is correct (only writes `.cue`/`.chd`/`.iso` entries).
+- **Async race in sessionManager**: `handleGameStart`/`handleGameStop` are async but `RegisterForAppLifetimeNotifications` doesn't await them. Rapid start+stop could interleave, potentially losing playtime or corrupting session state. Fix: queue or serialize game lifecycle events.
+- **retrodeck_config.py reads disk every call**: `get_saves_path()` → `get_retrodeck_path()` → `open()` + `json.load()` on every invocation. 50-ROM save sync = 50 reads of the same file. Fix: TTL cache (30s).
+- **es_de_config.py cache never invalidates on external changes**: `_es_systems_cache` and `_core_defaults_cache` load once, only reset via `_reset_cache()` after `set_system_core`/`set_game_core`. If user changes core in ES-DE directly, plugin shows stale data until restart. Fix: mtime-based invalidation or TTL.
+- **Deep tree dump floods backend at debug level**: `deepTreeDump()` runs for every RomM AppId on plugin load via `debugLog` callable. 100+ shortcuts at debug level hammers startup. Fix: gate behind flag, or run for one AppId per session only.
+- **Cleared downloads hidden on re-download**: `cleared` Set in DownloadQueue React state persists rom_ids. Re-downloading a previously cleared ROM hides the new progress. Fix: clear rom_id from `cleared` when new `download_progress` event arrives.
+- **Connection state via custom events, not central store**: Different components can have different connection states due to event propagation timing. Not a bug today, but a consistency risk. Fix (future): EventEmitter or subscriber-pattern store.
+- **Test coverage gaps in es_de_config write paths**: Read operations well-covered, but write paths (`set_system_override`, `set_game_override`, `_rebuild_game_xml`) and the 4-stage core resolution chain need more edge-case coverage.
+- **Dead code: `save_steamgriddb_key()`** in `lib/sgdb.py` — duplicate of `save_sgdb_api_key()`, never called from frontend. Delete it.
+- **XML parsing duplication in es_de_config.py**: Four separate SAX parser implementations with own state management. A shared base parser class could save 100-150 lines. Refactoring candidate when code is stable.
 
 ---
 
@@ -328,3 +225,10 @@ Custom game detail page for RomM games. RomMPlaySection with info items (Last Pl
 
 ### QAM Menu Restructuring ✅
 7 pages consolidated to 4. **Settings**: absorbs SaveSyncSettings + Log Level + RetroArch fix, auto-save connection fields. **Platforms**: Sync/BIOS tab toggle, BIOS lazy-loaded. **Data Management**: 3 per-platform lists merged into 1 with action modal. **MainPage**: inline downloads, 3 nav buttons (down from 6), consolidated RetroArch warning. Delta sync with preview before apply. Consistent sync progress display: spinner during preview, `[step/total] Description X/Y` progress bar during apply with dynamic step counting.
+
+### Phase 7: RetroAchievements + Game Detail Tabs ✅
+**7A — Backend**: `achievements.py` module with `get_achievements`, `get_achievement_progress`, `sync_achievements_after_session` callables. `ra_id` extracted during sync and stored in shortcut registry. Achievement caching with 24h TTL (definitions) and 1h TTL (user progress). `get_cached_game_detail()` extended with `ra_id` + achievement summary.
+**7B — QAM Settings**: Skipped — RA username auto-fetched from RomM user profile (`/api/users/me`), no manual configuration needed.
+**7C — Tabbed Layout**: Game detail page restructured into tabbed layout (GAME INFO | ACHIEVEMENTS | SAVES | BIOS) in `RomMGameInfoPanel.tsx`. Tab visibility conditional on `ra_id`, save sync enabled, BIOS status. `romm_tab_switch` custom event for cross-component tab switching.
+**7D — Achievement Badge**: Trophy badge in PlaySection info row showing earned/total with gold sparkle animation. Clickable to switch to achievements tab. Data from cached achievement summary.
+**7E — Achievements Tab**: Full achievement list with progress bar, earned/locked sections, badge images (greyed for locked), hardcore indicator with sparkles, earned dates, points, rarity labels. Sorted earned-first then by display_order. Lazy-loaded on tab activation. 65 backend tests in `test_achievements.py`.
