@@ -3,6 +3,7 @@ pythonVersion = "3.12"
 extraPaths = ["py_modules"]
 stubPath = "typings"
 typeCheckingMode = "basic"
+exclude = ["py_modules/vdf", "tests", "scripts", ".venv"]
 reportMissingModuleSource = "none"
 reportMissingImports = "warning"
 reportRedeclaration = "none"
