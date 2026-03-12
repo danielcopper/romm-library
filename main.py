@@ -63,6 +63,7 @@ class Plugin(
         self._download_in_progress = set()  # rom_ids currently being processed
         self._metadata_cache = {}
         self._achievements_cache = {}
+        self._romm_version = None  # Detected on test_connection
         self._load_state()
         self._load_bios_registry()
         self._load_metadata_cache()
@@ -356,6 +357,8 @@ class Plugin(
         self._download_tasks.clear()
         decky.logger.info("RomM Sync plugin unloaded")
 
+    _MIN_TESTED_VERSION = "4.6.1"
+
     async def test_connection(self):
         from lib.errors import error_response
 
@@ -363,9 +366,20 @@ class Plugin(
             return {"success": False, "message": "No server URL configured", "error_code": "config_error"}
         # Test basic connectivity (heartbeat may not require auth)
         try:
-            await self.loop.run_in_executor(None, self._romm_request, "/api/heartbeat")
+            heartbeat = await self.loop.run_in_executor(None, self._romm_request, "/api/heartbeat")
         except Exception as e:
+            self._romm_version = None
             return error_response(e)
+
+        # Extract server version from heartbeat
+        self._romm_version = None
+        try:
+            self._romm_version = heartbeat.get("SYSTEM", {}).get("VERSION")
+        except (AttributeError, TypeError):
+            pass
+        if self._romm_version:
+            decky.logger.info(f"RomM server version: {self._romm_version}")
+
         # Test authenticated access
         try:
             await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
@@ -374,7 +388,23 @@ class Plugin(
             if resp["error_code"] not in ("auth_error", "forbidden_error"):
                 resp["message"] = f"Server reachable but API request failed: {resp['message']}"
             return resp
-        return {"success": True, "message": "Connected to RomM"}
+
+        result = {"success": True, "message": "Connected to RomM"}
+        if self._romm_version and self._romm_version != "development":
+            result["message"] = f"Connected to RomM {self._romm_version}"
+            result["romm_version"] = self._romm_version
+            if self._romm_version < self._MIN_TESTED_VERSION:
+                result["version_warning"] = (
+                    f"RomM {self._romm_version} has not been tested. "
+                    f"Minimum tested version: {self._MIN_TESTED_VERSION}."
+                )
+        elif self._romm_version == "development":
+            result["romm_version"] = self._romm_version
+        return result
+
+    async def get_romm_version(self):
+        """Return cached RomM version (detected on last test_connection)."""
+        return {"version": self._romm_version}
 
     async def save_settings(self, romm_url, romm_user, romm_pass, allow_insecure_ssl=None):
         try:
