@@ -5,11 +5,27 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md.
 
 ---
 
+## Phase R1: Architecture Foundation
+
+**Goal**: Establish the new backend architecture (composition + service layer + adapters) as a foundation for Phase 8 and all future work. See `docs/architecture.md` for full design.
+
+**Steps:**
+1. Create directory structure (`models/`, `services/`, `adapters/`)
+2. Define domain dataclasses (`models.py`, `settings.py`, `state.py`) — typed replacements for raw dicts
+3. Extract `persistence.py` from `StateMixin` (load/save settings, state, caches)
+4. Extract `RommHttpClient` from `RommClientMixin` (generic HTTP, SSL, auth, retry)
+5. Write `bootstrap.py` skeleton — composition root called from `_main()`
+6. `main.py` starts using bootstrap but still has mixins for unmigrated services
+
+**Constraints:**
+- All 805+ existing tests must keep passing throughout
+- Each step is a mergeable PR
+- Unmigrated mixins coexist with new services during transition
 ---
 
-## Phase 8: Save Sync v2 — RomM 4.7.0 Migration
+## Phase 8: Save Sync v2 — RomM 4.7.0 Migration (includes Phase R2)
 
-**Goal**: Migrate save sync to RomM 4.7.0's device-based sync architecture. Simplify conflict detection, remove workarounds for 4.6.1 bugs.
+**Goal**: Migrate save sync to RomM 4.7.0's device-based sync architecture. Simplify conflict detection, remove workarounds for 4.6.1 bugs. Simultaneously migrate save sync to the new architecture (Phase R2 from `docs/architecture.md`).
 
 ### Key RomM 4.7.0 Changes
 
