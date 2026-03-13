@@ -591,6 +591,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
 
                 if resolution == "ask":
                     if local:
+                        assert server is not None  # guaranteed: conflict requires both sides
                         local_mtime_val = os.path.getmtime(local["path"]) if os.path.isfile(local["path"]) else None
                         conflicts.append(
                             {
@@ -604,9 +605,9 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
                                     else None
                                 ),
                                 "local_size": os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None,
-                                "server_save_id": server.get("id") if server else None,
-                                "server_updated_at": server.get("updated_at", "") if server else "",
-                                "server_size": server.get("file_size_bytes") if server else None,
+                                "server_save_id": server.get("id"),
+                                "server_updated_at": server.get("updated_at", ""),
+                                "server_size": server.get("file_size_bytes"),
                                 "created_at": datetime.now(timezone.utc).isoformat(),
                             }
                         )
@@ -632,16 +633,16 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
                             "rom_id": rom_id,
                             "filename": filename,
                             "local_path": local["path"],
-                            "local_hash": local_hash if local and server else None,
+                            "local_hash": local_hash if local else None,
                             "local_mtime": (
                                 datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat()
                                 if local_mtime_val
                                 else None
                             ),
                             "local_size": os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None,
-                            "server_save_id": server.get("id") if server else None,
-                            "server_updated_at": server.get("updated_at", "") if server else "",
-                            "server_size": server.get("file_size_bytes") if server else None,
+                            "server_save_id": server.get("id"),
+                            "server_updated_at": server.get("updated_at", ""),
+                            "server_size": server.get("file_size_bytes"),
                             "created_at": datetime.now(timezone.utc).isoformat(),
                         }
                     )
