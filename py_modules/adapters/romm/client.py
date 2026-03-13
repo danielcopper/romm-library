@@ -1,0 +1,298 @@
+"""Standalone HTTP client for the RomM API.
+
+No dependency on ``decky`` — all external dependencies (settings, plugin_dir,
+logger) are injected via the constructor.
+"""
+
+import base64
+import json
+import logging
+import os
+import socket
+import ssl
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+from pathlib import Path
+
+from lib.errors import (
+    RommApiError,
+    RommAuthError,
+    RommConflictError,
+    RommConnectionError,
+    RommForbiddenError,
+    RommNotFoundError,
+    RommServerError,
+    RommSSLError,
+    RommTimeoutError,
+)
+
+try:
+    import certifi
+
+    def _ca_bundle():
+        return certifi.where()
+except ImportError:
+
+    def _ca_bundle():
+        return None
+
+
+class RommHttpClient:
+    """Low-level HTTP client for RomM API requests.
+
+    Parameters
+    ----------
+    settings:
+        Shared settings dict (held by reference — mutations are visible here).
+    plugin_dir:
+        Absolute path to the plugin directory (replaces ``decky.DECKY_PLUGIN_DIR``).
+    logger:
+        Logger instance (replaces ``decky.logger``).
+    """
+
+    def __init__(self, settings: dict, plugin_dir: str, logger: logging.Logger) -> None:
+        self._settings = settings
+        self._plugin_dir = plugin_dir
+        self._logger = logger
+
+    # ------------------------------------------------------------------
+    # Platform map
+    # ------------------------------------------------------------------
+
+    def load_platform_map(self) -> dict:
+        """Load the platform slug -> RetroDECK system mapping from config.json."""
+        # Check plugin root first (Decky CLI moves defaults/ contents to root),
+        # then defaults/ subdirectory (dev deploys via mise run deploy)
+        root_path = os.path.join(self._plugin_dir, "config.json")
+        dev_path = os.path.join(self._plugin_dir, "defaults", "config.json")
+        config_path = root_path if os.path.exists(root_path) else dev_path
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        return config.get("platform_map", {})
+
+    def resolve_system(self, platform_slug: str, platform_fs_slug: str | None = None) -> str:
+        """Resolve a RomM platform slug to a RetroDECK system name.
+
+        Lazy-loads and caches ``_platform_map`` on first call.
+        """
+        if not hasattr(self, "_platform_map"):
+            self._platform_map = self.load_platform_map()
+        platform_map = self._platform_map
+        if platform_slug in platform_map:
+            return platform_map[platform_slug]
+        if platform_fs_slug and platform_fs_slug in platform_map:
+            return platform_map[platform_fs_slug]
+        return platform_slug
+
+    # ------------------------------------------------------------------
+    # SSL / Auth helpers
+    # ------------------------------------------------------------------
+
+    def ssl_context(self) -> ssl.SSLContext:
+        """SSL context for RomM connections. Respects user insecure toggle."""
+        ctx = ssl.create_default_context(cafile=_ca_bundle())
+        if self._settings.get("romm_allow_insecure_ssl", False):
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+    def auth_header(self) -> str:
+        """Base64-encoded Basic Auth header value for RomM."""
+        credentials = base64.b64encode(f"{self._settings['romm_user']}:{self._settings['romm_pass']}".encode()).decode()
+        return f"Basic {credentials}"
+
+    # ------------------------------------------------------------------
+    # Error translation & retry logic
+    # ------------------------------------------------------------------
+
+    def translate_http_error(self, exc: Exception, url: str, method: str = "GET") -> RommApiError:
+        """Translate urllib/socket exceptions into RommApiError subclasses."""
+        # HTTPError first (most specific HTTP-level error)
+        if isinstance(exc, urllib.error.HTTPError):
+            msg = f"HTTP {exc.code}: {exc.reason} ({method} {url})"
+            if exc.code == 400:
+                return RommApiError(f"Bad request ({method} {url})", url=url, method=method)
+            if exc.code == 401:
+                return RommAuthError(msg, url=url, method=method)
+            if exc.code == 403:
+                return RommForbiddenError(msg, url=url, method=method)
+            if exc.code == 404:
+                return RommNotFoundError(msg, url=url, method=method)
+            if exc.code == 409:
+                return RommConflictError(msg, url=url, method=method)
+            if exc.code == 429:
+                return RommServerError(
+                    f"Rate limited — too many requests ({method} {url})",
+                    status_code=429,
+                    url=url,
+                    method=method,
+                )
+            if exc.code >= 500:
+                return RommServerError(msg, status_code=exc.code, url=url, method=method)
+            return RommApiError(msg, url=url, method=method)
+        # URLError can wrap ssl/timeout in .reason — unwrap first
+        if isinstance(exc, urllib.error.URLError):
+            reason = exc.reason
+            if isinstance(reason, ssl.SSLError):
+                return RommSSLError(str(reason), url=url, method=method)
+            if isinstance(reason, (socket.timeout, TimeoutError)):
+                return RommTimeoutError(str(reason), url=url, method=method)
+            return RommConnectionError(str(exc), url=url, method=method)
+        # Direct ssl/timeout/connection (not wrapped in URLError)
+        if isinstance(exc, ssl.SSLError):
+            return RommSSLError(str(exc), url=url, method=method)
+        if isinstance(exc, (socket.timeout, TimeoutError)):
+            return RommTimeoutError(str(exc), url=url, method=method)
+        if isinstance(exc, (ConnectionError, OSError)):
+            return RommConnectionError(str(exc), url=url, method=method)
+        return RommApiError(f"Unexpected error: {exc}", url=url, method=method)
+
+    @staticmethod
+    def is_retryable(exc: Exception) -> bool:
+        """Check if an exception is a transient error worth retrying."""
+        if isinstance(exc, (RommServerError, RommConnectionError, RommTimeoutError)):
+            return True
+        # Backward compat for non-RomM exceptions
+        if isinstance(exc, urllib.error.HTTPError):
+            return exc.code >= 500
+        if isinstance(exc, (urllib.error.URLError, ConnectionError, TimeoutError, OSError)):
+            return True
+        return False
+
+    def with_retry(self, fn, *args, max_attempts: int = 3, base_delay: int = 1, **kwargs):
+        """Call fn(*args, **kwargs) with exponential backoff retry.
+
+        Delays: base_delay * 3^attempt (1s, 3s, 9s for defaults).
+        Only retries on transient errors (see is_retryable).
+        """
+        last_exc = None
+        for attempt in range(max_attempts):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < max_attempts - 1 and self.is_retryable(exc):
+                    delay = base_delay * (3**attempt)
+                    self._logger.debug(f"Retry {attempt + 1}/{max_attempts} after {delay}s: {exc}")
+                    time.sleep(delay)
+                else:
+                    raise
+        raise last_exc  # type: ignore[misc]  # pragma: no cover
+
+    # ------------------------------------------------------------------
+    # HTTP request methods
+    # ------------------------------------------------------------------
+
+    def request(self, path: str):
+        """GET a JSON resource from the RomM API."""
+        url = self._settings["romm_url"].rstrip("/") + path
+
+        def _do_request():
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("Authorization", self.auth_header())
+            try:
+                with urllib.request.urlopen(req, context=self.ssl_context(), timeout=30) as resp:
+                    return json.loads(resp.read().decode())
+            except RommApiError:
+                raise
+            except Exception as exc:
+                raise self.translate_http_error(exc, url, "GET") from exc
+
+        return self.with_retry(_do_request)
+
+    def download(self, path: str, dest: str, progress_callback=None):
+        """Download a file from the RomM API to a local path."""
+        encoded_path = urllib.parse.quote(path, safe="/:?=&@")
+        url = self._settings["romm_url"].rstrip("/") + encoded_path
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _do_download():
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("Authorization", self.auth_header())
+            ctx = self.ssl_context()
+            try:
+                with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+                    total = resp.headers.get("Content-Length")
+                    total = int(total) if total else 0
+                    downloaded = 0
+                    block_size = 8192
+                    with open(dest_path, "wb") as f:
+                        while True:
+                            chunk = resp.read(block_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total:
+                                progress_callback(downloaded, total)
+                if total > 0 and downloaded != total:
+                    raise IOError(f"Download incomplete: got {downloaded} bytes, expected {total}")
+                if total == 0 and downloaded == 0:
+                    raise IOError("Download produced 0 bytes (no Content-Length header and no data received)")
+            except RommApiError:
+                raise
+            except Exception as exc:
+                raise self.translate_http_error(exc, url, "GET") from exc
+
+        return self.with_retry(_do_download)
+
+    def json_request(self, path: str, data, method: str = "POST"):
+        """Send a JSON request (POST/PUT) to RomM API, return parsed response."""
+        url = self._settings["romm_url"].rstrip("/") + path
+
+        def _do_json_request():
+            body = json.dumps(data).encode("utf-8")
+            req = urllib.request.Request(url, data=body, method=method)
+            req.add_header("Content-Type", "application/json")
+            req.add_header("Authorization", self.auth_header())
+            try:
+                with urllib.request.urlopen(req, context=self.ssl_context(), timeout=30) as resp:
+                    return json.loads(resp.read().decode())
+            except RommApiError:
+                raise
+            except Exception as exc:
+                raise self.translate_http_error(exc, url, method) from exc
+
+        return self.with_retry(_do_json_request)
+
+    def post_json(self, path: str, data):
+        """POST JSON to RomM API, return parsed response."""
+        return self.json_request(path, data, method="POST")
+
+    def put_json(self, path: str, data):
+        """PUT JSON to RomM API, return parsed response."""
+        return self.json_request(path, data, method="PUT")
+
+    # Intentionally skips with_retry: POST uploads may not be idempotent.
+    # (RomM saves endpoint upserts by filename, but we err on the side of caution.)
+    def upload_multipart(self, path: str, file_path: str, method: str = "POST"):
+        """Upload a file via multipart/form-data to RomM API."""
+        boundary = uuid.uuid4().hex
+        filename = os.path.basename(file_path)
+        safe_filename = filename.replace("\r", "").replace("\n", "").replace("\0", "").replace('"', '\\"')
+
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+
+        body = b""
+        body += f"--{boundary}\r\n".encode()
+        body += f'Content-Disposition: form-data; name="saveFile"; filename="{safe_filename}"\r\n'.encode()
+        body += b"Content-Type: application/octet-stream\r\n\r\n"
+        body += file_data
+        body += f"\r\n--{boundary}--\r\n".encode()
+
+        url = self._settings["romm_url"].rstrip("/") + path
+        req = urllib.request.Request(url, data=body, method=method)
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        req.add_header("Authorization", self.auth_header())
+        try:
+            with urllib.request.urlopen(req, context=self.ssl_context(), timeout=30) as resp:
+                return json.loads(resp.read().decode())
+        except RommApiError:
+            raise
+        except Exception as exc:
+            raise self.translate_http_error(exc, url, method) from exc
