@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.12.0...decky-romm-sync-v0.13.0) (2026-03-13)
+
+
+### Features
+
+* detect and display RomM server version ([#98](https://github.com/danielcopper/decky-romm-sync/issues/98)) ([561cf0d](https://github.com/danielcopper/decky-romm-sync/commit/561cf0d923791d1535a10689579be8305a3b75ef))
+* v47 SaveApi adapter + VersionRouter + bug fixes ([#103](https://github.com/danielcopper/decky-romm-sync/issues/103)) ([cff8709](https://github.com/danielcopper/decky-romm-sync/commit/cff8709d66416b888f7bef2cf37ec6901a67a0ea))
+
+
+### Bug Fixes
+
+* retry app ID init on boot when backend isn't ready ([#95](https://github.com/danielcopper/decky-romm-sync/issues/95)) ([131279c](https://github.com/danielcopper/decky-romm-sync/commit/131279c071cc9e9f5624833974ca0e6ef584e075))
+
 ## [0.12.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.11.0...decky-romm-sync-v0.12.0) (2026-03-12)
 
 
