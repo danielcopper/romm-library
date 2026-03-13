@@ -1,3 +1,5 @@
+![decky-romm-sync](assets/store_image.png)
+
 # decky-romm-sync
 
 A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://github.com/rommapp/romm) game library to Steam as non-steam shortcuts. Games appear directly in your Steam library and launch through [RetroDECK](https://retrodeck.net/).
@@ -22,6 +24,7 @@ A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://githu
 ## Installation
 
 Both methods below require **Developer Mode** in Decky Loader:
+
 1. Open the Quick Access Menu (QAM) and select **Decky**
 2. Click the **gear icon** (top right) to open Decky settings
 3. Toggle on **Developer Mode** — a **Developer** tab will appear
