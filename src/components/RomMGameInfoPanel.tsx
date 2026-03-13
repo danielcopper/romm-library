@@ -25,7 +25,6 @@ import {
   getInstalledRom,
   checkPlatformBios,
   getSaveStatus,
-  getPendingConflicts,
   getArtworkBase64,
   getAchievements,
   getAchievementProgress,
@@ -174,21 +173,22 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           };
         }
 
-        // Build pending conflicts from cache
-        const conflicts = (cached.pending_conflicts ?? [])
-          .filter((c) => c.rom_id === romId)
-          .map((c) => ({
-            rom_id: c.rom_id,
-            filename: c.filename,
-            local_path: null,
+        // Derive conflicts from save status
+        const cachedSaveStatus = saveStatus;
+        const conflicts: PendingConflict[] = (cachedSaveStatus?.files ?? [])
+          .filter((f: any) => f.status === "conflict")
+          .map((f: any) => ({
+            rom_id: romId,
+            filename: f.filename,
+            local_path: f.local_path ?? null,
             local_hash: null,
-            local_mtime: null,
-            local_size: null,
-            server_save_id: 0,
-            server_updated_at: "",
-            server_size: null,
-            created_at: c.detected_at,
-          })) as PendingConflict[];
+            local_mtime: f.local_mtime ?? null,
+            local_size: f.local_size ?? null,
+            server_save_id: f.server_save_id ?? 0,
+            server_updated_at: f.server_updated_at ?? "",
+            server_size: f.server_size ?? null,
+            created_at: new Date().toISOString(),
+          }));
 
         // Store ra_id for tab visibility
         const raId = (cached as any).ra_id ?? null;
@@ -280,15 +280,26 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       if (detail?.type === "save_sync_settings") {
         const enabled = detail.save_sync_enabled as boolean;
         if (enabled) {
-          const [updatedStatus, updatedConflicts] = await Promise.all([
-            getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null),
-            getPendingConflicts().catch((): { conflicts: PendingConflict[] } => ({ conflicts: [] })),
-          ]);
+          const updatedStatus = await getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null);
+          const conflicts: PendingConflict[] = (updatedStatus?.files ?? [])
+            .filter((f: any) => f.status === "conflict")
+            .map((f: any) => ({
+              rom_id: romIdRef.current!,
+              filename: f.filename,
+              local_path: f.local_path ?? null,
+              local_hash: null,
+              local_mtime: f.local_mtime ?? null,
+              local_size: f.local_size ?? null,
+              server_save_id: f.server_save_id ?? 0,
+              server_updated_at: f.server_updated_at ?? "",
+              server_size: f.server_size ?? null,
+              created_at: new Date().toISOString(),
+            }));
           setState((prev) => ({
             ...prev,
             saveSyncEnabled: true,
             saveStatus: updatedStatus,
-            conflicts: updatedConflicts.conflicts.filter((c) => c.rom_id === romIdRef.current),
+            conflicts,
           }));
         } else {
           setState((prev) => ({ ...prev, saveSyncEnabled: false }));
@@ -297,14 +308,25 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       }
 
       if (detail?.type === "save_sync" && (!detail.rom_id || detail.rom_id === romIdRef.current)) {
-        const [updatedStatus, updatedConflicts] = await Promise.all([
-          getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null),
-          getPendingConflicts().catch((): { conflicts: PendingConflict[] } => ({ conflicts: [] })),
-        ]);
+        const updatedStatus = await getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null);
+        const conflicts: PendingConflict[] = (updatedStatus?.files ?? [])
+          .filter((f: any) => f.status === "conflict")
+          .map((f: any) => ({
+            rom_id: romIdRef.current!,
+            filename: f.filename,
+            local_path: f.local_path ?? null,
+            local_hash: null,
+            local_mtime: f.local_mtime ?? null,
+            local_size: f.local_size ?? null,
+            server_save_id: f.server_save_id ?? 0,
+            server_updated_at: f.server_updated_at ?? "",
+            server_size: f.server_size ?? null,
+            created_at: new Date().toISOString(),
+          }));
         setState((prev) => ({
           ...prev,
           saveStatus: updatedStatus,
-          conflicts: updatedConflicts.conflicts.filter((c) => c.rom_id === romIdRef.current),
+          conflicts,
         }));
       } else if (detail?.type === "bios" && detail.platform_slug) {
         const updated = await checkPlatformBios(detail.platform_slug).catch((): BiosStatus => ({ needs_bios: false }));

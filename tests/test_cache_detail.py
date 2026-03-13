@@ -106,10 +106,6 @@ class TestGetCachedGameDetailFound:
             },
             "last_sync_check_at": "2025-01-01T00:00:00Z",
         }
-        plugin._save_sync_state["pending_conflicts"] = [
-            {"rom_id": 123, "filename": "smw.srm", "local_path": "/saves/smw.srm"},
-            {"rom_id": 456, "filename": "other.srm", "local_path": "/saves/other.srm"},
-        ]
         plugin._metadata_cache["123"] = {
             "summary": "Classic SNES platformer",
             "genres": ["Platformer"],
@@ -129,8 +125,6 @@ class TestGetCachedGameDetailFound:
         assert result["save_status"]["files"][0]["filename"] == "smw.srm"
         assert result["save_status"]["files"][0]["status"] == "synced"
         assert result["save_status"]["last_sync_check_at"] == "2025-01-01T00:00:00Z"
-        assert len(result["pending_conflicts"]) == 1
-        assert result["pending_conflicts"][0]["rom_id"] == 123
         assert result["metadata"]["summary"] == "Classic SNES platformer"
         assert result["bios_status"] is None
 
@@ -194,8 +188,8 @@ class TestGetCachedGameDetailPartialData:
         assert result["metadata"] is None
 
     @pytest.mark.asyncio
-    async def test_no_conflicts(self, plugin):
-        """No pending conflicts returns empty list."""
+    async def test_no_pending_conflicts_key(self, plugin):
+        """pending_conflicts is no longer in the response (conflicts are inline)."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
             "name": "Zelda",
@@ -204,7 +198,7 @@ class TestGetCachedGameDetailPartialData:
         }
         result = await plugin.get_cached_game_detail(50000)
         assert result["found"] is True
-        assert result["pending_conflicts"] == []
+        assert "pending_conflicts" not in result
 
     @pytest.mark.asyncio
     async def test_save_sync_disabled(self, plugin):
@@ -265,45 +259,32 @@ class TestGetCachedGameDetailInstalled:
 
 
 class TestGetCachedGameDetailConflictFiltering:
-    """Test that pending_conflicts are filtered to the correct rom_id."""
+    """pending_conflicts was removed from get_cached_game_detail response."""
 
     @pytest.mark.asyncio
-    async def test_filters_by_rom_id(self, plugin):
-        """Only conflicts matching this rom_id are returned."""
+    async def test_no_pending_conflicts_in_response(self, plugin):
+        """pending_conflicts key is no longer in the response."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
             "name": "Game A",
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        plugin._save_sync_state["pending_conflicts"] = [
-            {"rom_id": 10, "filename": "a.srm"},
-            {"rom_id": 20, "filename": "b.srm"},
-            {"rom_id": 10, "filename": "c.srm"},
-            {"rom_id": 30, "filename": "d.srm"},
-        ]
         result = await plugin.get_cached_game_detail(50000)
-        assert len(result["pending_conflicts"]) == 2
-        assert all(c["rom_id"] == 10 for c in result["pending_conflicts"])
-        filenames = [c["filename"] for c in result["pending_conflicts"]]
-        assert "a.srm" in filenames
-        assert "c.srm" in filenames
+        assert "pending_conflicts" not in result
 
     @pytest.mark.asyncio
-    async def test_no_matching_conflicts(self, plugin):
-        """Conflicts exist for other roms but not this one."""
+    async def test_response_still_has_save_status(self, plugin):
+        """Response still includes save status fields."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
             "name": "Game A",
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        plugin._save_sync_state["pending_conflicts"] = [
-            {"rom_id": 20, "filename": "b.srm"},
-            {"rom_id": 30, "filename": "d.srm"},
-        ]
         result = await plugin.get_cached_game_detail(50000)
-        assert result["pending_conflicts"] == []
+        assert result["found"] is True
+        assert "save_sync_enabled" in result
 
     @pytest.mark.asyncio
     async def test_app_id_as_string(self, plugin):

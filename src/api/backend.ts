@@ -18,7 +18,7 @@ export interface CachedGameDetail {
   installed?: boolean;
   save_sync_enabled?: boolean;
   save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
-  pending_conflicts?: Array<{ rom_id: number; filename: string; detected_at: string }>;
+
   metadata?: Record<string, unknown> | null;
   bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string; cores?: Record<string, { required: boolean }>; used_by_active?: boolean }> } | null;
   rom_file?: string;
@@ -103,10 +103,11 @@ export const ensureDeviceRegistered = callable<[], { success: boolean; device_id
 export const getSaveStatus = callable<[number], SaveStatus>("get_save_status");
 export const checkSaveStatusLightweight = callable<[number], SaveStatus>("check_save_status_lightweight");
 export const preLaunchSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: PendingConflict[] }>("pre_launch_sync");
-export const postExitSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[] }>("post_exit_sync");
+export const postExitSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: PendingConflict[] }>("post_exit_sync");
 export const syncRomSaves = callable<[number], { success: boolean; message: string; synced: number; errors?: string[] }>("sync_rom_saves");
 export const syncAllSaves = callable<[], { success: boolean; message: string; synced: number; conflicts: number }>("sync_all_saves");
-export const resolveConflict = callable<[number, string, string], { success: boolean; message: string }>("resolve_conflict");
+export const resolveConflict = callable<[number, string, string, number, string], { success: boolean; message: string }>("resolve_conflict");
+/** @deprecated Conflicts are now returned inline from sync operations. Always returns empty. */
 export const getPendingConflicts = callable<[], { conflicts: PendingConflict[] }>("get_pending_conflicts");
 export const recordSessionStart = callable<[number], { success: boolean }>("record_session_start");
 export const recordSessionEnd = callable<[number], { success: boolean; duration_sec?: number; total_seconds?: number; session_count?: number; message?: string }>("record_session_end");

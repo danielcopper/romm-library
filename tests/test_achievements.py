@@ -948,7 +948,7 @@ class TestGetCachedGameDetailAchievements:
                 "cached_at": time.time(),
             },
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}, "pending_conflicts": []}
+        plugin._save_sync_state = {"settings": {}, "saves": {}}
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -968,7 +968,7 @@ class TestGetCachedGameDetailAchievements:
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}, "pending_conflicts": []}
+        plugin._save_sync_state = {"settings": {}, "saves": {}}
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -984,7 +984,7 @@ class TestGetCachedGameDetailAchievements:
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}, "pending_conflicts": []}
+        plugin._save_sync_state = {"settings": {}, "saves": {}}
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -1002,7 +1002,7 @@ class TestGetCachedGameDetailAchievements:
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}, "pending_conflicts": []}
+        plugin._save_sync_state = {"settings": {}, "saves": {}}
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -1028,7 +1028,7 @@ class TestGetCachedGameDetailAchievements:
                 "cached_at": time.time() - (2 * 3600),  # expired
             },
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}, "pending_conflicts": []}
+        plugin._save_sync_state = {"settings": {}, "saves": {}}
 
         result = await plugin.get_cached_game_detail(100)
 

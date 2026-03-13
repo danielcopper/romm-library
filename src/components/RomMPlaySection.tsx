@@ -29,7 +29,6 @@ import {
   getCachedGameDetail,
   _cachedGameDetailCache,
   testConnection,
-  checkSaveStatusLightweight,
   getSaveStatus,
   checkPlatformBios,
   getSgdbArtworkBase64,
@@ -443,7 +442,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         const romId = romIdRef.current;
         if (connected && romId && info.saveSyncEnabled) {
           try {
-            const saveStatus = await checkSaveStatusLightweight(romId);
+            const saveStatus = await getSaveStatus(romId);
             if (cancelled) return;
             const hasConflict = saveStatus?.files?.some((f: { status: string }) => f.status === "conflict") ?? false;
             // Always notify CustomPlayButton with fresh conflict status

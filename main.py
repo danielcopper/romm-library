@@ -519,9 +519,6 @@ class Plugin(
                 "last_sync_check_at": raw_save.get("last_sync_check_at"),
             }
 
-        # Pending conflicts for this rom
-        pending_conflicts = [c for c in self._save_sync_state.get("pending_conflicts", []) if c.get("rom_id") == rom_id]
-
         # Metadata from cache
         metadata = self._metadata_cache.get(rom_id_str)
 
@@ -581,7 +578,6 @@ class Plugin(
             "installed": installed,
             "save_sync_enabled": save_sync_enabled,
             "save_status": save_status,
-            "pending_conflicts": pending_conflicts,
             "metadata": metadata,
             "bios_status": bios_status,
             "rom_file": rom_file,

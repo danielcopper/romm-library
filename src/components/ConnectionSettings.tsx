@@ -25,15 +25,13 @@ import {
   getSaveSyncSettings,
   updateSaveSyncSettings,
   syncAllSaves,
-  getPendingConflicts,
   saveLogLevel,
   fixRetroarchInputDriver,
   logError,
 } from "../api/backend";
 import type { MigrationStatus } from "../api/backend";
 import { getMigrationState, setMigrationStatus, clearMigration, onMigrationChange } from "../utils/migrationStore";
-import { showConflictResolutionModal } from "./ConflictModal";
-import type { SaveSyncSettings as SaveSyncSettingsType, PendingConflict, ConflictMode, RetroArchInputCheck } from "../types";
+import type { SaveSyncSettings as SaveSyncSettingsType, ConflictMode, RetroArchInputCheck } from "../types";
 
 // Module-level state survives component remounts (modal close can remount QAM)
 const pendingEdits: { url?: string; username?: string; password?: string } = {};
@@ -106,23 +104,6 @@ const conflictModeOptions = [
   { data: "always_download" as ConflictMode, label: "Always Download" },
 ];
 
-function formatTimeAgo(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  } catch {
-    return iso;
-  }
-}
-
 interface ConnectionSettingsProps {
   onBack: () => void;
 }
@@ -144,11 +125,9 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
 
   // Save Sync state
   const [saveSyncSettings, setSaveSyncSettings] = useState<SaveSyncSettingsType | null>(null);
-  const [saveSyncConflicts, setSaveSyncConflicts] = useState<PendingConflict[]>([]);
   const [saveSyncToggleKey, setSaveSyncToggleKey] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState("");
-  const [resolving, setResolving] = useState<string | null>(null);
 
   // Controller state
   const [steamInputMode, setSteamInputMode] = useState("default");
@@ -194,7 +173,6 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
     getSaveSyncSettings()
       .then(setSaveSyncSettings)
       .catch((e) => logError(`Failed to load save sync settings: ${e}`));
-    loadSaveSyncConflicts();
 
     const unsubMigration = onMigrationChange(() => setMigration(getMigrationState()));
     return () => unsubMigration();
@@ -229,16 +207,6 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
     setLoading(false);
   };
 
-  // Save Sync helpers
-  const loadSaveSyncConflicts = async () => {
-    try {
-      const result = await getPendingConflicts();
-      setSaveSyncConflicts(result.conflicts);
-    } catch (e) {
-      logError(`Failed to load conflicts: ${e}`);
-    }
-  };
-
   const handleSaveSyncSettingChange = async (partial: Partial<SaveSyncSettingsType>) => {
     if (!saveSyncSettings) return;
     const updated = { ...saveSyncSettings, ...partial };
@@ -262,27 +230,12 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
       const result = await syncAllSaves();
       setSyncStatus(result.message);
       window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
-      if (result.conflicts > 0) {
-        await loadSaveSyncConflicts();
-      }
+
+
     } catch {
       setSyncStatus("Sync failed");
     }
     setSyncing(false);
-  };
-
-  const handleResolveConflict = async (conflict: PendingConflict) => {
-    const key = `${conflict.rom_id}:${conflict.filename}`;
-    setResolving(key);
-
-    const resolution = await showConflictResolutionModal([conflict]);
-    if (resolution === "use_local" || resolution === "use_server") {
-      setSaveSyncConflicts((prev) =>
-        prev.filter((c) => !(c.rom_id === conflict.rom_id && c.filename === conflict.filename)),
-      );
-    }
-
-    setResolving(null);
   };
 
   const handleToggleSaveSync = (value: boolean) => {
@@ -597,30 +550,6 @@ export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
           </PanelSectionRow>
         )}
       </PanelSection>
-      {saveSyncEnabled && saveSyncConflicts.length > 0 && (
-        <PanelSection title={`Conflicts (${saveSyncConflicts.length})`}>
-          {saveSyncConflicts.map((c) => {
-            const key = `${c.rom_id}:${c.filename}`;
-            const isResolving = resolving === key;
-            return (
-              <PanelSectionRow key={key}>
-                <Field
-                  label={c.filename}
-                  description={`ROM #${c.rom_id} \u2014 detected ${formatTimeAgo(c.created_at)}`}
-                >
-                  <ButtonItem
-                    layout="below"
-                    onClick={() => handleResolveConflict(c)}
-                    disabled={isResolving}
-                  >
-                    {isResolving ? "Resolving..." : "Resolve"}
-                  </ButtonItem>
-                </Field>
-              </PanelSectionRow>
-            );
-          })}
-        </PanelSection>
-      )}
       <PanelSection title="Controller">
         <PanelSectionRow>
           <DropdownItem

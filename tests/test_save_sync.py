@@ -112,7 +112,7 @@ class TestInitSaveSyncState:
         assert s["device_name"] is None
         assert s["saves"] == {}
         assert s["playtime"] == {}
-        assert s["pending_conflicts"] == []
+        assert "pending_conflicts" not in s
         assert s["settings"]["conflict_mode"] == "ask_me"
         assert s["settings"]["sync_before_launch"] is True
         assert s["settings"]["sync_after_exit"] is True
@@ -147,7 +147,6 @@ class TestSaveSyncStatePersistence:
             "device_name": "steamdeck",
             "saves": {"10": {"files": {}, "emulator": "retroarch", "system": "n64"}},
             "playtime": {"10": {"total_seconds": 3600}},
-            "pending_conflicts": [],
             "settings": {"conflict_mode": "always_upload", "sync_before_launch": False},
         }
         (tmp_path / "save_sync_state.json").write_text(json.dumps(state_data))
@@ -645,8 +644,7 @@ class TestPreLaunchSync:
         ):
             result = await plugin.pre_launch_sync(42)
 
-        assert len(plugin._save_sync_state["pending_conflicts"]) >= 1
-        # Conflicts must be returned in the response so frontend doesn't need a separate call
+        # Conflicts are returned in the response (no longer stored in state)
         assert "conflicts" in result
         assert len(result["conflicts"]) >= 1
         assert result["conflicts"][0]["rom_id"] == 42
@@ -708,16 +706,6 @@ class TestPreLaunchSync:
             "emulator": "retroarch",
             "system": "gba",
         }
-        # Pre-existing conflict for a DIFFERENT ROM
-        plugin._save_sync_state["pending_conflicts"].append(
-            {
-                "rom_id": 999,
-                "filename": "other.srm",
-                "local_path": "/tmp/other.srm",
-                "local_hash": "abc",
-            }
-        )
-
         server = _server_save(updated_at="2026-02-17T12:00:00Z")
 
         with (
@@ -726,7 +714,7 @@ class TestPreLaunchSync:
         ):
             result = await plugin.pre_launch_sync(42)
 
-        # Should return conflict for ROM 42 only, not ROM 999
+        # Conflicts returned inline only contain ROM 42
         assert len(result["conflicts"]) >= 1
         for c in result["conflicts"]:
             assert c["rom_id"] == 42
@@ -850,7 +838,7 @@ class TestPostExitSync:
 
     @pytest.mark.asyncio
     async def test_409_conflict_queued(self, plugin, tmp_path):
-        """409 during upload queues conflict in pending_conflicts."""
+        """409 during upload returns errors (conflicts handled as errors)."""
         from lib.errors import RommConflictError
 
         _install_rom(plugin, tmp_path)
@@ -881,9 +869,10 @@ class TestPostExitSync:
             patch.object(plugin, "_romm_list_saves", return_value=[server]),
             patch.object(plugin, "_romm_upload_save", side_effect=error_409),
         ):
-            await plugin.post_exit_sync(42)
+            result = await plugin.post_exit_sync(42)
 
-        assert len(plugin._save_sync_state["pending_conflicts"]) >= 1
+        # 409 errors are captured as conflicts in return value
+        assert len(result.get("conflicts", [])) >= 1
 
     @pytest.mark.asyncio
     async def test_downloads_server_newer_save_bidirectional(self, plugin, tmp_path):
@@ -1629,14 +1618,31 @@ class TestSyncAllSaves:
 
     @pytest.mark.asyncio
     async def test_returns_conflicts_count(self, plugin, tmp_path):
-        """sync_all_saves returns conflicts count from pending_conflicts."""
-        plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {"rom_id": 1, "filename": "a.srm"},
-            {"rom_id": 2, "filename": "b.srm"},
-        ]
+        """sync_all_saves returns conflicts count from _sync_rom_saves return values."""
+        # Install 2 ROMs with conflicting saves (first sync, ask_me mode)
+        _install_rom(plugin, tmp_path, rom_id=1, file_name="game_a.gba")
+        _install_rom(plugin, tmp_path, rom_id=2, file_name="game_b.gba")
+        _create_save(tmp_path, rom_name="game_a", content=b"local a")
+        _create_save(tmp_path, rom_name="game_b", content=b"local b")
 
-        result = await plugin.sync_all_saves()
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
+
+        server_a = _server_save(save_id=100, rom_id=1, filename="game_a.srm")
+        server_b = _server_save(save_id=101, rom_id=2, filename="game_b.srm")
+
+        def mock_list(rom_id):
+            if rom_id == 1:
+                return [server_a]
+            elif rom_id == 2:
+                return [server_b]
+            return []
+
+        with (
+            patch.object(plugin, "_romm_list_saves", side_effect=mock_list),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+        ):
+            result = await plugin.sync_all_saves()
 
         assert "conflicts" in result
         assert result["conflicts"] == 2
@@ -1744,20 +1750,15 @@ class TestPendingConflicts:
     """Tests for conflict queue management."""
 
     @pytest.mark.asyncio
-    async def test_get_pending_conflicts(self, plugin):
-        """Returns list of unresolved conflicts."""
-        plugin._save_sync_state["pending_conflicts"] = [
-            {"rom_id": 42, "filename": "pokemon.srm", "local_hash": "abc"},
-        ]
-
+    async def test_get_pending_conflicts_deprecated_stub(self, plugin):
+        """Deprecated stub always returns empty list."""
         result = await plugin.get_pending_conflicts()
 
-        assert len(result["conflicts"]) == 1
-        assert result["conflicts"][0]["rom_id"] == 42
+        assert result["conflicts"] == []
 
     @pytest.mark.asyncio
     async def test_get_empty_conflicts(self, plugin):
-        """Returns empty list when no conflicts."""
+        """Returns empty list (deprecated stub)."""
         result = await plugin.get_pending_conflicts()
 
         assert result["conflicts"] == []
@@ -1769,17 +1770,6 @@ class TestPendingConflicts:
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(save_file),
-                "local_hash": "abc",
-                "server_save_id": 100,
-                "server_updated_at": "2026-02-17T06:00:00Z",
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
 
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
@@ -1787,10 +1777,15 @@ class TestPendingConflicts:
             patch.object(plugin, "_romm_request", return_value={"id": 100}),
             patch.object(plugin, "_romm_upload_save", return_value=upload_response),
         ):
-            result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
+            result = await plugin.resolve_conflict(
+                42,
+                "pokemon.srm",
+                "upload",
+                server_save_id=100,
+                local_path=str(save_file),
+            )
 
         assert result["success"] is True
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
 
     @pytest.mark.asyncio
     async def test_resolve_download(self, plugin, tmp_path):
@@ -1800,17 +1795,6 @@ class TestPendingConflicts:
         saves_dir.mkdir(parents=True, exist_ok=True)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(saves_dir / "pokemon.srm"),
-                "local_hash": "abc",
-                "server_save_id": 100,
-                "server_updated_at": "2026-02-17T06:00:00Z",
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
 
         server_save = _server_save()
 
@@ -1822,10 +1806,15 @@ class TestPendingConflicts:
             patch.object(plugin, "_romm_request", return_value=server_save),
             patch.object(plugin, "_romm_download_save", side_effect=fake_download),
         ):
-            result = await plugin.resolve_conflict(42, "pokemon.srm", "download")
+            result = await plugin.resolve_conflict(
+                42,
+                "pokemon.srm",
+                "download",
+                server_save_id=100,
+                local_path=str(saves_dir / "pokemon.srm"),
+            )
 
         assert result["success"] is True
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
 
     @pytest.mark.asyncio
     async def test_resolve_invalid_resolution(self, plugin):
@@ -1835,23 +1824,30 @@ class TestPendingConflicts:
         assert result["success"] is False
 
     @pytest.mark.asyncio
-    async def test_resolve_not_found(self, plugin):
-        """Resolving a non-existent conflict returns failure."""
-        plugin._save_sync_state["pending_conflicts"] = []
-
+    async def test_resolve_missing_server_save_id(self, plugin):
+        """Resolving without server_save_id returns failure."""
         result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
 
         assert result["success"] is False
 
-    def test_add_pending_conflict_no_duplicates(self, plugin, tmp_path):
-        """Adding same conflict twice doesn't create duplicates."""
-        save_file = _create_save(tmp_path)
+    def test_sync_rom_saves_returns_conflicts(self, plugin, tmp_path):
+        """_sync_rom_saves returns conflict entries in the conflicts list."""
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path, content=b"local data")
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
+
         server = _server_save()
 
-        plugin._add_pending_conflict(42, "pokemon.srm", str(save_file), server)
-        plugin._add_pending_conflict(42, "pokemon.srm", str(save_file), server)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+        ):
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
+        assert len(conflicts) == 1
+        assert conflicts[0]["rom_id"] == 42
 
 
 # ============================================================================
@@ -1933,7 +1929,7 @@ class TestRetryMRO:
             patch.object(plugin, "_romm_upload_save", return_value=upload_resp),
             patch("time.sleep"),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         assert call_count[0] == 2  # retried once
         assert synced >= 1
@@ -1984,17 +1980,6 @@ class TestRetryMRO:
         saves_dir.mkdir(parents=True, exist_ok=True)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(saves_dir / "pokemon.srm"),
-                "local_hash": "abc",
-                "server_save_id": 100,
-                "server_updated_at": "2026-02-17T06:00:00Z",
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
 
         call_count = [0]
         server = _server_save()
@@ -2014,7 +1999,11 @@ class TestRetryMRO:
             patch.object(plugin, "_romm_download_save", side_effect=fake_download),
             patch("time.sleep"),
         ):
-            result = asyncio.get_event_loop().run_until_complete(plugin.resolve_conflict(42, "pokemon.srm", "download"))
+            result = asyncio.get_event_loop().run_until_complete(
+                plugin.resolve_conflict(
+                    42, "pokemon.srm", "download", server_save_id=100, local_path=str(saves_dir / "pokemon.srm")
+                )
+            )
 
         assert result["success"] is True
         assert call_count[0] == 2  # retried the metadata fetch
@@ -2025,17 +2014,6 @@ class TestRetryMRO:
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(save_file),
-                "local_hash": "abc",
-                "server_save_id": 100,
-                "server_updated_at": "2026-02-17T06:00:00Z",
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
 
         call_count = [0]
 
@@ -2052,7 +2030,9 @@ class TestRetryMRO:
             patch.object(plugin, "_romm_upload_save", return_value=upload_response),
             patch("time.sleep"),
         ):
-            result = asyncio.get_event_loop().run_until_complete(plugin.resolve_conflict(42, "pokemon.srm", "upload"))
+            result = asyncio.get_event_loop().run_until_complete(
+                plugin.resolve_conflict(42, "pokemon.srm", "upload", server_save_id=100, local_path=str(save_file))
+            )
 
         assert result["success"] is True
         assert call_count[0] == 2  # retried the metadata fetch
@@ -2547,7 +2527,6 @@ class TestFirstSyncConflictResolution:
             result = await plugin.sync_rom_saves(42)
 
         # Should auto-upload, not queue conflict
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
         assert result["synced"] == 1
 
     @pytest.mark.asyncio
@@ -2571,7 +2550,7 @@ class TestFirstSyncConflictResolution:
             result = await plugin.sync_rom_saves(42)
 
         # Local is newer → should auto-upload, not queue conflict
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(result["conflicts"]) == 0
         assert result["synced"] == 1
 
     @pytest.mark.asyncio
@@ -2589,10 +2568,10 @@ class TestFirstSyncConflictResolution:
             patch.object(plugin, "_romm_list_saves", return_value=[server]),
             patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
         ):
-            await plugin.sync_rom_saves(42)
+            result = await plugin.sync_rom_saves(42)
 
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
-        conflict = plugin._save_sync_state["pending_conflicts"][0]
+        assert len(result["conflicts"]) == 1
+        conflict = result["conflicts"][0]
         assert conflict["rom_id"] == 42
         assert conflict["filename"] == "pokemon.srm"
 
@@ -2619,7 +2598,7 @@ class TestFirstSyncConflictResolution:
             result = await plugin.sync_rom_saves(42)
 
         # Should auto-download, not queue conflict
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(result["conflicts"]) == 0
         assert result["synced"] == 1
 
     @pytest.mark.asyncio
@@ -2646,7 +2625,7 @@ class TestFirstSyncConflictResolution:
             result = await plugin.sync_rom_saves(42)
 
         # Server is newer → should auto-download
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(result["conflicts"]) == 0
         assert result["synced"] == 1
 
     @pytest.mark.asyncio
@@ -2667,7 +2646,7 @@ class TestFirstSyncConflictResolution:
         ):
             result = await plugin.sync_rom_saves(42)
 
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(result["conflicts"]) == 0
         assert result["synced"] == 0
 
     @pytest.mark.asyncio
@@ -2688,7 +2667,7 @@ class TestFirstSyncConflictResolution:
 
         assert result["synced"] == 1
         mock_upload.assert_called_once()
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(result["conflicts"]) == 0
 
     @pytest.mark.asyncio
     async def test_first_sync_server_only_downloads(self, plugin, tmp_path):
@@ -2712,7 +2691,7 @@ class TestFirstSyncConflictResolution:
 
         assert result["synced"] == 1
         assert (saves_dir / "pokemon.srm").exists()
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(result["conflicts"]) == 0
 
 
 # ============================================================================
@@ -2933,7 +2912,7 @@ class TestDownloadFailureHandling:
             patch.object(plugin, "_romm_download_save", side_effect=Exception("download failed")),
             patch("time.sleep"),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         assert len(errors) >= 1
         assert not tmp_file.exists()
@@ -3133,14 +3112,14 @@ class TestStateRecovery:
             patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"),
             patch.object(plugin, "_romm_upload_save", return_value=upload_response),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         assert synced == 1
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(conflicts) == 0
 
     @pytest.mark.asyncio
     async def test_complete_state_loss_different_content_ask_me_queues_conflict(self, plugin, tmp_path):
-        """State file lost, both exist with different content, ask_me → conflict queued."""
+        """State file lost, both exist with different content, ask_me → conflict returned."""
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path, content=b"local content")
 
@@ -3154,11 +3133,11 @@ class TestStateRecovery:
             patch.object(plugin, "_romm_list_saves", return_value=[server]),
             patch.object(plugin, "_get_server_save_hash", return_value="different_server_hash"),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         assert synced == 0
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
-        conflict = plugin._save_sync_state["pending_conflicts"][0]
+        assert len(conflicts) == 1
+        conflict = conflicts[0]
         assert conflict["rom_id"] == 42
         assert conflict["filename"] == "pokemon.srm"
 
@@ -3178,10 +3157,10 @@ class TestStateRecovery:
             patch.object(plugin, "_romm_list_saves", return_value=[server]),
             patch.object(plugin, "_get_server_save_hash", return_value=local_hash),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         assert synced == 0
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert len(conflicts) == 0
 
     @pytest.mark.asyncio
     async def test_partial_state_missing_rom_treated_as_first_sync(self, plugin, tmp_path):
@@ -3222,11 +3201,11 @@ class TestStateRecovery:
             patch.object(plugin, "_romm_list_saves", side_effect=mock_list),
             patch.object(plugin, "_get_server_save_hash", return_value="different_zelda_hash"),
         ):
-            await plugin.sync_all_saves()
+            result = await plugin.sync_all_saves()
 
         # ROM 42: unchanged on both sides → skip
-        # ROM 43: first sync, different content, default ask_me → conflict queued
-        conflicts = plugin._save_sync_state["pending_conflicts"]
+        # ROM 43: first sync, different content, default ask_me → conflict returned
+        conflicts = result.get("conflicts_list", [])
         assert any(c["rom_id"] == 43 and c["filename"] == "zelda.srm" for c in conflicts)
         # ROM 42 should NOT be in conflicts
         assert not any(c["rom_id"] == 42 for c in conflicts)
@@ -3245,10 +3224,10 @@ class TestStateRecovery:
             patch.object(plugin, "_romm_list_saves", return_value=[server]),
             patch.object(plugin, "_get_server_save_hash", return_value=None),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         # Can't verify → conflict
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
+        assert len(conflicts) == 1
 
 
 # ============================================================================
@@ -3331,7 +3310,7 @@ class TestBidirectionalSync:
             patch.object(plugin, "_romm_list_saves", return_value=[]),
             patch.object(plugin, "_romm_upload_save", return_value=upload_response),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         assert synced == 1
 
@@ -3352,7 +3331,7 @@ class TestBidirectionalSync:
             patch.object(plugin, "_romm_list_saves", return_value=[server]),
             patch.object(plugin, "_romm_download_save", side_effect=fake_download),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         assert synced == 1
 
@@ -3376,7 +3355,7 @@ class TestBidirectionalSync:
             patch.object(plugin, "_romm_upload_save", return_value=upload_response),
             patch.object(plugin, "_romm_download_save", side_effect=fake_download),
         ):
-            synced, errors = plugin._sync_rom_saves(42)
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
         # pokemon.srm uploaded + zelda.srm downloaded
         assert synced == 2
@@ -3468,51 +3447,38 @@ class TestResolveConflictEdgeCases:
 
     @pytest.mark.asyncio
     async def test_resolve_upload_without_server_save_id(self, plugin, tmp_path):
-        """Resolving upload when conflict has no server_save_id uses POST upsert."""
+        """Resolving upload without server_save_id returns error."""
         _install_rom(plugin, tmp_path)
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(save_file),
-                "local_hash": "abc",
-                "server_save_id": None,  # No server save ID (state lost)
-                "server_updated_at": "",
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
 
-        upload_response = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
+        result = await plugin.resolve_conflict(
+            42,
+            "pokemon.srm",
+            "upload",
+            server_save_id=None,
+            local_path=str(save_file),
+        )
 
-        with patch.object(plugin, "_romm_upload_save", return_value=upload_response) as mock_upload:
-            result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
-
-        assert result["success"] is True
-        # Should use POST (no save_id → None → uses POST)
-        assert mock_upload.call_args.args[3] is None  # save_id arg
+        assert result["success"] is False
+        assert "server_save_id" in result["message"].lower()
 
     @pytest.mark.asyncio
     async def test_resolve_download_missing_server_save_id(self, plugin, tmp_path):
         """Resolving download when server_save_id is missing fails gracefully."""
         _install_rom(plugin, tmp_path)
 
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
-                "server_save_id": None,
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
-
-        result = await plugin.resolve_conflict(42, "pokemon.srm", "download")
+        result = await plugin.resolve_conflict(
+            42,
+            "pokemon.srm",
+            "download",
+            server_save_id=None,
+            local_path=str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
+        )
 
         assert result["success"] is False
-        assert "no server save" in result["message"].lower()
+        assert "server_save_id" in result["message"].lower()
 
     @pytest.mark.asyncio
     async def test_resolve_upload_local_file_deleted(self, plugin, tmp_path):
@@ -3520,47 +3486,24 @@ class TestResolveConflictEdgeCases:
         _install_rom(plugin, tmp_path)
         # Note: no save file created on disk
 
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
-                "local_hash": "abc",
-                "server_save_id": 100,
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
-
-        result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
+        result = await plugin.resolve_conflict(
+            42,
+            "pokemon.srm",
+            "upload",
+            server_save_id=100,
+            local_path=str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
+        )
 
         assert result["success"] is False
         assert "not found" in result["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_resolve_conflict_removes_only_matching(self, plugin, tmp_path):
-        """Resolving one conflict leaves other conflicts intact."""
+    async def test_resolve_conflict_succeeds_with_valid_params(self, plugin, tmp_path):
+        """Resolving a conflict with valid params returns success."""
         _install_rom(plugin, tmp_path)
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(save_file),
-                "local_hash": "abc",
-                "server_save_id": 100,
-                "created_at": "2026-02-17T12:00:00Z",
-            },
-            {
-                "rom_id": 99,
-                "filename": "zelda.srm",
-                "local_path": "/some/other/path",
-                "local_hash": "def",
-                "server_save_id": 200,
-                "created_at": "2026-02-17T12:00:00Z",
-            },
-        ]
 
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
@@ -3568,12 +3511,15 @@ class TestResolveConflictEdgeCases:
             patch.object(plugin, "_romm_request", return_value={"id": 100}),
             patch.object(plugin, "_romm_upload_save", return_value=upload_response),
         ):
-            result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
+            result = await plugin.resolve_conflict(
+                42,
+                "pokemon.srm",
+                "upload",
+                server_save_id=100,
+                local_path=str(save_file),
+            )
 
         assert result["success"] is True
-        remaining = plugin._save_sync_state["pending_conflicts"]
-        assert len(remaining) == 1
-        assert remaining[0]["rom_id"] == 99
 
 
 # ============================================================================
@@ -3649,17 +3595,27 @@ class TestClockSkewBoundary:
 # ============================================================================
 
 
-class TestAddPendingConflictMetadata:
-    """Tests that _add_pending_conflict captures complete metadata."""
+class TestConflictMetadata:
+    """Tests that _sync_rom_saves returns conflicts with complete metadata."""
 
-    def test_captures_local_file_metadata(self, plugin, tmp_path):
+    def test_conflict_captures_local_file_metadata(self, plugin, tmp_path):
         """Conflict entry includes local hash, mtime, and size."""
-        save_file = _create_save(tmp_path, content=b"test data")
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path, content=b"test data")
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
+
         server = _server_save()
 
-        plugin._add_pending_conflict(42, "pokemon.srm", str(save_file), server)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+        ):
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
-        conflict = plugin._save_sync_state["pending_conflicts"][0]
+        assert len(conflicts) == 1
+        conflict = conflicts[0]
         assert conflict["local_hash"] is not None
         assert conflict["local_mtime"] is not None
         assert conflict["local_size"] is not None
@@ -3667,28 +3623,48 @@ class TestAddPendingConflictMetadata:
         # Verify mtime is ISO format
         datetime.fromisoformat(conflict["local_mtime"])
 
-    def test_captures_server_metadata(self, plugin, tmp_path):
+    def test_conflict_captures_server_metadata(self, plugin, tmp_path):
         """Conflict entry includes server save_id, updated_at, and size."""
-        save_file = _create_save(tmp_path)
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path)
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
+
         server = _server_save(save_id=123, updated_at="2026-02-17T12:00:00Z", file_size_bytes=2048)
 
-        plugin._add_pending_conflict(42, "pokemon.srm", str(save_file), server)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+        ):
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
-        conflict = plugin._save_sync_state["pending_conflicts"][0]
+        assert len(conflicts) == 1
+        conflict = conflicts[0]
         assert conflict["server_save_id"] == 123
         assert conflict["server_updated_at"] == "2026-02-17T12:00:00Z"
         assert conflict["server_size"] == 2048
 
-    def test_handles_nonexistent_local_file(self, plugin):
-        """Conflict for non-existent local file stores None for local metadata."""
+    def test_conflict_has_created_at(self, plugin, tmp_path):
+        """Conflict entry includes created_at timestamp."""
+        _install_rom(plugin, tmp_path)
+        _create_save(tmp_path)
+
+        plugin._save_sync_state["device_id"] = "dev-1"
+        plugin._save_sync_state["settings"]["conflict_mode"] = "ask_me"
+
         server = _server_save()
 
-        plugin._add_pending_conflict(42, "pokemon.srm", "/nonexistent/path.srm", server)
+        with (
+            patch.object(plugin, "_romm_list_saves", return_value=[server]),
+            patch.object(plugin, "_get_server_save_hash", return_value="different_hash"),
+        ):
+            synced, errors, conflicts = plugin._sync_rom_saves(42)
 
-        conflict = plugin._save_sync_state["pending_conflicts"][0]
-        assert conflict["local_hash"] is None
-        assert conflict["local_mtime"] is None
-        assert conflict["local_size"] is None
+        assert len(conflicts) == 1
+        conflict = conflicts[0]
+        assert conflict["created_at"] is not None
+        datetime.fromisoformat(conflict["created_at"])
 
 
 # ============================================================================
@@ -3788,72 +3764,48 @@ class TestResolveConflictFailurePreservation:
     """Tests that resolve_conflict only removes the conflict on success."""
 
     @pytest.mark.asyncio
-    async def test_resolve_conflict_download_failure_preserves_conflict(self, plugin, tmp_path):
-        """If download resolution fails, the conflict stays in pending_conflicts."""
+    async def test_resolve_conflict_download_failure_returns_error(self, plugin, tmp_path):
+        """If download resolution fails, result indicates failure."""
         _install_rom(plugin, tmp_path)
-
-        conflict_entry = {
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "created_at": "2026-02-17T12:00:00Z",
-        }
-        plugin._save_sync_state["pending_conflicts"] = [conflict_entry.copy()]
 
         with patch.object(plugin, "_with_retry", side_effect=Exception("network error")):
-            result = await plugin.resolve_conflict(42, "pokemon.srm", "download")
+            result = await plugin.resolve_conflict(
+                42,
+                "pokemon.srm",
+                "download",
+                server_save_id=100,
+                local_path=str(tmp_path / "retrodeck" / "saves" / "gba" / "pokemon.srm"),
+            )
 
         assert result["success"] is False
-        # Conflict must still be in pending_conflicts
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
-        assert plugin._save_sync_state["pending_conflicts"][0]["rom_id"] == 42
 
     @pytest.mark.asyncio
-    async def test_resolve_conflict_upload_failure_preserves_conflict(self, plugin, tmp_path):
-        """If upload resolution fails, the conflict stays in pending_conflicts."""
+    async def test_resolve_conflict_upload_failure_returns_error(self, plugin, tmp_path):
+        """If upload resolution fails, result indicates failure."""
         _install_rom(plugin, tmp_path)
         save_file = _create_save(tmp_path)
-
-        conflict_entry = {
-            "rom_id": 42,
-            "filename": "pokemon.srm",
-            "local_path": str(save_file),
-            "local_hash": "abc",
-            "server_save_id": 100,
-            "created_at": "2026-02-17T12:00:00Z",
-        }
-        plugin._save_sync_state["pending_conflicts"] = [conflict_entry.copy()]
 
         with (
             patch.object(plugin, "_romm_upload_save", side_effect=Exception("upload failed")),
             patch.object(plugin, "_romm_request", return_value={"id": 100}),
         ):
-            result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
+            result = await plugin.resolve_conflict(
+                42,
+                "pokemon.srm",
+                "upload",
+                server_save_id=100,
+                local_path=str(save_file),
+            )
 
         assert result["success"] is False
-        # Conflict must still be in pending_conflicts
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
-        assert plugin._save_sync_state["pending_conflicts"][0]["rom_id"] == 42
 
     @pytest.mark.asyncio
-    async def test_resolve_conflict_success_removes_conflict(self, plugin, tmp_path):
-        """On successful resolution, the conflict is removed from pending_conflicts."""
+    async def test_resolve_conflict_success_returns_success(self, plugin, tmp_path):
+        """On successful resolution, result indicates success."""
         _install_rom(plugin, tmp_path)
         save_file = _create_save(tmp_path)
 
         plugin._save_sync_state["device_id"] = "dev-1"
-        plugin._save_sync_state["pending_conflicts"] = [
-            {
-                "rom_id": 42,
-                "filename": "pokemon.srm",
-                "local_path": str(save_file),
-                "local_hash": "abc",
-                "server_save_id": 100,
-                "created_at": "2026-02-17T12:00:00Z",
-            }
-        ]
 
         upload_response = {"id": 100, "updated_at": "2026-02-17T15:00:00Z"}
 
@@ -3861,10 +3813,15 @@ class TestResolveConflictFailurePreservation:
             patch.object(plugin, "_romm_request", return_value={"id": 100}),
             patch.object(plugin, "_romm_upload_save", return_value=upload_response),
         ):
-            result = await plugin.resolve_conflict(42, "pokemon.srm", "upload")
+            result = await plugin.resolve_conflict(
+                42,
+                "pokemon.srm",
+                "upload",
+                server_save_id=100,
+                local_path=str(save_file),
+            )
 
         assert result["success"] is True
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
 
 
 # ============================================================================
@@ -4031,16 +3988,16 @@ class TestPruneOrphanedSaveSyncState:
 
         assert "42" not in plugin._save_sync_state["playtime"]
 
-    def test_prunes_orphaned_conflicts(self, plugin):
-        """Pending conflict for rom_id not in registry gets removed."""
-        plugin._save_sync_state["pending_conflicts"] = [
-            {"rom_id": 42, "filename": "pokemon.srm", "local_path": "/tmp/pokemon.srm"},
-        ]
+    def test_prune_only_affects_saves_and_playtime(self, plugin):
+        """Pruning only removes orphaned saves and playtime entries (not conflicts)."""
+        plugin._save_sync_state["saves"]["42"] = {"files": {"pokemon.srm": {}}}
+        plugin._save_sync_state["playtime"]["42"] = {"total_seconds": 3600}
         plugin._state["shortcut_registry"] = {}
 
         plugin._prune_orphaned_save_sync_state()
 
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 0
+        assert "42" not in plugin._save_sync_state["saves"]
+        assert "42" not in plugin._save_sync_state["playtime"]
 
     def test_keeps_entries_in_registry(self, plugin):
         """Entries for rom_ids that ARE in registry survive pruning."""
@@ -4049,15 +4006,11 @@ class TestPruneOrphanedSaveSyncState:
         }
         plugin._save_sync_state["saves"]["42"] = {"files": {"pokemon.srm": {}}}
         plugin._save_sync_state["playtime"]["42"] = {"total_seconds": 3600}
-        plugin._save_sync_state["pending_conflicts"] = [
-            {"rom_id": 42, "filename": "pokemon.srm", "local_path": "/tmp/pokemon.srm"},
-        ]
 
         plugin._prune_orphaned_save_sync_state()
 
         assert "42" in plugin._save_sync_state["saves"]
         assert "42" in plugin._save_sync_state["playtime"]
-        assert len(plugin._save_sync_state["pending_conflicts"]) == 1
 
     def test_no_changes_no_save(self, plugin):
         """Nothing orphaned means _save_save_sync_state is not called."""
@@ -4072,14 +4025,12 @@ class TestPruneOrphanedSaveSyncState:
         mock_save.assert_not_called()
 
     def test_empty_state_no_crash(self, plugin):
-        """Empty saves/playtime/conflicts dicts cause no errors."""
+        """Empty saves/playtime dicts cause no errors."""
         plugin._save_sync_state["saves"] = {}
         plugin._save_sync_state["playtime"] = {}
-        plugin._save_sync_state["pending_conflicts"] = []
         plugin._state["shortcut_registry"] = {}
 
         plugin._prune_orphaned_save_sync_state()  # should not raise
 
         assert plugin._save_sync_state["saves"] == {}
         assert plugin._save_sync_state["playtime"] == {}
-        assert plugin._save_sync_state["pending_conflicts"] == []

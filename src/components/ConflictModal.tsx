@@ -54,14 +54,14 @@ const ConflictModalContent: FC<ConflictModalProps> = ({ conflicts, closeModal, o
   const handleChoice = async (resolution: ConflictResolution) => {
     if (resolution === "use_local") {
       try {
-        await resolveConflict(conflict.rom_id, conflict.filename, "upload");
+        await resolveConflict(conflict.rom_id, conflict.filename, "upload", conflict.server_save_id, conflict.local_path ?? "");
       } catch (e) {
         logError(`Failed to resolve conflict (upload): ${e}`);
         return;
       }
     } else if (resolution === "use_server") {
       try {
-        await resolveConflict(conflict.rom_id, conflict.filename, "download");
+        await resolveConflict(conflict.rom_id, conflict.filename, "download", conflict.server_save_id, conflict.local_path ?? "");
       } catch (e) {
         logError(`Failed to resolve conflict (download): ${e}`);
         return;

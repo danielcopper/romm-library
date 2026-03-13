@@ -14,7 +14,6 @@ import {
   recordSessionEnd,
   getAppIdRomIdMap,
   getSaveSyncSettings,
-  getPendingConflicts,
   syncAchievementsAfterSession,
   logInfo,
   logError,
@@ -148,14 +147,9 @@ async function handleGameStop(): Promise<void> {
         toaster.toast({ title: "RomM Save Sync", body: "Failed to sync saves after exit" });
       }
 
-      // Check for pending conflicts (ask_me mode)
-      try {
-        const conflictsResult = await getPendingConflicts();
-        if (conflictsResult.conflicts && conflictsResult.conflicts.length > 0) {
-          notifyConflicts(conflictsResult.conflicts.length);
-        }
-      } catch {
-        // non-critical
+      // Check for conflicts returned from post-exit sync
+      if (result.conflicts && result.conflicts.length > 0) {
+        notifyConflicts(result.conflicts.length);
       }
     }
   } catch (e) {

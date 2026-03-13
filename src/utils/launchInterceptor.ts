@@ -7,7 +7,7 @@
 
 import { toaster } from "@decky/api";
 import { isRomMAppId } from "../patches/gameDetailPatch";
-import { getInstalledRom, getPendingConflicts, getSaveSyncSettings, logInfo, logError } from "../api/backend";
+import { getInstalledRom, checkSaveStatusLightweight, getSaveSyncSettings, logInfo, logError } from "../api/backend";
 
 let gameActionHook: { unregister: () => void } | null = null;
 
@@ -41,11 +41,9 @@ export function registerLaunchInterceptor(): void {
         try {
           const settings = await getSaveSyncSettings();
           if (settings.conflict_mode === "ask_me") {
-            const conflictsResult = await getPendingConflicts();
-            const romConflicts = (conflictsResult.conflicts || []).filter(
-              (c) => c.rom_id === rom.rom_id,
-            );
-            if (romConflicts.length > 0) {
+            const saveStatus = await checkSaveStatusLightweight(rom.rom_id);
+            const hasConflict = saveStatus?.files?.some((f: any) => f.status === "conflict") ?? false;
+            if (hasConflict) {
               SteamClient.Apps.CancelGameAction(gameActionId);
               toaster.toast({
                 title: "RomM Save Sync",

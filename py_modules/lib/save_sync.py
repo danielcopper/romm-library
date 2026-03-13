@@ -60,7 +60,6 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             "device_name": None,
             "saves": {},
             "playtime": {},
-            "pending_conflicts": [],
             "settings": {
                 "save_sync_enabled": False,
                 "conflict_mode": "ask_me",
@@ -76,7 +75,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         try:
             with open(path, "r") as f:
                 saved = json.load(f)
-            for key in ("saves", "playtime", "pending_conflicts"):
+            for key in ("saves", "playtime"):
                 if key in saved:
                     self._save_sync_state[key] = saved[key]
             for key in ("version", "device_id", "device_name"):
@@ -115,15 +114,6 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
                 decky.logger.info(f"Pruned orphaned save sync state: {section}[{rid}]")
             if stale:
                 changed = True
-
-        # pending_conflicts is a list of dicts with "rom_id" (int); registry keys are strings
-        conflicts = self._save_sync_state.get("pending_conflicts", [])
-        before = len(conflicts)
-        self._save_sync_state["pending_conflicts"] = [c for c in conflicts if str(c.get("rom_id", "")) in registry]
-        pruned_count = before - len(self._save_sync_state["pending_conflicts"])
-        if pruned_count:
-            decky.logger.info(f"Pruned {pruned_count} orphaned pending conflict(s)")
-            changed = True
 
         if changed:
             self._save_save_sync_state()
@@ -466,36 +456,6 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         except (ValueError, TypeError):
             return "ask"
 
-    def _add_pending_conflict(self, rom_id, filename, local_path, server_save, local_hash=None):
-        """Add a conflict to the pending queue (no duplicates).
-
-        Pass local_hash if already computed to avoid re-hashing.
-        """
-        rom_id = int(rom_id)
-        for c in self._save_sync_state["pending_conflicts"]:
-            if c.get("rom_id") == rom_id and c.get("filename") == filename:
-                return
-
-        if local_hash is None and os.path.isfile(local_path):
-            local_hash = self._file_md5(local_path)
-        local_mtime = os.path.getmtime(local_path) if os.path.isfile(local_path) else None
-        self._save_sync_state["pending_conflicts"].append(
-            {
-                "rom_id": rom_id,
-                "filename": filename,
-                "local_path": local_path,
-                "local_hash": local_hash,
-                "local_mtime": (
-                    datetime.fromtimestamp(local_mtime, tz=timezone.utc).isoformat() if local_mtime else None
-                ),
-                "local_size": os.path.getsize(local_path) if os.path.isfile(local_path) else None,
-                "server_save_id": server_save.get("id"),
-                "server_updated_at": server_save.get("updated_at", ""),
-                "server_size": server_save.get("file_size_bytes"),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-
     def _update_file_sync_state(self, rom_id_str, filename, server_response, local_path, system):
         """Update per-file sync tracking after a successful sync operation."""
         if rom_id_str not in self._save_sync_state["saves"]:
@@ -560,7 +520,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         """Sync saves for a single ROM (always bidirectional).
 
         The 8-scenario conflict detection table handles all cases.
-        Returns (synced_count, errors_list).
+        Returns (synced_count, errors_list, conflicts_list).
         """
         t_total = time.time()
         rom_id = int(rom_id)
@@ -569,7 +529,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         info = self._get_rom_save_info(rom_id)
         if not info:
             self._log_debug(f"_sync_rom_saves({rom_id}): no save info, skipping")
-            return 0, []
+            return 0, [], []
         system, rom_name, saves_dir = info
 
         # Fetch server saves (with retry)
@@ -579,7 +539,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         except Exception as e:
             decky.logger.error(f"_sync_rom_saves({rom_id}): failed to list saves: {e}")
             _code, _msg = classify_error(e)
-            return 0, [f"Failed to fetch saves: {_msg}"]
+            return 0, [f"Failed to fetch saves: {_msg}"], []
         self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): list_saves {time.time() - t0:.3f}s")
 
         t0 = time.time()
@@ -600,6 +560,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         all_filenames = set(local_by_name.keys()) | set(server_by_name.keys())
         synced = 0
         errors = []
+        conflicts = []
 
         for filename in sorted(all_filenames):
             t_file = time.time()
@@ -630,7 +591,25 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
 
                 if resolution == "ask":
                     if local:
-                        self._add_pending_conflict(rom_id, filename, local["path"], server, local_hash=local_hash)
+                        local_mtime_val = os.path.getmtime(local["path"]) if os.path.isfile(local["path"]) else None
+                        conflicts.append(
+                            {
+                                "rom_id": rom_id,
+                                "filename": filename,
+                                "local_path": local["path"],
+                                "local_hash": local_hash,
+                                "local_mtime": (
+                                    datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat()
+                                    if local_mtime_val
+                                    else None
+                                ),
+                                "local_size": os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None,
+                                "server_save_id": server.get("id"),
+                                "server_updated_at": server.get("updated_at", ""),
+                                "server_size": server.get("file_size_bytes"),
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                            }
+                        )
                     continue
                 action = resolution
 
@@ -647,13 +626,24 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
                 )
             except RommConflictError:
                 if local and server:
-                    # Server has newer save — queue as conflict
-                    self._add_pending_conflict(
-                        rom_id,
-                        filename,
-                        local["path"],
-                        server,
-                        local_hash=local_hash if local and server else None,
+                    local_mtime_val = os.path.getmtime(local["path"]) if os.path.isfile(local["path"]) else None
+                    conflicts.append(
+                        {
+                            "rom_id": rom_id,
+                            "filename": filename,
+                            "local_path": local["path"],
+                            "local_hash": local_hash if local and server else None,
+                            "local_mtime": (
+                                datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat()
+                                if local_mtime_val
+                                else None
+                            ),
+                            "local_size": os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None,
+                            "server_save_id": server.get("id"),
+                            "server_updated_at": server.get("updated_at", ""),
+                            "server_size": server.get("file_size_bytes"),
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        }
                     )
                 else:
                     errors.append(f"{filename}: conflict without matching local+server")
@@ -678,7 +668,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             f"[TIMING] _sync_rom_saves({rom_id}): TOTAL {time.time() - t_total:.3f}s"
             f" synced={synced} errors={len(errors)}"
         )
-        return synced, errors
+        return synced, errors, conflicts
 
     # ── Callables ─────────────────────────────────────────────────
 
@@ -930,12 +920,8 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             if not reg.get("success"):
                 return {"success": False, "message": "Device not registered"}
 
-        synced, errors = await self.loop.run_in_executor(None, self._sync_rom_saves, rom_id)
+        synced, errors, conflicts = await self.loop.run_in_executor(None, self._sync_rom_saves, rom_id)
         self._save_save_sync_state()
-
-        # Return conflicts for this ROM so the frontend doesn't need a separate call
-        rom_id_int = int(rom_id)
-        conflicts = [c for c in self._save_sync_state["pending_conflicts"] if c.get("rom_id") == rom_id_int]
 
         msg = f"Downloaded {synced} save(s)"
         if errors:
@@ -962,7 +948,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             if not reg.get("success"):
                 return {"success": False, "message": "Device not registered"}
 
-        synced, errors = await self.loop.run_in_executor(None, self._sync_rom_saves, rom_id)
+        synced, errors, conflicts = await self.loop.run_in_executor(None, self._sync_rom_saves, rom_id)
         self._save_save_sync_state()
 
         msg = f"Uploaded {synced} save(s)"
@@ -973,6 +959,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             "message": msg,
             "synced": synced,
             "errors": errors,
+            "conflicts": conflicts,
         }
 
     async def sync_rom_saves(self, rom_id):
@@ -985,7 +972,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             if not reg.get("success"):
                 return {"success": False, "message": "Device not registered"}
 
-        synced, errors = await self.loop.run_in_executor(None, self._sync_rom_saves, int(rom_id))
+        synced, errors, conflicts = await self.loop.run_in_executor(None, self._sync_rom_saves, int(rom_id))
         self._save_save_sync_state()
 
         msg = f"Synced {synced} save(s)"
@@ -996,6 +983,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             "message": msg,
             "synced": synced,
             "errors": errors,
+            "conflicts": conflicts,
         }
 
     async def sync_all_saves(self):
@@ -1010,6 +998,7 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
 
         total_synced = 0
         total_errors = []
+        all_conflicts = []
         rom_count = 0
 
         # Only iterate installed ROMs — non-installed ROMs have no save files
@@ -1018,13 +1007,14 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
 
         for rom_id_str in sorted(rom_ids):
             rom_count += 1
-            synced, errors = await self.loop.run_in_executor(None, self._sync_rom_saves, int(rom_id_str))
+            synced, errors, conflicts = await self.loop.run_in_executor(None, self._sync_rom_saves, int(rom_id_str))
             total_synced += synced
             total_errors.extend(errors)
+            all_conflicts.extend(conflicts)
 
         self._save_save_sync_state()
 
-        conflicts = len(self._save_sync_state.get("pending_conflicts", []))
+        conflicts = len(all_conflicts)
         msg = f"Synced {total_synced} save(s) across {rom_count} ROM(s)"
         if total_errors:
             msg += f", {len(total_errors)} error(s)"
@@ -1035,11 +1025,12 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             "message": msg,
             "synced": total_synced,
             "conflicts": conflicts,
+            "conflicts_list": all_conflicts,
             "roms_checked": rom_count,
             "errors": total_errors,
         }
 
-    async def resolve_conflict(self, rom_id, filename, resolution):
+    async def resolve_conflict(self, rom_id, filename, resolution, server_save_id=None, local_path=None):
         """Resolve a pending save conflict. resolution: "upload" or "download"."""
         rom_id = int(rom_id)
         rom_id_str = str(rom_id)
@@ -1047,15 +1038,15 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         if resolution not in ("upload", "download"):
             return {"success": False, "message": f"Invalid resolution: {resolution}"}
 
-        # Find the matching conflict (don't remove yet — wait for success)
-        conflict = None
-        for c in self._save_sync_state["pending_conflicts"]:
-            if c.get("rom_id") == rom_id and c.get("filename") == filename:
-                conflict = c
-                break
-
-        if not conflict:
-            return {"success": False, "message": "Conflict not found"}
+        # Build conflict from params passed by frontend
+        if not server_save_id:
+            return {"success": False, "message": "Missing server_save_id"}
+        conflict = {
+            "rom_id": rom_id,
+            "filename": filename,
+            "server_save_id": server_save_id,
+            "local_path": local_path,
+        }
 
         info = self._get_rom_save_info(rom_id)
         if not info:
@@ -1069,12 +1060,6 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
             if result is not None:
                 return result
 
-            # Remove from pending only after successful resolution
-            self._save_sync_state["pending_conflicts"] = [
-                c
-                for c in self._save_sync_state["pending_conflicts"]
-                if not (c.get("rom_id") == rom_id and c.get("filename") == filename)
-            ]
             self._save_save_sync_state()
             return {"success": True, "message": f"Conflict resolved: {resolution}"}
         except Exception as e:
@@ -1103,8 +1088,8 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
         return None  # Success — caller handles state update
 
     async def get_pending_conflicts(self):
-        """Return list of unresolved save conflicts."""
-        return {"conflicts": self._save_sync_state.get("pending_conflicts", [])}
+        """Deprecated — conflicts are now returned inline from sync operations."""
+        return {"conflicts": []}
 
     async def record_session_start(self, rom_id):
         """Record the start of a play session for playtime tracking."""

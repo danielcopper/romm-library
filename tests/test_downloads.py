@@ -1152,7 +1152,6 @@ class TestRemoveRomCleansSaveSyncState:
         plugin._save_sync_state = {
             "saves": {"42": {"last_sync": "2024-01-01"}, "99": {"last_sync": "2024-02-01"}},
             "playtime": {"42": {"total_seconds": 3600}, "99": {"total_seconds": 7200}},
-            "pending_conflicts": {},
             "settings": {"save_sync_enabled": False},
         }
         save_calls = []
@@ -1190,7 +1189,6 @@ class TestRemoveRomCleansSaveSyncState:
         plugin._save_sync_state = {
             "saves": {"1": {"last_sync": "2024-01-01"}, "2": {"last_sync": "2024-02-01"}},
             "playtime": {"1": {"total_seconds": 100}, "2": {"total_seconds": 200}},
-            "pending_conflicts": {},
             "settings": {"save_sync_enabled": False},
         }
         save_calls = []
