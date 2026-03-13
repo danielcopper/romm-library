@@ -30,7 +30,7 @@ from lib.errors import (
 )
 
 try:
-    import certifi
+    import certifi  # type: ignore[import-not-found]  # optional: falls via system or pip
 
     def _ca_bundle():
         return certifi.where()

@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(plugin_dir, "py_modules"))
 sys.path.insert(0, plugin_dir)
 
 import decky
+from bootstrap import bootstrap
 
 from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
@@ -39,6 +40,16 @@ class Plugin(
     async def _main(self):
         self.loop = asyncio.get_event_loop()
         self._load_settings()
+        # ── Wire adapters from composition root ──
+        adapters = bootstrap(
+            settings_dir=decky.DECKY_PLUGIN_SETTINGS_DIR,
+            runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
+            logger=decky.logger,
+            settings=self.settings,
+        )
+        self._persistence = adapters["persistence"]
+        self._http_client = adapters["http_client"]
         self._sync_state = SyncState.IDLE
         self._sync_last_heartbeat = 0.0
         self._sync_progress = {
