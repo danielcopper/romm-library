@@ -1,9 +1,15 @@
-import fcntl
-import json
+"""StateMixin — thin delegation shim to PersistenceAdapter for I/O.
+
+File read/write logic lives in ``adapters.persistence.PersistenceAdapter``.
+This mixin keeps business logic (migrations, pruning, logging) and delegates
+pure I/O through a lazy ``_persistence`` property.
+"""
+
 import os
 from typing import TYPE_CHECKING
 
 import decky
+from adapters.persistence import PersistenceAdapter
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -16,20 +22,26 @@ if TYPE_CHECKING:
 
 
 class StateMixin(_StateDeps if TYPE_CHECKING else object):
+    # -- lazy property: auto-creates adapter on first access ---------------
+
+    @property
+    def _persistence(self) -> PersistenceAdapter:
+        if not hasattr(self, "_StateMixin__persistence"):
+            self._StateMixin__persistence = PersistenceAdapter(
+                decky.DECKY_PLUGIN_SETTINGS_DIR,
+                decky.DECKY_PLUGIN_RUNTIME_DIR,
+                decky.logger,
+            )
+        return self._StateMixin__persistence
+
+    @_persistence.setter
+    def _persistence(self, value: PersistenceAdapter) -> None:
+        self._StateMixin__persistence = value
+
+    # -- settings ----------------------------------------------------------
+
     def _load_settings(self):
-        settings_path = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "settings.json")
-        try:
-            with open(settings_path, "r") as f:
-                self.settings = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.settings = {}
-        self.settings.setdefault("romm_url", "")
-        self.settings.setdefault("romm_user", "")
-        self.settings.setdefault("romm_pass", "")
-        self.settings.setdefault("enabled_platforms", {})
-        self.settings.setdefault("steam_input_mode", "default")
-        self.settings.setdefault("steamgriddb_api_key", "")
-        self.settings.setdefault("romm_allow_insecure_ssl", False)
+        self.settings = self._persistence.load_settings()
         # Migrate old boolean setting
         if "disable_steam_input" in self.settings:
             if self.settings.pop("disable_steam_input"):
@@ -41,21 +53,11 @@ class StateMixin(_StateDeps if TYPE_CHECKING else object):
                 self.settings.setdefault("log_level", "debug")
             self._save_settings_to_disk()
         self.settings.setdefault("log_level", "warn")
-        # Enforce 0600 on settings file (migrate from world-readable 0644)
-        if os.path.exists(settings_path):
-            current_mode = os.stat(settings_path).st_mode & 0o777
-            if current_mode != 0o600:
-                os.chmod(settings_path, 0o600)
 
     def _save_settings_to_disk(self):
-        settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
-        os.makedirs(settings_dir, exist_ok=True)
-        settings_path = os.path.join(settings_dir, "settings.json")
-        tmp_path = settings_path + ".tmp"
-        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(self.settings, f, indent=2)
-        os.replace(tmp_path, settings_path)
+        self._persistence.save_settings(self.settings)
+
+    # -- logging -----------------------------------------------------------
 
     LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
 
@@ -65,22 +67,13 @@ class StateMixin(_StateDeps if TYPE_CHECKING else object):
         if self.LOG_LEVELS.get("debug", 0) >= self.LOG_LEVELS.get(configured, 2):
             decky.logger.info(msg)
 
-    _STATE_VERSION = 1
+    # -- state -------------------------------------------------------------
 
     def _load_state(self):
-        state_path = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "state.json")
-        try:
-            with open(state_path, "r") as f:
-                saved = json.load(f)
-            if not isinstance(saved, dict):
-                saved = {}
-            # Migrate: add version key if missing
-            if "version" not in saved:
-                saved["version"] = self._STATE_VERSION
-            self._state.update(saved)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
-        self._state.setdefault("version", self._STATE_VERSION)
+        self._state = self._persistence.load_state(self._state)
+
+    def _save_state(self):
+        self._persistence.save_state(self._state)
 
     def _prune_stale_installed_roms(self):
         """Remove installed_roms entries whose files no longer exist on disk."""
@@ -88,7 +81,6 @@ class StateMixin(_StateDeps if TYPE_CHECKING else object):
         for rom_id, entry in list(self._state["installed_roms"].items()):
             file_path = entry.get("file_path", "")
             rom_dir = entry.get("rom_dir", "")
-            # Keep if either the file or the rom_dir still exists
             if (file_path and os.path.exists(file_path)) or (rom_dir and os.path.exists(rom_dir)):
                 continue
             decky.logger.info(f"Pruned stale installed_roms entry: {rom_id} ({file_path})")
@@ -111,48 +103,10 @@ class StateMixin(_StateDeps if TYPE_CHECKING else object):
         if pruned:
             self._save_state()
 
-    def _save_state(self):
-        state_dir = decky.DECKY_PLUGIN_RUNTIME_DIR
-        os.makedirs(state_dir, exist_ok=True)
-        state_path = os.path.join(state_dir, "state.json")
-        tmp_path = state_path + ".tmp"
-        lock_fd = os.open(state_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w") as f:
-                json.dump(self._state, f, indent=2)
-            os.replace(tmp_path, state_path)
-        finally:
-            os.close(lock_fd)
-
-    _METADATA_CACHE_VERSION = 1
+    # -- metadata cache ----------------------------------------------------
 
     def _load_metadata_cache(self):
-        cache_path = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "metadata_cache.json")
-        try:
-            with open(cache_path, "r") as f:
-                loaded = json.load(f)
-            if not isinstance(loaded, dict):
-                loaded = {}
-            # Migrate: add version key if missing
-            if "version" not in loaded:
-                loaded["version"] = self._METADATA_CACHE_VERSION
-            self._metadata_cache = loaded
-        except (FileNotFoundError, json.JSONDecodeError):
-            self._metadata_cache = {"version": self._METADATA_CACHE_VERSION}
+        self._metadata_cache = self._persistence.load_metadata_cache()
 
     def _save_metadata_cache(self):
-        cache_dir = decky.DECKY_PLUGIN_RUNTIME_DIR
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_path = os.path.join(cache_dir, "metadata_cache.json")
-        tmp_path = cache_path + ".tmp"
-        lock_fd = os.open(cache_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w") as f:
-                json.dump(self._metadata_cache, f, indent=2)
-            os.replace(tmp_path, cache_path)
-        finally:
-            os.close(lock_fd)
+        self._persistence.save_metadata_cache(self._metadata_cache)

@@ -1,6 +1,9 @@
+![decky-romm-sync](assets/store_image.png)
+
 # decky-romm-sync
 
-A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://github.com/rommapp/romm) game library to Steam as non-steam shortcuts. Games appear directly in your Steam library and launch through [RetroDECK](https://retrodeck.net/).
+A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://github.com/rommapp/romm) game library to
+Steam as non-steam shortcuts. Games appear directly in your Steam library and launch through [RetroDECK](https://retrodeck.net/).
 
 ## Features
 
@@ -22,13 +25,15 @@ A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://githu
 ## Installation
 
 Both methods below require **Developer Mode** in Decky Loader:
+
 1. Open the Quick Access Menu (QAM) and select **Decky**
 2. Click the **gear icon** (top right) to open Decky settings
 3. Toggle on **Developer Mode** — a **Developer** tab will appear
 
 ### Install from ZIP
 
-1. Download the latest `decky-romm-sync.zip` from the [releases page](https://github.com/danielcopper/decky-romm-sync/releases) to your Steam Deck
+1. Download the latest `decky-romm-sync.zip` from the [releases page](https://github.com/danielcopper/decky-romm-sync/releases)
+   to your Steam Deck
 2. In Decky settings, go to the **Developer** tab
 3. Select **Install Plugin from ZIP**
 4. Choose the downloaded file and confirm
@@ -81,8 +86,10 @@ This plugin stands on the shoulders of some great projects:
 
 - [Decky Loader](https://decky.xyz/) — the plugin framework that makes all of this possible
 - [Valve](https://www.valvesoftware.com/) — for the Steam Deck, SteamOS, and an open enough platform to build on
-- [Unifideck](https://github.com/ma3ke/unifideck) — inspiration for game detail page injection techniques and gamepad navigation patterns
-- [MetaDeck](https://github.com/EmuDeck/MetaDeck) — inspiration for store patching patterns used in metadata display on non-Steam shortcuts
+- [Unifideck](https://github.com/ma3ke/unifideck) — inspiration for game detail page injection techniques and gamepad
+  navigation patterns
+- [MetaDeck](https://github.com/EmuDeck/MetaDeck) — inspiration for store patching patterns used in metadata display
+  on non-Steam shortcuts
 
 ## License
 
