@@ -604,9 +604,9 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
                                     else None
                                 ),
                                 "local_size": os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None,
-                                "server_save_id": server.get("id"),
-                                "server_updated_at": server.get("updated_at", ""),
-                                "server_size": server.get("file_size_bytes"),
+                                "server_save_id": server.get("id") if server else None,
+                                "server_updated_at": server.get("updated_at", "") if server else "",
+                                "server_size": server.get("file_size_bytes") if server else None,
                                 "created_at": datetime.now(timezone.utc).isoformat(),
                             }
                         )
@@ -639,9 +639,9 @@ class SaveSyncMixin(_SaveSyncDeps if TYPE_CHECKING else object):
                                 else None
                             ),
                             "local_size": os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None,
-                            "server_save_id": server.get("id"),
-                            "server_updated_at": server.get("updated_at", ""),
-                            "server_size": server.get("file_size_bytes"),
+                            "server_save_id": server.get("id") if server else None,
+                            "server_updated_at": server.get("updated_at", "") if server else "",
+                            "server_size": server.get("file_size_bytes") if server else None,
                             "created_at": datetime.now(timezone.utc).isoformat(),
                         }
                     )
