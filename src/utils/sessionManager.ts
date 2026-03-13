@@ -215,8 +215,12 @@ export async function initSessionManager(): Promise<void> {
   );
 
   // Suspend/resume for accurate playtime
-  suspendHook = SteamClient.System.RegisterForOnSuspendRequest(handleSuspend);
-  resumeHook = SteamClient.System.RegisterForOnResumeFromSuspend(handleResume);
+  try {
+    suspendHook = SteamClient.System.RegisterForOnSuspendRequest(handleSuspend);
+    resumeHook = SteamClient.System.RegisterForOnResumeFromSuspend(handleResume);
+  } catch (e) {
+    console.warn("[romm-sync] Suspend/resume hooks unavailable:", e);
+  }
 
   logInfo("Session manager initialized");
 }

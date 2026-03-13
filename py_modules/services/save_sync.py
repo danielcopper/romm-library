@@ -889,11 +889,15 @@ class SaveSyncService:
 
     async def post_exit_sync(self, rom_id: int) -> dict:
         """Upload changed saves after game exit."""
+        self._logger.info("post_exit_sync called for rom_id=%d", rom_id)
+
         if not self._is_save_sync_enabled():
+            self._logger.info("post_exit_sync skipped: save sync disabled")
             return {"success": True, "message": "Save sync disabled", "synced": 0}
 
         settings = self._save_sync_state.get("settings", {})
         if not settings.get("sync_after_exit", True):
+            self._logger.info("post_exit_sync skipped: sync_after_exit disabled")
             return {"success": True, "message": "Post-exit sync disabled", "synced": 0}
 
         if not self._save_sync_state.get("device_id"):
@@ -903,6 +907,14 @@ class SaveSyncService:
 
         synced, errors, conflicts = await self._loop.run_in_executor(None, self._sync_rom_saves, rom_id)
         self.save_state()
+
+        self._logger.info(
+            "post_exit_sync complete for rom_id=%d: synced=%d, errors=%d, conflicts=%d",
+            rom_id,
+            synced,
+            len(errors),
+            len(conflicts),
+        )
 
         msg = f"Uploaded {synced} save(s)"
         if errors:

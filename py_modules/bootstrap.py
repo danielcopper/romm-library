@@ -14,7 +14,7 @@ from typing import Any
 
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.client import RommHttpClient
-from adapters.romm.save_api.v46 import SaveApiV46
+from adapters.romm.version_router import VersionRouter
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
 
@@ -49,12 +49,13 @@ def bootstrap(
     """
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_client = RommHttpClient(settings, plugin_dir, logger)
-    save_api = SaveApiV46(http_client)
+    version_router = VersionRouter(http_client)
 
     return {
         "persistence": persistence,
         "http_client": http_client,
-        "save_api": save_api,
+        "save_api": version_router,
+        "version_router": version_router,
     }
 
 

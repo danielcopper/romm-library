@@ -50,6 +50,7 @@ class Plugin(
         )
         self._persistence = adapters["persistence"]
         self._http_client = adapters["http_client"]
+        self._version_router = adapters["version_router"]
         self._sync_state = SyncState.IDLE
         self._sync_last_heartbeat = 0.0
         self._sync_progress = {
@@ -409,6 +410,9 @@ class Plugin(
             pass
         if self._romm_version:
             decky.logger.info(f"RomM server version: {self._romm_version}")
+            router = getattr(self, "_version_router", None)
+            if router:
+                router.set_version(self._romm_version)
 
         # Test authenticated access
         try:
@@ -694,11 +698,8 @@ class Plugin(
 
     async def post_exit_sync(self, rom_id):
         save_svc = getattr(self, "_save_sync_service", None)
-        play_svc = getattr(self, "_playtime_service", None)
-        if save_svc and play_svc:
-            result = await save_svc.post_exit_sync(rom_id)
-            await play_svc.record_session_end(rom_id)
-            return result
+        if save_svc:
+            return await save_svc.post_exit_sync(rom_id)
         return await SaveSyncMixin.post_exit_sync(self, rom_id)
 
     async def sync_rom_saves(self, rom_id):
