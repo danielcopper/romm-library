@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(plugin_dir, "py_modules"))
 sys.path.insert(0, plugin_dir)
 
 import decky
-from bootstrap import bootstrap
+from bootstrap import bootstrap, wire_services
 
 from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
@@ -80,6 +80,25 @@ class Plugin(
         self._load_metadata_cache()
         self._init_save_sync_state()
         self._load_save_sync_state()
+        # ── Wire services (composition, uses live state refs) ──
+        try:
+            services = wire_services(
+                save_api=adapters["save_api"],
+                http_client=self._http_client,
+                state=self._state,
+                save_sync_state=self._save_sync_state,
+                loop=self.loop,
+                logger=decky.logger,
+                runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+                get_saves_path=retrodeck_config.get_saves_path,
+                save_state_fn=self._save_save_sync_state,
+            )
+            self._save_sync_service = services["save_sync_service"]
+            self._playtime_service = services["playtime_service"]
+        except Exception as e:
+            decky.logger.error(f"Failed to wire services, falling back to mixins: {e}")
+            self._save_sync_service = None
+            self._playtime_service = None
         # ── Startup state healing ──
         self._prune_stale_installed_roms()  # lib/state.py
         self._prune_stale_registry()  # lib/state.py
@@ -642,3 +661,114 @@ class Plugin(
         except Exception as e:
             decky.logger.error(f"Failed to set game core: {e}")
             return {"success": False, "message": str(e)}
+
+    # ── Save Sync / Playtime delegation to new services ──────────
+    # When the service is wired, delegate to it; otherwise fall back
+    # to the inherited mixin method.  Use getattr() because tests
+    # instantiate Plugin without calling _main(), so the attrs may
+    # not exist.
+
+    async def ensure_device_registered(self):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.ensure_device_registered()
+        return await SaveSyncMixin.ensure_device_registered(self)
+
+    async def get_save_status(self, rom_id):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.get_save_status(rom_id)
+        return await SaveSyncMixin.get_save_status(self, rom_id)
+
+    async def check_save_status_lightweight(self, rom_id):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.check_save_status_lightweight(rom_id)
+        return await SaveSyncMixin.check_save_status_lightweight(self, rom_id)
+
+    async def pre_launch_sync(self, rom_id):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.pre_launch_sync(rom_id)
+        return await SaveSyncMixin.pre_launch_sync(self, rom_id)
+
+    async def post_exit_sync(self, rom_id):
+        save_svc = getattr(self, "_save_sync_service", None)
+        play_svc = getattr(self, "_playtime_service", None)
+        if save_svc and play_svc:
+            result = await save_svc.post_exit_sync(rom_id)
+            await play_svc.record_session_end(rom_id)
+            return result
+        return await SaveSyncMixin.post_exit_sync(self, rom_id)
+
+    async def sync_rom_saves(self, rom_id):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.sync_rom_saves(rom_id)
+        return await SaveSyncMixin.sync_rom_saves(self, rom_id)
+
+    async def sync_all_saves(self):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.sync_all_saves()
+        return await SaveSyncMixin.sync_all_saves(self)
+
+    async def resolve_conflict(self, rom_id, filename, resolution, server_save_id=None, local_path=None):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.resolve_conflict(rom_id, filename, resolution, server_save_id, local_path)
+        return await SaveSyncMixin.resolve_conflict(self, rom_id, filename, resolution, server_save_id, local_path)
+
+    async def get_pending_conflicts(self):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.get_pending_conflicts()
+        return await SaveSyncMixin.get_pending_conflicts(self)
+
+    async def get_save_sync_settings(self):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.get_save_sync_settings()
+        return await SaveSyncMixin.get_save_sync_settings(self)
+
+    async def update_save_sync_settings(self, settings):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.update_save_sync_settings(settings)
+        return await SaveSyncMixin.update_save_sync_settings(self, settings)
+
+    async def delete_local_saves(self, rom_id):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.delete_local_saves(rom_id)
+        return await SaveSyncMixin.delete_local_saves(self, rom_id)
+
+    async def delete_platform_saves(self, platform_slug):
+        svc = getattr(self, "_save_sync_service", None)
+        if svc:
+            return await svc.delete_platform_saves(platform_slug)
+        return await SaveSyncMixin.delete_platform_saves(self, platform_slug)
+
+    async def record_session_start(self, rom_id):
+        svc = getattr(self, "_playtime_service", None)
+        if svc:
+            return await svc.record_session_start(rom_id)
+        return await SaveSyncMixin.record_session_start(self, rom_id)
+
+    async def record_session_end(self, rom_id):
+        svc = getattr(self, "_playtime_service", None)
+        if svc:
+            return await svc.record_session_end(rom_id)
+        return await SaveSyncMixin.record_session_end(self, rom_id)
+
+    async def get_server_playtime(self, rom_id):
+        svc = getattr(self, "_playtime_service", None)
+        if svc:
+            return await svc.get_server_playtime(rom_id)
+        return await SaveSyncMixin.get_server_playtime(self, rom_id)
+
+    async def get_all_playtime(self):
+        svc = getattr(self, "_playtime_service", None)
+        if svc:
+            return await svc.get_all_playtime()
+        return await SaveSyncMixin.get_all_playtime(self)
