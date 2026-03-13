@@ -86,7 +86,7 @@ class TestRecordSession:
         await svc.record_session_start(42)
         start = datetime.now(timezone.utc) - timedelta(seconds=30)
         state["playtime"]["42"]["last_session_start"] = start.isoformat()
-        result1 = await svc.record_session_end(42)
+        await svc.record_session_end(42)
 
         # Session 2
         await svc.record_session_start(42)
