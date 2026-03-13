@@ -19,7 +19,8 @@ DEFAULT_SETTINGS: dict = {
     "steam_input_mode": "default",
     "steamgriddb_api_key": "",
     "romm_allow_insecure_ssl": False,
-    "log_level": "warn",
+    # NOTE: log_level default is NOT here — it's applied in StateMixin._load_settings()
+    # AFTER the debug_logging → log_level migration runs.
 }
 
 
