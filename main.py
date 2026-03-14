@@ -11,7 +11,6 @@ from bootstrap import bootstrap, wire_services
 from services.sync import SyncState
 
 from lib import retrodeck_config
-from lib.achievements import AchievementsMixin
 from lib.state import StateMixin
 from lib.steam_config import SteamConfigMixin
 
@@ -19,7 +18,6 @@ from lib.steam_config import SteamConfigMixin
 class Plugin(
     StateMixin,
     SteamConfigMixin,
-    AchievementsMixin,
 ):
     settings: dict
     loop: asyncio.AbstractEventLoop
@@ -47,7 +45,6 @@ class Plugin(
             "retrodeck_home_path": "",
         }
         self._metadata_cache = {}
-        self._achievements_cache = {}
         self._romm_version = None  # Detected on test_connection
         self._load_state()
         self._load_metadata_cache()
@@ -78,6 +75,7 @@ class Plugin(
         self._firmware_service = services["firmware_service"]
         self._sgdb_service = services["sgdb_service"]
         self._metadata_service = services["metadata_service"]
+        self._achievements_service = services["achievements_service"]
         self._firmware_service.load_bios_registry()
         # Load persisted state into the live dict
         self._save_sync_service.init_state()
@@ -561,9 +559,9 @@ class Plugin(
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
         achievement_summary = None
-        if ra_id and self._get_ra_username():
+        if ra_id and self._achievements_service._get_ra_username():
             # Try cache first for quick badge rendering
-            cached_progress = self._get_progress_cache_entry(rom_id_str)
+            cached_progress = self._achievements_service._get_progress_cache_entry(rom_id_str)
             if cached_progress:
                 achievement_summary = {
                     "earned": cached_progress.get("earned", 0),
@@ -827,3 +825,14 @@ class Plugin(
 
     async def get_app_id_rom_id_map(self):
         return await self._metadata_service.get_app_id_rom_id_map()
+
+    # ── Achievements delegation to AchievementsService ───────
+
+    async def get_achievements(self, rom_id):
+        return await self._achievements_service.get_achievements(rom_id)
+
+    async def get_achievement_progress(self, rom_id):
+        return await self._achievements_service.get_achievement_progress(rom_id)
+
+    async def sync_achievements_after_session(self, rom_id):
+        return await self._achievements_service.sync_achievements_after_session(rom_id)

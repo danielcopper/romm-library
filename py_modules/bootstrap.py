@@ -15,6 +15,7 @@ from typing import Any
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.client import RommHttpClient
 from adapters.romm.version_router import VersionRouter
+from services.achievements import AchievementsService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
 from services.metadata import MetadataService
@@ -170,6 +171,14 @@ def wire_services(
         plugin=plugin,
     )
 
+    achievements_service = AchievementsService(
+        http_client=http_client,
+        state=state,
+        loop=loop,
+        logger=logger,
+        log_debug=plugin._log_debug,
+    )
+
     return {
         "save_sync_service": save_sync_service,
         "playtime_service": playtime_service,
@@ -178,4 +187,5 @@ def wire_services(
         "firmware_service": firmware_service,
         "sgdb_service": sgdb_service,
         "metadata_service": metadata_service,
+        "achievements_service": achievements_service,
     }

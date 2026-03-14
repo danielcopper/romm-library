@@ -1,30 +1,45 @@
-import time
-from typing import TYPE_CHECKING
+"""AchievementsService — RetroAchievements data fetching via RomM server.
 
-import decky
+Extracted from AchievementsMixin. Owns the achievements cache and handles
+achievement list fetching, user progress tracking, and post-session refresh.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import asyncio
-    from typing import Protocol
+    import logging
+    from collections.abc import Callable
 
     from adapters.romm.client import RommHttpClient
 
-    class _AchievementsDeps(Protocol):
-        _state: dict
-        _metadata_cache: dict
-        _achievements_cache: dict
-        _http_client: RommHttpClient
-        loop: asyncio.AbstractEventLoop
 
-        def _log_debug(self, msg: str) -> None: ...
-
-
-class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
+class AchievementsService:
     """RetroAchievements data fetching via RomM server."""
 
     ACHIEVEMENTS_CACHE_TTL = 24 * 3600  # 24h for achievement definitions
     PROGRESS_CACHE_TTL = 3600  # 1h for user progress
     RA_USERNAME_CACHE_TTL = 3600  # 1h for RA username detection
+
+    def __init__(
+        self,
+        *,
+        http_client: RommHttpClient,
+        state: dict,
+        loop: asyncio.AbstractEventLoop,
+        logger: logging.Logger,
+        log_debug: Callable,
+    ) -> None:
+        self._http_client = http_client
+        self._state = state
+        self._loop = loop
+        self._logger = logger
+        self._log_debug = log_debug
+
+        self._achievements_cache: dict = {}
 
     def _get_ra_username(self):
         """Get RA username from RomM user profile (cached).
@@ -42,7 +57,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
     async def _fetch_ra_username(self):
         """Fetch RA username from RomM user profile and cache it."""
         try:
-            user_data = await self.loop.run_in_executor(None, self._http_client.request, "/api/users/me")
+            user_data = await self._loop.run_in_executor(None, self._http_client.request, "/api/users/me")
             ra_username = (user_data.get("ra_username") or "").strip()
             self._achievements_cache["_ra_user"] = {
                 "username": ra_username,
@@ -50,7 +65,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
             }
             return ra_username
         except Exception as e:
-            decky.logger.warning(f"Failed to fetch RA username from RomM: {e}")
+            self._logger.warning(f"Failed to fetch RA username from RomM: {e}")
             # Return stale cache if available
             cached = self._achievements_cache.get("_ra_user")
             if cached:
@@ -120,7 +135,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
 
         # Fetch ROM detail from RomM (includes ra_metadata)
         try:
-            rom_data = await self.loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+            rom_data = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
             achievements = self._extract_achievements_from_rom(rom_data)
 
             # Cache it
@@ -132,7 +147,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
 
             return {"success": True, "achievements": achievements, "total": len(achievements)}
         except Exception as e:
-            decky.logger.warning(f"Failed to fetch achievements for rom_id={rom_id}: {e}")
+            self._logger.warning(f"Failed to fetch achievements for rom_id={rom_id}: {e}")
             # Return stale cache if available
             stale = self._achievements_cache.get(rom_id_str, {})
             if stale.get("achievements"):
@@ -181,7 +196,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
         try:
             # Fetch user profile from RomM — includes ra_progression and ra_username
             # RomM 4.2+ has ra_progression on user schema
-            user_data = await self.loop.run_in_executor(None, self._http_client.request, "/api/users/me")
+            user_data = await self._loop.run_in_executor(None, self._http_client.request, "/api/users/me")
             # Cache ra_username from this response to avoid separate fetch next time
             fetched_username = (user_data.get("ra_username") or "").strip()
             if fetched_username:
@@ -228,7 +243,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
             return {"success": True, **{k: v for k, v in progress_data.items() if k != "cached_at"}}
 
         except Exception as e:
-            decky.logger.warning(f"Failed to fetch achievement progress for rom_id={rom_id}: {e}")
+            self._logger.warning(f"Failed to fetch achievement progress for rom_id={rom_id}: {e}")
             # Return stale cache if available
             stale_progress = self._achievements_cache.get(rom_id_str, {}).get("user_progress")
             if stale_progress:
@@ -251,7 +266,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
         # Fetch fresh progress
         result = await self.get_achievement_progress(rom_id)
         if result.get("success"):
-            decky.logger.info(
+            self._logger.info(
                 f"Post-session achievement sync for rom_id={rom_id}: "
                 f"{result.get('earned', 0)}/{result.get('total', 0)} earned"
             )
