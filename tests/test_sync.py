@@ -30,8 +30,8 @@ def plugin():
         metadata_cache=p._metadata_cache,
         loop=asyncio.get_event_loop(),
         logger=decky.logger,
-        save_metadata_cache=lambda: p._save_metadata_cache(),
-        log_debug=lambda msg: p._log_debug(msg),
+        save_metadata_cache=p._save_metadata_cache,
+        log_debug=p._log_debug,
     )
     p._metadata_service = metadata_service
 
@@ -45,7 +45,9 @@ def plugin():
         logger=decky.logger,
         plugin_dir=decky.DECKY_PLUGIN_DIR,
         emit=decky.emit,
-        plugin=p,
+        save_state=p._save_state,
+        save_settings_to_disk=p._save_settings_to_disk,
+        log_debug=p._log_debug,
         metadata_service=metadata_service,
     )
     return p

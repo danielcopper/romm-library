@@ -4,10 +4,6 @@ Handles ROM downloads (single and multi-file), disk space checks,
 download queue management, ROM removal, and partial download cleanup.
 """
 
-# TODO(Steps 5-10): The save_state and save_save_sync_state callables
-# are temporary bridges to StateMixin and SaveSyncService. Replace with
-# proper service injection when StateMixin is dissolved.
-
 from __future__ import annotations
 
 import asyncio

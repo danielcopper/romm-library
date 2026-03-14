@@ -7,21 +7,105 @@ sys.path.insert(0, os.path.join(plugin_dir, "py_modules"))
 sys.path.insert(0, plugin_dir)
 
 import decky
+from adapters.persistence import PersistenceAdapter
 from bootstrap import bootstrap, wire_services
 from services.sync import SyncState
 
 from lib import retrodeck_config
-from lib.state import StateMixin
 
 
-class Plugin(
-    StateMixin,
-):
+class Plugin:
     settings: dict
     loop: asyncio.AbstractEventLoop
 
+    # -- logging ---------------------------------------------------------------
+
+    LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+
+    def _log_debug(self, msg):
+        """Log a message only when log_level allows debug messages."""
+        configured = self.settings.get("log_level", "warn")
+        if self.LOG_LEVELS.get("debug", 0) >= self.LOG_LEVELS.get(configured, 2):
+            decky.logger.info(msg)
+
+    # -- persistence delegates -------------------------------------------------
+
+    @property
+    def _persistence(self) -> PersistenceAdapter:
+        """Lazy-init persistence adapter; overwritten by _main() with the bootstrap instance."""
+        if not hasattr(self, "_persistence_instance"):
+            self._persistence_instance = PersistenceAdapter(
+                decky.DECKY_PLUGIN_SETTINGS_DIR,
+                decky.DECKY_PLUGIN_RUNTIME_DIR,
+                decky.logger,
+            )
+        return self._persistence_instance
+
+    @_persistence.setter
+    def _persistence(self, value: PersistenceAdapter) -> None:
+        self._persistence_instance = value
+
+    def _save_state(self):
+        self._persistence.save_state(self._state)
+
+    def _save_settings_to_disk(self):
+        self._persistence.save_settings(self.settings)
+
+    def _save_metadata_cache(self):
+        self._persistence.save_metadata_cache(self._metadata_cache)
+
+    def _load_metadata_cache(self):
+        self._metadata_cache = self._persistence.load_metadata_cache()
+
+    # -- pruning ---------------------------------------------------------------
+
+    def _prune_stale_installed_roms(self):
+        """Remove installed_roms entries whose files no longer exist on disk."""
+        pruned = []
+        for rom_id, entry in list(self._state["installed_roms"].items()):
+            file_path = entry.get("file_path", "")
+            rom_dir = entry.get("rom_dir", "")
+            if (file_path and os.path.exists(file_path)) or (rom_dir and os.path.exists(rom_dir)):
+                continue
+            decky.logger.info(f"Pruned stale installed_roms entry: {rom_id} ({file_path})")
+            pruned.append(rom_id)
+        for rom_id in pruned:
+            del self._state["installed_roms"][rom_id]
+        if pruned:
+            self._save_state()
+
+    def _prune_stale_registry(self):
+        """Remove shortcut_registry entries with missing or invalid app_id."""
+        pruned = []
+        for rom_id, entry in list(self._state["shortcut_registry"].items()):
+            app_id = entry.get("app_id")
+            if not app_id or not isinstance(app_id, int):
+                decky.logger.info(f"Pruned stale registry entry: rom_id={rom_id} (invalid app_id={app_id})")
+                pruned.append(rom_id)
+        for rom_id in pruned:
+            del self._state["shortcut_registry"][rom_id]
+        if pruned:
+            self._save_state()
+
+    # -- settings loading with migrations --------------------------------------
+
+    def _load_settings(self):
+        self.settings = self._persistence.load_settings()
+        # Migrate old boolean setting
+        if "disable_steam_input" in self.settings:
+            if self.settings.pop("disable_steam_input"):
+                self.settings["steam_input_mode"] = "force_off"
+            self._save_settings_to_disk()
+        # Migrate old boolean debug_logging to log_level
+        if "debug_logging" in self.settings:
+            if self.settings.pop("debug_logging"):
+                self.settings.setdefault("log_level", "debug")
+            self._save_settings_to_disk()
+        self.settings.setdefault("log_level", "warn")
+
     async def _main(self):
         self.loop = asyncio.get_event_loop()
+        # ── Load settings (uses lazy _persistence property) ──
         self._load_settings()
         # ── Wire adapters from composition root ──
         adapters = bootstrap(
@@ -46,8 +130,8 @@ class Plugin(
         }
         self._metadata_cache = {}
         self._romm_version = None  # Detected on test_connection
-        self._load_state()
-        self._load_metadata_cache()
+        self._state = self._persistence.load_state(self._state)
+        self._metadata_cache = self._persistence.load_metadata_cache()
         # ── Save sync state (owned by SaveSyncService) ──
         from services.save_sync import SaveSyncService
 
@@ -67,7 +151,10 @@ class Plugin(
             runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
             emit=decky.emit,
             get_saves_path=retrodeck_config.get_saves_path,
-            plugin=self,
+            save_state=self._save_state,
+            save_settings_to_disk=self._save_settings_to_disk,
+            save_metadata_cache=self._save_metadata_cache,
+            log_debug=self._log_debug,
         )
         self._save_sync_service = services["save_sync_service"]
         self._playtime_service = services["playtime_service"]
@@ -82,8 +169,8 @@ class Plugin(
         self._save_sync_service.init_state()
         self._save_sync_service.load_state()
         # ── Startup state healing ──
-        self._prune_stale_installed_roms()  # lib/state.py
-        self._prune_stale_registry()  # lib/state.py
+        self._prune_stale_installed_roms()
+        self._prune_stale_registry()
         self._save_sync_service.prune_orphaned_state()  # services/save_sync.py
         self._sgdb_service.prune_orphaned_artwork_cache()  # services/sgdb.py
         self._sync_service.prune_orphaned_staging_artwork()  # services/sync.py

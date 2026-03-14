@@ -4,10 +4,6 @@ Handles BIOS registry loading, firmware status checks, downloads,
 deletion, and per-core filtering for RetroArch emulators.
 """
 
-# TODO(Steps 9-10): The save_state callable is a temporary bridge to
-# StateMixin. Replace with proper persistence injection when StateMixin
-# is dissolved.
-
 from __future__ import annotations
 
 import hashlib

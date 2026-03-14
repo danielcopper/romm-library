@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from adapters.persistence import PersistenceAdapter
@@ -84,7 +85,10 @@ def wire_services(
     runtime_dir: str,
     emit: Any,
     get_saves_path: Any,
-    plugin: Any,
+    save_state: Callable,
+    save_settings_to_disk: Callable,
+    save_metadata_cache: Callable,
+    log_debug: Callable,
 ) -> dict:
     """Create service instances after plugin state is initialised.
 
@@ -125,8 +129,8 @@ def wire_services(
         metadata_cache=metadata_cache,
         loop=loop,
         logger=logger,
-        save_metadata_cache=plugin._save_metadata_cache,
-        log_debug=plugin._log_debug,
+        save_metadata_cache=save_metadata_cache,
+        log_debug=log_debug,
     )
 
     sync_service = SyncService(
@@ -139,7 +143,9 @@ def wire_services(
         logger=logger,
         plugin_dir=plugin_dir,
         emit=emit,
-        plugin=plugin,
+        save_state=save_state,
+        save_settings_to_disk=save_settings_to_disk,
+        log_debug=log_debug,
         metadata_service=metadata_service,
     )
 
@@ -151,7 +157,7 @@ def wire_services(
         logger=logger,
         runtime_dir=runtime_dir,
         emit=emit,
-        save_state=plugin._save_state,
+        save_state=save_state,
         save_save_sync_state=save_sync_service.save_state,
     )
 
@@ -161,7 +167,7 @@ def wire_services(
         loop=loop,
         logger=logger,
         plugin_dir=plugin_dir,
-        save_state=plugin._save_state,
+        save_state=save_state,
     )
 
     sgdb_service = SgdbService(
@@ -172,8 +178,8 @@ def wire_services(
         loop=loop,
         logger=logger,
         runtime_dir=runtime_dir,
-        save_state=plugin._save_state,
-        save_settings_to_disk=plugin._save_settings_to_disk,
+        save_state=save_state,
+        save_settings_to_disk=save_settings_to_disk,
         sync_service=sync_service,
     )
 
@@ -182,7 +188,7 @@ def wire_services(
         state=state,
         loop=loop,
         logger=logger,
-        log_debug=plugin._log_debug,
+        log_debug=log_debug,
     )
 
     return {

@@ -4,10 +4,6 @@ Handles platform/ROM fetching, shortcut data preparation, artwork
 downloading, delta preview/apply, and shortcut registry management.
 """
 
-# TODO(Step 10): The `plugin` parameter is a temporary bridge to
-# StateMixin methods that haven't been extracted yet. Replace with
-# proper service injection when StateMixin is dissolved.
-
 from __future__ import annotations
 
 import asyncio
@@ -51,7 +47,9 @@ class SyncService:
         logger: logging.Logger,
         plugin_dir: str,
         emit: Callable,
-        plugin: Any,
+        save_state: Callable,
+        save_settings_to_disk: Callable,
+        log_debug: Callable,
         metadata_service: Any = None,
     ) -> None:
         self._http_client = http_client
@@ -63,7 +61,9 @@ class SyncService:
         self._logger = logger
         self._plugin_dir = plugin_dir
         self._emit = emit
-        self._plugin = plugin
+        self._save_state = save_state
+        self._save_settings_to_disk = save_settings_to_disk
+        self._log_debug = log_debug
         self._metadata_service = metadata_service
 
         # Sync-specific state (owned by this service)
@@ -114,7 +114,7 @@ class SyncService:
     async def save_platform_sync(self, platform_id, enabled):
         pid = str(platform_id)
         self._settings["enabled_platforms"][pid] = bool(enabled)
-        self._plugin._save_settings_to_disk()
+        self._save_settings_to_disk()
         return {"success": True}
 
     async def set_all_platforms_sync(self, enabled):
@@ -130,7 +130,7 @@ class SyncService:
         for p in platforms:
             ep[str(p["id"])] = enabled
         self._settings["enabled_platforms"] = ep
-        self._plugin._save_settings_to_disk()
+        self._save_settings_to_disk()
         return {"success": True}
 
     # ── Sync control ─────────────────────────────────────────
@@ -274,7 +274,7 @@ class SyncService:
             "platforms": delta["platforms_count"],
             "roms": delta["total_roms"],
         }
-        self._plugin._save_state()
+        self._save_state()
 
         # Figure out which step the frontend starts at
         next_step = current_step + 1
@@ -564,7 +564,7 @@ class SyncService:
             self._metadata_cache[rom_id_str] = self._metadata_service.extract_metadata(rom)
             self._metadata_service.mark_metadata_dirty()
         self._metadata_service.flush_metadata_if_dirty()
-        self._plugin._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
+        self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
         return all_roms, shortcuts_data, platforms
 
@@ -637,7 +637,7 @@ class SyncService:
                 "platforms": len(platforms),
                 "roms": len(all_roms),
             }
-            self._plugin._save_state()
+            self._save_state()
 
             # Store pending data for report_sync_results to reference
             self._pending_sync = {sd["rom_id"]: sd for sd in shortcuts_data}
@@ -738,7 +738,7 @@ class SyncService:
 
         # Update timestamp and save
         self._state["last_sync"] = datetime.now(timezone.utc).isoformat()
-        self._plugin._save_state()
+        self._save_state()
         self._pending_sync = {}
 
         # Rebuild platform_app_ids from registry
@@ -972,7 +972,7 @@ class SyncService:
             "platforms": len(platforms),
             "roms": len(registry),
         }
-        self._plugin._save_state()
+        self._save_state()
 
     async def report_removal_results(self, removed_rom_ids):
         """Called by frontend after removing shortcuts via SteamClient."""
@@ -1017,7 +1017,7 @@ class SyncService:
     async def clear_sync_cache(self):
         """Clear last_sync timestamp to force a full re-fetch on next sync."""
         self._state["last_sync"] = None
-        self._plugin._save_state()
+        self._save_state()
         self._logger.info("Sync cache cleared — next sync will do a full fetch")
         return {"success": True, "message": "Next sync will do a full fetch"}
 

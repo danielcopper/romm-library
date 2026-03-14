@@ -50,7 +50,9 @@ def plugin():
         logger=decky.logger,
         plugin_dir=decky.DECKY_PLUGIN_DIR,
         emit=decky.emit,
-        plugin=p,
+        save_state=p._save_state,
+        save_settings_to_disk=p._save_settings_to_disk,
+        log_debug=p._log_debug,
     )
     return p
 
