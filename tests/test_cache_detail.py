@@ -4,6 +4,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from adapters.steam_config import SteamConfigAdapter
 from fakes.fake_save_api import FakeSaveApi
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
@@ -34,8 +35,12 @@ def plugin(tmp_path):
 
     decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
     p._sync_service = SyncService(
         http_client=MagicMock(),
+        steam_config=steam_config,
         state=p._state,
         settings=p.settings,
         metadata_cache=p._metadata_cache,

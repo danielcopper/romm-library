@@ -4,6 +4,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from adapters.steam_config import SteamConfigAdapter
 from services.downloads import DownloadService
 from services.sync import SyncService
 
@@ -21,8 +22,12 @@ def plugin():
 
     import decky
 
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
     p._sync_service = SyncService(
         http_client=p._http_client,
+        steam_config=steam_config,
         state=p._state,
         settings=p.settings,
         metadata_cache=p._metadata_cache,

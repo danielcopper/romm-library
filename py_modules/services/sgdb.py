@@ -4,9 +4,6 @@ Handles SGDB API key verification, artwork fetching/caching, icon saving
 to Steam grid directory, and orphaned artwork cache pruning.
 """
 
-# TODO(Steps 9-10): Replace plugin ref with proper service injection
-# when SteamConfigMixin is extracted.
-
 from __future__ import annotations
 
 import base64
@@ -34,9 +31,10 @@ if TYPE_CHECKING:
     import asyncio
     import logging
     from collections.abc import Callable
-    from typing import Any
 
     from adapters.romm.client import RommHttpClient
+    from adapters.steam_config import SteamConfigAdapter
+
     from services.sync import SyncService
 
 
@@ -47,6 +45,7 @@ class SgdbService:
         self,
         *,
         http_client: RommHttpClient,
+        steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
         loop: asyncio.AbstractEventLoop,
@@ -55,9 +54,9 @@ class SgdbService:
         save_state: Callable[[], None],
         save_settings_to_disk: Callable[[], None],
         sync_service: SyncService,
-        plugin: Any,
     ) -> None:
         self._http_client = http_client
+        self._steam_config = steam_config
         self._state = state
         self._settings = settings
         self._loop = loop
@@ -66,9 +65,6 @@ class SgdbService:
         self._save_state = save_state
         self._save_settings_to_disk = save_settings_to_disk
         self._sync_service = sync_service
-        # TODO(Steps 9-10): Replace plugin ref with proper service injection
-        # when SteamConfigMixin is extracted.
-        self._plugin = plugin
 
     # -- logging -----------------------------------------------------------
 
@@ -313,9 +309,7 @@ class SgdbService:
 
     def _save_icon_to_grid(self, app_id, icon_bytes):
         """Write icon PNG to Steam's grid dir and update shortcuts.vdf icon field."""
-        # TODO(Steps 9-10): Replace plugin ref with proper service injection
-        # when SteamConfigMixin is extracted.
-        grid_dir = self._plugin._grid_dir()
+        grid_dir = self._steam_config.grid_dir()
         if not grid_dir:
             self._logger.warning("Cannot find Steam grid directory for icon save")
             return False
@@ -338,7 +332,7 @@ class SgdbService:
 
         # Update shortcuts.vdf icon field
         try:
-            vdf_data = self._plugin._read_shortcuts()
+            vdf_data = self._steam_config.read_shortcuts()
             # Convert unsigned app_id to signed int32 for VDF comparison
             signed_id = struct.unpack("i", struct.pack("I", app_id & 0xFFFFFFFF))[0]
             shortcuts = vdf_data.get("shortcuts", {})
@@ -346,7 +340,7 @@ class SgdbService:
                 if entry.get("appid") == signed_id:
                     entry["icon"] = icon_path
                     break
-            self._plugin._write_shortcuts(vdf_data)
+            self._steam_config.write_shortcuts(vdf_data)
         except Exception as e:
             self._logger.warning(f"Failed to update shortcuts.vdf icon field: {e}")
             # Icon file is still saved, just VDF field not set — non-fatal

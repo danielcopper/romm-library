@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import MagicMock
 
 import pytest
+from adapters.steam_config import SteamConfigAdapter
 from services.sgdb import SgdbService
 from services.sync import SyncService
 
@@ -19,8 +20,12 @@ def plugin():
 
     import decky
 
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
     p._sync_service = SyncService(
         http_client=p._http_client,
+        steam_config=steam_config,
         state=p._state,
         settings=p.settings,
         metadata_cache=p._metadata_cache,
@@ -33,6 +38,7 @@ def plugin():
 
     p._sgdb_service = SgdbService(
         http_client=p._http_client,
+        steam_config=steam_config,
         state=p._state,
         settings=p.settings,
         loop=asyncio.get_event_loop(),
@@ -41,7 +47,6 @@ def plugin():
         save_state=MagicMock(),
         save_settings_to_disk=MagicMock(),
         sync_service=p._sync_service,
-        plugin=p,
     )
     return p
 
@@ -690,9 +695,9 @@ class TestSaveShortcutIcon:
         """Icon PNG should be written to Steam's grid directory."""
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
-        plugin._read_shortcuts = lambda: {"shortcuts": {}}
-        plugin._write_shortcuts = lambda data: None
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.read_shortcuts = lambda: {"shortcuts": {}}
+        plugin._steam_config.write_shortcuts = lambda data: None
 
         result = plugin._sgdb_service._save_icon_to_grid(12345, b"fake png data")
 
@@ -707,7 +712,7 @@ class TestSaveShortcutIcon:
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
 
         # app_id 3000000000 -> signed = -1294967296
         app_id = 3000000000
@@ -721,8 +726,8 @@ class TestSaveShortcutIcon:
         def mock_write(data):
             written_data.update(data)
 
-        plugin._read_shortcuts = mock_read
-        plugin._write_shortcuts = mock_write
+        plugin._steam_config.read_shortcuts = mock_read
+        plugin._steam_config.write_shortcuts = mock_write
 
         result = plugin._sgdb_service._save_icon_to_grid(app_id, b"icon data")
 
@@ -732,7 +737,7 @@ class TestSaveShortcutIcon:
 
     def test_save_icon_to_grid_no_grid_dir(self, plugin):
         """Should return False if grid directory cannot be found."""
-        plugin._grid_dir = lambda: None
+        plugin._steam_config.grid_dir = lambda: None
 
         result = plugin._sgdb_service._save_icon_to_grid(12345, b"data")
         assert result is False
@@ -741,7 +746,7 @@ class TestSaveShortcutIcon:
         """If VDF has no matching shortcut, icon file should still be saved."""
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
 
         written_data = {}
 
@@ -751,8 +756,8 @@ class TestSaveShortcutIcon:
         def mock_write(data):
             written_data.update(data)
 
-        plugin._read_shortcuts = mock_read
-        plugin._write_shortcuts = mock_write
+        plugin._steam_config.read_shortcuts = mock_read
+        plugin._steam_config.write_shortcuts = mock_write
 
         result = plugin._sgdb_service._save_icon_to_grid(12345, b"icon data")
 
@@ -768,9 +773,9 @@ class TestSaveShortcutIcon:
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
-        plugin._read_shortcuts = lambda: {"shortcuts": {}}
-        plugin._write_shortcuts = lambda data: None
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.read_shortcuts = lambda: {"shortcuts": {}}
+        plugin._steam_config.write_shortcuts = lambda data: None
         plugin._sgdb_service._loop = asyncio.get_event_loop()
 
         icon_b64 = base64.b64encode(b"real icon png").decode("ascii")

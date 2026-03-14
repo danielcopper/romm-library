@@ -15,6 +15,7 @@ from typing import Any
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.client import RommHttpClient
 from adapters.romm.version_router import VersionRouter
+from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
@@ -30,6 +31,7 @@ def bootstrap(
     settings_dir: str,
     runtime_dir: str,
     plugin_dir: str,
+    user_home: str,
     logger: logging.Logger,
     settings: dict,
 ) -> dict:
@@ -56,12 +58,14 @@ def bootstrap(
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_client = RommHttpClient(settings, plugin_dir, logger)
     version_router = VersionRouter(http_client)
+    steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
     return {
         "persistence": persistence,
         "http_client": http_client,
         "save_api": version_router,
         "version_router": version_router,
+        "steam_config": steam_config,
     }
 
 
@@ -69,6 +73,7 @@ def wire_services(
     *,
     save_api: Any,
     http_client: RommHttpClient,
+    steam_config: SteamConfigAdapter,
     state: dict,
     settings: dict,
     metadata_cache: dict,
@@ -126,6 +131,7 @@ def wire_services(
 
     sync_service = SyncService(
         http_client=http_client,
+        steam_config=steam_config,
         state=state,
         settings=settings,
         metadata_cache=metadata_cache,
@@ -160,6 +166,7 @@ def wire_services(
 
     sgdb_service = SgdbService(
         http_client=http_client,
+        steam_config=steam_config,
         state=state,
         settings=settings,
         loop=loop,
@@ -168,7 +175,6 @@ def wire_services(
         save_state=plugin._save_state,
         save_settings_to_disk=plugin._save_settings_to_disk,
         sync_service=sync_service,
-        plugin=plugin,
     )
 
     achievements_service = AchievementsService(

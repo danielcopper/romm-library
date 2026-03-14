@@ -7,6 +7,5 @@ name = Mixins must not import each other
 type = independence
 modules =
     lib.state
-    lib.steam_config
     lib.metadata
 

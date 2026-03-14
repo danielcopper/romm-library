@@ -4,10 +4,9 @@ Handles platform/ROM fetching, shortcut data preparation, artwork
 downloading, delta preview/apply, and shortcut registry management.
 """
 
-# TODO(Steps 9-10): The `plugin` parameter is a temporary bridge to
-# StateMixin and SteamConfigMixin methods that haven't been extracted
-# to services yet. Replace with proper service injection when those
-# mixins are migrated.
+# TODO(Step 10): The `plugin` parameter is a temporary bridge to
+# StateMixin methods that haven't been extracted yet. Replace with
+# proper service injection when StateMixin is dissolved.
 
 from __future__ import annotations
 
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from adapters.romm.client import RommHttpClient
+    from adapters.steam_config import SteamConfigAdapter
 
 
 class SyncState(Enum):
@@ -43,6 +43,7 @@ class SyncService:
         self,
         *,
         http_client: RommHttpClient,
+        steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
         metadata_cache: dict,
@@ -54,6 +55,7 @@ class SyncService:
         metadata_service: Any = None,
     ) -> None:
         self._http_client = http_client
+        self._steam_config = steam_config
         self._state = state
         self._settings = settings
         self._metadata_cache = metadata_cache
@@ -688,7 +690,7 @@ class SyncService:
 
     def _report_sync_results_io(self, rom_id_to_app_id, removed_rom_ids):
         """Sync helper for report_sync_results — artwork renames, state save in executor."""
-        grid = self._plugin._grid_dir()
+        grid = self._steam_config.grid_dir()
 
         # Update registry with new mappings from frontend
         for rom_id_str, app_id in rom_id_to_app_id.items():
@@ -728,7 +730,7 @@ class SyncService:
         steam_input_mode = self._settings.get("steam_input_mode", "default")
         if steam_input_mode != "default" and rom_id_to_app_id:
             try:
-                self._plugin._set_steam_input_config(
+                self._steam_config.set_steam_input_config(
                     [int(aid) for aid in rom_id_to_app_id.values()], mode=steam_input_mode
                 )
             except Exception as e:
@@ -802,7 +804,7 @@ class SyncService:
         Returns dict of rom_id -> local cover path.
         """
         cover_paths = {}
-        grid = self._plugin._grid_dir()
+        grid = self._steam_config.grid_dir()
         if not grid:
             self._logger.warning("Cannot find grid directory, skipping artwork")
             return cover_paths
@@ -931,11 +933,11 @@ class SyncService:
                 removed_app_ids.append(entry["app_id"])
         if removed_app_ids:
             try:
-                self._plugin._set_steam_input_config(removed_app_ids, mode="default")
+                self._steam_config.set_steam_input_config(removed_app_ids, mode="default")
             except Exception as e:
                 self._logger.error(f"Failed to clean up Steam Input config: {e}")
 
-        grid = self._plugin._grid_dir()
+        grid = self._steam_config.grid_dir()
         for rom_id in removed_rom_ids:
             entry = self._state["shortcut_registry"].pop(str(rom_id), None)
             if entry and grid:
@@ -982,7 +984,7 @@ class SyncService:
     async def get_artwork_base64(self, rom_id):
         """Return base64-encoded cover artwork for a single ROM (callable from frontend)."""
         rom_id = int(rom_id)
-        grid = self._plugin._grid_dir()
+        grid = self._steam_config.grid_dir()
         if not grid:
             return {"base64": None}
 
@@ -1047,7 +1049,7 @@ class SyncService:
 
     def prune_orphaned_staging_artwork(self):
         """Remove orphaned romm_{rom_id}_cover.png staging files from Steam grid dir."""
-        grid = self._plugin._grid_dir()
+        grid = self._steam_config.grid_dir()
         if not grid or not os.path.isdir(grid):
             return
         registry = self._state.get("shortcut_registry", {})

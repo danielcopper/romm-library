@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from adapters.romm.client import RommHttpClient
+from adapters.steam_config import SteamConfigAdapter
 from services.sync import SyncService
 
 from lib.errors import (
@@ -36,8 +37,12 @@ def plugin():
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
     p._sync_service = SyncService(
         http_client=p._http_client,
+        steam_config=steam_config,
         state=p._state,
         settings=p.settings,
         metadata_cache=p._metadata_cache,

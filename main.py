@@ -12,12 +12,10 @@ from services.sync import SyncState
 
 from lib import retrodeck_config
 from lib.state import StateMixin
-from lib.steam_config import SteamConfigMixin
 
 
 class Plugin(
     StateMixin,
-    SteamConfigMixin,
 ):
     settings: dict
     loop: asyncio.AbstractEventLoop
@@ -30,12 +28,14 @@ class Plugin(
             settings_dir=decky.DECKY_PLUGIN_SETTINGS_DIR,
             runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
             plugin_dir=decky.DECKY_PLUGIN_DIR,
+            user_home=decky.DECKY_USER_HOME,
             logger=decky.logger,
             settings=self.settings,
         )
         self._persistence = adapters["persistence"]
         self._http_client = adapters["http_client"]
         self._version_router = adapters["version_router"]
+        self._steam_config = adapters["steam_config"]
         self._state = {
             "shortcut_registry": {},
             "installed_roms": {},
@@ -56,6 +56,7 @@ class Plugin(
         services = wire_services(
             save_api=adapters["save_api"],
             http_client=self._http_client,
+            steam_config=self._steam_config,
             state=self._state,
             settings=self.settings,
             metadata_cache=self._metadata_cache,
@@ -464,6 +465,23 @@ class Plugin(
         self._save_settings_to_disk()
         return {"success": True}
 
+    async def apply_steam_input_setting(self):
+        """Apply current Steam Input setting to all existing ROM shortcuts."""
+        mode = self.settings.get("steam_input_mode", "default")
+        app_ids = [entry["app_id"] for entry in self._state["shortcut_registry"].values() if "app_id" in entry]
+        if not app_ids:
+            return {"success": True, "message": "No shortcuts to update"}
+        try:
+            self._steam_config.set_steam_input_config(app_ids, mode=mode)
+            return {"success": True, "message": f"Steam Input set to '{mode}' for {len(app_ids)} shortcuts"}
+        except Exception as e:
+            decky.logger.error(f"Failed to apply Steam Input setting: {e}")
+            return {"success": False, "message": "Operation failed"}
+
+    async def fix_retroarch_input_driver(self):
+        """Change RetroArch input_driver from 'x' to 'sdl2'."""
+        return self._steam_config.fix_retroarch_input_driver()
+
     async def get_settings(self):
         has_credentials = bool(self.settings.get("romm_user") and self.settings.get("romm_pass"))
         return {
@@ -473,7 +491,7 @@ class Plugin(
             "has_credentials": has_credentials,
             "steam_input_mode": self.settings.get("steam_input_mode", "default"),
             "sgdb_api_key_masked": "••••" if self.settings.get("steamgriddb_api_key") else "",
-            "retroarch_input_check": self._check_retroarch_input_driver(),
+            "retroarch_input_check": self._steam_config.check_retroarch_input_driver(),
             "log_level": self.settings.get("log_level", "warn"),
             "romm_allow_insecure_ssl": self.settings.get("romm_allow_insecure_ssl", False),
         }

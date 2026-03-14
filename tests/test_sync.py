@@ -3,6 +3,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from adapters.steam_config import SteamConfigAdapter
 from services.metadata import MetadataService
 from services.sync import SyncService, SyncState
 
@@ -20,6 +21,9 @@ def plugin():
 
     import decky
 
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
     metadata_service = MetadataService(
         http_client=p._http_client,
         state=p._state,
@@ -33,6 +37,7 @@ def plugin():
 
     p._sync_service = SyncService(
         http_client=p._http_client,
+        steam_config=steam_config,
         state=p._state,
         settings=p.settings,
         metadata_cache=p._metadata_cache,
@@ -196,7 +201,7 @@ class TestReportRemovalResults:
             "10": {"app_id": 1001, "name": "Game A", "cover_path": str(art_file)},
         }
         # Mock _grid_dir to return tmp_path
-        plugin._grid_dir = lambda: str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: str(tmp_path)
 
         result = await plugin.report_removal_results([10])
         assert result["success"] is True
@@ -216,7 +221,7 @@ class TestReportRemovalResults:
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Game A", "artwork_id": 12345},
         }
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
 
         result = await plugin.report_removal_results([10])
         assert result["success"] is True
@@ -428,7 +433,7 @@ class TestArtworkStaging:
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         mock_loop = MagicMock()
         mock_loop.run_in_executor = AsyncMock()
         plugin._sync_service._loop = mock_loop
@@ -449,7 +454,7 @@ class TestArtworkStaging:
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         mock_loop = MagicMock()
         mock_loop.run_in_executor = AsyncMock()
         plugin._sync_service._loop = mock_loop
@@ -473,7 +478,7 @@ class TestArtworkStaging:
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         mock_loop = MagicMock()
         mock_loop.run_in_executor = AsyncMock()
         plugin._sync_service._loop = mock_loop
@@ -499,7 +504,7 @@ class TestArtworkRenameOnSync:
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
 
         # Create staged artwork
         staging = grid_dir / "romm_1_cover.png"
@@ -530,7 +535,7 @@ class TestArtworkRenameOnSync:
 
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
 
         final = grid_dir / "100001p.png"
         final.write_text("cover data")
@@ -563,7 +568,7 @@ class TestRemovalCleansUpAppIdArtwork:
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 100001, "name": "Game A", "cover_path": ""},
         }
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
 
         await plugin.report_removal_results([10])
         assert not art_file.exists()
@@ -582,7 +587,7 @@ class TestRemovalCleansUpAppIdArtwork:
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 100001, "name": "Game A", "cover_path": ""},
         }
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
 
         await plugin.report_removal_results([10])
         assert not staging.exists()
@@ -719,11 +724,13 @@ class TestShortcutDataFormat:
 
     def test_artwork_id_generation_consistency(self, plugin):
         """Artwork ID must be deterministic for the same exe+name pair."""
+        from adapters.steam_config import SteamConfigAdapter
+
         exe = "/home/deck/homebrew/plugins/decky-romm-sync/bin/romm-launcher"
         name = "Test Game"
 
-        id1 = plugin._generate_artwork_id(exe, name)
-        id2 = plugin._generate_artwork_id(exe, name)
+        id1 = SteamConfigAdapter.generate_artwork_id(exe, name)
+        id2 = SteamConfigAdapter.generate_artwork_id(exe, name)
 
         assert id1 == id2, "Artwork ID should be deterministic"
         assert isinstance(id1, int), "Artwork ID should be an integer"
@@ -731,10 +738,12 @@ class TestShortcutDataFormat:
 
     def test_artwork_id_differs_per_game(self, plugin):
         """Different game names should produce different artwork IDs."""
+        from adapters.steam_config import SteamConfigAdapter
+
         exe = "/home/deck/homebrew/plugins/decky-romm-sync/bin/romm-launcher"
 
-        id_a = plugin._generate_artwork_id(exe, "Game A")
-        id_b = plugin._generate_artwork_id(exe, "Game B")
+        id_a = SteamConfigAdapter.generate_artwork_id(exe, "Game A")
+        id_b = SteamConfigAdapter.generate_artwork_id(exe, "Game B")
 
         assert id_a != id_b, "Different games should have different artwork IDs"
 
@@ -747,7 +756,7 @@ class TestPruneOrphanedStagingArtwork:
         staging = grid_dir / "romm_42_cover.png"
         staging.write_text("fake")
 
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         plugin._state["shortcut_registry"] = {}
 
         plugin._sync_service.prune_orphaned_staging_artwork()
@@ -762,7 +771,7 @@ class TestPruneOrphanedStagingArtwork:
         final = grid_dir / "1001p.png"
         final.write_text("fake final")
 
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         plugin._state["shortcut_registry"] = {
             "42": {"app_id": 1001, "name": "Game A"},
         }
@@ -778,7 +787,7 @@ class TestPruneOrphanedStagingArtwork:
         staging = grid_dir / "romm_42_cover.png"
         staging.write_text("fake staging")
 
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         plugin._state["shortcut_registry"] = {
             "42": {"app_id": 1001, "name": "Game A"},
         }
@@ -795,7 +804,7 @@ class TestPruneOrphanedStagingArtwork:
         other = grid_dir / "something_else.png"
         other.write_text("other")
 
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         plugin._state["shortcut_registry"] = {}
 
         plugin._sync_service.prune_orphaned_staging_artwork()
@@ -804,7 +813,7 @@ class TestPruneOrphanedStagingArtwork:
 
     def test_no_grid_dir_no_crash(self, plugin):
         """When _grid_dir() returns None, pruning should not crash."""
-        plugin._grid_dir = lambda: None
+        plugin._steam_config.grid_dir = lambda: None
         plugin._state["shortcut_registry"] = {}
 
         # Should not raise
@@ -820,7 +829,7 @@ class TestPruneOrphanedStagingArtwork:
         staging = grid_dir / "romm_42_cover.png"
         staging.write_text("fake")
 
-        plugin._grid_dir = lambda: str(grid_dir)
+        plugin._steam_config.grid_dir = lambda: str(grid_dir)
         plugin._state["shortcut_registry"] = {}
 
         with caplog.at_level(logging.WARNING):
