@@ -12,7 +12,6 @@ from services.sync import SyncState
 
 from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
-from lib.metadata import MetadataMixin
 from lib.state import StateMixin
 from lib.steam_config import SteamConfigMixin
 
@@ -20,7 +19,6 @@ from lib.steam_config import SteamConfigMixin
 class Plugin(
     StateMixin,
     SteamConfigMixin,
-    MetadataMixin,
     AchievementsMixin,
 ):
     settings: dict
@@ -79,6 +77,7 @@ class Plugin(
         self._download_service = services["download_service"]
         self._firmware_service = services["firmware_service"]
         self._sgdb_service = services["sgdb_service"]
+        self._metadata_service = services["metadata_service"]
         self._firmware_service.load_bios_registry()
         # Load persisted state into the live dict
         self._save_sync_service.init_state()
@@ -817,3 +816,14 @@ class Plugin(
 
     async def save_shortcut_icon(self, app_id, icon_base64):
         return await self._sgdb_service.save_shortcut_icon(app_id, icon_base64)
+
+    # ── Metadata delegation to MetadataService ────────────────
+
+    async def get_rom_metadata(self, rom_id):
+        return await self._metadata_service.get_rom_metadata(rom_id)
+
+    async def get_all_metadata_cache(self):
+        return await self._metadata_service.get_all_metadata_cache()
+
+    async def get_app_id_rom_id_map(self):
+        return await self._metadata_service.get_app_id_rom_id_map()

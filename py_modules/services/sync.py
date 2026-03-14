@@ -4,10 +4,10 @@ Handles platform/ROM fetching, shortcut data preparation, artwork
 downloading, delta preview/apply, and shortcut registry management.
 """
 
-# TODO(Steps 5-9): The `plugin` parameter is a temporary bridge to
-# StateMixin, MetadataMixin, and SteamConfigMixin methods that haven't
-# been extracted to services yet. Replace with proper service injection
-# when those mixins are migrated.
+# TODO(Steps 9-10): The `plugin` parameter is a temporary bridge to
+# StateMixin and SteamConfigMixin methods that haven't been extracted
+# to services yet. Replace with proper service injection when those
+# mixins are migrated.
 
 from __future__ import annotations
 
@@ -51,6 +51,7 @@ class SyncService:
         plugin_dir: str,
         emit: Callable,
         plugin: Any,
+        metadata_service: Any = None,
     ) -> None:
         self._http_client = http_client
         self._state = state
@@ -61,6 +62,7 @@ class SyncService:
         self._plugin_dir = plugin_dir
         self._emit = emit
         self._plugin = plugin
+        self._metadata_service = metadata_service
 
         # Sync-specific state (owned by this service)
         self._sync_state = SyncState.IDLE
@@ -557,9 +559,9 @@ class SyncService:
         # Cache metadata from sync response
         for rom in all_roms:
             rom_id_str = str(rom["id"])
-            self._metadata_cache[rom_id_str] = self._plugin._extract_metadata(rom)
-            self._plugin._mark_metadata_dirty()
-        self._plugin._flush_metadata_if_dirty()
+            self._metadata_cache[rom_id_str] = self._metadata_service.extract_metadata(rom)
+            self._metadata_service.mark_metadata_dirty()
+        self._metadata_service.flush_metadata_if_dirty()
         self._plugin._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
         return all_roms, shortcuts_data, platforms
@@ -663,7 +665,7 @@ class SyncService:
             }
             self._loop.create_task(self._emit("sync_progress", self._sync_progress))
         finally:
-            self._plugin._flush_metadata_if_dirty()
+            self._metadata_service.flush_metadata_if_dirty()
             self._sync_state = SyncState.IDLE
             if self._sync_progress.get("phase") == "error":
                 pass

@@ -3,6 +3,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from services.metadata import MetadataService
 from services.sync import SyncService, SyncState
 
 # conftest.py patches decky before this import
@@ -19,6 +20,17 @@ def plugin():
 
     import decky
 
+    metadata_service = MetadataService(
+        http_client=p._http_client,
+        state=p._state,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        save_metadata_cache=lambda: p._save_metadata_cache(),
+        log_debug=lambda msg: p._log_debug(msg),
+    )
+    p._metadata_service = metadata_service
+
     p._sync_service = SyncService(
         http_client=p._http_client,
         state=p._state,
@@ -29,6 +41,7 @@ def plugin():
         plugin_dir=decky.DECKY_PLUGIN_DIR,
         emit=decky.emit,
         plugin=p,
+        metadata_service=metadata_service,
     )
     return p
 
@@ -38,6 +51,7 @@ async def _set_event_loop(plugin):
     """Ensure plugin.loop matches the running event loop for async tests."""
     plugin.loop = asyncio.get_event_loop()
     plugin._sync_service._loop = asyncio.get_event_loop()
+    plugin._metadata_service._loop = asyncio.get_event_loop()
 
 
 class TestReportSyncResults:

@@ -17,6 +17,7 @@ from adapters.romm.client import RommHttpClient
 from adapters.romm.version_router import VersionRouter
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
+from services.metadata import MetadataService
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
 from services.sgdb import SgdbService
@@ -112,6 +113,16 @@ def wire_services(
         save_state=save_sync_service.save_state,
     )
 
+    metadata_service = MetadataService(
+        http_client=http_client,
+        state=state,
+        metadata_cache=metadata_cache,
+        loop=loop,
+        logger=logger,
+        save_metadata_cache=plugin._save_metadata_cache,
+        log_debug=plugin._log_debug,
+    )
+
     sync_service = SyncService(
         http_client=http_client,
         state=state,
@@ -122,6 +133,7 @@ def wire_services(
         plugin_dir=plugin_dir,
         emit=emit,
         plugin=plugin,
+        metadata_service=metadata_service,
     )
 
     download_service = DownloadService(
@@ -165,4 +177,5 @@ def wire_services(
         "download_service": download_service,
         "firmware_service": firmware_service,
         "sgdb_service": sgdb_service,
+        "metadata_service": metadata_service,
     }

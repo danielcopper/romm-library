@@ -4,6 +4,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from services.metadata import MetadataService
 from services.sync import SyncService
 
 # conftest.py patches decky before this import
@@ -20,6 +21,17 @@ def plugin():
 
     import decky
 
+    metadata_service = MetadataService(
+        http_client=p._http_client,
+        state=p._state,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        save_metadata_cache=lambda: p._save_metadata_cache(),
+        log_debug=lambda msg: p._log_debug(msg),
+    )
+    p._metadata_service = metadata_service
+
     p._sync_service = SyncService(
         http_client=p._http_client,
         state=p._state,
@@ -30,12 +42,20 @@ def plugin():
         plugin_dir=decky.DECKY_PLUGIN_DIR,
         emit=decky.emit,
         plugin=p,
+        metadata_service=metadata_service,
     )
     return p
 
 
+@pytest.fixture(autouse=True)
+async def _set_event_loop(plugin):
+    """Ensure plugin.loop and service loops match the running event loop for async tests."""
+    plugin.loop = asyncio.get_event_loop()
+    plugin._metadata_service._loop = asyncio.get_event_loop()
+
+
 class TestExtractMetadata:
-    """Tests for the _extract_metadata helper."""
+    """Tests for the extract_metadata helper."""
 
     def test_full_metadatum(self, plugin):
         rom = {
@@ -49,7 +69,7 @@ class TestExtractMetadata:
                 "player_count": "1-4",
             },
         }
-        result = plugin._extract_metadata(rom)
+        result = plugin._metadata_service.extract_metadata(rom)
         assert result["summary"] == "An adventure game"
         assert result["genres"] == ["RPG", "Adventure"]
         assert result["companies"] == ["Nintendo", "HAL Laboratory"]
@@ -62,13 +82,13 @@ class TestExtractMetadata:
     def test_first_release_date_ms_to_seconds(self, plugin):
         """Verify milliseconds are divided by 1000 for unix seconds."""
         rom = {"metadatum": {"first_release_date": 946684800000}}
-        result = plugin._extract_metadata(rom)
+        result = plugin._metadata_service.extract_metadata(rom)
         assert result["first_release_date"] == 946684800
 
     def test_missing_metadatum(self, plugin):
         """ROM with no metadatum field returns empty defaults."""
         rom = {"summary": "A game", "id": 1}
-        result = plugin._extract_metadata(rom)
+        result = plugin._metadata_service.extract_metadata(rom)
         assert result["summary"] == "A game"
         assert result["genres"] == []
         assert result["companies"] == []
@@ -80,7 +100,7 @@ class TestExtractMetadata:
     def test_none_metadatum(self, plugin):
         """ROM with metadatum=None returns empty defaults."""
         rom = {"summary": "A game", "metadatum": None}
-        result = plugin._extract_metadata(rom)
+        result = plugin._metadata_service.extract_metadata(rom)
         assert result["genres"] == []
         assert result["first_release_date"] is None
 
@@ -89,9 +109,9 @@ class TestExtractMetadata:
         rom1 = {"summary": None, "metadatum": {}}
         rom2 = {"summary": "", "metadatum": {}}
         rom3 = {"metadatum": {}}
-        assert plugin._extract_metadata(rom1)["summary"] == ""
-        assert plugin._extract_metadata(rom2)["summary"] == ""
-        assert plugin._extract_metadata(rom3)["summary"] == ""
+        assert plugin._metadata_service.extract_metadata(rom1)["summary"] == ""
+        assert plugin._metadata_service.extract_metadata(rom2)["summary"] == ""
+        assert plugin._metadata_service.extract_metadata(rom3)["summary"] == ""
 
     def test_none_fields_in_metadatum(self, plugin):
         """Metadatum fields that are None return empty list/string."""
@@ -103,7 +123,7 @@ class TestExtractMetadata:
                 "player_count": None,
             },
         }
-        result = plugin._extract_metadata(rom)
+        result = plugin._metadata_service.extract_metadata(rom)
         assert result["genres"] == []
         assert result["companies"] == []
         assert result["game_modes"] == []
@@ -142,7 +162,6 @@ class TestGetRomMetadata:
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
 
         romm_response = {
@@ -185,7 +204,6 @@ class TestGetRomMetadata:
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
 
         # Set cache as 8 days old
@@ -217,7 +235,6 @@ class TestGetRomMetadata:
         """On network error, returns stale cached data if available."""
         from unittest.mock import patch
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
 
         # Stale cache (8 days old)
@@ -243,7 +260,6 @@ class TestGetRomMetadata:
         """On network error with no cache, returns empty defaults."""
         from unittest.mock import patch
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
 
         with patch.object(plugin._http_client, "request", side_effect=Exception("Connection refused")):
@@ -266,7 +282,6 @@ class TestGetRomMetadata:
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
 
         romm_response = {"id": 42, "summary": "Just a summary"}
@@ -312,7 +327,6 @@ class TestGetRomMetadata:
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "debug"
 
         romm_response = {"id": 42, "summary": "test", "metadatum": {}}
@@ -335,6 +349,8 @@ class TestGetAllMetadataCache:
             "1": {"summary": "Game 1", "cached_at": 100},
             "2": {"summary": "Game 2", "cached_at": 200},
         }
+        # Update service's reference too (same dict in production, but fixture re-assigned)
+        plugin._metadata_service._metadata_cache = plugin._metadata_cache
         result = await plugin.get_all_metadata_cache()
         assert len(result) == 2
         assert result["1"]["summary"] == "Game 1"
@@ -343,6 +359,7 @@ class TestGetAllMetadataCache:
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_cache(self, plugin):
         plugin._metadata_cache = {}
+        plugin._metadata_service._metadata_cache = plugin._metadata_cache
         result = await plugin.get_all_metadata_cache()
         assert result == {}
 
@@ -396,7 +413,7 @@ class TestSyncMetadataCapture:
     """Tests for metadata capture during _do_sync."""
 
     def test_extract_metadata_during_sync(self, plugin, tmp_path):
-        """Verify that _extract_metadata produces correct cache entries for ROM list items."""
+        """Verify that extract_metadata produces correct cache entries for ROM list items."""
         import decky
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
@@ -427,7 +444,7 @@ class TestSyncMetadataCapture:
 
         for rom in roms:
             rom_id_str = str(rom["id"])
-            plugin._metadata_cache[rom_id_str] = plugin._extract_metadata(rom)
+            plugin._metadata_cache[rom_id_str] = plugin._metadata_service.extract_metadata(rom)
         plugin._save_metadata_cache()
 
         # Verify in-memory cache
@@ -477,7 +494,7 @@ class TestSyncMetadataCapture:
             {"id": 1, "summary": "New game", "metadatum": {"genres": ["RPG"]}},
         ]
         for rom in new_roms:
-            plugin._metadata_cache[str(rom["id"])] = plugin._extract_metadata(rom)
+            plugin._metadata_cache[str(rom["id"])] = plugin._metadata_service.extract_metadata(rom)
         plugin._save_metadata_cache()
 
         # Both old and new entries must be present
@@ -497,7 +514,7 @@ class TestSyncMetadataCapture:
     def test_sync_rom_without_metadatum(self, plugin):
         """ROM without metadatum field gets an empty-default cache entry during sync."""
         rom = {"id": 5, "summary": "No metadata here"}
-        result = plugin._extract_metadata(rom)
+        result = plugin._metadata_service.extract_metadata(rom)
         assert result["summary"] == "No metadata here"
         assert result["genres"] == []
         assert result["companies"] == []
@@ -517,7 +534,6 @@ class TestGetRomMetadata404:
         import urllib.error
         from unittest.mock import patch
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
 
         http_404 = urllib.error.HTTPError(
@@ -543,7 +559,6 @@ class TestGetRomMetadata404:
         import urllib.error
         from unittest.mock import patch
 
-        plugin.loop = asyncio.get_event_loop()
         plugin.settings["log_level"] = "warn"
 
         plugin._metadata_cache["999"] = {
