@@ -13,14 +13,12 @@ from services.sync import SyncState
 from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
 from lib.metadata import MetadataMixin
-from lib.sgdb import SgdbMixin
 from lib.state import StateMixin
 from lib.steam_config import SteamConfigMixin
 
 
 class Plugin(
     StateMixin,
-    SgdbMixin,
     SteamConfigMixin,
     MetadataMixin,
     AchievementsMixin,
@@ -80,6 +78,7 @@ class Plugin(
         self._sync_service = services["sync_service"]
         self._download_service = services["download_service"]
         self._firmware_service = services["firmware_service"]
+        self._sgdb_service = services["sgdb_service"]
         self._firmware_service.load_bios_registry()
         # Load persisted state into the live dict
         self._save_sync_service.init_state()
@@ -88,7 +87,7 @@ class Plugin(
         self._prune_stale_installed_roms()  # lib/state.py
         self._prune_stale_registry()  # lib/state.py
         self._save_sync_service.prune_orphaned_state()  # services/save_sync.py
-        self._prune_orphaned_artwork_cache()  # lib/sgdb.py
+        self._sgdb_service.prune_orphaned_artwork_cache()  # services/sgdb.py
         self._sync_service.prune_orphaned_staging_artwork()  # services/sync.py
         self._download_service.cleanup_leftover_tmp_files()  # services/downloads.py
         # ── RetroDECK path change detection ──
@@ -804,3 +803,17 @@ class Plugin(
 
     async def get_all_playtime(self):
         return await self._playtime_service.get_all_playtime()
+
+    # ── SGDB delegation to SgdbService ───────────────────────
+
+    async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
+        return await self._sgdb_service.get_sgdb_artwork_base64(rom_id, asset_type_num)
+
+    async def verify_sgdb_api_key(self, api_key=None):
+        return await self._sgdb_service.verify_sgdb_api_key(api_key)
+
+    async def save_sgdb_api_key(self, api_key):
+        return await self._sgdb_service.save_sgdb_api_key(api_key)
+
+    async def save_shortcut_icon(self, app_id, icon_base64):
+        return await self._sgdb_service.save_shortcut_icon(app_id, icon_base64)

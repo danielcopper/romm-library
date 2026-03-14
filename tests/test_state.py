@@ -4,6 +4,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from services.sgdb import SgdbService
 from services.sync import SyncService
 
 # conftest.py patches decky before this import
@@ -29,6 +30,19 @@ def plugin():
         logger=decky.logger,
         plugin_dir=decky.DECKY_PLUGIN_DIR,
         emit=decky.emit,
+        plugin=p,
+    )
+
+    p._sgdb_service = SgdbService(
+        http_client=p._http_client,
+        state=p._state,
+        settings=p.settings,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+        save_state=MagicMock(),
+        save_settings_to_disk=MagicMock(),
+        sync_service=p._sync_service,
         plugin=p,
     )
     return p
@@ -243,7 +257,7 @@ class TestLogLevel:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._sgdb_service._runtime_dir = str(tmp_path)
 
         plugin.settings["log_level"] = "warn"
         with patch.object(decky.logger, "info") as mock_info:
@@ -259,7 +273,7 @@ class TestLogLevel:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._sgdb_service._runtime_dir = str(tmp_path)
 
         plugin.settings["log_level"] = "debug"
         plugin.settings["steamgriddb_api_key"] = ""

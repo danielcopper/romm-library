@@ -19,6 +19,7 @@ from services.downloads import DownloadService
 from services.firmware import FirmwareService
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
+from services.sgdb import SgdbService
 from services.sync import SyncService
 
 
@@ -144,10 +145,24 @@ def wire_services(
         save_state=plugin._save_state,
     )
 
+    sgdb_service = SgdbService(
+        http_client=http_client,
+        state=state,
+        settings=settings,
+        loop=loop,
+        logger=logger,
+        runtime_dir=runtime_dir,
+        save_state=plugin._save_state,
+        save_settings_to_disk=plugin._save_settings_to_disk,
+        sync_service=sync_service,
+        plugin=plugin,
+    )
+
     return {
         "save_sync_service": save_sync_service,
         "playtime_service": playtime_service,
         "sync_service": sync_service,
         "download_service": download_service,
         "firmware_service": firmware_service,
+        "sgdb_service": sgdb_service,
     }

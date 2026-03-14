@@ -9,5 +9,4 @@ modules =
     lib.state
     lib.steam_config
     lib.metadata
-    lib.sgdb
 

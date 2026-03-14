@@ -1,3 +1,14 @@
+"""SgdbService — SteamGridDB artwork management extracted from SgdbMixin.
+
+Handles SGDB API key verification, artwork fetching/caching, icon saving
+to Steam grid directory, and orphaned artwork cache pruning.
+"""
+
+# TODO(Steps 9-10): Replace plugin ref with proper service injection
+# when SteamConfigMixin is extracted.
+
+from __future__ import annotations
+
 import base64
 import json
 import os
@@ -7,8 +18,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import TYPE_CHECKING
-
-import decky
 
 try:
     import certifi  # type: ignore[import-not-found]  # optional: falls via system or pip
@@ -23,32 +32,64 @@ except ImportError:
 
 if TYPE_CHECKING:
     import asyncio
-    from typing import Optional, Protocol
+    import logging
+    from collections.abc import Callable
+    from typing import Any
 
     from adapters.romm.client import RommHttpClient
-
-    class _SgdbDeps(Protocol):
-        settings: dict
-        _state: dict
-        _http_client: RommHttpClient
-        loop: asyncio.AbstractEventLoop
-
-        def _save_settings_to_disk(self) -> None: ...
-        def _log_debug(self, msg: str) -> None: ...
-        def _save_state(self) -> None: ...
-        def _grid_dir(self) -> Optional[str]: ...
-        def _read_shortcuts(self) -> dict: ...
-        def _write_shortcuts(self, data: dict) -> None: ...
+    from services.sync import SyncService
 
 
-class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
+class SgdbService:
+    """SteamGridDB artwork: API key management, artwork fetch/cache, icon save."""
+
+    def __init__(
+        self,
+        *,
+        http_client: RommHttpClient,
+        state: dict,
+        settings: dict,
+        loop: asyncio.AbstractEventLoop,
+        logger: logging.Logger,
+        runtime_dir: str,
+        save_state: Callable[[], None],
+        save_settings_to_disk: Callable[[], None],
+        sync_service: SyncService,
+        plugin: Any,
+    ) -> None:
+        self._http_client = http_client
+        self._state = state
+        self._settings = settings
+        self._loop = loop
+        self._logger = logger
+        self._runtime_dir = runtime_dir
+        self._save_state = save_state
+        self._save_settings_to_disk = save_settings_to_disk
+        self._sync_service = sync_service
+        # TODO(Steps 9-10): Replace plugin ref with proper service injection
+        # when SteamConfigMixin is extracted.
+        self._plugin = plugin
+
+    # -- logging -----------------------------------------------------------
+
+    _LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+
+    def _log_debug(self, msg: str) -> None:
+        configured = self._settings.get("log_level", "warn")
+        if self._LOG_LEVELS.get("debug", 0) >= self._LOG_LEVELS.get(configured, 2):
+            self._logger.info(msg)
+
+    # -- artwork dir -------------------------------------------------------
+
     def _sgdb_artwork_dir(self):
-        art_dir = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "artwork")
+        art_dir = os.path.join(self._runtime_dir, "artwork")
         os.makedirs(art_dir, exist_ok=True)
         return art_dir
 
+    # -- SGDB HTTP ---------------------------------------------------------
+
     def _sgdb_request(self, path):
-        api_key = self.settings.get("steamgriddb_api_key", "")
+        api_key = self._settings.get("steamgriddb_api_key", "")
         if not api_key:
             return None
         url = "https://www.steamgriddb.com/api/v2" + path
@@ -65,8 +106,10 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
             if result and result.get("success") and result.get("data"):
                 return result["data"]["id"]
         except Exception as e:
-            decky.logger.warning(f"SGDB lookup failed for IGDB {igdb_id}: {e}")
+            self._logger.warning(f"SGDB lookup failed for IGDB {igdb_id}: {e}")
         return None
+
+    # -- artwork download --------------------------------------------------
 
     def _download_sgdb_artwork(self, sgdb_game_id, rom_id, asset_type):
         type_map = {
@@ -107,13 +150,15 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
             os.replace(tmp_path, cached)
             return cached
         except Exception as e:
-            decky.logger.warning(f"SGDB {asset_type} download failed for game {sgdb_game_id}: {e}")
+            self._logger.warning(f"SGDB {asset_type} download failed for game {sgdb_game_id}: {e}")
             if os.path.exists(cached + ".tmp"):
                 try:
                     os.remove(cached + ".tmp")
                 except OSError:
                     pass
             return None
+
+    # -- artwork base64 (callable) -----------------------------------------
 
     async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
         rom_id = int(rom_id)
@@ -134,10 +179,10 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
                 with open(cached, "rb") as f:
                     return {"base64": base64.b64encode(f.read()).decode("ascii"), "no_api_key": False}
             except Exception as e:
-                decky.logger.warning(f"Failed to read cached SGDB artwork: {e}")
+                self._logger.warning(f"Failed to read cached SGDB artwork: {e}")
 
         # Try to fetch from SGDB
-        if not self.settings.get("steamgriddb_api_key"):
+        if not self._settings.get("steamgriddb_api_key"):
             self._log_debug("SGDB artwork skipped: no API key configured")
             return {"base64": None, "no_api_key": True}
 
@@ -153,7 +198,7 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
         # On-demand fetch from RomM API for pre-existing ROMs missing IDs
         if not sgdb_id:
             try:
-                rom_data = await self.loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+                rom_data = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
                 if rom_data:
                     sgdb_id = rom_data.get("sgdb_id")
                     igdb_id = igdb_id or rom_data.get("igdb_id")
@@ -167,11 +212,11 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
                         self._state["shortcut_registry"][str(rom_id)]["igdb_id"] = igdb_id
                     self._save_state()
             except Exception as e:
-                decky.logger.warning(f"SGDB artwork: failed to fetch IDs from RomM for rom_id={rom_id}: {e}")
+                self._logger.warning(f"SGDB artwork: failed to fetch IDs from RomM for rom_id={rom_id}: {e}")
 
         # Fallback: look up SGDB via IGDB ID if we have igdb_id but no sgdb_id
         if not sgdb_id and igdb_id:
-            sgdb_id = await self.loop.run_in_executor(None, self._get_sgdb_game_id, igdb_id)
+            sgdb_id = await self._loop.run_in_executor(None, self._get_sgdb_game_id, igdb_id)
             if sgdb_id and str(rom_id) in self._state["shortcut_registry"]:
                 self._state["shortcut_registry"][str(rom_id)]["sgdb_id"] = sgdb_id
                 self._save_state()
@@ -180,18 +225,20 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
             self._log_debug(f"SGDB artwork skipped: no SGDB game found for rom_id={rom_id}")
             return {"base64": None, "no_api_key": False}
 
-        path = await self.loop.run_in_executor(None, self._download_sgdb_artwork, sgdb_id, rom_id, asset_type)
+        path = await self._loop.run_in_executor(None, self._download_sgdb_artwork, sgdb_id, rom_id, asset_type)
         if path and os.path.exists(path):
             self._log_debug(f"SGDB artwork download success: rom_id={rom_id}, asset_type={asset_type}")
             try:
                 with open(path, "rb") as f:
                     return {"base64": base64.b64encode(f.read()).decode("ascii"), "no_api_key": False}
             except Exception as e:
-                decky.logger.warning(f"Failed to read SGDB artwork: {e}")
+                self._logger.warning(f"Failed to read SGDB artwork: {e}")
         else:
             self._log_debug(f"SGDB artwork download failed: rom_id={rom_id}, asset_type={asset_type}")
 
         return {"base64": None, "no_api_key": False}
+
+    # -- API key management ------------------------------------------------
 
     def _verify_sgdb_api_key_io(self, api_key):
         """Sync helper for verify_sgdb_api_key — full HTTP round-trip in executor."""
@@ -206,32 +253,34 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
     async def verify_sgdb_api_key(self, api_key=None):
         # Use saved key if no valid key provided (modal pattern doesn't hold the real key)
         if not api_key or api_key == "••••":
-            api_key = self.settings.get("steamgriddb_api_key", "")
+            api_key = self._settings.get("steamgriddb_api_key", "")
         if not api_key:
             return {"success": False, "message": "No API key configured"}
         try:
-            data = await self.loop.run_in_executor(None, self._verify_sgdb_api_key_io, api_key)
+            data = await self._loop.run_in_executor(None, self._verify_sgdb_api_key_io, api_key)
             if data.get("success"):
                 return {"success": True, "message": "API key is valid"}
             return {"success": False, "message": "API key rejected by SteamGridDB"}
         except urllib.error.HTTPError as e:
-            decky.logger.warning(f"SGDB API key verification HTTP error: {e.code}")
+            self._logger.warning(f"SGDB API key verification HTTP error: {e.code}")
             if e.code in (401, 403):
                 return {"success": False, "message": "Invalid API key"}
             return {"success": False, "message": f"SteamGridDB error: HTTP {e.code}"}
         except Exception as e:
-            decky.logger.error(f"SGDB API key verification failed: {e}")
+            self._logger.error(f"SGDB API key verification failed: {e}")
             return {"success": False, "message": f"Connection failed: {e}"}
 
     async def save_sgdb_api_key(self, api_key):
         if api_key and api_key != "••••":
-            self.settings["steamgriddb_api_key"] = api_key
+            self._settings["steamgriddb_api_key"] = api_key
             self._save_settings_to_disk()
         return {"success": True, "message": "SteamGridDB API key saved"}
 
-    def _prune_orphaned_artwork_cache(self):
+    # -- cache pruning -----------------------------------------------------
+
+    def prune_orphaned_artwork_cache(self):
         """Remove SGDB artwork cache files for rom_ids not in the shortcut registry."""
-        art_dir = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "artwork")
+        art_dir = os.path.join(self._runtime_dir, "artwork")
         if not os.path.isdir(art_dir):
             return
         registry = self._state.get("shortcut_registry", {})
@@ -242,9 +291,9 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
                 try:
                     os.remove(os.path.join(art_dir, filename))
                     pruned += 1
-                    decky.logger.info(f"Removed leftover artwork tmp: {filename}")
+                    self._logger.info(f"Removed leftover artwork tmp: {filename}")
                 except OSError as e:
-                    decky.logger.warning(f"Failed to remove artwork tmp {filename}: {e}")
+                    self._logger.warning(f"Failed to remove artwork tmp {filename}: {e}")
                 continue
             # Expected format: {rom_id}_{type}.png
             parts = filename.split("_", 1)
@@ -256,15 +305,19 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
                     os.remove(os.path.join(art_dir, filename))
                     pruned += 1
                 except OSError as e:
-                    decky.logger.warning(f"Failed to remove orphaned artwork {filename}: {e}")
+                    self._logger.warning(f"Failed to remove orphaned artwork {filename}: {e}")
         if pruned:
-            decky.logger.info(f"Pruned {pruned} orphaned SGDB artwork cache file(s)")
+            self._logger.info(f"Pruned {pruned} orphaned SGDB artwork cache file(s)")
+
+    # -- icon saving -------------------------------------------------------
 
     def _save_icon_to_grid(self, app_id, icon_bytes):
         """Write icon PNG to Steam's grid dir and update shortcuts.vdf icon field."""
-        grid_dir = self._grid_dir()
+        # TODO(Steps 9-10): Replace plugin ref with proper service injection
+        # when SteamConfigMixin is extracted.
+        grid_dir = self._plugin._grid_dir()
         if not grid_dir:
-            decky.logger.warning("Cannot find Steam grid directory for icon save")
+            self._logger.warning("Cannot find Steam grid directory for icon save")
             return False
 
         # Write icon file to grid dir
@@ -275,7 +328,7 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
                 f.write(icon_bytes)
             os.replace(tmp_path, icon_path)
         except Exception as e:
-            decky.logger.error(f"Failed to write icon file {icon_path}: {e}")
+            self._logger.error(f"Failed to write icon file {icon_path}: {e}")
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -285,7 +338,7 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
 
         # Update shortcuts.vdf icon field
         try:
-            vdf_data = self._read_shortcuts()
+            vdf_data = self._plugin._read_shortcuts()
             # Convert unsigned app_id to signed int32 for VDF comparison
             signed_id = struct.unpack("i", struct.pack("I", app_id & 0xFFFFFFFF))[0]
             shortcuts = vdf_data.get("shortcuts", {})
@@ -293,9 +346,9 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
                 if entry.get("appid") == signed_id:
                     entry["icon"] = icon_path
                     break
-            self._write_shortcuts(vdf_data)
+            self._plugin._write_shortcuts(vdf_data)
         except Exception as e:
-            decky.logger.warning(f"Failed to update shortcuts.vdf icon field: {e}")
+            self._logger.warning(f"Failed to update shortcuts.vdf icon field: {e}")
             # Icon file is still saved, just VDF field not set — non-fatal
 
         return True
@@ -306,8 +359,8 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
         try:
             icon_bytes = base64.b64decode(icon_base64)
         except Exception as e:
-            decky.logger.error(f"Failed to decode icon base64: {e}")
+            self._logger.error(f"Failed to decode icon base64: {e}")
             return {"success": False}
 
-        success = await self.loop.run_in_executor(None, self._save_icon_to_grid, app_id, icon_bytes)
+        success = await self._loop.run_in_executor(None, self._save_icon_to_grid, app_id, icon_bytes)
         return {"success": success}
