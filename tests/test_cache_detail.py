@@ -1,13 +1,20 @@
 import asyncio
+import logging
 import os
-from unittest.mock import patch
 
 import pytest
+from fakes.fake_save_api import FakeSaveApi
+from services.playtime import PlaytimeService
+from services.save_sync import SaveSyncService
 
 from lib.sync import SyncState
 
 # conftest.py patches decky before this import
 from main import Plugin
+
+
+def _no_retry(fn, *a, **kw):
+    return fn(*a, **kw)
 
 
 @pytest.fixture
@@ -34,14 +41,47 @@ def plugin(tmp_path):
     decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
     decky.DECKY_USER_HOME = str(tmp_path)
 
-    p._init_save_sync_state()
+    # Wire services with FakeSaveApi
+    fake_api = FakeSaveApi()
+    p._save_sync_state = SaveSyncService.make_default_state()
+    saves_path = str(tmp_path / "retrodeck" / "saves")
+
+    p._save_sync_service = SaveSyncService(
+        save_api=fake_api,
+        with_retry=_no_retry,
+        is_retryable=lambda e: isinstance(e, ConnectionError),
+        state=p._state,
+        save_sync_state=p._save_sync_state,
+        loop=asyncio.get_event_loop(),
+        logger=logging.getLogger("test"),
+        runtime_dir=str(tmp_path),
+        get_saves_path=lambda: saves_path,
+    )
+    p._save_sync_service.init_state()
+
+    p._playtime_service = PlaytimeService(
+        save_api=fake_api,
+        with_retry=_no_retry,
+        is_retryable=lambda e: isinstance(e, ConnectionError),
+        save_sync_state=p._save_sync_state,
+        loop=asyncio.get_event_loop(),
+        logger=logging.getLogger("test"),
+        save_state=p._save_sync_service.save_state,
+    )
+
+    # Store fake_api on plugin for test access
+    p._fake_api = fake_api
+
     p._save_sync_state["settings"]["save_sync_enabled"] = False
     return p
 
 
 @pytest.fixture(autouse=True)
 async def _set_event_loop(plugin):
-    plugin.loop = asyncio.get_event_loop()
+    loop = asyncio.get_event_loop()
+    plugin.loop = loop
+    plugin._save_sync_service._loop = loop
+    plugin._playtime_service._loop = loop
 
 
 def _install_rom(plugin, tmp_path, rom_id=42, system="gba", file_name="pokemon.gba"):
@@ -312,8 +352,7 @@ class TestLightweightSaveStatusNoSaves:
     async def test_no_local_no_server(self, plugin, tmp_path):
         """No local or server saves returns empty files list."""
         _install_rom(plugin, tmp_path)
-        with patch.object(plugin, "_romm_list_saves", return_value=[]):
-            result = await plugin.check_save_status_lightweight(42)
+        result = await plugin.check_save_status_lightweight(42)
         assert result["rom_id"] == 42
         assert result["files"] == []
 
@@ -322,8 +361,8 @@ class TestLightweightSaveStatusNoSaves:
         """Server save with no local file returns status=download."""
         _install_rom(plugin, tmp_path)
         server = _server_save()
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]):
-            result = await plugin.check_save_status_lightweight(42)
+        plugin._fake_api.saves[server["id"]] = server
+        result = await plugin.check_save_status_lightweight(42)
         assert len(result["files"]) == 1
         assert result["files"][0]["status"] == "download"
         assert result["files"][0]["local_path"] is None
@@ -332,8 +371,7 @@ class TestLightweightSaveStatusNoSaves:
     @pytest.mark.asyncio
     async def test_rom_not_installed(self, plugin, tmp_path):
         """Non-installed ROM returns empty files."""
-        with patch.object(plugin, "_romm_list_saves", return_value=[]):
-            result = await plugin.check_save_status_lightweight(999)
+        result = await plugin.check_save_status_lightweight(999)
         assert result["files"] == []
 
 
@@ -361,8 +399,8 @@ class TestLightweightSaveStatusSynced:
         }
 
         server = _server_save()
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]):
-            result = await plugin.check_save_status_lightweight(42)
+        plugin._fake_api.saves[server["id"]] = server
+        result = await plugin.check_save_status_lightweight(42)
 
         assert len(result["files"]) == 1
         assert result["files"][0]["status"] == "skip"
@@ -388,8 +426,8 @@ class TestLightweightSaveStatusSynced:
         }
 
         server = _server_save(updated_at="2026-02-18T10:00:00Z")
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]):
-            result = await plugin.check_save_status_lightweight(42)
+        plugin._fake_api.saves[server["id"]] = server
+        result = await plugin.check_save_status_lightweight(42)
 
         assert result["files"][0]["status"] == "download"
 
@@ -412,8 +450,8 @@ class TestLightweightSaveStatusSynced:
         }
 
         server = _server_save()
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]):
-            result = await plugin.check_save_status_lightweight(42)
+        plugin._fake_api.saves[server["id"]] = server
+        result = await plugin.check_save_status_lightweight(42)
 
         assert result["files"][0]["status"] == "upload"
 
@@ -436,8 +474,8 @@ class TestLightweightSaveStatusSynced:
         }
 
         server = _server_save(updated_at="2026-02-18T10:00:00Z")
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]):
-            result = await plugin.check_save_status_lightweight(42)
+        plugin._fake_api.saves[server["id"]] = server
+        result = await plugin.check_save_status_lightweight(42)
 
         assert result["files"][0]["status"] == "conflict"
 
@@ -451,8 +489,7 @@ class TestLightweightSaveStatusNeverSynced:
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path)
 
-        with patch.object(plugin, "_romm_list_saves", return_value=[]):
-            result = await plugin.check_save_status_lightweight(42)
+        result = await plugin.check_save_status_lightweight(42)
 
         assert len(result["files"]) == 1
         assert result["files"][0]["status"] == "upload"
@@ -464,8 +501,8 @@ class TestLightweightSaveStatusNeverSynced:
         _create_save(tmp_path)
 
         server = _server_save()
-        with patch.object(plugin, "_romm_list_saves", return_value=[server]):
-            result = await plugin.check_save_status_lightweight(42)
+        plugin._fake_api.saves[server["id"]] = server
+        result = await plugin.check_save_status_lightweight(42)
 
         assert result["files"][0]["status"] == "conflict"
 
@@ -479,8 +516,8 @@ class TestLightweightSaveStatusAPIError:
         _install_rom(plugin, tmp_path)
         _create_save(tmp_path)
 
-        with patch.object(plugin, "_with_retry", side_effect=Exception("Connection refused")):
-            result = await plugin.check_save_status_lightweight(42)
+        plugin._fake_api.fail_on_next(Exception("Connection refused"))
+        result = await plugin.check_save_status_lightweight(42)
 
         assert len(result["files"]) == 1
         assert result["files"][0]["filename"] == "pokemon.srm"

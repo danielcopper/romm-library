@@ -69,13 +69,12 @@ def wire_services(
     logger: logging.Logger,
     runtime_dir: str,
     get_saves_path: Any,
-    save_state_fn: Any,
 ) -> dict:
     """Create service instances after plugin state is initialised.
 
-    Called from ``Plugin._main()`` after ``_init_save_sync_state`` /
-    ``_load_save_sync_state`` so that services receive live references
-    to the fully-populated state dicts.
+    Called from ``Plugin._main()`` after save-sync state is populated
+    so that services receive live references to the fully-populated
+    state dicts.
 
     Returns
     -------
@@ -100,7 +99,7 @@ def wire_services(
         save_sync_state=save_sync_state,
         loop=loop,
         logger=logger,
-        save_state=save_state_fn,
+        save_state=save_sync_service.save_state,
     )
 
     return {

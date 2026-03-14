@@ -1,7 +1,7 @@
 """RommClientMixin — thin delegation shim to RommHttpClient.
 
 All HTTP logic lives in ``adapters.romm.client.RommHttpClient``.
-This mixin exists only so that unmigrated mixins (SyncMixin, SaveSyncMixin,
+This mixin exists only so that unmigrated mixins (SyncMixin,
 etc.) can keep calling ``self._romm_request()``, ``self._with_retry()``, etc.
 through the Plugin MRO without changes.
 
