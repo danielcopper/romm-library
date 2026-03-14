@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,6 +13,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
+    p._http_client = MagicMock()
     p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
@@ -318,7 +320,7 @@ class TestGetSgdbArtworkBase64:
             return str(art_file)
 
         with (
-            patch.object(plugin, "_romm_request", return_value=romm_response),
+            patch.object(plugin._http_client, "request", return_value=romm_response),
             patch.object(plugin, "_get_sgdb_game_id", return_value=9999),
             patch.object(plugin, "_download_sgdb_artwork", side_effect=fake_download_sgdb),
         ):
@@ -349,7 +351,7 @@ class TestGetSgdbArtworkBase64:
         }
 
         # RomM API also returns no igdb_id
-        with patch.object(plugin, "_romm_request", return_value={"igdb_id": None}):
+        with patch.object(plugin._http_client, "request", return_value={"igdb_id": None}):
             result = await plugin.get_sgdb_artwork_base64(42, 1)
 
         assert result["base64"] is None
@@ -455,7 +457,7 @@ class TestGetSgdbArtworkBase64:
         plugin.loop = asyncio.get_event_loop()
 
         # Not in registry or pending, RomM API fails
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Connection refused")):
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Connection refused")):
             result = await plugin.get_sgdb_artwork_base64(42, 1)
 
         assert result["base64"] is None

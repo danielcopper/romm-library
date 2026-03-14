@@ -6,7 +6,7 @@ import urllib.parse
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 
 class SyncState(Enum):
@@ -20,11 +20,14 @@ import decky
 from lib.errors import classify_error
 
 if TYPE_CHECKING:
-    from typing import Callable, Optional, Protocol
+    from typing import Optional, Protocol
+
+    from adapters.romm.client import RommHttpClient
 
     class _SyncDeps(Protocol):
         settings: dict
         _state: dict
+        _http_client: RommHttpClient
         _sync_state: SyncState
         _sync_progress: dict
         _sync_last_heartbeat: float
@@ -33,8 +36,6 @@ if TYPE_CHECKING:
         _metadata_cache: dict
         loop: asyncio.AbstractEventLoop
 
-        def _romm_request(self, path: str) -> Any: ...
-        def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
         def _save_settings_to_disk(self) -> None: ...
         def _save_state(self) -> None: ...
         def _save_metadata_cache(self) -> None: ...
@@ -53,7 +54,7 @@ if TYPE_CHECKING:
 class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
     async def get_platforms(self):
         try:
-            platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+            platforms = await self.loop.run_in_executor(None, self._http_client.request, "/api/platforms")
         except Exception as e:
             decky.logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -90,7 +91,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
     async def set_all_platforms_sync(self, enabled):
         enabled = bool(enabled)
         try:
-            platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+            platforms = await self.loop.run_in_executor(None, self._http_client.request, "/api/platforms")
         except Exception as e:
             decky.logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -361,7 +362,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
         # Phase 1: Fetch platforms
         await self._emit_progress("platforms", message="Fetching platforms...")
 
-        platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+        platforms = await self.loop.run_in_executor(None, self._http_client.request, "/api/platforms")
         if not isinstance(platforms, list):
             decky.logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
             platforms = []
@@ -404,7 +405,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 try:
                     delta_resp = await self.loop.run_in_executor(
                         None,
-                        self._romm_request,
+                        self._http_client.request,
                         f"/api/roms?platform_ids={platform_id}&limit=1&offset=0&updated_after={updated_after}",
                     )
                     server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
@@ -458,7 +459,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 try:
                     roms = await self.loop.run_in_executor(
                         None,
-                        self._romm_request,
+                        self._http_client.request,
                         f"/api/roms?platform_ids={platform_id}&limit={limit}&offset={offset}",
                     )
                 except Exception as e:
@@ -878,7 +879,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 continue
 
             try:
-                await self.loop.run_in_executor(None, self._romm_download, cover_url, staging)
+                await self.loop.run_in_executor(None, self._http_client.download, cover_url, staging)
                 cover_paths[rom_id] = staging
             except Exception as e:
                 decky.logger.warning(f"Failed to download artwork for {rom['name']}: {e}")
@@ -911,7 +912,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
 
             # Fall back to API if slug not in registry
             if not platform_name:
-                platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+                platforms = await self.loop.run_in_executor(None, self._http_client.request, "/api/platforms")
                 for p in platforms:
                     if p.get("slug") == platform_slug:
                         platform_name = p.get("name", "")

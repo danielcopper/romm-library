@@ -3,7 +3,7 @@ import json
 import os
 import urllib.parse
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import decky
 
@@ -12,15 +12,16 @@ from lib.errors import error_response
 
 if TYPE_CHECKING:
     import asyncio
-    from typing import Callable, Optional, Protocol
+    from typing import Protocol
+
+    from adapters.romm.client import RommHttpClient
 
     class _FirmwareDeps(Protocol):
         _state: dict
         _bios_registry: dict
+        _http_client: RommHttpClient
         loop: asyncio.AbstractEventLoop
 
-        def _romm_request(self, path: str) -> Any: ...
-        def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
         def _save_state(self) -> None: ...
 
 
@@ -112,7 +113,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         """
         server_offline = False
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
+            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
         except Exception as e:
             decky.logger.warning(f"Failed to fetch firmware from server: {e}")
             server_offline = True
@@ -236,7 +237,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         """Download a single firmware file from RomM."""
         firmware_id = int(firmware_id)
         try:
-            fw = await self.loop.run_in_executor(None, self._romm_request, f"/api/firmware/{firmware_id}")
+            fw = await self.loop.run_in_executor(None, self._http_client.request, f"/api/firmware/{firmware_id}")
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
             return error_response(e)
@@ -248,7 +249,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             download_path = f"/api/firmware/{firmware_id}/content/{urllib.parse.quote(file_name, safe='')}"
-            await self.loop.run_in_executor(None, self._romm_download, download_path, tmp_path)
+            await self.loop.run_in_executor(None, self._http_client.download, download_path, tmp_path)
         except Exception as e:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -265,7 +266,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
     async def download_all_firmware(self, platform_slug):
         """Download all firmware for a given platform slug."""
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
+            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -300,7 +301,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
     async def download_required_firmware(self, platform_slug):
         """Download only required firmware for a given platform slug."""
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
+            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
         except Exception as e:
             decky.logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -365,7 +366,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
             registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
 
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._romm_request, "/api/firmware")
+            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
             for fw in firmware_list:
                 fw_slug = self._firmware_slug(fw.get("file_path", ""))
                 if not fw_slug:

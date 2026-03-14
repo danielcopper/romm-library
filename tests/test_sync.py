@@ -1,5 +1,6 @@
 import asyncio
 import os
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,6 +14,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
+    p._http_client = MagicMock()
     p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}

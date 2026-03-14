@@ -6,7 +6,7 @@ import struct
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import decky
 
@@ -25,15 +25,17 @@ if TYPE_CHECKING:
     import asyncio
     from typing import Optional, Protocol
 
+    from adapters.romm.client import RommHttpClient
+
     class _SgdbDeps(Protocol):
         settings: dict
         _state: dict
         _pending_sync: dict
+        _http_client: RommHttpClient
         loop: asyncio.AbstractEventLoop
 
         def _save_settings_to_disk(self) -> None: ...
         def _log_debug(self, msg: str) -> None: ...
-        def _romm_request(self, path: str) -> Any: ...
         def _save_state(self) -> None: ...
         def _grid_dir(self) -> Optional[str]: ...
         def _read_shortcuts(self) -> dict: ...
@@ -152,7 +154,7 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
         # On-demand fetch from RomM API for pre-existing ROMs missing IDs
         if not sgdb_id:
             try:
-                rom_data = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
+                rom_data = await self.loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
                 if rom_data:
                     sgdb_id = rom_data.get("sgdb_id")
                     igdb_id = igdb_id or rom_data.get("igdb_id")

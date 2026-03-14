@@ -14,7 +14,6 @@ from lib.achievements import AchievementsMixin
 from lib.downloads import DownloadMixin
 from lib.firmware import FirmwareMixin
 from lib.metadata import MetadataMixin
-from lib.romm_client import RommClientMixin
 from lib.sgdb import SgdbMixin
 from lib.state import StateMixin
 from lib.steam_config import SteamConfigMixin
@@ -23,7 +22,6 @@ from lib.sync import SyncMixin, SyncState
 
 class Plugin(
     StateMixin,
-    RommClientMixin,
     SgdbMixin,
     SteamConfigMixin,
     FirmwareMixin,
@@ -394,7 +392,7 @@ class Plugin(
             return {"success": False, "message": "No server URL configured", "error_code": "config_error"}
         # Test basic connectivity (heartbeat may not require auth)
         try:
-            heartbeat = await self.loop.run_in_executor(None, self._romm_request, "/api/heartbeat")
+            heartbeat = await self.loop.run_in_executor(None, self._http_client.request, "/api/heartbeat")
         except Exception as e:
             self._romm_version = None
             return error_response(e)
@@ -413,7 +411,7 @@ class Plugin(
 
         # Test authenticated access
         try:
-            await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+            await self.loop.run_in_executor(None, self._http_client.request, "/api/platforms")
         except Exception as e:
             resp = error_response(e)
             if resp["error_code"] not in ("auth_error", "forbidden_error"):

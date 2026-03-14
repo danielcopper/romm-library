@@ -1,5 +1,5 @@
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import decky
 
@@ -7,13 +7,15 @@ if TYPE_CHECKING:
     import asyncio
     from typing import Protocol
 
+    from adapters.romm.client import RommHttpClient
+
     class _MetadataDeps(Protocol):
         _metadata_cache: dict
         _state: dict
+        _http_client: RommHttpClient
         loop: asyncio.AbstractEventLoop
 
         def _log_debug(self, msg: str) -> None: ...
-        def _romm_request(self, path: str) -> Any: ...
         def _save_metadata_cache(self) -> None: ...
 
 
@@ -70,7 +72,7 @@ class MetadataMixin(_MetadataDeps if TYPE_CHECKING else object):
         # Cache miss or stale — fetch from RomM API
         self._log_debug(f"Metadata cache miss for rom_id={rom_id}, fetching from API")
         try:
-            rom_data = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
+            rom_data = await self.loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
             metadata = self._extract_metadata(rom_data)
             self._metadata_cache[rom_id_str] = metadata
             self._save_metadata_cache()

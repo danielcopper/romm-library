@@ -1,5 +1,5 @@
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import decky
 
@@ -7,14 +7,16 @@ if TYPE_CHECKING:
     import asyncio
     from typing import Protocol
 
+    from adapters.romm.client import RommHttpClient
+
     class _AchievementsDeps(Protocol):
         _state: dict
         _metadata_cache: dict
         _achievements_cache: dict
+        _http_client: RommHttpClient
         loop: asyncio.AbstractEventLoop
 
         def _log_debug(self, msg: str) -> None: ...
-        def _romm_request(self, path: str) -> Any: ...
 
 
 class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
@@ -40,7 +42,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
     async def _fetch_ra_username(self):
         """Fetch RA username from RomM user profile and cache it."""
         try:
-            user_data = await self.loop.run_in_executor(None, self._romm_request, "/api/users/me")
+            user_data = await self.loop.run_in_executor(None, self._http_client.request, "/api/users/me")
             ra_username = (user_data.get("ra_username") or "").strip()
             self._achievements_cache["_ra_user"] = {
                 "username": ra_username,
@@ -118,7 +120,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
 
         # Fetch ROM detail from RomM (includes ra_metadata)
         try:
-            rom_data = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
+            rom_data = await self.loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
             achievements = self._extract_achievements_from_rom(rom_data)
 
             # Cache it
@@ -179,7 +181,7 @@ class AchievementsMixin(_AchievementsDeps if TYPE_CHECKING else object):
         try:
             # Fetch user profile from RomM — includes ra_progression and ra_username
             # RomM 4.2+ has ra_progression on user schema
-            user_data = await self.loop.run_in_executor(None, self._romm_request, "/api/users/me")
+            user_data = await self.loop.run_in_executor(None, self._http_client.request, "/api/users/me")
             # Cache ra_username from this response to avoid separate fetch next time
             fetched_username = (user_data.get("ra_username") or "").strip()
             if fetched_username:

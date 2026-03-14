@@ -1,6 +1,6 @@
 import asyncio
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,6 +20,7 @@ def plugin():
         "enabled_platforms": {},
         "log_level": "warn",
     }
+    p._http_client = MagicMock()
     p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {
@@ -145,7 +146,7 @@ class TestFetchRaUsername:
         plugin.loop = asyncio.get_event_loop()
         user_data = {"ra_username": "  RetroPlayer  "}
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
+        with patch.object(plugin._http_client, "request", return_value=user_data):
             result = await plugin._fetch_ra_username()
 
         assert result == "RetroPlayer"
@@ -156,7 +157,7 @@ class TestFetchRaUsername:
         plugin.loop = asyncio.get_event_loop()
         user_data = {"ra_username": None}
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
+        with patch.object(plugin._http_client, "request", return_value=user_data):
             result = await plugin._fetch_ra_username()
 
         assert result == ""
@@ -165,7 +166,7 @@ class TestFetchRaUsername:
     async def test_returns_empty_on_api_error(self, plugin):
         plugin.loop = asyncio.get_event_loop()
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Network error")):
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Network error")):
             result = await plugin._fetch_ra_username()
 
         assert result == ""
@@ -178,7 +179,7 @@ class TestFetchRaUsername:
             "cached_at": time.time() - (2 * 3600),  # expired
         }
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Network error")):
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Network error")):
             result = await plugin._fetch_ra_username()
 
         assert result == "OldUser"
@@ -188,7 +189,7 @@ class TestFetchRaUsername:
         plugin.loop = asyncio.get_event_loop()
         user_data = {"ra_username": ""}
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
+        with patch.object(plugin._http_client, "request", return_value=user_data):
             result = await plugin._fetch_ra_username()
 
         assert result == ""
@@ -383,7 +384,7 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999, "app_id": 100}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
             result = await plugin.get_achievements(42)
 
         assert result["success"] is True
@@ -404,7 +405,7 @@ class TestGetAchievements:
         }
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             result = await plugin.get_achievements(42)
 
         mock_req.assert_not_called()
@@ -423,7 +424,7 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
             result = await plugin.get_achievements(42)
 
         assert result["success"] is True
@@ -461,7 +462,7 @@ class TestGetAchievements:
         }
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Connection refused")):
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Connection refused")):
             result = await plugin.get_achievements(42)
 
         assert result["success"] is True
@@ -474,7 +475,7 @@ class TestGetAchievements:
         plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Connection refused")):
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Connection refused")):
             result = await plugin.get_achievements(42)
 
         assert result["success"] is False
@@ -489,7 +490,7 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
             result = await plugin.get_achievements("42")
 
         assert result["success"] is True
@@ -502,7 +503,7 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = {"id": 42, "ra_metadata": {"achievements": []}}
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
             result = await plugin.get_achievements(42)
 
         assert result["success"] is True
@@ -525,7 +526,7 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10, earned_hardcore=3)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.get_achievement_progress(42)
 
@@ -546,7 +547,7 @@ class TestGetAchievementProgress:
         # Third call: get_achievement_progress -> /api/users/me
         user_data_with_username = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [
                 {"ra_username": "RetroPlayer"},  # _fetch_ra_username
                 rom_data,  # get_achievements
@@ -565,7 +566,7 @@ class TestGetAchievementProgress:
         plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request", return_value={"ra_username": None}):
+        with patch.object(plugin._http_client, "request", return_value={"ra_username": None}):
             result = await plugin.get_achievement_progress(42)
 
         assert result["success"] is False
@@ -600,7 +601,7 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             result = await plugin.get_achievement_progress(42)
 
         mock_req.assert_not_called()
@@ -621,7 +622,7 @@ class TestGetAchievementProgress:
             "ra_progression": {"results": [{"rom_ra_id": 1111, "num_awarded": 5}]},
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.get_achievement_progress(42)
 
@@ -648,7 +649,7 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             # get_achievements cache hit, then /api/users/me fails
             mock_req.side_effect = Exception("Network error")
             result = await plugin.get_achievement_progress(42)
@@ -669,7 +670,7 @@ class TestGetAchievementProgress:
             "cached_at": time.time(),
         }
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Network error")):
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Network error")):
             result = await plugin.get_achievement_progress(42)
 
         assert result["success"] is False
@@ -686,7 +687,7 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = {"ra_username": "RetroPlayer", "ra_progression": {"results": []}}
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.get_achievement_progress(42)
 
@@ -703,7 +704,7 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = {"ra_username": "RetroPlayer", "ra_progression": None}
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.get_achievement_progress(42)
 
@@ -719,7 +720,7 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=7, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             await plugin.get_achievement_progress(42)
 
@@ -737,7 +738,7 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=7, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.get_achievement_progress(42)
 
@@ -759,7 +760,7 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.get_achievement_progress(42)
 
@@ -787,7 +788,7 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.get_achievement_progress(42)
 
@@ -803,7 +804,7 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10, ra_username="NewUser")
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             await plugin.get_achievement_progress(42)
 
@@ -837,7 +838,7 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
+        with patch.object(plugin._http_client, "request", return_value=user_data):
             result = await plugin.sync_achievements_after_session(42)
 
         assert result["success"] is True
@@ -875,7 +876,7 @@ class TestSyncAchievementsAfterSession:
 
         with (
             patch.object(plugin, "get_achievement_progress", side_effect=spy_get_progress),
-            patch.object(plugin, "_romm_request", return_value=user_data),
+            patch.object(plugin._http_client, "request", return_value=user_data),
         ):
             await plugin.sync_achievements_after_session(42)
 
@@ -890,7 +891,7 @@ class TestSyncAchievementsAfterSession:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=3, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
             result = await plugin.sync_achievements_after_session(42)
 
@@ -916,7 +917,7 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
+        with patch.object(plugin._http_client, "request", return_value=user_data):
             await plugin.sync_achievements_after_session(42)
 
         # Achievements list should still be cached

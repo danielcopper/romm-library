@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from adapters.romm.client import RommHttpClient
 from fakes.fake_save_api import FakeSaveApi
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
@@ -29,6 +30,7 @@ def plugin(tmp_path):
         "enabled_platforms": {},
         "log_level": "warn",
     }
+    p._http_client = RommHttpClient(p.settings, __import__("decky").DECKY_PLUGIN_DIR, logging.getLogger("test"))
     p._sync_state = SyncState.IDLE
     p._sync_progress = {"running": False}
     p._state = {
@@ -545,12 +547,12 @@ class TestPendingConflicts:
 
 
 class TestRetryMRO:
-    """Verify _with_retry is accessible on Plugin via RommClientMixin MRO."""
+    """Verify with_retry is accessible on Plugin via _http_client."""
 
-    def test_with_retry_accessible_via_mro(self, plugin):
-        """_with_retry should be inherited from RommClientMixin."""
+    def test_with_retry_accessible_via_http_client(self, plugin):
+        """with_retry should be accessible via _http_client."""
         fn = MagicMock(return_value="ok")
-        result = plugin._with_retry(fn, "arg1")
+        result = plugin._http_client.with_retry(fn, "arg1")
         assert result == "ok"
         fn.assert_called_once_with("arg1")
 

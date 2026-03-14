@@ -7,7 +7,7 @@ import time
 import urllib.parse
 import zipfile
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import decky
 
@@ -15,18 +15,18 @@ from lib import retrodeck_config
 from lib.errors import error_response
 
 if TYPE_CHECKING:
-    from typing import Callable, Optional, Protocol
+    from typing import Protocol
+
+    from adapters.romm.client import RommHttpClient
 
     class _DownloadDeps(Protocol):
         _download_in_progress: set
         _download_queue: dict
         _download_tasks: dict
         _state: dict
+        _http_client: RommHttpClient
         loop: asyncio.AbstractEventLoop
 
-        def _romm_request(self, path: str) -> Any: ...
-        def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
-        def _resolve_system(self, platform_slug: str, platform_fs_slug: Optional[str] = None) -> str: ...
         def _save_state(self) -> None: ...
 
         _save_sync_state: dict
@@ -148,7 +148,7 @@ class DownloadMixin(_DownloadDeps if TYPE_CHECKING else object):
 
         self._download_in_progress.add(rom_id)
         try:
-            rom_detail = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
+            rom_detail = await self.loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
         except Exception as e:
             self._download_in_progress.discard(rom_id)
             decky.logger.error(f"Failed to fetch ROM {rom_id}: {e}")
@@ -156,7 +156,7 @@ class DownloadMixin(_DownloadDeps if TYPE_CHECKING else object):
 
         platform_slug = rom_detail.get("platform_slug", "")
         platform_fs_slug = rom_detail.get("platform_fs_slug")
-        system = self._resolve_system(platform_slug, platform_fs_slug)
+        system = self._http_client.resolve_system(platform_slug, platform_fs_slug)
 
         roms_dir = os.path.join(retrodeck_config.get_roms_path(), system)
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
@@ -316,13 +316,17 @@ class DownloadMixin(_DownloadDeps if TYPE_CHECKING else object):
             if has_multiple:
                 # Multi-file ROM: API returns ZIP, download to temp then extract
                 tmp_zip = target_path + ".zip.tmp"
-                await self.loop.run_in_executor(None, self._romm_download, download_path, tmp_zip, progress_callback)
+                await self.loop.run_in_executor(
+                    None, self._http_client.download, download_path, tmp_zip, progress_callback
+                )
                 final_path = await self.loop.run_in_executor(
                     None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
                 )
             else:
                 tmp_path = target_path + ".tmp"
-                await self.loop.run_in_executor(None, self._romm_download, download_path, tmp_path, progress_callback)
+                await self.loop.run_in_executor(
+                    None, self._http_client.download, download_path, tmp_path, progress_callback
+                )
                 final_path = await self.loop.run_in_executor(
                     None, self._post_download_single_io, rom_id, rom_detail, target_path, file_name, system
                 )
