@@ -16,9 +16,6 @@ def plugin():
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_client = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
-    p._download_tasks = {}
-    p._download_queue = {}
-    p._download_in_progress = set()
     p._metadata_cache = {}
 
     import decky

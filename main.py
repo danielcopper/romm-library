@@ -12,7 +12,6 @@ from services.sync import SyncState
 
 from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
-from lib.downloads import DownloadMixin
 from lib.firmware import FirmwareMixin
 from lib.metadata import MetadataMixin
 from lib.sgdb import SgdbMixin
@@ -27,7 +26,6 @@ class Plugin(
     FirmwareMixin,
     MetadataMixin,
     AchievementsMixin,
-    DownloadMixin,
 ):
     settings: dict
     loop: asyncio.AbstractEventLoop
@@ -54,9 +52,6 @@ class Plugin(
             "downloaded_bios": {},
             "retrodeck_home_path": "",
         }
-        self._download_tasks = {}  # rom_id -> asyncio.Task
-        self._download_queue = {}  # rom_id -> DownloadItem dict
-        self._download_in_progress = set()  # rom_ids currently being processed
         self._metadata_cache = {}
         self._achievements_cache = {}
         self._romm_version = None  # Detected on test_connection
@@ -86,6 +81,7 @@ class Plugin(
         self._save_sync_service = services["save_sync_service"]
         self._playtime_service = services["playtime_service"]
         self._sync_service = services["sync_service"]
+        self._download_service = services["download_service"]
         # Load persisted state into the live dict
         self._save_sync_service.init_state()
         self._save_sync_service.load_state()
@@ -95,10 +91,10 @@ class Plugin(
         self._save_sync_service.prune_orphaned_state()  # services/save_sync.py
         self._prune_orphaned_artwork_cache()  # lib/sgdb.py
         self._sync_service.prune_orphaned_staging_artwork()  # services/sync.py
-        self._cleanup_leftover_tmp_files()  # lib/downloads.py
+        self._download_service.cleanup_leftover_tmp_files()  # services/downloads.py
         # ── RetroDECK path change detection ──
         self._detect_retrodeck_path_change()
-        self.loop.create_task(self._poll_download_requests())
+        self.loop.create_task(self._download_service.poll_download_requests())
         decky.logger.info("RomM Sync plugin loaded")
 
     def _detect_retrodeck_path_change(self):
@@ -372,9 +368,9 @@ class Plugin(
         if self._sync_service._sync_state == SyncState.RUNNING:
             self._sync_service._sync_state = SyncState.CANCELLING
         # Cancel all active downloads
-        for rom_id, task in list(self._download_tasks.items()):
+        for rom_id, task in list(self._download_service._download_tasks.items()):
             task.cancel()
-        self._download_tasks.clear()
+        self._download_service._download_tasks.clear()
         decky.logger.info("RomM Sync plugin unloaded")
 
     _MIN_TESTED_VERSION = "4.6.1"
@@ -713,6 +709,29 @@ class Plugin(
 
     async def get_rom_by_steam_app_id(self, app_id):
         return await self._sync_service.get_rom_by_steam_app_id(app_id)
+
+    # ── Download delegation to DownloadService ──────────────
+
+    async def start_download(self, rom_id):
+        return await self._download_service.start_download(rom_id)
+
+    async def cancel_download(self, rom_id):
+        return await self._download_service.cancel_download(rom_id)
+
+    async def get_download_queue(self):
+        return await self._download_service.get_download_queue()
+
+    async def clear_completed_downloads(self):
+        return await self._download_service.clear_completed_downloads()
+
+    async def get_installed_rom(self, rom_id):
+        return await self._download_service.get_installed_rom(rom_id)
+
+    async def remove_rom(self, rom_id):
+        return await self._download_service.remove_rom(rom_id)
+
+    async def uninstall_all_roms(self):
+        return await self._download_service.uninstall_all_roms()
 
     # ── Save Sync / Playtime delegation to services ──────────
 

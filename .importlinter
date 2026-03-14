@@ -11,5 +11,4 @@ modules =
     lib.firmware
     lib.metadata
     lib.sgdb
-    lib.downloads
 

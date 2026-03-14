@@ -28,9 +28,6 @@ def plugin(tmp_path):
         "log_level": "warn",
     }
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
-    p._download_tasks = {}
-    p._download_queue = {}
-    p._download_in_progress = set()
     p._metadata_cache = {}
 
     import decky
