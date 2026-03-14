@@ -3,8 +3,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
-
-from lib.sync import SyncState
+from services.sync import SyncService, SyncState
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -15,15 +14,25 @@ def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_client = MagicMock()
-    p._sync_state = SyncState.IDLE
-    p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
-    p._pending_sync = {}
     p._download_tasks = {}
     p._download_queue = {}
     p._download_in_progress = set()
     p._metadata_cache = {}
-    p._pending_delta = None
+
+    import decky
+
+    p._sync_service = SyncService(
+        http_client=p._http_client,
+        state=p._state,
+        settings=p.settings,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        emit=decky.emit,
+        plugin=p,
+    )
     return p
 
 
@@ -31,6 +40,7 @@ def plugin():
 async def _set_event_loop(plugin):
     """Ensure plugin.loop matches the running event loop for async tests."""
     plugin.loop = asyncio.get_event_loop()
+    plugin._sync_service._loop = asyncio.get_event_loop()
 
 
 class TestReportSyncResults:
@@ -40,7 +50,7 @@ class TestReportSyncResults:
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin._pending_sync = {
+        plugin._sync_service._pending_sync = {
             1: {"name": "Game A", "platform_name": "N64", "cover_path": "/grid/abc.png"},
             2: {"name": "Game B", "platform_name": "SNES", "cover_path": "/grid/def.png"},
         }
@@ -67,7 +77,7 @@ class TestReportSyncResults:
             "name": "Old Game",
             "platform_name": "NES",
         }
-        plugin._pending_sync = {}
+        plugin._sync_service._pending_sync = {}
 
         result = await plugin.report_sync_results({}, [99])
         assert result["success"] is True
@@ -80,7 +90,7 @@ class TestReportSyncResults:
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         decky.emit.reset_mock()
 
-        plugin._pending_sync = {
+        plugin._sync_service._pending_sync = {
             1: {"name": "Game A", "platform_name": "N64", "cover_path": ""},
         }
 
@@ -97,7 +107,7 @@ class TestReportSyncResults:
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin._pending_sync = {}
+        plugin._sync_service._pending_sync = {}
         await plugin.report_sync_results({}, [])
         assert plugin._state["last_sync"] is not None
 
@@ -107,9 +117,9 @@ class TestReportSyncResults:
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin._pending_sync = {1: {"name": "X", "platform_name": "Y", "cover_path": ""}}
+        plugin._sync_service._pending_sync = {1: {"name": "X", "platform_name": "Y", "cover_path": ""}}
         await plugin.report_sync_results({"1": 1}, [])
-        assert plugin._pending_sync == {}
+        assert plugin._sync_service._pending_sync == {}
 
 
 class TestRemoveAllShortcuts:
@@ -319,13 +329,14 @@ class TestRemovePlatformShortcuts:
     async def test_returns_matching_platform_entries(self, plugin):
         from unittest.mock import AsyncMock, MagicMock
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
             return_value=[
                 {"id": 1, "slug": "n64", "name": "Nintendo 64"},
                 {"id": 2, "slug": "snes", "name": "Super Nintendo"},
             ]
         )
+        plugin._sync_service._loop = mock_loop
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64"},
@@ -343,12 +354,13 @@ class TestRemovePlatformShortcuts:
     async def test_platform_not_found(self, plugin):
         from unittest.mock import AsyncMock, MagicMock
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
             return_value=[
                 {"id": 1, "slug": "n64", "name": "Nintendo 64"},
             ]
         )
+        plugin._sync_service._loop = mock_loop
 
         result = await plugin.remove_platform_shortcuts("nonexistent")
         assert result["success"] is False
@@ -360,12 +372,13 @@ class TestRemovePlatformShortcuts:
         """remove_platform_shortcuts just returns data; registry cleared by report_removal_results."""
         from unittest.mock import AsyncMock, MagicMock
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
             return_value=[
                 {"id": 1, "slug": "n64", "name": "Nintendo 64"},
             ]
         )
+        plugin._sync_service._loop = mock_loop
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64"},
@@ -380,8 +393,9 @@ class TestRemovePlatformShortcuts:
         """When platform_slug is in the registry, no API call needed."""
         from unittest.mock import AsyncMock, MagicMock
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("Server unreachable"))
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("Server unreachable"))
+        plugin._sync_service._loop = mock_loop
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64", "platform_slug": "n64"},
@@ -404,16 +418,17 @@ class TestArtworkStaging:
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         plugin._grid_dir = lambda: str(grid_dir)
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock()
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock()
+        plugin._sync_service._loop = mock_loop
 
         roms = [{"id": 42, "name": "Test Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._download_artwork(roms)
+        result = await plugin._sync_service._download_artwork(roms)
 
         assert 42 in result
         assert result[42].endswith("romm_42_cover.png")
         # Should have called _romm_download with staging path as dest arg
-        call_args = plugin.loop.run_in_executor.call_args[0]
+        call_args = mock_loop.run_in_executor.call_args[0]
         assert "romm_42_cover.png" in call_args[3]
 
     @pytest.mark.asyncio
@@ -424,8 +439,9 @@ class TestArtworkStaging:
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         plugin._grid_dir = lambda: str(grid_dir)
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock()
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock()
+        plugin._sync_service._loop = mock_loop
 
         # Simulate existing final artwork from previous sync
         final_art = grid_dir / "99999p.png"
@@ -434,10 +450,10 @@ class TestArtworkStaging:
         plugin._state["shortcut_registry"]["42"] = {"app_id": 99999, "name": "Test"}
 
         roms = [{"id": 42, "name": "Test Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._download_artwork(roms)
+        result = await plugin._sync_service._download_artwork(roms)
 
         assert result[42] == str(final_art)
-        plugin.loop.run_in_executor.assert_not_called()
+        mock_loop.run_in_executor.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_download_if_staging_exists(self, plugin, tmp_path):
@@ -447,17 +463,18 @@ class TestArtworkStaging:
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         plugin._grid_dir = lambda: str(grid_dir)
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock()
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock()
+        plugin._sync_service._loop = mock_loop
 
         staging = grid_dir / "romm_42_cover.png"
         staging.write_text("fake")
 
         roms = [{"id": 42, "name": "Test Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._download_artwork(roms)
+        result = await plugin._sync_service._download_artwork(roms)
 
         assert result[42] == str(staging)
-        plugin.loop.run_in_executor.assert_not_called()
+        mock_loop.run_in_executor.assert_not_called()
 
 
 class TestArtworkRenameOnSync:
@@ -477,7 +494,7 @@ class TestArtworkRenameOnSync:
         staging = grid_dir / "romm_1_cover.png"
         staging.write_text("cover data")
 
-        plugin._pending_sync = {
+        plugin._sync_service._pending_sync = {
             1: {"name": "Game A", "platform_name": "N64", "cover_path": str(staging)},
         }
 
@@ -507,7 +524,7 @@ class TestArtworkRenameOnSync:
         final = grid_dir / "100001p.png"
         final.write_text("cover data")
 
-        plugin._pending_sync = {
+        plugin._sync_service._pending_sync = {
             1: {"name": "Game A", "platform_name": "N64", "cover_path": str(final)},
         }
 
@@ -599,8 +616,8 @@ class TestShortcutDataFormat:
 
         plugin.settings["romm_url"] = "http://romm.local"
         plugin.settings["enabled_platforms"] = {"gba": True}
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
             side_effect=[
                 # _fetch_platforms
                 [{"id": 1, "slug": "gba", "name": "Game Boy Advance", "rom_count": 1}],
@@ -618,9 +635,10 @@ class TestShortcutDataFormat:
                 ],
             ]
         )
-        plugin._download_artwork = AsyncMock(return_value={})
-        plugin._emit_progress = AsyncMock()
-        plugin._sync_state = SyncState.IDLE
+        plugin._sync_service._loop = mock_loop
+        plugin._sync_service._download_artwork = AsyncMock(return_value={})
+        plugin._sync_service._emit_progress = AsyncMock()
+        plugin._sync_service._sync_state = SyncState.IDLE
 
         # Mock decky.emit to capture the shortcuts
         import decky
@@ -632,11 +650,12 @@ class TestShortcutDataFormat:
             emitted_events.append((event, args))
 
         decky.emit = mock_emit
+        plugin._sync_service._emit = mock_emit
 
         try:
             # Call _do_sync directly (start_sync creates a background task
             # that never runs with a mock loop)
-            await plugin._do_sync()
+            await plugin._sync_service._do_sync()
         except Exception:
             pass
         finally:
@@ -720,7 +739,7 @@ class TestPruneOrphanedStagingArtwork:
         plugin._grid_dir = lambda: str(grid_dir)
         plugin._state["shortcut_registry"] = {}
 
-        plugin._prune_orphaned_staging_artwork()
+        plugin._sync_service.prune_orphaned_staging_artwork()
         assert not staging.exists()
 
     def test_removes_redundant_staging_with_final(self, plugin, tmp_path):
@@ -737,7 +756,7 @@ class TestPruneOrphanedStagingArtwork:
             "42": {"app_id": 1001, "name": "Game A"},
         }
 
-        plugin._prune_orphaned_staging_artwork()
+        plugin._sync_service.prune_orphaned_staging_artwork()
         assert not staging.exists()
         assert final.exists()  # final artwork untouched
 
@@ -753,7 +772,7 @@ class TestPruneOrphanedStagingArtwork:
             "42": {"app_id": 1001, "name": "Game A"},
         }
 
-        plugin._prune_orphaned_staging_artwork()
+        plugin._sync_service.prune_orphaned_staging_artwork()
         assert staging.exists()
 
     def test_ignores_non_staging_files(self, plugin, tmp_path):
@@ -768,7 +787,7 @@ class TestPruneOrphanedStagingArtwork:
         plugin._grid_dir = lambda: str(grid_dir)
         plugin._state["shortcut_registry"] = {}
 
-        plugin._prune_orphaned_staging_artwork()
+        plugin._sync_service.prune_orphaned_staging_artwork()
         assert final.exists()
         assert other.exists()
 
@@ -778,7 +797,7 @@ class TestPruneOrphanedStagingArtwork:
         plugin._state["shortcut_registry"] = {}
 
         # Should not raise
-        plugin._prune_orphaned_staging_artwork()
+        plugin._sync_service.prune_orphaned_staging_artwork()
 
     def test_handles_os_error(self, plugin, tmp_path, caplog):
         """OSError during os.remove should log warning and not crash."""
@@ -795,7 +814,7 @@ class TestPruneOrphanedStagingArtwork:
 
         with caplog.at_level(logging.WARNING):
             with patch("os.remove", side_effect=OSError("permission denied")):
-                plugin._prune_orphaned_staging_artwork()
+                plugin._sync_service.prune_orphaned_staging_artwork()
 
         # File still exists (os.remove was mocked to fail)
         assert staging.exists()
@@ -830,7 +849,7 @@ class TestClassifyRoms:
     def test_all_new_empty_registry(self, plugin):
         """Empty registry -> all in new, none in changed/unchanged."""
         sd = [self._make_sd(1, "Game A"), self._make_sd(2, "Game B")]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 2
         assert changed == []
         assert unchanged_ids == []
@@ -859,7 +878,7 @@ class TestClassifyRoms:
             self._make_sd(1, "Game A", fs_name="gamea.z64"),
             self._make_sd(2, "Game B", fs_name="gameb.z64"),
         ]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert new == []
         assert changed == []
         assert set(unchanged_ids) == {1, 2}
@@ -888,7 +907,7 @@ class TestClassifyRoms:
             self._make_sd(2, "New Name", fs_name="gameb.z64"),  # changed (name)
             self._make_sd(3, "Game C", fs_name="gamec.z64"),  # new
         ]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 1
         assert new[0]["rom_id"] == 3
         assert len(changed) == 1
@@ -906,7 +925,7 @@ class TestClassifyRoms:
         # Must also set fs_name in registry to match
         plugin._state["shortcut_registry"]["1"]["fs_name"] = ""
         plugin._state["shortcut_registry"]["1"]["platform_slug"] = "n64"
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert 99 in stale
         assert disabled == 0  # N64 is in fetched_platform_names
 
@@ -916,7 +935,7 @@ class TestClassifyRoms:
             "1": {"app_id": 1001, "name": "Game A", "platform_name": "SNES"},
         }
         sd = []  # nothing fetched
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert 1 in stale
         assert disabled == 1  # SNES is not in {"N64"}
 
@@ -932,7 +951,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "New Title")]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(changed) == 1
         assert changed[0]["existing_app_id"] == 1001
         assert new == []
@@ -950,7 +969,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A", platform_name="N64")]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(changed) == 1
         assert changed[0]["rom_id"] == 1
 
@@ -966,7 +985,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A", fs_name="new.z64")]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(changed) == 1
         assert changed[0]["rom_id"] == 1
 
@@ -982,7 +1001,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A", igdb_id=999, sgdb_id=888)]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert unchanged_ids == [1]
         assert changed == []
         assert new == []
@@ -993,7 +1012,7 @@ class TestClassifyRoms:
             "1": {"name": "Game A", "platform_name": "N64"},
         }
         sd = [self._make_sd(1, "Game A")]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 1
         assert new[0]["rom_id"] == 1
         assert changed == []
@@ -1001,7 +1020,7 @@ class TestClassifyRoms:
     def test_first_sync_empty_registry_all_new(self, plugin):
         """First sync (empty registry) -> all new."""
         sd = [self._make_sd(i, f"Game {i}") for i in range(1, 6)]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 5
         assert changed == []
         assert unchanged_ids == []
@@ -1020,7 +1039,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A")]
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 0
         assert len(changed) == 0
         assert len(stale) == 0
@@ -1034,7 +1053,7 @@ class TestClassifyRoms:
         }
         sd = []  # nothing fetched
         # Neither GBA nor SNES in fetched set
-        new, changed, unchanged_ids, stale, disabled = plugin._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(stale) == 2
         assert disabled == 2
 
@@ -1059,8 +1078,8 @@ class TestSyncPreview:
             {"rom_id": 2, "name": "Game B", "platform_name": "N64", "platform_slug": "n64", "fs_name": "b.z64"},
             {"rom_id": 3, "name": "Game C", "platform_name": "N64", "platform_slug": "n64", "fs_name": "c.z64"},
         ]
-        plugin._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
-        plugin._emit_progress = AsyncMock()
+        plugin._sync_service._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
+        plugin._sync_service._emit_progress = AsyncMock()
 
         # Set up registry: rom 1 unchanged, rom 2 changed name
         plugin._state["shortcut_registry"] = {
@@ -1091,19 +1110,19 @@ class TestSyncPreview:
         shortcuts_data = [
             {"rom_id": 1, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
         ]
-        plugin._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
-        plugin._emit_progress = AsyncMock()
+        plugin._sync_service._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
+        plugin._sync_service._emit_progress = AsyncMock()
 
         result = await plugin.sync_preview()
-        assert plugin._pending_delta is not None
-        assert plugin._pending_delta["preview_id"] == result["preview_id"]
-        assert len(plugin._pending_delta["new"]) == 1
-        assert plugin._pending_delta["platforms_count"] == 1
-        assert plugin._pending_delta["total_roms"] == 1
+        assert plugin._sync_service._pending_delta is not None
+        assert plugin._sync_service._pending_delta["preview_id"] == result["preview_id"]
+        assert len(plugin._sync_service._pending_delta["new"]) == 1
+        assert plugin._sync_service._pending_delta["platforms_count"] == 1
+        assert plugin._sync_service._pending_delta["total_roms"] == 1
 
     @pytest.mark.asyncio
     async def test_returns_error_when_sync_running(self, plugin):
-        plugin._sync_state = SyncState.RUNNING
+        plugin._sync_service._sync_state = SyncState.RUNNING
         result = await plugin.sync_preview()
         assert result["success"] is False
         assert "already in progress" in result["message"]
@@ -1122,11 +1141,11 @@ class TestSyncPreview:
         shortcuts_data = [
             {"rom_id": 1, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
         ]
-        plugin._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
-        plugin._emit_progress = AsyncMock()
+        plugin._sync_service._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms))
+        plugin._sync_service._emit_progress = AsyncMock()
 
         await plugin.sync_preview()
-        assert plugin._sync_state == SyncState.IDLE
+        assert plugin._sync_service._sync_state == SyncState.IDLE
 
 
 class TestSyncApplyDelta:
@@ -1134,7 +1153,7 @@ class TestSyncApplyDelta:
 
     def _setup_pending_delta(self, plugin, preview_id="test-preview-123"):
         """Helper to populate _pending_delta with valid data."""
-        plugin._pending_delta = {
+        plugin._sync_service._pending_delta = {
             "preview_id": preview_id,
             "new": [
                 {
@@ -1177,7 +1196,7 @@ class TestSyncApplyDelta:
 
     @pytest.mark.asyncio
     async def test_rejects_when_no_pending_delta(self, plugin):
-        assert plugin._pending_delta is None
+        assert plugin._sync_service._pending_delta is None
         result = await plugin.sync_apply_delta("any-id")
         assert result["success"] is False
         assert result["error_code"] == "stale_preview"
@@ -1199,7 +1218,7 @@ class TestSyncApplyDelta:
         plugin._save_state = lambda: None
 
         self._setup_pending_delta(plugin)
-        plugin._emit_progress = AsyncMock()
+        plugin._sync_service._emit_progress = AsyncMock()
 
         result = await plugin.sync_apply_delta("test-preview-123")
         assert result["success"] is True
@@ -1228,12 +1247,12 @@ class TestSyncApplyDelta:
         plugin._save_state = lambda: None
 
         self._setup_pending_delta(plugin)
-        plugin._emit_progress = AsyncMock()
+        plugin._sync_service._emit_progress = AsyncMock()
 
         await plugin.sync_apply_delta("test-preview-123")
-        assert 1 in plugin._pending_sync
-        assert 2 in plugin._pending_sync
-        assert 3 in plugin._pending_sync
+        assert 1 in plugin._sync_service._pending_sync
+        assert 2 in plugin._sync_service._pending_sync
+        assert 3 in plugin._sync_service._pending_sync
 
     @pytest.mark.asyncio
     async def test_clears_pending_delta(self, plugin, tmp_path):
@@ -1251,10 +1270,10 @@ class TestSyncApplyDelta:
         plugin._save_state = lambda: None
 
         self._setup_pending_delta(plugin)
-        plugin._emit_progress = AsyncMock()
+        plugin._sync_service._emit_progress = AsyncMock()
 
         await plugin.sync_apply_delta("test-preview-123")
-        assert plugin._pending_delta is None
+        assert plugin._sync_service._pending_delta is None
 
     @pytest.mark.asyncio
     async def test_builds_collection_map_from_unchanged(self, plugin, tmp_path):
@@ -1273,7 +1292,7 @@ class TestSyncApplyDelta:
         plugin._save_state = lambda: None
 
         # Include both rom 1 and 5 as unchanged
-        plugin._pending_delta = {
+        plugin._sync_service._pending_delta = {
             "preview_id": "test-preview-123",
             "new": [],
             "changed": [],
@@ -1286,7 +1305,7 @@ class TestSyncApplyDelta:
             "platforms_count": 2,
             "total_roms": 2,
         }
-        plugin._emit_progress = AsyncMock()
+        plugin._sync_service._emit_progress = AsyncMock()
 
         await plugin.sync_apply_delta("test-preview-123")
 
@@ -1302,7 +1321,7 @@ class TestSyncCancelPreview:
 
     @pytest.mark.asyncio
     async def test_clears_pending_delta(self, plugin):
-        plugin._pending_delta = {
+        plugin._sync_service._pending_delta = {
             "preview_id": "some-id",
             "new": [],
             "changed": [],
@@ -1313,7 +1332,7 @@ class TestSyncCancelPreview:
             "total_roms": 0,
         }
         result = await plugin.sync_cancel_preview()
-        assert plugin._pending_delta is None
+        assert plugin._sync_service._pending_delta is None
         assert result["success"] is True
 
     @pytest.mark.asyncio

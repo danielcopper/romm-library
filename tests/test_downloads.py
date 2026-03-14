@@ -4,8 +4,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from lib.sync import SyncState
+from services.sync import SyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -16,14 +15,25 @@ def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_client = MagicMock()
-    p._sync_state = SyncState.IDLE
-    p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
-    p._pending_sync = {}
     p._download_tasks = {}
     p._download_queue = {}
     p._download_in_progress = set()
     p._metadata_cache = {}
+
+    import decky
+
+    p._sync_service = SyncService(
+        http_client=p._http_client,
+        state=p._state,
+        settings=p.settings,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        emit=decky.emit,
+        plugin=p,
+    )
     return p
 
 

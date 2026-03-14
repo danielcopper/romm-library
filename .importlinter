@@ -12,5 +12,4 @@ modules =
     lib.metadata
     lib.sgdb
     lib.downloads
-    lib.sync
 

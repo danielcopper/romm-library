@@ -1,13 +1,13 @@
 import asyncio
 import logging
 import os
+from unittest.mock import MagicMock
 
 import pytest
 from fakes.fake_save_api import FakeSaveApi
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
-
-from lib.sync import SyncState
+from services.sync import SyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -27,10 +27,7 @@ def plugin(tmp_path):
         "enabled_platforms": {},
         "log_level": "warn",
     }
-    p._sync_state = SyncState.IDLE
-    p._sync_progress = {"running": False}
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
-    p._pending_sync = {}
     p._download_tasks = {}
     p._download_queue = {}
     p._download_in_progress = set()
@@ -39,6 +36,18 @@ def plugin(tmp_path):
     import decky
 
     decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+    p._sync_service = SyncService(
+        http_client=MagicMock(),
+        state=p._state,
+        settings=p.settings,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        emit=decky.emit,
+        plugin=p,
+    )
     decky.DECKY_USER_HOME = str(tmp_path)
 
     # Wire services with FakeSaveApi

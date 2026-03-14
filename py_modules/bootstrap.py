@@ -17,6 +17,7 @@ from adapters.romm.client import RommHttpClient
 from adapters.romm.version_router import VersionRouter
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
+from services.sync import SyncService
 
 
 def bootstrap(
@@ -64,11 +65,16 @@ def wire_services(
     save_api: Any,
     http_client: RommHttpClient,
     state: dict,
+    settings: dict,
+    metadata_cache: dict,
     save_sync_state: dict,
     loop: asyncio.AbstractEventLoop,
     logger: logging.Logger,
+    plugin_dir: str,
     runtime_dir: str,
+    emit: Any,
     get_saves_path: Any,
+    plugin: Any,
 ) -> dict:
     """Create service instances after plugin state is initialised.
 
@@ -78,7 +84,8 @@ def wire_services(
 
     Returns
     -------
-    dict with keys ``save_sync_service`` and ``playtime_service``.
+    dict with keys ``save_sync_service``, ``playtime_service``, and
+    ``sync_service``.
     """
     save_sync_service = SaveSyncService(
         save_api=save_api,
@@ -102,7 +109,20 @@ def wire_services(
         save_state=save_sync_service.save_state,
     )
 
+    sync_service = SyncService(
+        http_client=http_client,
+        state=state,
+        settings=settings,
+        metadata_cache=metadata_cache,
+        loop=loop,
+        logger=logger,
+        plugin_dir=plugin_dir,
+        emit=emit,
+        plugin=plugin,
+    )
+
     return {
         "save_sync_service": save_sync_service,
         "playtime_service": playtime_service,
+        "sync_service": sync_service,
     }

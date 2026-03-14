@@ -8,6 +8,7 @@ sys.path.insert(0, plugin_dir)
 
 import decky
 from bootstrap import bootstrap, wire_services
+from services.sync import SyncState
 
 from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
@@ -17,7 +18,6 @@ from lib.metadata import MetadataMixin
 from lib.sgdb import SgdbMixin
 from lib.state import StateMixin
 from lib.steam_config import SteamConfigMixin
-from lib.sync import SyncMixin, SyncState
 
 
 class Plugin(
@@ -28,7 +28,6 @@ class Plugin(
     MetadataMixin,
     AchievementsMixin,
     DownloadMixin,
-    SyncMixin,
 ):
     settings: dict
     loop: asyncio.AbstractEventLoop
@@ -47,15 +46,6 @@ class Plugin(
         self._persistence = adapters["persistence"]
         self._http_client = adapters["http_client"]
         self._version_router = adapters["version_router"]
-        self._sync_state = SyncState.IDLE
-        self._sync_last_heartbeat = 0.0
-        self._sync_progress = {
-            "running": False,
-            "phase": "",
-            "current": 0,
-            "total": 0,
-            "message": "",
-        }
         self._state = {
             "shortcut_registry": {},
             "installed_roms": {},
@@ -64,8 +54,6 @@ class Plugin(
             "downloaded_bios": {},
             "retrodeck_home_path": "",
         }
-        self._pending_sync = {}
-        self._pending_delta = None
         self._download_tasks = {}  # rom_id -> asyncio.Task
         self._download_queue = {}  # rom_id -> DownloadItem dict
         self._download_in_progress = set()  # rom_ids currently being processed
@@ -84,14 +72,20 @@ class Plugin(
             save_api=adapters["save_api"],
             http_client=self._http_client,
             state=self._state,
+            settings=self.settings,
+            metadata_cache=self._metadata_cache,
             save_sync_state=self._save_sync_state,
             loop=self.loop,
             logger=decky.logger,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
             runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+            emit=decky.emit,
             get_saves_path=retrodeck_config.get_saves_path,
+            plugin=self,
         )
         self._save_sync_service = services["save_sync_service"]
         self._playtime_service = services["playtime_service"]
+        self._sync_service = services["sync_service"]
         # Load persisted state into the live dict
         self._save_sync_service.init_state()
         self._save_sync_service.load_state()
@@ -100,7 +94,7 @@ class Plugin(
         self._prune_stale_registry()  # lib/state.py
         self._save_sync_service.prune_orphaned_state()  # services/save_sync.py
         self._prune_orphaned_artwork_cache()  # lib/sgdb.py
-        self._prune_orphaned_staging_artwork()  # lib/sync.py
+        self._sync_service.prune_orphaned_staging_artwork()  # services/sync.py
         self._cleanup_leftover_tmp_files()  # lib/downloads.py
         # ── RetroDECK path change detection ──
         self._detect_retrodeck_path_change()
@@ -375,8 +369,8 @@ class Plugin(
         return await self.loop.run_in_executor(None, self._get_migration_status_io, old_home, new_home)
 
     async def _unload(self):
-        if self._sync_state == SyncState.RUNNING:
-            self._sync_state = SyncState.CANCELLING
+        if self._sync_service._sync_state == SyncState.RUNNING:
+            self._sync_service._sync_state = SyncState.CANCELLING
         # Cancel all active downloads
         for rom_id, task in list(self._download_tasks.items()):
             task.cancel()
@@ -660,6 +654,65 @@ class Plugin(
         except Exception as e:
             decky.logger.error(f"Failed to set game core: {e}")
             return {"success": False, "message": str(e)}
+
+    # ── Sync delegation to SyncService ─────────────────────
+
+    async def get_platforms(self):
+        return await self._sync_service.get_platforms()
+
+    async def save_platform_sync(self, platform_id, enabled):
+        return await self._sync_service.save_platform_sync(platform_id, enabled)
+
+    async def set_all_platforms_sync(self, enabled):
+        return await self._sync_service.set_all_platforms_sync(enabled)
+
+    async def start_sync(self):
+        return await self._sync_service.start_sync()
+
+    async def cancel_sync(self):
+        return await self._sync_service.cancel_sync()
+
+    async def get_sync_progress(self):
+        return await self._sync_service.get_sync_progress()
+
+    async def sync_heartbeat(self):
+        return await self._sync_service.sync_heartbeat()
+
+    async def sync_preview(self):
+        return await self._sync_service.sync_preview()
+
+    async def sync_apply_delta(self, preview_id):
+        return await self._sync_service.sync_apply_delta(preview_id)
+
+    async def sync_cancel_preview(self):
+        return await self._sync_service.sync_cancel_preview()
+
+    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
+        return await self._sync_service.report_sync_results(rom_id_to_app_id, removed_rom_ids, cancelled)
+
+    async def get_registry_platforms(self):
+        return await self._sync_service.get_registry_platforms()
+
+    async def remove_platform_shortcuts(self, platform_slug):
+        return await self._sync_service.remove_platform_shortcuts(platform_slug)
+
+    async def remove_all_shortcuts(self):
+        return await self._sync_service.remove_all_shortcuts()
+
+    async def report_removal_results(self, removed_rom_ids):
+        return await self._sync_service.report_removal_results(removed_rom_ids)
+
+    async def get_artwork_base64(self, rom_id):
+        return await self._sync_service.get_artwork_base64(rom_id)
+
+    async def clear_sync_cache(self):
+        return await self._sync_service.clear_sync_cache()
+
+    async def get_sync_stats(self):
+        return await self._sync_service.get_sync_stats()
+
+    async def get_rom_by_steam_app_id(self, app_id):
+        return await self._sync_service.get_rom_by_steam_app_id(app_id)
 
     # ── Save Sync / Playtime delegation to services ──────────
 

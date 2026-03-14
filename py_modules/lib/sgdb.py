@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     class _SgdbDeps(Protocol):
         settings: dict
         _state: dict
-        _pending_sync: dict
         _http_client: RommHttpClient
         loop: asyncio.AbstractEventLoop
 
@@ -147,7 +146,7 @@ class SgdbMixin(_SgdbDeps if TYPE_CHECKING else object):
         sgdb_id = reg.get("sgdb_id")
         igdb_id = reg.get("igdb_id")
         if not sgdb_id:
-            pending = self._pending_sync.get(rom_id, {})
+            pending = self._sync_service._pending_sync.get(rom_id, {})
             sgdb_id = sgdb_id or pending.get("sgdb_id")
             igdb_id = igdb_id or pending.get("igdb_id")
 
