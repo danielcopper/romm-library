@@ -1,3 +1,15 @@
+"""FirmwareService — BIOS/firmware management extracted from FirmwareMixin.
+
+Handles BIOS registry loading, firmware status checks, downloads,
+deletion, and per-core filtering for RetroArch emulators.
+"""
+
+# TODO(Steps 9-10): The save_state callable is a temporary bridge to
+# StateMixin. Replace with proper persistence injection when StateMixin
+# is dissolved.
+
+from __future__ import annotations
+
 import hashlib
 import json
 import os
@@ -5,34 +17,48 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-import decky
-
-from lib import retrodeck_config
+from lib import es_de_config, retrodeck_config
 from lib.errors import error_response
 
 if TYPE_CHECKING:
     import asyncio
-    from typing import Protocol
+    import logging
+    from collections.abc import Callable
 
     from adapters.romm.client import RommHttpClient
 
-    class _FirmwareDeps(Protocol):
-        _state: dict
-        _bios_registry: dict
-        _http_client: RommHttpClient
-        loop: asyncio.AbstractEventLoop
 
-        def _save_state(self) -> None: ...
+class FirmwareService:
+    """BIOS/firmware management: registry, status, downloads, deletion."""
 
+    def __init__(
+        self,
+        *,
+        http_client: RommHttpClient,
+        state: dict,
+        loop: asyncio.AbstractEventLoop,
+        logger: logging.Logger,
+        plugin_dir: str,
+        save_state: Callable[[], None],
+    ) -> None:
+        self._http_client = http_client
+        self._state = state
+        self._loop = loop
+        self._logger = logger
+        self._plugin_dir = plugin_dir
+        self._save_state = save_state
+        self._bios_registry: dict = {}
+        self._bios_files_index: dict = {}
 
-class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
-    def _load_bios_registry(self):
+    # ── Registry loading ─────────────────────────────────────
+
+    def load_bios_registry(self) -> None:
         self._bios_registry = {}
         self._bios_files_index = {}
         # Check plugin root first (Decky CLI moves defaults/ contents to root),
         # then defaults/ subdirectory (dev deploys via mise run deploy)
-        root_path = os.path.join(decky.DECKY_PLUGIN_DIR, "bios_registry.json")
-        defaults_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "bios_registry.json")
+        root_path = os.path.join(self._plugin_dir, "bios_registry.json")
+        defaults_path = os.path.join(self._plugin_dir, "defaults", "bios_registry.json")
         registry_path = root_path if os.path.exists(root_path) else defaults_path
         try:
             with open(registry_path, "r") as f:
@@ -42,9 +68,11 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
                 for filename, entry in files.items():
                     self._bios_files_index[filename] = {**entry, "platform": platform}
         except FileNotFoundError:
-            decky.logger.warning("bios_registry.json not found, registry enrichment disabled")
+            self._logger.warning("bios_registry.json not found, registry enrichment disabled")
         except Exception as e:
-            decky.logger.error(f"Failed to load bios_registry.json: {e}")
+            self._logger.error(f"Failed to load bios_registry.json: {e}")
+
+    # ── Internal helpers ─────────────────────────────────────
 
     def _enrich_firmware_file(self, file_dict, core_so=None):
         entry = self._bios_files_index.get(file_dict.get("file_name", ""))
@@ -105,6 +133,8 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
             return os.path.join(bios_base, reg_entry["firmware_path"])
         return os.path.join(bios_base, file_name)
 
+    # ── Public API ───────────────────────────────────────────
+
     async def get_firmware_status(self):
         """Return BIOS/firmware status for all platforms on the RomM server.
 
@@ -113,9 +143,9 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         """
         server_offline = False
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
+            firmware_list = await self._loop.run_in_executor(None, self._http_client.request, "/api/firmware")
         except Exception as e:
-            decky.logger.warning(f"Failed to fetch firmware from server: {e}")
+            self._logger.warning(f"Failed to fetch firmware from server: {e}")
             server_offline = True
             firmware_list = None
 
@@ -165,8 +195,6 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
                     platforms_map[reg_slug]["files"].append(file_dict)
 
         # Resolve active core per platform and enrich files with core-specific required values
-        from lib import es_de_config
-
         for plat in platforms_map.values():
             slug = plat["platform_slug"]
             core_so, core_label = es_de_config.get_active_core(slug)
@@ -237,9 +265,9 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         """Download a single firmware file from RomM."""
         firmware_id = int(firmware_id)
         try:
-            fw = await self.loop.run_in_executor(None, self._http_client.request, f"/api/firmware/{firmware_id}")
+            fw = await self._loop.run_in_executor(None, self._http_client.request, f"/api/firmware/{firmware_id}")
         except Exception as e:
-            decky.logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
+            self._logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
             return error_response(e)
 
         file_name = fw.get("file_name", "")
@@ -249,26 +277,26 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             download_path = f"/api/firmware/{firmware_id}/content/{urllib.parse.quote(file_name, safe='')}"
-            await self.loop.run_in_executor(None, self._http_client.download, download_path, tmp_path)
+            await self._loop.run_in_executor(None, self._http_client.download, download_path, tmp_path)
         except Exception as e:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            decky.logger.error(f"Failed to download firmware {file_name}: {e}")
+            self._logger.error(f"Failed to download firmware {file_name}: {e}")
             return error_response(e)
 
-        md5_match, registry_hash_valid = await self.loop.run_in_executor(
+        md5_match, registry_hash_valid = await self._loop.run_in_executor(
             None, self._download_firmware_post_io, fw, firmware_id, dest, tmp_path
         )
 
-        decky.logger.info(f"Firmware downloaded: {file_name} -> {dest}")
+        self._logger.info(f"Firmware downloaded: {file_name} -> {dest}")
         return {"success": True, "file_path": dest, "md5_match": md5_match, "registry_hash_valid": registry_hash_valid}
 
     async def download_all_firmware(self, platform_slug):
         """Download all firmware for a given platform slug."""
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
+            firmware_list = await self._loop.run_in_executor(None, self._http_client.request, "/api/firmware")
         except Exception as e:
-            decky.logger.error(f"Failed to fetch firmware: {e}")
+            self._logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
             resp["downloaded"] = 0
             return resp
@@ -301,9 +329,9 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
     async def download_required_firmware(self, platform_slug):
         """Download only required firmware for a given platform slug."""
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
+            firmware_list = await self._loop.run_in_executor(None, self._http_client.request, "/api/firmware")
         except Exception as e:
-            decky.logger.error(f"Failed to fetch firmware: {e}")
+            self._logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
             resp["downloaded"] = 0
             return resp
@@ -311,8 +339,6 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
 
         # Resolve active core to filter by core-specific required status
-        from lib import es_de_config
-
         core_so, _ = es_de_config.get_active_core(platform_slug)
 
         platform_firmware = []
@@ -356,8 +382,6 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
 
         # Resolve active core for per-core filtering
-        from lib import es_de_config
-
         active_core_so, active_core_label = es_de_config.get_active_core(platform_slug, rom_filename=rom_filename)
 
         # Build combined registry entries for this platform from all mapped slugs
@@ -366,7 +390,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
             registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
 
         try:
-            firmware_list = await self.loop.run_in_executor(None, self._http_client.request, "/api/firmware")
+            firmware_list = await self._loop.run_in_executor(None, self._http_client.request, "/api/firmware")
             for fw in firmware_list:
                 fw_slug = self._firmware_slug(fw.get("file_path", ""))
                 if not fw_slug:
@@ -521,7 +545,7 @@ class FirmwareMixin(_FirmwareDeps if TYPE_CHECKING else object):
         if not bios_status.get("needs_bios") or not bios_status.get("files"):
             return {"success": True, "deleted_count": 0, "message": "No BIOS files for this platform"}
 
-        deleted, errors = await self.loop.run_in_executor(None, self._delete_platform_bios_io, bios_status["files"])
+        deleted, errors = await self._loop.run_in_executor(None, self._delete_platform_bios_io, bios_status["files"])
 
         if errors:
             return {

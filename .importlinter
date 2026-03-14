@@ -8,7 +8,6 @@ type = independence
 modules =
     lib.state
     lib.steam_config
-    lib.firmware
     lib.metadata
     lib.sgdb
 

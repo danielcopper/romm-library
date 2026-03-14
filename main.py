@@ -12,7 +12,6 @@ from services.sync import SyncState
 
 from lib import retrodeck_config
 from lib.achievements import AchievementsMixin
-from lib.firmware import FirmwareMixin
 from lib.metadata import MetadataMixin
 from lib.sgdb import SgdbMixin
 from lib.state import StateMixin
@@ -23,7 +22,6 @@ class Plugin(
     StateMixin,
     SgdbMixin,
     SteamConfigMixin,
-    FirmwareMixin,
     MetadataMixin,
     AchievementsMixin,
 ):
@@ -56,7 +54,6 @@ class Plugin(
         self._achievements_cache = {}
         self._romm_version = None  # Detected on test_connection
         self._load_state()
-        self._load_bios_registry()
         self._load_metadata_cache()
         # ── Save sync state (owned by SaveSyncService) ──
         from services.save_sync import SaveSyncService
@@ -82,6 +79,8 @@ class Plugin(
         self._playtime_service = services["playtime_service"]
         self._sync_service = services["sync_service"]
         self._download_service = services["download_service"]
+        self._firmware_service = services["firmware_service"]
+        self._firmware_service.load_bios_registry()
         # Load persisted state into the live dict
         self._save_sync_service.init_state()
         self._save_sync_service.load_state()
@@ -195,7 +194,7 @@ class Plugin(
         old_bios = os.path.join(old_home, "bios")
         new_bios = retrodeck_config.get_bios_path()
         if os.path.isdir(old_bios):
-            for file_name, reg_entry in self._bios_files_index.items():
+            for file_name, reg_entry in self._firmware_service._bios_files_index.items():
                 if file_name in self._state.get("downloaded_bios", {}):
                     continue
                 firmware_path = reg_entry.get("firmware_path", file_name)
@@ -544,7 +543,7 @@ class Plugin(
         bios_status = None
         if platform_slug:
             try:
-                bios = await self.check_platform_bios(platform_slug, rom_filename=rom_file or None)
+                bios = await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_file or None)
                 if bios.get("needs_bios"):
                     bios_status = {
                         "platform_slug": platform_slug,
@@ -620,7 +619,7 @@ class Plugin(
             return {"success": False, "message": "RetroDECK home not found"}
         try:
             await self.loop.run_in_executor(None, self._set_system_core_io, retrodeck_home, platform_slug, core_label)
-            bios = await self.check_platform_bios(platform_slug)
+            bios = await self._firmware_service.check_platform_bios(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set system core: {e}")
@@ -645,11 +644,31 @@ class Plugin(
             )
             # Extract rom filename from path for per-game core detection
             rom_filename = rom_path.lstrip("./") if rom_path else None
-            bios = await self.check_platform_bios(platform_slug, rom_filename=rom_filename)
+            bios = await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_filename)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set game core: {e}")
             return {"success": False, "message": str(e)}
+
+    # ── Firmware delegation to FirmwareService ──────────────
+
+    async def get_firmware_status(self):
+        return await self._firmware_service.get_firmware_status()
+
+    async def download_firmware(self, firmware_id):
+        return await self._firmware_service.download_firmware(firmware_id)
+
+    async def download_all_firmware(self, platform_slug):
+        return await self._firmware_service.download_all_firmware(platform_slug)
+
+    async def download_required_firmware(self, platform_slug):
+        return await self._firmware_service.download_required_firmware(platform_slug)
+
+    async def check_platform_bios(self, platform_slug, rom_filename=None):
+        return await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_filename)
+
+    async def delete_platform_bios(self, platform_slug):
+        return await self._firmware_service.delete_platform_bios(platform_slug)
 
     # ── Sync delegation to SyncService ─────────────────────
 

@@ -3,6 +3,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from services.firmware import FirmwareService
 from services.sync import SyncService
 
 # conftest.py patches decky before this import
@@ -23,10 +24,17 @@ def plugin():
         "retrodeck_home_path": "",
     }
     p._metadata_cache = {}
-    p._bios_registry = {}
-    p._bios_files_index = {}
 
     import decky
+
+    p._firmware_service = FirmwareService(
+        http_client=p._http_client,
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        save_state=MagicMock(),
+    )
 
     p._sync_service = SyncService(
         http_client=p._http_client,

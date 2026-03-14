@@ -16,6 +16,7 @@ from adapters.persistence import PersistenceAdapter
 from adapters.romm.client import RommHttpClient
 from adapters.romm.version_router import VersionRouter
 from services.downloads import DownloadService
+from services.firmware import FirmwareService
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
 from services.sync import SyncService
@@ -86,7 +87,7 @@ def wire_services(
     Returns
     -------
     dict with keys ``save_sync_service``, ``playtime_service``,
-    ``sync_service``, and ``download_service``.
+    ``sync_service``, ``download_service``, and ``firmware_service``.
     """
     save_sync_service = SaveSyncService(
         save_api=save_api,
@@ -134,9 +135,19 @@ def wire_services(
         save_save_sync_state=save_sync_service.save_state,
     )
 
+    firmware_service = FirmwareService(
+        http_client=http_client,
+        state=state,
+        loop=loop,
+        logger=logger,
+        plugin_dir=plugin_dir,
+        save_state=plugin._save_state,
+    )
+
     return {
         "save_sync_service": save_sync_service,
         "playtime_service": playtime_service,
         "sync_service": sync_service,
         "download_service": download_service,
+        "firmware_service": firmware_service,
     }
