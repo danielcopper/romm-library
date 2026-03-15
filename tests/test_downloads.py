@@ -782,7 +782,8 @@ class TestDoDownloadCancelled:
         plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
         with patch.object(plugin._http_client, "download", side_effect=fake_download_cancel):
-            await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
+            with pytest.raises(asyncio.CancelledError):
+                await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
         assert plugin._download_service._download_queue[42]["status"] == "cancelled"
         assert not os.path.exists(target_path)

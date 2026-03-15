@@ -38,6 +38,9 @@ if TYPE_CHECKING:
     from services.sync import SyncService
 
 
+_USER_AGENT = "decky-romm-sync/0.1"
+
+
 class SgdbService:
     """SteamGridDB artwork: API key management, artwork fetch/cache, icon save."""
 
@@ -91,7 +94,7 @@ class SgdbService:
         url = "https://www.steamgriddb.com/api/v2" + path
         req = urllib.request.Request(url, method="GET")
         req.add_header("Authorization", f"Bearer {api_key}")
-        req.add_header("User-Agent", "decky-romm-sync/0.1")
+        req.add_header("User-Agent", _USER_AGENT)
         ctx = ssl.create_default_context(cafile=_ca_bundle())
         with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
             return json.loads(resp.read().decode())
@@ -133,7 +136,7 @@ class SgdbService:
                 return None
             image_url = result["data"][0]["url"]
             req = urllib.request.Request(image_url, method="GET")
-            req.add_header("User-Agent", "decky-romm-sync/0.1")
+            req.add_header("User-Agent", _USER_AGENT)
             ctx = ssl.create_default_context(cafile=_ca_bundle())
             tmp_path = cached + ".tmp"
             with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
@@ -156,6 +159,60 @@ class SgdbService:
 
     # -- artwork base64 (callable) -----------------------------------------
 
+    async def _read_file_as_base64(self, path):
+        """Read a file and return base64-encoded string, or None on failure."""
+        try:
+            data = await self._loop.run_in_executor(None, lambda: open(path, "rb").read())
+            return base64.b64encode(data).decode("ascii")
+        except Exception as e:
+            self._logger.warning(f"Failed to read file {path}: {e}")
+            return None
+
+    async def _resolve_sgdb_id(self, rom_id):
+        """Resolve SGDB game ID from registry, pending sync, RomM API, or IGDB lookup."""
+        rom_id_str = str(rom_id)
+        reg = self._state["shortcut_registry"].get(rom_id_str, {})
+        sgdb_id = reg.get("sgdb_id")
+        igdb_id = reg.get("igdb_id")
+
+        if not sgdb_id:
+            pending = self._sync_service._pending_sync.get(rom_id, {})
+            sgdb_id = pending.get("sgdb_id")
+            igdb_id = igdb_id or pending.get("igdb_id")
+
+        # On-demand fetch from RomM API for pre-existing ROMs missing IDs
+        if not sgdb_id:
+            sgdb_id, igdb_id = await self._fetch_ids_from_romm(rom_id, igdb_id)
+
+        # Fallback: look up SGDB via IGDB ID
+        if not sgdb_id and igdb_id:
+            sgdb_id = await self._loop.run_in_executor(None, self._get_sgdb_game_id, igdb_id)
+            if sgdb_id and rom_id_str in self._state["shortcut_registry"]:
+                self._state["shortcut_registry"][rom_id_str]["sgdb_id"] = sgdb_id
+                self._save_state()
+
+        return sgdb_id
+
+    async def _fetch_ids_from_romm(self, rom_id, igdb_id):
+        """Fetch sgdb_id and igdb_id from RomM API and update registry."""
+        rom_id_str = str(rom_id)
+        sgdb_id = None
+        try:
+            rom_data = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+            if rom_data:
+                sgdb_id = rom_data.get("sgdb_id")
+                igdb_id = igdb_id or rom_data.get("igdb_id")
+            self._log_debug(f"SGDB artwork: fetched sgdb_id={sgdb_id}, igdb_id={igdb_id} from RomM for rom_id={rom_id}")
+            if rom_id_str in self._state["shortcut_registry"]:
+                if sgdb_id:
+                    self._state["shortcut_registry"][rom_id_str]["sgdb_id"] = sgdb_id
+                if igdb_id:
+                    self._state["shortcut_registry"][rom_id_str]["igdb_id"] = igdb_id
+                self._save_state()
+        except Exception as e:
+            self._logger.warning(f"SGDB artwork: failed to fetch IDs from RomM for rom_id={rom_id}: {e}")
+        return sgdb_id, igdb_id
+
     async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
         rom_id = int(rom_id)
         asset_type_num = int(asset_type_num)
@@ -171,52 +228,15 @@ class SgdbService:
         # Return from cache if available
         if os.path.exists(cached):
             self._log_debug(f"SGDB artwork cache hit: {cached}")
-            try:
-                with open(cached, "rb") as f:
-                    return {"base64": base64.b64encode(f.read()).decode("ascii"), "no_api_key": False}
-            except Exception as e:
-                self._logger.warning(f"Failed to read cached SGDB artwork: {e}")
+            b64 = await self._read_file_as_base64(cached)
+            if b64:
+                return {"base64": b64, "no_api_key": False}
 
-        # Try to fetch from SGDB
         if not self._settings.get("steamgriddb_api_key"):
             self._log_debug("SGDB artwork skipped: no API key configured")
             return {"base64": None, "no_api_key": True}
 
-        # Look up SGDB game ID from registry or pending sync
-        reg = self._state["shortcut_registry"].get(str(rom_id), {})
-        sgdb_id = reg.get("sgdb_id")
-        igdb_id = reg.get("igdb_id")
-        if not sgdb_id:
-            pending = self._sync_service._pending_sync.get(rom_id, {})
-            sgdb_id = sgdb_id or pending.get("sgdb_id")
-            igdb_id = igdb_id or pending.get("igdb_id")
-
-        # On-demand fetch from RomM API for pre-existing ROMs missing IDs
-        if not sgdb_id:
-            try:
-                rom_data = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
-                if rom_data:
-                    sgdb_id = rom_data.get("sgdb_id")
-                    igdb_id = igdb_id or rom_data.get("igdb_id")
-                self._log_debug(
-                    f"SGDB artwork: fetched sgdb_id={sgdb_id}, igdb_id={igdb_id} from RomM for rom_id={rom_id}"
-                )
-                if str(rom_id) in self._state["shortcut_registry"]:
-                    if sgdb_id:
-                        self._state["shortcut_registry"][str(rom_id)]["sgdb_id"] = sgdb_id
-                    if igdb_id:
-                        self._state["shortcut_registry"][str(rom_id)]["igdb_id"] = igdb_id
-                    self._save_state()
-            except Exception as e:
-                self._logger.warning(f"SGDB artwork: failed to fetch IDs from RomM for rom_id={rom_id}: {e}")
-
-        # Fallback: look up SGDB via IGDB ID if we have igdb_id but no sgdb_id
-        if not sgdb_id and igdb_id:
-            sgdb_id = await self._loop.run_in_executor(None, self._get_sgdb_game_id, igdb_id)
-            if sgdb_id and str(rom_id) in self._state["shortcut_registry"]:
-                self._state["shortcut_registry"][str(rom_id)]["sgdb_id"] = sgdb_id
-                self._save_state()
-
+        sgdb_id = await self._resolve_sgdb_id(rom_id)
         if not sgdb_id:
             self._log_debug(f"SGDB artwork skipped: no SGDB game found for rom_id={rom_id}")
             return {"base64": None, "no_api_key": False}
@@ -224,11 +244,9 @@ class SgdbService:
         path = await self._loop.run_in_executor(None, self._download_sgdb_artwork, sgdb_id, rom_id, asset_type)
         if path and os.path.exists(path):
             self._log_debug(f"SGDB artwork download success: rom_id={rom_id}, asset_type={asset_type}")
-            try:
-                with open(path, "rb") as f:
-                    return {"base64": base64.b64encode(f.read()).decode("ascii"), "no_api_key": False}
-            except Exception as e:
-                self._logger.warning(f"Failed to read SGDB artwork: {e}")
+            b64 = await self._read_file_as_base64(path)
+            if b64:
+                return {"base64": b64, "no_api_key": False}
         else:
             self._log_debug(f"SGDB artwork download failed: rom_id={rom_id}, asset_type={asset_type}")
 
@@ -241,7 +259,7 @@ class SgdbService:
         url = "https://www.steamgriddb.com/api/v2/search/autocomplete/test"
         req = urllib.request.Request(url, method="GET")
         req.add_header("Authorization", f"Bearer {api_key}")
-        req.add_header("User-Agent", "decky-romm-sync/0.1")
+        req.add_header("User-Agent", _USER_AGENT)
         ctx = ssl.create_default_context(cafile=_ca_bundle())
         with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
             return json.loads(resp.read().decode())

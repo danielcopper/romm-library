@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from adapters.romm.client import RommHttpClient
 
 _DOWNLOAD_QUEUE_MAX_TERMINAL = 50
+_ZIP_TMP_EXT = ".zip.tmp"
+_TMP_EXT = ".tmp"
 
 
 class DownloadService:
@@ -80,7 +82,7 @@ class DownloadService:
         for rid in terminal_ids[:excess]:
             del self._download_queue[rid]
 
-    async def clear_completed_downloads(self):
+    def clear_completed_downloads(self):
         """Remove all completed/failed/cancelled items from the download queue."""
         terminal_ids = [
             rid
@@ -91,39 +93,49 @@ class DownloadService:
             del self._download_queue[rid]
         return {"success": True, "removed": len(terminal_ids)}
 
+    def _remove_tmp_file(self, filepath):
+        """Try to remove a tmp file, return True on success."""
+        try:
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+                self._logger.info(f"Removed leftover tmp file: {filepath}")
+                return True
+        except OSError as e:
+            self._logger.warning(f"Failed to remove tmp file {filepath}: {e}")
+        return False
+
+    def _clean_rom_tmp_files(self):
+        """Remove leftover .tmp and .zip.tmp files from ROM directories."""
+        cleaned = 0
+        roms_base = retrodeck_config.get_roms_path()
+        if not os.path.isdir(roms_base):
+            return cleaned
+        for system_dir in os.listdir(roms_base):
+            system_path = os.path.join(roms_base, system_dir)
+            if not os.path.isdir(system_path):
+                continue
+            for filename in os.listdir(system_path):
+                if filename.endswith((_TMP_EXT, _ZIP_TMP_EXT)):
+                    if self._remove_tmp_file(os.path.join(system_path, filename)):
+                        cleaned += 1
+        return cleaned
+
+    def _clean_bios_tmp_files(self):
+        """Remove leftover .tmp files from BIOS directory."""
+        cleaned = 0
+        bios_base = retrodeck_config.get_bios_path()
+        if not os.path.isdir(bios_base):
+            return cleaned
+        for root, _dirs, files in os.walk(bios_base):
+            for filename in files:
+                if filename.endswith(_TMP_EXT):
+                    if self._remove_tmp_file(os.path.join(root, filename)):
+                        cleaned += 1
+        return cleaned
+
     def cleanup_leftover_tmp_files(self):
         """Remove leftover .tmp and .zip.tmp files from ROM and BIOS directories on startup."""
-        cleaned = 0
-        # Clean ROM directories
-        roms_base = retrodeck_config.get_roms_path()
-        if os.path.isdir(roms_base):
-            for system_dir in os.listdir(roms_base):
-                system_path = os.path.join(roms_base, system_dir)
-                if not os.path.isdir(system_path):
-                    continue
-                for filename in os.listdir(system_path):
-                    if filename.endswith(".tmp") or filename.endswith(".zip.tmp"):
-                        filepath = os.path.join(system_path, filename)
-                        try:
-                            if os.path.isfile(filepath):
-                                os.remove(filepath)
-                                cleaned += 1
-                                self._logger.info(f"Removed leftover tmp file: {filepath}")
-                        except OSError as e:
-                            self._logger.warning(f"Failed to remove tmp file {filepath}: {e}")
-        # Clean BIOS directory
-        bios_base = retrodeck_config.get_bios_path()
-        if os.path.isdir(bios_base):
-            for root, dirs, files in os.walk(bios_base):
-                for filename in files:
-                    if filename.endswith(".tmp"):
-                        filepath = os.path.join(root, filename)
-                        try:
-                            os.remove(filepath)
-                            cleaned += 1
-                            self._logger.info(f"Removed leftover BIOS tmp: {filepath}")
-                        except OSError as e:
-                            self._logger.warning(f"Failed to remove BIOS tmp {filepath}: {e}")
+        cleaned = self._clean_rom_tmp_files() + self._clean_bios_tmp_files()
         if cleaned:
             self._logger.info(f"Cleaned {cleaned} leftover tmp file(s)")
 
@@ -233,7 +245,7 @@ class DownloadService:
         roms_base = retrodeck_config.get_roms_path()
         if not os.path.realpath(extract_dir).startswith(os.path.realpath(roms_base) + os.sep):
             raise ValueError(f"Extract directory would be outside roms directory: {extract_dir}")
-        tmp_zip = target_path + ".zip.tmp"
+        tmp_zip = target_path + _ZIP_TMP_EXT
         with zipfile.ZipFile(tmp_zip, "r") as zf:
             # Fix 3: ZIP slip protection
             real_extract = os.path.realpath(extract_dir)
@@ -280,7 +292,7 @@ class DownloadService:
 
     def _post_download_single_io(self, rom_id, rom_detail, target_path, file_name, system):
         """Sync helper for _do_download single-file — rename + state update in executor."""
-        tmp_path = target_path + ".tmp"
+        tmp_path = target_path + _TMP_EXT
         os.replace(tmp_path, target_path)
 
         installed_entry = {
@@ -337,7 +349,7 @@ class DownloadService:
 
             if has_multiple:
                 # Multi-file ROM: API returns ZIP, download to temp then extract
-                tmp_zip = target_path + ".zip.tmp"
+                tmp_zip = target_path + _ZIP_TMP_EXT
                 await self._loop.run_in_executor(
                     None, self._http_client.download, download_path, tmp_zip, progress_callback
                 )
@@ -345,7 +357,7 @@ class DownloadService:
                     None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
                 )
             else:
-                tmp_path = target_path + ".tmp"
+                tmp_path = target_path + _TMP_EXT
                 await self._loop.run_in_executor(
                     None, self._http_client.download, download_path, tmp_path, progress_callback
                 )
@@ -370,6 +382,7 @@ class DownloadService:
             self._download_queue[rom_id]["status"] = "cancelled"
             self._cleanup_partial_download(target_path, rom_detail.get("has_multiple_files", False), file_name)
             self._logger.info(f"Download cancelled: {rom_name}")
+            raise
 
         except Exception as e:
             self._download_queue[rom_id]["status"] = "failed"
@@ -431,8 +444,8 @@ class DownloadService:
     def _cleanup_partial_download(self, target_path, has_multiple, file_name):
         """Clean up partial download files. Each step is independent so one failure doesn't block others."""
         paths_to_remove = [
-            target_path + ".zip.tmp",
-            target_path + ".tmp",
+            target_path + _ZIP_TMP_EXT,
+            target_path + _TMP_EXT,
             target_path,
         ]
         for path in paths_to_remove:
@@ -462,10 +475,10 @@ class DownloadService:
             pass
         return {"success": True, "message": "Download cancelled"}
 
-    async def get_download_queue(self):
+    def get_download_queue(self):
         return {"downloads": list(self._download_queue.values())}
 
-    async def get_installed_rom(self, rom_id):
+    def get_installed_rom(self, rom_id):
         return self._state["installed_roms"].get(str(int(rom_id)))
 
     def _is_safe_rom_path(self, path):

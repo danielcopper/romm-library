@@ -32,6 +32,9 @@ class SyncState(Enum):
     CANCELLING = "cancelling"
 
 
+_SYNC_CANCELLED = "Sync cancelled"
+
+
 class SyncService:
     """Sync engine: fetch ROMs, prepare shortcuts, manage artwork + registry."""
 
@@ -111,7 +114,7 @@ class SyncService:
             )
         return {"success": True, "platforms": result}
 
-    async def save_platform_sync(self, platform_id, enabled):
+    def save_platform_sync(self, platform_id, enabled):
         pid = str(platform_id)
         self._settings["enabled_platforms"][pid] = bool(enabled)
         self._save_settings_to_disk()
@@ -135,7 +138,7 @@ class SyncService:
 
     # ── Sync control ─────────────────────────────────────────
 
-    async def start_sync(self):
+    def start_sync(self):
         if self._sync_state != SyncState.IDLE:
             return {"success": False, "message": "Sync already in progress"}
         self._sync_state = SyncState.RUNNING
@@ -143,16 +146,16 @@ class SyncService:
         self._loop.create_task(self._do_sync())
         return {"success": True, "message": "Sync started"}
 
-    async def cancel_sync(self):
+    def cancel_sync(self):
         if self._sync_state != SyncState.RUNNING:
             return {"success": True, "message": "No sync in progress"}
         self._sync_state = SyncState.CANCELLING
         return {"success": True, "message": "Sync cancelling..."}
 
-    async def get_sync_progress(self):
+    def get_sync_progress(self):
         return self._sync_progress
 
-    async def sync_heartbeat(self):
+    def sync_heartbeat(self):
         """Called by frontend during shortcut application to keep safety timeout alive."""
         self._sync_last_heartbeat = time.monotonic()
         return {"success": True}
@@ -203,8 +206,8 @@ class SyncService:
                 "preview_id": preview_id,
             }
         except asyncio.CancelledError:
-            await self._finish_sync("Sync cancelled")
-            return {"success": False, "message": "Sync cancelled"}
+            await self._finish_sync(_SYNC_CANCELLED)
+            raise
         except Exception as e:
             import traceback
 
@@ -311,7 +314,7 @@ class SyncService:
 
         return {"success": True, "message": "Applying changes"}
 
-    async def sync_cancel_preview(self):
+    def sync_cancel_preview(self):
         self._pending_delta = None
         return {"success": True}
 
@@ -390,6 +393,140 @@ class SyncService:
 
     # ── Fetch & prepare ──────────────────────────────────────
 
+    async def _fetch_enabled_platforms(self):
+        """Fetch and filter platforms by enabled_platforms setting."""
+        platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+        if not isinstance(platforms, list):
+            self._logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
+            return []
+
+        enabled = self._settings.get("enabled_platforms", {})
+        no_prefs = len(enabled) == 0
+        self._logger.info(f"Platform filter: {len(enabled)} prefs saved, no_prefs={no_prefs}")
+        self._logger.info(f"Enabled platforms: {[k for k, v in enabled.items() if v]}")
+        platforms = [p for p in platforms if enabled.get(str(p["id"]), no_prefs)]
+        self._logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
+        return platforms
+
+    def _reconstruct_platform_from_registry(self, registry, platform_name, platform_slug):
+        """Reconstruct ROM list from registry for an unchanged platform."""
+        return [
+            {
+                "id": int(rid),
+                "name": entry["name"],
+                "fs_name": entry.get("fs_name", ""),
+                "platform_name": platform_name,
+                "platform_slug": platform_slug,
+                "platform_display_name": platform_name,
+                "igdb_id": entry.get("igdb_id"),
+                "sgdb_id": entry.get("sgdb_id"),
+                "ra_id": entry.get("ra_id"),
+            }
+            for rid, entry in registry.items()
+            if entry.get("platform_name") == platform_name
+        ]
+
+    async def _try_incremental_skip(
+        self, platform, registry, last_sync, platform_name, platform_slug, all_roms, pi, total_platforms
+    ):
+        """Try incremental fetch; return True if platform was skipped (unchanged)."""
+        registry_count = sum(1 for e in registry.values() if e.get("platform_name") == platform_name)
+        if not last_sync or registry_count == 0:
+            return False
+
+        updated_after = urllib.parse.quote(last_sync)
+        try:
+            delta_resp = await self._loop.run_in_executor(
+                None,
+                self._http_client.request,
+                f"/api/roms?platform_ids={platform['id']}&limit=1&offset=0&updated_after={updated_after}",
+            )
+            server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
+            platform_total = platform.get("rom_count", 0)
+
+            if server_total == 0 and platform_total == registry_count:
+                self._logger.info(f"Skipping {platform_name}: {registry_count} ROMs unchanged")
+                all_roms.extend(self._reconstruct_platform_from_registry(registry, platform_name, platform_slug))
+                await self._emit_progress(
+                    "roms",
+                    current=len(all_roms),
+                    message=f"{platform_name} unchanged ({pi}/{total_platforms})",
+                )
+                return True
+
+            self._logger.info(
+                f"{platform_name}: {server_total} updated, "
+                f"server={platform_total} vs registry={registry_count} — full fetch"
+            )
+        except Exception as e:
+            self._logger.warning(f"Incremental check failed for {platform_name}, falling back to full fetch: {e}")
+        return False
+
+    async def _full_fetch_platform_roms(self, platform_id, platform_name, platform_slug, all_roms, pi, total_platforms):
+        """Full paginated fetch of ROMs for a single platform."""
+        offset = 0
+        limit = 50
+        await self._emit_progress(
+            "roms",
+            current=len(all_roms),
+            message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+        )
+
+        while True:
+            self._check_cancelling()
+            try:
+                roms = await self._loop.run_in_executor(
+                    None,
+                    self._http_client.request,
+                    f"/api/roms?platform_ids={platform_id}&limit={limit}&offset={offset}",
+                )
+            except Exception as e:
+                self._logger.error(f"Failed to fetch ROMs for platform {platform_name}: {e}")
+                break
+
+            rom_list = roms.get("items", []) if isinstance(roms, dict) else roms
+            for rom in rom_list:
+                rom.pop("files", None)
+                rom["platform_name"] = platform_name
+                rom["platform_slug"] = platform_slug
+
+            all_roms.extend(rom_list)
+            await self._emit_progress(
+                "roms",
+                current=len(all_roms),
+                message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+            )
+            if len(rom_list) < limit:
+                break
+            offset += limit
+
+    def _check_cancelling(self):
+        """Raise CancelledError if sync is being cancelled."""
+        if self._sync_state == SyncState.CANCELLING:
+            raise asyncio.CancelledError(_SYNC_CANCELLED)
+
+    def _build_shortcuts_data(self, all_roms):
+        """Build shortcut data list from ROM list."""
+        exe = os.path.join(self._plugin_dir, "bin", "romm-launcher")
+        start_dir = os.path.join(self._plugin_dir, "bin")
+        return [
+            {
+                "rom_id": rom["id"],
+                "name": rom["name"],
+                "fs_name": rom.get("fs_name", ""),
+                "exe": exe,
+                "start_dir": start_dir,
+                "launch_options": f"romm:{rom['id']}",
+                "platform_name": rom.get("platform_name", "Unknown"),
+                "platform_slug": rom.get("platform_slug", ""),
+                "igdb_id": rom.get("igdb_id"),
+                "sgdb_id": rom.get("sgdb_id"),
+                "ra_id": rom.get("ra_id"),
+                "cover_path": "",
+            }
+            for rom in all_roms
+        ]
+
     async def _fetch_and_prepare(self):
         """Fetch platforms + ROMs, prepare shortcut data.
         Returns (all_roms, shortcuts_data, platforms) or raises on cancel/error.
@@ -399,164 +536,35 @@ class SyncService:
 
         # Phase 1: Fetch platforms
         await self._emit_progress("platforms", message="Fetching platforms...")
-
-        platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
-        if not isinstance(platforms, list):
-            self._logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
-            platforms = []
-
-        if self._sync_state == SyncState.CANCELLING:
-            raise asyncio.CancelledError("Sync cancelled")
-
-        # Filter platforms by enabled_platforms setting
-        enabled = self._settings.get("enabled_platforms", {})
-        no_prefs = len(enabled) == 0
-        self._logger.info(f"Platform filter: {len(enabled)} prefs saved, no_prefs={no_prefs}")
-        self._logger.info(f"Enabled platforms: {[k for k, v in enabled.items() if v]}")
-        platforms = [p for p in platforms if enabled.get(str(p["id"]), no_prefs)]
-        self._logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
+        platforms = await self._fetch_enabled_platforms()
+        self._check_cancelling()
 
         # Phase 2: Fetch ROMs per platform (incremental if possible)
         await self._emit_progress("roms", message="Fetching ROMs...")
-
         last_sync = self._state.get("last_sync")
         registry = self._state.get("shortcut_registry", {})
 
         all_roms = []
         total_platforms = len(platforms)
         for pi, platform in enumerate(platforms, 1):
-            if self._sync_state == SyncState.CANCELLING:
-                raise asyncio.CancelledError("Sync cancelled")
-
-            platform_id = platform["id"]
+            self._check_cancelling()
             platform_name = platform.get("name", platform.get("display_name", "Unknown"))
             platform_slug = platform.get("slug", "")
-            offset = 0
-            limit = 50
 
-            # Count how many ROMs we have in registry for this platform
-            registry_count = sum(1 for e in registry.values() if e.get("platform_name") == platform_name)
-
-            # Try incremental fetch if we have a last_sync timestamp
-            if last_sync and registry_count > 0:
-                updated_after = urllib.parse.quote(last_sync)
-                try:
-                    delta_resp = await self._loop.run_in_executor(
-                        None,
-                        self._http_client.request,
-                        f"/api/roms?platform_ids={platform_id}&limit=1&offset=0&updated_after={updated_after}",
-                    )
-                    server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
-
-                    # Use rom_count from platform list instead of a separate API call
-                    platform_total = platform.get("rom_count", 0)
-
-                    if server_total == 0 and platform_total == registry_count:
-                        # Nothing changed, nothing deleted — reconstruct from registry
-                        self._logger.info(f"Skipping {platform_name}: {registry_count} ROMs unchanged")
-                        for rid, entry in registry.items():
-                            if entry.get("platform_name") == platform_name:
-                                all_roms.append(
-                                    {
-                                        "id": int(rid),
-                                        "name": entry["name"],
-                                        "fs_name": entry.get("fs_name", ""),
-                                        "platform_name": platform_name,
-                                        "platform_slug": platform_slug,
-                                        "platform_display_name": platform_name,
-                                        "igdb_id": entry.get("igdb_id"),
-                                        "sgdb_id": entry.get("sgdb_id"),
-                                        "ra_id": entry.get("ra_id"),
-                                    }
-                                )
-                        await self._emit_progress(
-                            "roms",
-                            current=len(all_roms),
-                            message=f"{platform_name} unchanged ({pi}/{total_platforms})",
-                        )
-                        continue
-                    else:
-                        self._logger.info(
-                            f"{platform_name}: {server_total} updated, "
-                            f"server={platform_total} vs registry={registry_count} — full fetch"
-                        )
-                except Exception as e:
-                    self._logger.warning(
-                        f"Incremental check failed for {platform_name}, falling back to full fetch: {e}"
-                    )
-
-            # Full fetch for this platform
-            await self._emit_progress(
-                "roms",
-                current=len(all_roms),
-                message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+            skipped = await self._try_incremental_skip(
+                platform, registry, last_sync, platform_name, platform_slug, all_roms, pi, total_platforms
             )
-
-            while True:
-                if self._sync_state == SyncState.CANCELLING:
-                    raise asyncio.CancelledError("Sync cancelled")
-
-                try:
-                    roms = await self._loop.run_in_executor(
-                        None,
-                        self._http_client.request,
-                        f"/api/roms?platform_ids={platform_id}&limit={limit}&offset={offset}",
-                    )
-                except Exception as e:
-                    self._logger.error(f"Failed to fetch ROMs for platform {platform_name}: {e}")
-                    break
-
-                if isinstance(roms, dict):
-                    rom_list = roms.get("items", [])
-                else:
-                    rom_list = roms
-
-                for rom in rom_list:
-                    rom.pop("files", None)
-                    rom["platform_name"] = platform_name
-                    rom["platform_slug"] = platform_slug
-
-                all_roms.extend(rom_list)
-                await self._emit_progress(
-                    "roms",
-                    current=len(all_roms),
-                    message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+            if not skipped:
+                await self._full_fetch_platform_roms(
+                    platform["id"], platform_name, platform_slug, all_roms, pi, total_platforms
                 )
 
-                if len(rom_list) < limit:
-                    break
-                offset += limit
-
-        if self._sync_state == SyncState.CANCELLING:
-            raise asyncio.CancelledError("Sync cancelled")
-
+        self._check_cancelling()
         self._logger.info(f"Fetched {len(all_roms)} ROMs from {len(platforms)} platforms")
 
         # Phase 3: Prepare shortcut data
-        exe = os.path.join(self._plugin_dir, "bin", "romm-launcher")
-        start_dir = os.path.join(self._plugin_dir, "bin")
-
-        shortcuts_data = []
-        for i, rom in enumerate(all_roms):
-            shortcuts_data.append(
-                {
-                    "rom_id": rom["id"],
-                    "name": rom["name"],
-                    "fs_name": rom.get("fs_name", ""),
-                    "exe": exe,
-                    "start_dir": start_dir,
-                    "launch_options": f"romm:{rom['id']}",
-                    "platform_name": rom.get("platform_name", "Unknown"),
-                    "platform_slug": rom.get("platform_slug", ""),
-                    "igdb_id": rom.get("igdb_id"),
-                    "sgdb_id": rom.get("sgdb_id"),
-                    "ra_id": rom.get("ra_id"),
-                    "cover_path": "",
-                }
-            )
-
-        if self._sync_state == SyncState.CANCELLING:
-            raise asyncio.CancelledError("Sync cancelled")
+        shortcuts_data = self._build_shortcuts_data(all_roms)
+        self._check_cancelling()
 
         # Cache metadata from sync response
         for rom in all_roms:
@@ -575,8 +583,8 @@ class SyncService:
             try:
                 all_roms, shortcuts_data, platforms = await self._fetch_and_prepare()
             except asyncio.CancelledError:
-                await self._finish_sync("Sync cancelled")
-                return
+                await self._finish_sync(_SYNC_CANCELLED)
+                raise
             except Exception as e:
                 self._logger.error(f"Failed to fetch platforms: {e}")
                 _code, _msg = classify_error(e)
@@ -612,7 +620,7 @@ class SyncService:
                 cover_paths = {}
 
             if self._sync_state == SyncState.CANCELLING:
-                await self._finish_sync("Sync cancelled")
+                await self._finish_sync(_SYNC_CANCELLED)
                 return
 
             for sd in shortcuts_data:
@@ -669,9 +677,7 @@ class SyncService:
         finally:
             self._metadata_service.flush_metadata_if_dirty()
             self._sync_state = SyncState.IDLE
-            if self._sync_progress.get("phase") == "error":
-                pass
-            elif self._sync_progress.get("running"):
+            if self._sync_progress.get("phase") != "error" and self._sync_progress.get("running"):
                 self._start_safety_timeout()
 
     async def _finish_sync(self, message):
@@ -688,41 +694,45 @@ class SyncService:
 
     # ── Sync results (called by frontend) ────────────────────
 
+    def _finalize_cover_path(self, grid, cover_path, app_id, rom_id_str):
+        """Rename staged artwork to final Steam app_id filename, return final path."""
+        if not grid or not cover_path:
+            return cover_path
+        final_path = os.path.join(grid, f"{app_id}p.png")
+        if cover_path != final_path and os.path.exists(cover_path):
+            try:
+                os.replace(cover_path, final_path)
+                return final_path
+            except OSError as e:
+                self._logger.warning(f"Failed to rename artwork for rom {rom_id_str}: {e}")
+        elif os.path.exists(final_path):
+            return final_path
+        return cover_path
+
+    def _build_registry_entry(self, pending, app_id, cover_path):
+        """Build a registry entry dict from pending sync data."""
+        entry = {
+            "app_id": app_id,
+            "name": pending.get("name", ""),
+            "fs_name": pending.get("fs_name", ""),
+            "platform_name": pending.get("platform_name", ""),
+            "platform_slug": pending.get("platform_slug", ""),
+            "cover_path": cover_path,
+        }
+        for meta_key in ("igdb_id", "sgdb_id", "ra_id"):
+            if pending.get(meta_key):
+                entry[meta_key] = pending[meta_key]
+        return entry
+
     def _report_sync_results_io(self, rom_id_to_app_id, removed_rom_ids):
         """Sync helper for report_sync_results — artwork renames, state save in executor."""
         grid = self._steam_config.grid_dir()
 
-        # Update registry with new mappings from frontend
         for rom_id_str, app_id in rom_id_to_app_id.items():
             pending = self._pending_sync.get(int(rom_id_str), {})
-            cover_path = pending.get("cover_path", "")
+            cover_path = self._finalize_cover_path(grid, pending.get("cover_path", ""), app_id, rom_id_str)
+            self._state["shortcut_registry"][rom_id_str] = self._build_registry_entry(pending, app_id, cover_path)
 
-            # Rename staged artwork to final Steam app_id filename
-            if grid and cover_path:
-                final_path = os.path.join(grid, f"{app_id}p.png")
-                if cover_path != final_path and os.path.exists(cover_path):
-                    try:
-                        os.replace(cover_path, final_path)
-                        cover_path = final_path
-                    except OSError as e:
-                        self._logger.warning(f"Failed to rename artwork for rom {rom_id_str}: {e}")
-                elif os.path.exists(final_path):
-                    cover_path = final_path
-
-            registry_entry = {
-                "app_id": app_id,
-                "name": pending.get("name", ""),
-                "fs_name": pending.get("fs_name", ""),
-                "platform_name": pending.get("platform_name", ""),
-                "platform_slug": pending.get("platform_slug", ""),
-                "cover_path": cover_path,
-            }
-            for meta_key in ("igdb_id", "sgdb_id", "ra_id"):
-                if pending.get(meta_key):
-                    registry_entry[meta_key] = pending[meta_key]
-            self._state["shortcut_registry"][rom_id_str] = registry_entry
-
-        # Remove stale entries
         for rom_id in removed_rom_ids:
             self._state["shortcut_registry"].pop(str(rom_id), None)
 
@@ -736,7 +746,6 @@ class SyncService:
             except Exception as e:
                 self._logger.error(f"Failed to set Steam Input config: {e}")
 
-        # Update timestamp and save
         self._state["last_sync"] = datetime.now(timezone.utc).isoformat()
         self._save_state()
         self._pending_sync = {}
@@ -855,7 +864,7 @@ class SyncService:
 
     # ── Registry queries ─────────────────────────────────────
 
-    async def get_registry_platforms(self):
+    def get_registry_platforms(self):
         """Return platforms from the shortcut registry (works offline, no RomM API call)."""
         platforms = {}
         for rom_id, entry in self._state["shortcut_registry"].items():
@@ -867,23 +876,27 @@ class SyncService:
             "platforms": [{"name": k, "slug": v["slug"], "count": v["count"]} for k, v in sorted(platforms.items())],
         }
 
+    def _find_platform_name_in_registry(self, platform_slug):
+        """Look up platform name from the shortcut registry by slug."""
+        for entry in self._state["shortcut_registry"].values():
+            if entry.get("platform_slug") == platform_slug:
+                return entry.get("platform_name")
+        return None
+
+    async def _find_platform_name_from_api(self, platform_slug):
+        """Look up platform name from the RomM API by slug."""
+        platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+        for p in platforms:
+            if p.get("slug") == platform_slug:
+                return p.get("name", "")
+        return None
+
     async def remove_platform_shortcuts(self, platform_slug):
         """Return app_ids and rom_ids for a platform for the frontend to remove via SteamClient."""
         try:
-            # Try registry first (works offline)
-            platform_name = None
-            for entry in self._state["shortcut_registry"].values():
-                if entry.get("platform_slug") == platform_slug:
-                    platform_name = entry.get("platform_name")
-                    break
-
-            # Fall back to API if slug not in registry
+            platform_name = self._find_platform_name_in_registry(platform_slug)
             if not platform_name:
-                platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
-                for p in platforms:
-                    if p.get("slug") == platform_slug:
-                        platform_name = p.get("name", "")
-                        break
+                platform_name = await self._find_platform_name_from_api(platform_slug)
 
             if not platform_name:
                 return {
@@ -893,44 +906,64 @@ class SyncService:
                     "rom_ids": [],
                 }
 
-            app_ids = []
-            rom_ids = []
-            for rom_id, entry in self._state["shortcut_registry"].items():
-                if entry.get("platform_name") == platform_name:
-                    if "app_id" in entry:
-                        app_ids.append(entry["app_id"])
-                    rom_ids.append(rom_id)
+            app_ids = [
+                entry["app_id"]
+                for entry in self._state["shortcut_registry"].values()
+                if entry.get("platform_name") == platform_name and "app_id" in entry
+            ]
+            rom_ids = [
+                rom_id
+                for rom_id, entry in self._state["shortcut_registry"].items()
+                if entry.get("platform_name") == platform_name
+            ]
 
-            return {
-                "success": True,
-                "app_ids": app_ids,
-                "rom_ids": rom_ids,
-                "platform_name": platform_name,
-            }
+            return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids, "platform_name": platform_name}
         except Exception as e:
             self._logger.error(f"Failed to get platform shortcuts: {e}")
-            return {
-                "success": False,
-                "message": f"Failed: {e}",
-                "app_ids": [],
-                "rom_ids": [],
-            }
+            return {"success": False, "message": f"Failed: {e}", "app_ids": [], "rom_ids": []}
 
-    async def remove_all_shortcuts(self):
+    def remove_all_shortcuts(self):
         """Return app_ids and rom_ids for the frontend to remove via SteamClient."""
         registry = self._state.get("shortcut_registry", {})
         app_ids = [entry["app_id"] for entry in registry.values() if "app_id" in entry]
         rom_ids = list(registry.keys())
         return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids}
 
+    def _remove_artwork_files(self, grid, rom_id, entry):
+        """Remove all artwork files for a registry entry."""
+        removed = False
+        # Try cover_path first (stores the final renamed path)
+        cover_path = entry.get("cover_path", "")
+        if cover_path and os.path.exists(cover_path):
+            os.remove(cover_path)
+            removed = True
+        # Try {app_id}p.png (the standard Steam grid filename)
+        if not removed and entry.get("app_id"):
+            app_path = os.path.join(grid, f"{entry['app_id']}p.png")
+            if os.path.exists(app_path):
+                os.remove(app_path)
+                removed = True
+        # Fallback: legacy artwork_id format
+        if not removed:
+            artwork_id = entry.get("artwork_id")
+            if artwork_id:
+                art_path = os.path.join(grid, f"{artwork_id}p.png")
+                if os.path.exists(art_path):
+                    os.remove(art_path)
+        # Clean up any leftover staging file
+        staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
+        if os.path.exists(staging):
+            os.remove(staging)
+
     def _report_removal_results_io(self, removed_rom_ids):
         """Sync helper for report_removal_results — file deletions, state save in executor."""
         # Clean up Steam Input config for removed shortcuts (always reset to default)
-        removed_app_ids = []
-        for rom_id in removed_rom_ids:
-            entry = self._state["shortcut_registry"].get(str(rom_id))
-            if entry and entry.get("app_id"):
-                removed_app_ids.append(entry["app_id"])
+        removed_app_ids = [
+            entry["app_id"]
+            for rom_id in removed_rom_ids
+            for entry in [self._state["shortcut_registry"].get(str(rom_id))]
+            if entry and entry.get("app_id")
+        ]
         if removed_app_ids:
             try:
                 self._steam_config.set_steam_input_config(removed_app_ids, mode="default")
@@ -941,33 +974,11 @@ class SyncService:
         for rom_id in removed_rom_ids:
             entry = self._state["shortcut_registry"].pop(str(rom_id), None)
             if entry and grid:
-                removed = False
-                # Try cover_path first (stores the final renamed path)
-                cover_path = entry.get("cover_path", "")
-                if cover_path and os.path.exists(cover_path):
-                    os.remove(cover_path)
-                    removed = True
-                # Try {app_id}p.png (the standard Steam grid filename)
-                if not removed and entry.get("app_id"):
-                    app_path = os.path.join(grid, f"{entry['app_id']}p.png")
-                    if os.path.exists(app_path):
-                        os.remove(app_path)
-                        removed = True
-                # Fallback: legacy artwork_id format
-                if not removed:
-                    artwork_id = entry.get("artwork_id")
-                    if artwork_id:
-                        art_path = os.path.join(grid, f"{artwork_id}p.png")
-                        if os.path.exists(art_path):
-                            os.remove(art_path)
-                # Clean up any leftover staging file
-                staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
-                if os.path.exists(staging):
-                    os.remove(staging)
+                self._remove_artwork_files(grid, rom_id, entry)
 
         # Update sync_stats to reflect current registry
         registry = self._state.get("shortcut_registry", {})
-        platforms = set(e.get("platform_name", "") for e in registry.values())
+        platforms = {e.get("platform_name", "") for e in registry.values()}
         self._state["sync_stats"] = {
             "platforms": len(platforms),
             "roms": len(registry),
@@ -1005,8 +1016,8 @@ class SyncService:
 
         if cover_path and os.path.exists(cover_path):
             try:
-                with open(cover_path, "rb") as f:
-                    return {"base64": base64.b64encode(f.read()).decode("ascii")}
+                data = await self._loop.run_in_executor(None, lambda: open(cover_path, "rb").read())
+                return {"base64": base64.b64encode(data).decode("ascii")}
             except Exception as e:
                 self._logger.warning(f"Failed to read artwork for rom {rom_id}: {e}")
 
@@ -1014,16 +1025,16 @@ class SyncService:
 
     # ── Cache / stats ────────────────────────────────────────
 
-    async def clear_sync_cache(self):
+    def clear_sync_cache(self):
         """Clear last_sync timestamp to force a full re-fetch on next sync."""
         self._state["last_sync"] = None
         self._save_state()
         self._logger.info("Sync cache cleared — next sync will do a full fetch")
         return {"success": True, "message": "Next sync will do a full fetch"}
 
-    async def get_sync_stats(self):
+    def get_sync_stats(self):
         registry = self._state.get("shortcut_registry", {})
-        platforms = set(e.get("platform_name", "") for e in registry.values())
+        platforms = {e.get("platform_name", "") for e in registry.values()}
         return {
             "last_sync": self._state.get("last_sync"),
             "platforms": len(platforms),
@@ -1031,7 +1042,7 @@ class SyncService:
             "total_shortcuts": len(registry),
         }
 
-    async def get_rom_by_steam_app_id(self, app_id):
+    def get_rom_by_steam_app_id(self, app_id):
         app_id = int(app_id)
         for rom_id, entry in self._state["shortcut_registry"].items():
             if entry.get("app_id") == app_id:
@@ -1047,6 +1058,16 @@ class SyncService:
 
     # ── Housekeeping ─────────────────────────────────────────
 
+    def _is_staging_file_orphaned(self, grid, registry, rom_id):
+        """Check if a staging artwork file is orphaned (not in registry or has final artwork)."""
+        if rom_id not in registry:
+            return True
+        app_id = registry[rom_id].get("app_id")
+        if app_id:
+            final = os.path.join(grid, f"{app_id}p.png")
+            return os.path.exists(final)
+        return False
+
     def prune_orphaned_staging_artwork(self):
         """Remove orphaned romm_{rom_id}_cover.png staging files from Steam grid dir."""
         grid = self._steam_config.grid_dir()
@@ -1057,28 +1078,17 @@ class SyncService:
         for filename in os.listdir(grid):
             if not filename.startswith("romm_") or not filename.endswith("_cover.png"):
                 continue
-            # Extract rom_id from "romm_{rom_id}_cover.png"
             try:
                 rom_id = filename[len("romm_") : -len("_cover.png")]
                 int(rom_id)  # validate it's numeric
             except (ValueError, IndexError):
                 continue
-            should_remove = False
-            if rom_id not in registry:
-                # ROM no longer synced
-                should_remove = True
-            else:
-                # Check if final artwork exists (staging is redundant leftover)
-                app_id = registry[rom_id].get("app_id")
-                if app_id:
-                    final = os.path.join(grid, f"{app_id}p.png")
-                    if os.path.exists(final):
-                        should_remove = True
-            if should_remove:
-                try:
-                    os.remove(os.path.join(grid, filename))
-                    pruned.append(filename)
-                except OSError as e:
-                    self._logger.warning(f"Failed to remove orphaned staging artwork {filename}: {e}")
+            if not self._is_staging_file_orphaned(grid, registry, rom_id):
+                continue
+            try:
+                os.remove(os.path.join(grid, filename))
+                pruned.append(filename)
+            except OSError as e:
+                self._logger.warning(f"Failed to remove orphaned staging artwork {filename}: {e}")
         if pruned:
             self._logger.info(f"Pruned {len(pruned)} orphaned staging artwork file(s)")

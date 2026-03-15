@@ -451,7 +451,7 @@ class Plugin:
         if self._sync_service._sync_state == SyncState.RUNNING:
             self._sync_service._sync_state = SyncState.CANCELLING
         # Cancel all active downloads
-        for rom_id, task in list(self._download_service._download_tasks.items()):
+        for rom_id, task in self._download_service._download_tasks.items():
             task.cancel()
         self._download_service._download_tasks.clear()
         decky.logger.info("RomM Sync plugin unloaded")
@@ -777,22 +777,22 @@ class Plugin:
         return await self._sync_service.get_platforms()
 
     async def save_platform_sync(self, platform_id, enabled):
-        return await self._sync_service.save_platform_sync(platform_id, enabled)
+        return self._sync_service.save_platform_sync(platform_id, enabled)
 
     async def set_all_platforms_sync(self, enabled):
         return await self._sync_service.set_all_platforms_sync(enabled)
 
     async def start_sync(self):
-        return await self._sync_service.start_sync()
+        return self._sync_service.start_sync()
 
     async def cancel_sync(self):
-        return await self._sync_service.cancel_sync()
+        return self._sync_service.cancel_sync()
 
     async def get_sync_progress(self):
-        return await self._sync_service.get_sync_progress()
+        return self._sync_service.get_sync_progress()
 
     async def sync_heartbeat(self):
-        return await self._sync_service.sync_heartbeat()
+        return self._sync_service.sync_heartbeat()
 
     async def sync_preview(self):
         return await self._sync_service.sync_preview()
@@ -801,19 +801,19 @@ class Plugin:
         return await self._sync_service.sync_apply_delta(preview_id)
 
     async def sync_cancel_preview(self):
-        return await self._sync_service.sync_cancel_preview()
+        return self._sync_service.sync_cancel_preview()
 
     async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
         return await self._sync_service.report_sync_results(rom_id_to_app_id, removed_rom_ids, cancelled)
 
     async def get_registry_platforms(self):
-        return await self._sync_service.get_registry_platforms()
+        return self._sync_service.get_registry_platforms()
 
     async def remove_platform_shortcuts(self, platform_slug):
         return await self._sync_service.remove_platform_shortcuts(platform_slug)
 
     async def remove_all_shortcuts(self):
-        return await self._sync_service.remove_all_shortcuts()
+        return self._sync_service.remove_all_shortcuts()
 
     async def report_removal_results(self, removed_rom_ids):
         return await self._sync_service.report_removal_results(removed_rom_ids)
@@ -822,13 +822,13 @@ class Plugin:
         return await self._sync_service.get_artwork_base64(rom_id)
 
     async def clear_sync_cache(self):
-        return await self._sync_service.clear_sync_cache()
+        return self._sync_service.clear_sync_cache()
 
     async def get_sync_stats(self):
-        return await self._sync_service.get_sync_stats()
+        return self._sync_service.get_sync_stats()
 
     async def get_rom_by_steam_app_id(self, app_id):
-        return await self._sync_service.get_rom_by_steam_app_id(app_id)
+        return self._sync_service.get_rom_by_steam_app_id(app_id)
 
     # ── Download delegation to DownloadService ──────────────
 
@@ -839,13 +839,13 @@ class Plugin:
         return await self._download_service.cancel_download(rom_id)
 
     async def get_download_queue(self):
-        return await self._download_service.get_download_queue()
+        return self._download_service.get_download_queue()
 
     async def clear_completed_downloads(self):
-        return await self._download_service.clear_completed_downloads()
+        return self._download_service.clear_completed_downloads()
 
     async def get_installed_rom(self, rom_id):
-        return await self._download_service.get_installed_rom(rom_id)
+        return self._download_service.get_installed_rom(rom_id)
 
     async def remove_rom(self, rom_id):
         return await self._download_service.remove_rom(rom_id)
@@ -926,10 +926,10 @@ class Plugin:
         return await self._metadata_service.get_rom_metadata(rom_id)
 
     async def get_all_metadata_cache(self):
-        return await self._metadata_service.get_all_metadata_cache()
+        return self._metadata_service.get_all_metadata_cache()
 
     async def get_app_id_rom_id_map(self):
-        return await self._metadata_service.get_app_id_rom_id_map()
+        return self._metadata_service.get_app_id_rom_id_map()
 
     # ── Achievements delegation to AchievementsService ───────
 

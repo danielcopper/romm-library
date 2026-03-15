@@ -112,11 +112,11 @@ class MetadataService:
                 "cached_at": 0,
             }
 
-    async def get_all_metadata_cache(self):
+    def get_all_metadata_cache(self):
         """Return the full metadata cache dict for frontend to load on plugin start."""
         return self._metadata_cache
 
-    async def get_app_id_rom_id_map(self):
+    def get_app_id_rom_id_map(self):
         """Return {app_id: rom_id} mapping from shortcut_registry for frontend lookup."""
         result = {}
         for rom_id, entry in self._state["shortcut_registry"].items():

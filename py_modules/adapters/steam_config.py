@@ -36,7 +36,7 @@ class SteamConfigAdapter:
                     return os.path.join(base, users[0])
                 if len(users) > 1:
                     users.sort(
-                        key=lambda u: os.path.getmtime(os.path.join(base, u)),
+                        key=lambda u, base=base: os.path.getmtime(os.path.join(base, u)),
                         reverse=True,
                     )
                     return os.path.join(base, users[0])

@@ -159,6 +159,31 @@ class AchievementsService:
                 }
             return {"success": False, "achievements": [], "total": 0, "message": str(e)}
 
+    def _extract_game_progress(self, ra_progression, ra_id, total):
+        """Extract progress data for a specific game from RA progression results."""
+        results = (ra_progression or {}).get("results") or []
+        game_progress = next((entry for entry in results if entry.get("rom_ra_id") == ra_id), None)
+
+        if not game_progress:
+            return {
+                "earned": 0,
+                "earned_hardcore": 0,
+                "total": total,
+                "earned_achievements": [],
+                "cached_at": time.time(),
+            }
+        return {
+            "earned": game_progress.get("num_awarded", 0) or 0,
+            "earned_hardcore": game_progress.get("num_awarded_hardcore", 0) or 0,
+            "total": game_progress.get("max_possible", total) or total,
+            "earned_achievements": game_progress.get("earned_achievements", []),
+            "cached_at": time.time(),
+        }
+
+    def _progress_data_response(self, progress_data):
+        """Build a success response from progress_data, excluding cached_at."""
+        return {"success": True, **{k: v for k, v in progress_data.items() if k != "cached_at"}}
+
     async def get_achievement_progress(self, rom_id):
         """Fetch user's achievement progress for a ROM from RomM.
 
@@ -168,86 +193,39 @@ class AchievementsService:
         rom_id = int(rom_id)
         rom_id_str = str(rom_id)
 
-        # Check cached RA username first, fetch from RomM if stale
-        ra_username = self._get_ra_username()
-        if not ra_username:
-            ra_username = await self._fetch_ra_username()
+        ra_username = self._get_ra_username() or await self._fetch_ra_username()
         if not ra_username:
             return {"success": False, "message": "No RA username configured in RomM", "earned": 0, "total": 0}
 
-        # Check progress cache
         cached_progress = self._get_progress_cache_entry(rom_id_str)
         if cached_progress:
             self._log_debug(f"Achievement progress cache hit for rom_id={rom_id}")
             return {"success": True, **cached_progress}
 
-        # Look up ra_id from registry
-        reg = self._state["shortcut_registry"].get(rom_id_str, {})
-        ra_id = reg.get("ra_id")
+        ra_id = self._state["shortcut_registry"].get(rom_id_str, {}).get("ra_id")
         if not ra_id:
             return {"success": True, "earned": 0, "total": 0, "earned_achievements": [], "no_ra_id": True}
 
-        # Ensure we have the achievement list
-        cheevos_result = await self.get_achievements(rom_id)
-        total = cheevos_result.get("total", 0)
+        total = (await self.get_achievements(rom_id)).get("total", 0)
 
-        # Fetch user progression from RomM
-        # RomM exposes user RA progression — try the user-specific endpoint
         try:
-            # Fetch user profile from RomM — includes ra_progression and ra_username
-            # RomM 4.2+ has ra_progression on user schema
             user_data = await self._loop.run_in_executor(None, self._http_client.request, "/api/users/me")
-            # Cache ra_username from this response to avoid separate fetch next time
             fetched_username = (user_data.get("ra_username") or "").strip()
             if fetched_username:
-                self._achievements_cache["_ra_user"] = {
-                    "username": fetched_username,
-                    "cached_at": time.time(),
-                }
-            ra_progression = user_data.get("ra_progression") or {}
-            results = ra_progression.get("results") or []
+                self._achievements_cache["_ra_user"] = {"username": fetched_username, "cached_at": time.time()}
 
-            # Find progression for this game's ra_id
-            game_progress = None
-            for entry in results:
-                if entry.get("rom_ra_id") == ra_id:
-                    game_progress = entry
-                    break
+            progress_data = self._extract_game_progress(user_data.get("ra_progression"), ra_id, total)
 
-            if game_progress:
-                earned = game_progress.get("num_awarded", 0) or 0
-                earned_hardcore = game_progress.get("num_awarded_hardcore", 0) or 0
-                earned_achievements = game_progress.get("earned_achievements", [])
-
-                progress_data = {
-                    "earned": earned,
-                    "earned_hardcore": earned_hardcore,
-                    "total": game_progress.get("max_possible", total) or total,
-                    "earned_achievements": earned_achievements,
-                    "cached_at": time.time(),
-                }
-            else:
-                progress_data = {
-                    "earned": 0,
-                    "earned_hardcore": 0,
-                    "total": total,
-                    "earned_achievements": [],
-                    "cached_at": time.time(),
-                }
-
-            # Cache progress
             if rom_id_str not in self._achievements_cache:
                 self._achievements_cache[rom_id_str] = {}
             self._achievements_cache[rom_id_str]["user_progress"] = progress_data
 
-            return {"success": True, **{k: v for k, v in progress_data.items() if k != "cached_at"}}
-
+            return self._progress_data_response(progress_data)
         except Exception as e:
             self._logger.warning(f"Failed to fetch achievement progress for rom_id={rom_id}: {e}")
-            # Return stale cache if available
             stale_progress = self._achievements_cache.get(rom_id_str, {}).get("user_progress")
             if stale_progress:
-                return {"success": True, **{k: v for k, v in stale_progress.items() if k != "cached_at"}, "stale": True}
+                return {**self._progress_data_response(stale_progress), "stale": True}
             return {"success": False, "earned": 0, "total": 0, "earned_achievements": [], "message": str(e)}
 
     async def sync_achievements_after_session(self, rom_id):
