@@ -5,9 +5,9 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
-from adapters.romm.client import RommHttpClient
+from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
-from services.sync import SyncService
+from services.library_sync import LibrarySyncService
 
 from lib.errors import (
     RommApiError,
@@ -33,14 +33,14 @@ def plugin():
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     import decky
 
-    p._http_client = RommHttpClient(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._http_client = RommHttpAdapter(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = SyncService(
+    p._sync_service = LibrarySyncService(
         http_client=p._http_client,
         steam_config=steam_config,
         state=p._state,
@@ -513,63 +513,63 @@ class TestRommUploadMultipartErrors:
 
 
 class TestRetryLogic:
-    """Tests for with_retry and is_retryable on RommHttpClient."""
+    """Tests for with_retry and is_retryable on RommHttpAdapter."""
 
     def test_is_retryable_5xx(self, plugin):
         """HTTP 500/502/503 are retryable."""
         for code in (500, 502, 503):
             exc = urllib.error.HTTPError("url", code, "err", {}, None)
-            assert RommHttpClient.is_retryable(exc) is True
+            assert RommHttpAdapter.is_retryable(exc) is True
 
     def test_is_not_retryable_4xx(self, plugin):
         """HTTP 400/401/404/409 are NOT retryable."""
         for code in (400, 401, 403, 404, 409):
             exc = urllib.error.HTTPError("url", code, "err", {}, None)
-            assert RommHttpClient.is_retryable(exc) is False
+            assert RommHttpAdapter.is_retryable(exc) is False
 
     def test_is_retryable_connection_errors(self, plugin):
         """ConnectionError, TimeoutError, URLError are retryable."""
-        assert RommHttpClient.is_retryable(ConnectionError("refused")) is True
-        assert RommHttpClient.is_retryable(TimeoutError("timed out")) is True
-        assert RommHttpClient.is_retryable(urllib.error.URLError("unreachable")) is True
-        assert RommHttpClient.is_retryable(OSError("network down")) is True
+        assert RommHttpAdapter.is_retryable(ConnectionError("refused")) is True
+        assert RommHttpAdapter.is_retryable(TimeoutError("timed out")) is True
+        assert RommHttpAdapter.is_retryable(urllib.error.URLError("unreachable")) is True
+        assert RommHttpAdapter.is_retryable(OSError("network down")) is True
 
     def test_is_not_retryable_other(self, plugin):
         """ValueError, KeyError etc. are NOT retryable."""
-        assert RommHttpClient.is_retryable(ValueError("bad")) is False
-        assert RommHttpClient.is_retryable(KeyError("missing")) is False
+        assert RommHttpAdapter.is_retryable(ValueError("bad")) is False
+        assert RommHttpAdapter.is_retryable(KeyError("missing")) is False
 
     def test_is_retryable_romm_server_error(self, plugin):
         """RommServerError is retryable."""
-        assert RommHttpClient.is_retryable(RommServerError("500")) is True
+        assert RommHttpAdapter.is_retryable(RommServerError("500")) is True
 
     def test_is_retryable_romm_connection_error(self, plugin):
         """RommConnectionError is retryable."""
-        assert RommHttpClient.is_retryable(RommConnectionError("refused")) is True
+        assert RommHttpAdapter.is_retryable(RommConnectionError("refused")) is True
 
     def test_is_retryable_romm_timeout_error(self, plugin):
         """RommTimeoutError is retryable."""
-        assert RommHttpClient.is_retryable(RommTimeoutError("timed out")) is True
+        assert RommHttpAdapter.is_retryable(RommTimeoutError("timed out")) is True
 
     def test_is_not_retryable_romm_auth_error(self, plugin):
         """RommAuthError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommAuthError("401")) is False
+        assert RommHttpAdapter.is_retryable(RommAuthError("401")) is False
 
     def test_is_not_retryable_romm_not_found_error(self, plugin):
         """RommNotFoundError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommNotFoundError("404")) is False
+        assert RommHttpAdapter.is_retryable(RommNotFoundError("404")) is False
 
     def test_is_not_retryable_romm_conflict_error(self, plugin):
         """RommConflictError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommConflictError("409")) is False
+        assert RommHttpAdapter.is_retryable(RommConflictError("409")) is False
 
     def test_is_not_retryable_romm_ssl_error(self, plugin):
         """RommSSLError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommSSLError("cert bad")) is False
+        assert RommHttpAdapter.is_retryable(RommSSLError("cert bad")) is False
 
     def test_is_not_retryable_romm_forbidden_error(self, plugin):
         """RommForbiddenError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommForbiddenError("403")) is False
+        assert RommHttpAdapter.is_retryable(RommForbiddenError("403")) is False
 
     def test_retry_succeeds_on_first_try(self, plugin):
         """No retries needed when call succeeds."""
@@ -836,3 +836,162 @@ class TestVersionDetection:
             result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "timeout_error"
+
+
+# ── Tests for uncovered HTTP adapter methods ──────────
+
+
+class TestTranslateHttpStatus:
+    """Tests for _translate_http_status() — covers lines 122-134."""
+
+    def _make_client(self):
+        import logging
+
+        return RommHttpAdapter(
+            {"romm_url": "http://test", "romm_user": "u", "romm_pass": "p"},
+            "/tmp",
+            logging.getLogger("test"),
+        )
+
+    def test_400_bad_request(self):
+        client = self._make_client()
+        err = client._translate_http_status(400, "Bad request", "/api/test", "GET")
+        assert isinstance(err, RommApiError)
+        assert "Bad request" in str(err)
+
+    def test_401_auth_error(self):
+        client = self._make_client()
+        err = client._translate_http_status(401, "Unauthorized", "/api/test", "GET")
+        assert isinstance(err, RommAuthError)
+
+    def test_403_forbidden(self):
+        client = self._make_client()
+        err = client._translate_http_status(403, "Forbidden", "/api/test", "GET")
+        assert isinstance(err, RommForbiddenError)
+
+    def test_404_not_found(self):
+        client = self._make_client()
+        err = client._translate_http_status(404, "Not Found", "/api/test", "GET")
+        assert isinstance(err, RommNotFoundError)
+
+    def test_409_conflict(self):
+        client = self._make_client()
+        err = client._translate_http_status(409, "Conflict", "/api/test", "POST")
+        assert isinstance(err, RommConflictError)
+
+    def test_429_rate_limited(self):
+        client = self._make_client()
+        err = client._translate_http_status(429, "Too Many", "/api/test", "GET")
+        assert isinstance(err, RommServerError)
+        assert "Rate limited" in str(err)
+
+    def test_500_server_error(self):
+        client = self._make_client()
+        err = client._translate_http_status(500, "Internal Server Error", "/api/test", "GET")
+        assert isinstance(err, RommServerError)
+
+    def test_502_server_error(self):
+        client = self._make_client()
+        err = client._translate_http_status(502, "Bad Gateway", "/api/test", "GET")
+        assert isinstance(err, RommServerError)
+
+    def test_unknown_4xx(self):
+        client = self._make_client()
+        err = client._translate_http_status(418, "I'm a teapot", "/api/test", "GET")
+        assert isinstance(err, RommApiError)
+        assert not isinstance(err, RommServerError)
+
+
+class TestTranslateUnwrapped:
+    """Tests for _translate_unwrapped() — covers lines 137-145."""
+
+    def test_ssl_error(self):
+        err = RommHttpAdapter._translate_unwrapped(ssl.SSLError("cert error"), "/api", "GET")
+        assert isinstance(err, RommSSLError)
+
+    def test_socket_timeout(self):
+        err = RommHttpAdapter._translate_unwrapped(socket.timeout("timed out"), "/api", "GET")
+        assert isinstance(err, RommTimeoutError)
+
+    def test_timeout_error(self):
+        err = RommHttpAdapter._translate_unwrapped(TimeoutError("timed out"), "/api", "GET")
+        assert isinstance(err, RommTimeoutError)
+
+    def test_connection_error(self):
+        err = RommHttpAdapter._translate_unwrapped(ConnectionError("refused"), "/api", "GET")
+        assert isinstance(err, RommConnectionError)
+
+    def test_os_error(self):
+        err = RommHttpAdapter._translate_unwrapped(OSError("disk full"), "/api", "GET")
+        assert isinstance(err, RommConnectionError)
+
+    def test_unexpected_error(self):
+        err = RommHttpAdapter._translate_unwrapped(ValueError("weird"), "/api", "GET")
+        assert isinstance(err, RommApiError)
+        assert "Unexpected" in str(err)
+
+
+class TestStreamToFile:
+    """Tests for _stream_to_file() — covers lines 214-229."""
+
+    def test_writes_data_to_file(self, tmp_path):
+        from io import BytesIO
+
+        data = b"hello world" * 100
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        resp.read = stream.read
+
+        dest = tmp_path / "output.bin"
+        total, downloaded = RommHttpAdapter._stream_to_file(resp, dest)
+        assert total == len(data)
+        assert downloaded == len(data)
+        assert dest.read_bytes() == data
+
+    def test_no_content_length(self, tmp_path):
+        from io import BytesIO
+
+        data = b"some data"
+        resp = MagicMock()
+        resp.headers = {}
+        stream = BytesIO(data)
+        resp.read = stream.read
+
+        dest = tmp_path / "output.bin"
+        total, downloaded = RommHttpAdapter._stream_to_file(resp, dest)
+        assert total == 0
+        assert downloaded == len(data)
+
+    def test_progress_callback(self, tmp_path):
+        from io import BytesIO
+
+        data = b"x" * 16384  # 2 blocks
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        resp.read = stream.read
+
+        progress_calls = []
+        dest = tmp_path / "output.bin"
+        RommHttpAdapter._stream_to_file(resp, dest, progress_callback=lambda d, t: progress_calls.append((d, t)))
+        assert len(progress_calls) >= 1
+        assert progress_calls[-1][0] == len(data)
+
+
+class TestValidateDownload:
+    """Tests for _validate_download() — covers lines 232-237."""
+
+    def test_valid_download(self):
+        RommHttpAdapter._validate_download(1000, 1000)  # should not raise
+
+    def test_incomplete_download(self):
+        with pytest.raises(IOError, match="incomplete"):
+            RommHttpAdapter._validate_download(1000, 500)
+
+    def test_zero_bytes_no_content_length(self):
+        with pytest.raises(IOError, match="0 bytes"):
+            RommHttpAdapter._validate_download(0, 0)
+
+    def test_no_content_length_but_data_received(self):
+        RommHttpAdapter._validate_download(0, 500)  # should not raise

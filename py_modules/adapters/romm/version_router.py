@@ -6,7 +6,7 @@ Defaults to v46 (safe fallback). Call ``set_version()`` after
 
 from __future__ import annotations
 
-from adapters.romm.client import RommHttpClient
+from adapters.romm.http import RommHttpAdapter
 from adapters.romm.save_api.v46 import SaveApiV46
 from adapters.romm.save_api.v47 import SaveApiV47
 
@@ -25,7 +25,7 @@ _V47_THRESHOLD = (4, 7, 0)
 class VersionRouter:
     """Selects the correct SaveApi adapter based on detected RomM version."""
 
-    def __init__(self, client: RommHttpClient) -> None:
+    def __init__(self, client: RommHttpAdapter) -> None:
         self._v46 = SaveApiV46(client)
         self._v47 = SaveApiV47(client)
         self._active = self._v46

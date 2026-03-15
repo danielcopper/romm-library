@@ -1,0 +1,52 @@
+[importlinter]
+root_packages =
+    services
+    adapters
+    lib
+
+# Services must not import concrete adapters (protocols are OK).
+[importlinter:contract:no-adapter-impl-in-services]
+name = Services must not import concrete adapter implementations
+type = forbidden
+source_modules =
+    services
+forbidden_modules =
+    adapters.romm.http
+    adapters.romm.save_api.v46
+    adapters.romm.save_api.v47
+    adapters.romm.version_router
+    adapters.steam_config
+    adapters.persistence
+
+# Adapters must not import services
+[importlinter:contract:no-services-in-adapters]
+name = Adapters must not import services
+type = forbidden
+source_modules =
+    adapters
+forbidden_modules =
+    services
+
+# Utilities (lib/) must not import services or adapters
+[importlinter:contract:utilities-independence]
+name = Utilities must not import services or adapters
+type = forbidden
+source_modules =
+    lib
+forbidden_modules =
+    services
+    adapters
+
+# Services must be independent of each other
+[importlinter:contract:service-independence]
+name = Services must not import other services
+type = independence
+modules =
+    services.library_sync
+    services.save_sync
+    services.playtime
+    services.downloads
+    services.firmware
+    services.sgdb_artwork
+    services.metadata
+    services.achievements

@@ -190,6 +190,26 @@ Only `save_sync_state.json` has a `"version"` field. `state.json`, `settings.jso
 - **Cleared downloads hidden on re-download**: `cleared` Set in DownloadQueue React state persists rom_ids. Re-downloading a previously cleared ROM hides the new progress. Fix: clear rom_id from `cleared` when new `download_progress` event arrives.
 - **Connection state via custom events, not central store**: Different components can have different connection states due to event propagation timing. Not a bug today, but a consistency risk. Fix (future): EventEmitter or subscriber-pattern store.
 - **Test coverage gaps in es_de_config write paths**: Read operations well-covered, but write paths (`set_system_override`, `set_game_override`, `_rebuild_game_xml`) and the 4-stage core resolution chain need more edge-case coverage.
+- **Test quality validation**: Mutation testing via `mutmut` to verify tests actually catch bugs (not just coverage-gaming). Run as nightly CI job or manual trigger — too slow for every PR. Also consider property-based testing (`hypothesis`) for edge cases and integration tests for full flows (sync → shortcut → download).
+- **main.py slimming**: Extract MigrationService (~200 lines), GameDetailComposer (~80 lines), and core switching logic into services. Target: main.py ~500 lines (callables + `_main()` only).
+
+---
+
+## Phase R3: Service Decomposition (next PR after post-migration)
+
+**Goal**: Break down the largest services into focused, single-responsibility classes. Ordered by impact.
+
+### Phase 1 — High impact, lower risk
+1. **es_de_config.py** (737L) → `CoreResolver` class + `GamelistXmlEditor` class. Eliminates 8 module-level globals, improves cache safety.
+2. **main.py** (943L) → Extract `RetroDeckMigrationService` (265 lines, self-contained). Reduces main.py to ~650 lines.
+
+### Phase 2 — Medium impact
+3. **SaveSyncService** (1160L) → Extract `SaveConflictDetector` (145L, isolated conflict logic). Reduces to ~1000L, conflict modes become independently testable.
+4. **DownloadService** (581L) → Extract `RomRemovalService` (100L, independent concern) + `DownloadPostProcessor` (80L, ZIP/M3U handling).
+
+### Phase 3 — Larger refactoring
+5. **LibrarySyncService** (1103L) → Extract `SyncArtworkManager` (150L) + `ShortcutDataBuilder` (150L) + `ShortcutRemovalService` (100L). Reduces to ~600L.
+6. **FirmwareService** (521L) → Extract `BiosStatusComputer` (100L). Lower priority, already reasonably focused.
 - **Dead code: `save_steamgriddb_key()`** in `lib/sgdb.py` — duplicate of `save_sgdb_api_key()`, never called from frontend. Delete it.
 - **XML parsing duplication in es_de_config.py**: Four separate SAX parser implementations with own state management. A shared base parser class could save 100-150 lines. Refactoring candidate when code is stable.
 

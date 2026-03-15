@@ -9,7 +9,7 @@ sys.path.insert(0, plugin_dir)
 import decky
 from adapters.persistence import PersistenceAdapter
 from bootstrap import bootstrap, wire_services
-from services.sync import SyncState
+from services.library_sync import SyncState
 
 from lib import retrodeck_config
 
@@ -771,7 +771,7 @@ class Plugin:
     async def delete_platform_bios(self, platform_slug):
         return await self._firmware_service.delete_platform_bios(platform_slug)
 
-    # ── Sync delegation to SyncService ─────────────────────
+    # ── Sync delegation to LibrarySyncService ─────────────────────
 
     async def get_platforms(self):
         return await self._sync_service.get_platforms()
@@ -906,7 +906,7 @@ class Plugin:
     async def get_all_playtime(self):
         return await self._playtime_service.get_all_playtime()
 
-    # ── SGDB delegation to SgdbService ───────────────────────
+    # ── SGDB delegation to SgdbArtworkService ───────────────────────
 
     async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
         return await self._sgdb_service.get_sgdb_artwork_base64(rom_id, asset_type_num)

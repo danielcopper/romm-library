@@ -7,7 +7,7 @@ A Decky Loader plugin that syncs a self-hosted RomM library into Steam as Non-St
 ## Architecture
 
 ```
-RomM Server <-HTTP-> Python Backend (main.py)
+RomM Server <-HTTP-> Python Backend (main.py + services/ + adapters/)
                           | callable() / emit()
                    Frontend (TypeScript) <-> SteamClient.Apps API
                           |
@@ -16,9 +16,22 @@ RomM Server <-HTTP-> Python Backend (main.py)
                      bin/romm-launcher (bash) -> RetroDECK (flatpak)
 ```
 
-- **Backend** (`main.py` + `lib/`): RomM API, SteamGridDB API, ROM/BIOS/artwork downloads, state persistence
-- **Frontend** (`src/`): SteamClient shortcut CRUD, QAM panel UI, game detail page injection
-- **Communication**: `callable()` for request/response, `decky.emit()` for backend-to-frontend events
+**Backend layers** (dependency direction: services → protocols ← adapters):
+- **`main.py`** — Plugin entry point, callable routing, composition root
+- **`py_modules/services/`** — Business logic (8 services, depend on Protocols only)
+- **`py_modules/adapters/`** — I/O boundaries (HTTP, persistence, Steam VDF, save API)
+- **`py_modules/models/`** — Domain dataclasses
+- **`py_modules/lib/`** — Utilities (errors, ES-DE config, RetroDECK paths)
+
+**Frontend** (`src/`): SteamClient shortcut CRUD, QAM panel UI, game detail page injection
+
+**Communication**: `callable()` for request/response, `decky.emit()` for backend-to-frontend events
+
+**Layer rules** (enforced by import-linter in CI):
+- Services must not import concrete adapter implementations (Protocols OK)
+- Adapters must not import services
+- Utilities must not import services or adapters
+- Services must be independent of each other
 
 ## Key Technical Constraints
 
@@ -32,50 +45,58 @@ RomM Server <-HTTP-> Python Backend (main.py)
 - **BIsModOrShortcut bypass DROPPED**: Phase 5.6 removed the bypass counter entirely. Shortcuts return `BIsModOrShortcut() = true` (natural state). We own the entire game detail UI via RomMPlaySection + future RomMGameInfoPanel. See `docs/game-detail-ui.md` section 2 for the rationale.
 - **Shortcut property re-sync**: Changing exe, startDir, or launchOptions on existing shortcuts may not take effect reliably. Full delete + recreate (re-sync) is required for changes to launch config.
 - **RomM 4.6.1 Save API**: `GET /api/saves/{id}/content` does not exist — use `download_path` from save metadata (URL-encode spaces/parens). No `content_hash` in SaveSchema — use hybrid timestamp + download-and-hash. `POST /api/saves` upserts by filename. `GET /api/roms/{id}/notes` returns 500 — read `all_user_notes` from ROM detail instead. `device_id` param is accepted but ignored. See wiki Save-File-Sync-Architecture for full details.
+- **Decky callables must be async**: Even if the method body is synchronous, Decky's callable framework requires `async def`. Do not remove `async` from callable methods in main.py.
 
 ## File Structure
 
 ```
-main.py                              # Plugin entry point, composes mixin classes from lib/
-py_modules/lib/                      # Backend mixin modules (in py_modules/ for Decky sys.path)
-py_modules/services/save_sync.py     # Save sync service (device registration, upload/download, conflict detection)
-py_modules/services/playtime.py      # Playtime tracking service (session recording, RomM notes sync)
-py_modules/lib/es_de_config.py       # ES-DE config parser (core resolution, gamelist.xml read/write)
-py_modules/lib/retrodeck_config.py   # RetroDECK path resolution (roms, saves, BIOS, states)
-src/index.tsx                        # Plugin entry, event listeners, QAM router
-src/components/MainPage.tsx          # Status, sync button, navigation
-src/components/ConnectionSettings.tsx # RomM connection, SGDB API key, controller settings
-src/components/PlatformSync.tsx      # Per-platform enable/disable toggles
-src/components/DangerZone.tsx        # Per-platform and bulk removal
-src/components/DownloadQueue.tsx     # Active/completed downloads
-src/components/BiosManager.tsx       # Per-platform BIOS file status and downloads
-src/components/CustomPlayButton.tsx  # Custom Play/Download button with dropdown menu
-src/components/RomMPlaySection.tsx   # PlaySection wrapper: CustomPlayButton + info items (last played, playtime, achievements, save sync, BIOS)
-src/components/RomMGameInfoPanel.tsx  # Metadata panel: description, genres, developer, release date
-src/components/SaveSyncSettings.tsx  # Save sync settings QAM page
-src/components/ConflictModal.tsx     # Save conflict resolution modal (keep local/server/launch anyway)
-src/patches/gameDetailPatch.tsx      # Route patch for /library/app/:appid, injects RomMPlaySection
-src/patches/metadataPatches.ts       # Store patches for metadata display, playtime writes
-src/api/backend.ts                   # callable() wrappers (typed)
-src/types/index.ts                   # Shared TypeScript interfaces
-src/types/steam.d.ts                 # SteamClient/collectionStore/appStore type declarations
-src/utils/steamShortcuts.ts          # addShortcut, removeShortcut, getExistingRomMShortcuts
-src/utils/syncManager.ts             # Listens for sync_apply, orchestrates shortcut creation
-src/utils/syncProgress.ts            # Module-level sync progress store
-src/utils/downloadStore.ts           # Module-level download state store
-src/utils/collections.ts             # Steam collection management
-src/utils/sessionManager.ts          # Game session detection and playtime tracking
-bin/romm-launcher                    # Bash launcher for RetroDECK
-defaults/config.json                 # 149 platform slug -> RetroDECK system mappings
-tests/test_*.py                      # Per-module backend tests (586 tests)
-tests/conftest.py                    # Mock decky module for test isolation
+main.py                                   # Plugin entry point, callable routing, bootstrap
+py_modules/
+  bootstrap.py                            # Composition root — wires adapters and services
+  services/
+    protocols.py                          # Protocol interfaces (HttpAdapter, SteamConfigAdapter)
+    library_sync.py                       # Library sync engine (fetch ROMs, create shortcuts, artwork)
+    save_sync.py                          # Save file sync (upload/download .srm, conflict detection)
+    playtime.py                           # Playtime tracking (session recording, RomM notes)
+    downloads.py                          # ROM download engine (ZIP extraction, M3U, queue)
+    firmware.py                           # BIOS/firmware management (registry, downloads, per-core filtering)
+    sgdb_artwork.py                       # SteamGridDB artwork (fetch, cache, icons)
+    metadata.py                           # ROM metadata caching (TTL refresh, app_id mapping)
+    achievements.py                       # RetroAchievements (progress, caching, RA username)
+  adapters/
+    persistence.py                        # Settings/state/cache JSON I/O (atomic writes)
+    steam_config.py                       # Steam VDF read/write, grid dir, Steam Input config
+    romm/
+      http.py                             # RommHttpAdapter — HTTP client for RomM API
+      version_router.py                   # Proxy selecting v46/v47 SaveApi by server version
+      save_api/
+        protocol.py                       # SaveApiProtocol interface
+        v46.py                            # RomM 4.6.1 save API adapter
+        v47.py                            # RomM 4.7.0 save API adapter
+  models/
+    save_sync.py                          # Domain dataclasses (SaveFile, SaveConflict, PlaytimeEntry)
+  lib/
+    errors.py                             # Exception hierarchy (RommApiError, classify_error)
+    es_de_config.py                       # ES-DE config parser (core resolution, gamelist.xml)
+    retrodeck_config.py                   # RetroDECK path resolution (roms, saves, BIOS, states)
+src/
+  index.tsx                               # Plugin entry, event listeners, QAM router
+  components/                             # React components (MainPage, ConnectionSettings, etc.)
+  patches/                                # Steam UI patches (game detail page, metadata)
+  api/backend.ts                          # callable() wrappers (typed)
+  types/                                  # TypeScript interfaces + Steam type declarations
+  utils/                                  # Shortcut management, sync, downloads, collections, sessions
+bin/romm-launcher                         # Bash launcher for RetroDECK
+defaults/config.json                      # 149 platform slug → RetroDECK system mappings
+tests/test_*.py                           # Per-module backend tests (949 tests)
+tests/conftest.py                         # Mock decky module for test isolation
 ```
 
 ## Current State
 
-**Latest release**: v0.9.1 on main
+**Latest release**: v0.12.0 on main
 
-Working (Phases 1-6 complete):
+Working (Phases 1-7 + R1-R2 complete, post-migration cleanup done):
 - Full sync engine (fetch ROMs, create shortcuts, apply cover art)
 - On-demand ROM downloads with progress tracking
 - BIOS file management per platform with per-core annotations
@@ -92,16 +113,26 @@ Working (Phases 1-6 complete):
 - Per-platform and per-game core switching (ES-DE gamelist.xml integration)
 - RetroDECK path migration (internal SSD ↔ SD card)
 - Native Steam metadata display (descriptions, genres, release date, controller support)
+- RetroAchievements integration with tabbed game detail page
 
-See PLAN.md for the full roadmap (Phases 1-6 done, 7=RetroAchievements+Tabs, 8=Save Sync v2, 9-10 deferred).
+See PLAN.md for the full roadmap.
 
 ## Development
 
 - **Build**: `pnpm build` (Rollup -> dist/index.js)
 - **Tests**: `python -m pytest tests/ -q` or `mise run test`
+- **Coverage**: `python -m pytest tests/ -q --cov=py_modules --cov=main --cov-report=term --cov-branch`
 - **Setup**: `mise run setup` (installs JS + Python dependencies)
 - **Dev reload**: `mise run dev` (build + restart plugin_loader)
 - **Tooling**: mise manages node, pnpm, python. Venv auto-activates via `_.python.venv` in mise.toml.
+
+## Code Quality
+
+- **SonarCloud**: CI-based analysis on every PR + push to main. Quality Gate enforces 80% coverage on new code, 0 bugs, 0 vulnerabilities.
+- **Ruff**: Python linting in CI.
+- **basedpyright**: Type checking in CI.
+- **import-linter**: Layer boundary enforcement in CI (services ↛ adapters, adapters ↛ services, services independent).
+- **pytest-cov**: Branch coverage reported to SonarCloud.
 
 ## Testing
 

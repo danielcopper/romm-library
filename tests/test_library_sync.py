@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
+from services.library_sync import LibrarySyncService, SyncState
 from services.metadata import MetadataService
-from services.sync import SyncService, SyncState
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -35,7 +35,7 @@ def plugin():
     )
     p._metadata_service = metadata_service
 
-    p._sync_service = SyncService(
+    p._sync_service = LibrarySyncService(
         http_client=p._http_client,
         steam_config=steam_config,
         state=p._state,
@@ -1361,3 +1361,1113 @@ class TestSyncCancelPreview:
     async def test_returns_success(self, plugin):
         result = await plugin.sync_cancel_preview()
         assert result == {"success": True}
+
+
+# ── Tests for uncovered helper methods in library_sync.py ──────────
+
+
+class TestGetPlatforms:
+    """Tests for get_platforms() — lines 90-117."""
+
+    @pytest.mark.asyncio
+    async def test_returns_platforms_with_rom_count(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "N64", "slug": "n64", "rom_count": 10},
+                {"id": 2, "name": "SNES", "slug": "snes", "rom_count": 5},
+            ]
+        )
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service.get_platforms()
+        assert result["success"] is True
+        assert len(result["platforms"]) == 2
+        assert result["platforms"][0]["name"] == "N64"
+        assert result["platforms"][0]["rom_count"] == 10
+        assert result["platforms"][1]["name"] == "SNES"
+
+    @pytest.mark.asyncio
+    async def test_skips_zero_rom_count(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "N64", "slug": "n64", "rom_count": 10},
+                {"id": 2, "name": "Empty", "slug": "empty", "rom_count": 0},
+            ]
+        )
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service.get_platforms()
+        assert result["success"] is True
+        assert len(result["platforms"]) == 1
+        assert result["platforms"][0]["name"] == "N64"
+
+    @pytest.mark.asyncio
+    async def test_sync_enabled_from_settings(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "N64", "slug": "n64", "rom_count": 10},
+                {"id": 2, "name": "SNES", "slug": "snes", "rom_count": 5},
+            ]
+        )
+        plugin._sync_service._loop = mock_loop
+        plugin.settings["enabled_platforms"] = {"1": True, "2": False}
+
+        result = await plugin._sync_service.get_platforms()
+        assert result["platforms"][0]["sync_enabled"] is True
+        assert result["platforms"][1]["sync_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_default_sync_enabled_when_no_prefs(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value=[{"id": 1, "name": "N64", "slug": "n64", "rom_count": 3}])
+        plugin._sync_service._loop = mock_loop
+        plugin.settings["enabled_platforms"] = {}
+
+        result = await plugin._sync_service.get_platforms()
+        assert result["platforms"][0]["sync_enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("Connection refused"))
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service.get_platforms()
+        assert result["success"] is False
+        assert "error_code" in result
+
+    @pytest.mark.asyncio
+    async def test_unexpected_response_type(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value="not a list")
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service.get_platforms()
+        assert result["success"] is False
+        assert result["error_code"] == "api_error"
+
+
+class TestSavePlatformSync:
+    """Tests for save_platform_sync() — lines 120-123."""
+
+    def test_saves_enabled_setting(self, plugin):
+        result = plugin._sync_service.save_platform_sync(42, True)
+        assert result["success"] is True
+        assert plugin.settings["enabled_platforms"]["42"] is True
+
+    def test_saves_disabled_setting(self, plugin):
+        plugin.settings["enabled_platforms"]["42"] = True
+        result = plugin._sync_service.save_platform_sync(42, False)
+        assert result["success"] is True
+        assert plugin.settings["enabled_platforms"]["42"] is False
+
+
+class TestSetAllPlatformsSync:
+    """Tests for set_all_platforms_sync() — lines 126-139."""
+
+    @pytest.mark.asyncio
+    async def test_enables_all(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "N64"},
+                {"id": 2, "name": "SNES"},
+            ]
+        )
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service.set_all_platforms_sync(True)
+        assert result["success"] is True
+        assert plugin.settings["enabled_platforms"]["1"] is True
+        assert plugin.settings["enabled_platforms"]["2"] is True
+
+    @pytest.mark.asyncio
+    async def test_disables_all(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value=[{"id": 1, "name": "N64"}])
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service.set_all_platforms_sync(False)
+        assert result["success"] is True
+        assert plugin.settings["enabled_platforms"]["1"] is False
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("timeout"))
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service.set_all_platforms_sync(True)
+        assert result["success"] is False
+
+
+class TestSyncControl:
+    """Tests for start_sync, cancel_sync, get_sync_progress, sync_heartbeat — lines 143-163."""
+
+    def test_start_sync_when_idle(self, plugin):
+        result = plugin._sync_service.start_sync()
+        assert result["success"] is True
+        assert plugin._sync_service._sync_state == SyncState.RUNNING
+
+    def test_start_sync_rejects_when_running(self, plugin):
+        plugin._sync_service._sync_state = SyncState.RUNNING
+        result = plugin._sync_service.start_sync()
+        assert result["success"] is False
+        assert "already in progress" in result["message"]
+
+    def test_cancel_sync_when_running(self, plugin):
+        plugin._sync_service._sync_state = SyncState.RUNNING
+        result = plugin._sync_service.cancel_sync()
+        assert result["success"] is True
+        assert plugin._sync_service._sync_state == SyncState.CANCELLING
+
+    def test_cancel_sync_when_idle(self, plugin):
+        result = plugin._sync_service.cancel_sync()
+        assert result["success"] is True
+        assert "No sync" in result["message"]
+
+    def test_get_sync_progress(self, plugin):
+        result = plugin._sync_service.get_sync_progress()
+        assert "running" in result
+        assert "phase" in result
+
+    def test_sync_heartbeat(self, plugin):
+        import time
+
+        old = plugin._sync_service._sync_last_heartbeat
+        time.sleep(0.01)
+        result = plugin._sync_service.sync_heartbeat()
+        assert result["success"] is True
+        assert plugin._sync_service._sync_last_heartbeat > old
+
+
+class TestCheckCancelling:
+    """Tests for _check_cancelling() — lines 505-508."""
+
+    def test_raises_when_cancelling(self, plugin):
+        plugin._sync_service._sync_state = SyncState.CANCELLING
+        with pytest.raises(asyncio.CancelledError):
+            plugin._sync_service._check_cancelling()
+
+    def test_noop_when_running(self, plugin):
+        plugin._sync_service._sync_state = SyncState.RUNNING
+        plugin._sync_service._check_cancelling()  # should not raise
+
+    def test_noop_when_idle(self, plugin):
+        plugin._sync_service._check_cancelling()  # should not raise
+
+
+class TestBuildShortcutsData:
+    """Tests for _build_shortcuts_data() — lines 510-530."""
+
+    def test_builds_correct_format(self, plugin):
+        roms = [
+            {
+                "id": 1,
+                "name": "Game A",
+                "fs_name": "gamea.z64",
+                "platform_name": "N64",
+                "platform_slug": "n64",
+                "igdb_id": 100,
+                "sgdb_id": 200,
+                "ra_id": 300,
+            },
+            {"id": 2, "name": "Game B", "platform_name": "SNES", "platform_slug": "snes"},
+        ]
+        result = plugin._sync_service._build_shortcuts_data(roms)
+        assert len(result) == 2
+        assert result[0]["rom_id"] == 1
+        assert result[0]["name"] == "Game A"
+        assert result[0]["fs_name"] == "gamea.z64"
+        assert result[0]["launch_options"] == "romm:1"
+        assert result[0]["platform_name"] == "N64"
+        assert result[0]["platform_slug"] == "n64"
+        assert result[0]["igdb_id"] == 100
+        assert result[0]["sgdb_id"] == 200
+        assert result[0]["ra_id"] == 300
+        assert result[0]["cover_path"] == ""
+        assert "romm-launcher" in result[0]["exe"]
+        assert result[1]["fs_name"] == ""
+
+    def test_empty_roms(self, plugin):
+        result = plugin._sync_service._build_shortcuts_data([])
+        assert result == []
+
+    def test_missing_optional_fields(self, plugin):
+        roms = [{"id": 5, "name": "Minimal"}]
+        result = plugin._sync_service._build_shortcuts_data(roms)
+        assert result[0]["rom_id"] == 5
+        assert result[0]["platform_name"] == "Unknown"
+        assert result[0]["platform_slug"] == ""
+        assert result[0]["igdb_id"] is None
+        assert result[0]["sgdb_id"] is None
+
+
+class TestFetchEnabledPlatforms:
+    """Tests for _fetch_enabled_platforms() — lines 398-411, 402-403."""
+
+    @pytest.mark.asyncio
+    async def test_filters_by_enabled(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "N64", "slug": "n64"},
+                {"id": 2, "name": "SNES", "slug": "snes"},
+                {"id": 3, "name": "GBA", "slug": "gba"},
+            ]
+        )
+        plugin._sync_service._loop = mock_loop
+        plugin.settings["enabled_platforms"] = {"1": True, "2": False, "3": True}
+
+        result = await plugin._sync_service._fetch_enabled_platforms()
+        assert len(result) == 2
+        names = [p["name"] for p in result]
+        assert "N64" in names
+        assert "GBA" in names
+        assert "SNES" not in names
+
+    @pytest.mark.asyncio
+    async def test_all_enabled_when_no_prefs(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"id": 1, "name": "N64", "slug": "n64"},
+                {"id": 2, "name": "SNES", "slug": "snes"},
+            ]
+        )
+        plugin._sync_service._loop = mock_loop
+        plugin.settings["enabled_platforms"] = {}
+
+        result = await plugin._sync_service._fetch_enabled_platforms()
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_for_non_list_response(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value={"error": "bad response"})
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service._fetch_enabled_platforms()
+        assert result == []
+
+
+class TestReconstructPlatformFromRegistry:
+    """Tests for _reconstruct_platform_from_registry() — lines 413-429."""
+
+    def test_reconstructs_matching_entries(self, plugin):
+        plugin._state["shortcut_registry"] = {
+            "1": {
+                "name": "Game A",
+                "fs_name": "a.z64",
+                "platform_name": "N64",
+                "igdb_id": 100,
+                "sgdb_id": 200,
+                "ra_id": 300,
+            },
+            "2": {"name": "Game B", "fs_name": "b.z64", "platform_name": "N64"},
+            "3": {"name": "Game C", "fs_name": "c.z64", "platform_name": "SNES"},
+        }
+        result = plugin._sync_service._reconstruct_platform_from_registry(
+            plugin._state["shortcut_registry"], "N64", "n64"
+        )
+        assert len(result) == 2
+        ids = {r["id"] for r in result}
+        assert ids == {1, 2}
+        # Check fields
+        game_a = next(r for r in result if r["id"] == 1)
+        assert game_a["name"] == "Game A"
+        assert game_a["platform_name"] == "N64"
+        assert game_a["platform_slug"] == "n64"
+        assert game_a["igdb_id"] == 100
+
+    def test_empty_when_no_match(self, plugin):
+        plugin._state["shortcut_registry"] = {
+            "1": {"name": "Game A", "platform_name": "SNES"},
+        }
+        result = plugin._sync_service._reconstruct_platform_from_registry(
+            plugin._state["shortcut_registry"], "N64", "n64"
+        )
+        assert result == []
+
+    def test_empty_registry(self, plugin):
+        result = plugin._sync_service._reconstruct_platform_from_registry({}, "N64", "n64")
+        assert result == []
+
+
+class TestTryIncrementalSkip:
+    """Tests for _try_incremental_skip() — lines 431-465."""
+
+    @pytest.mark.asyncio
+    async def test_skips_unchanged_platform(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value={"total": 0})
+        plugin._sync_service._loop = mock_loop
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"name": "Game A", "platform_name": "N64"},
+            "2": {"name": "Game B", "platform_name": "N64"},
+        }
+        platform = {"id": 1, "rom_count": 2}
+        all_roms = []
+
+        skipped = await plugin._sync_service._try_incremental_skip(
+            platform, plugin._state["shortcut_registry"], "2025-01-01T00:00:00", "N64", "n64", all_roms, 1, 1
+        )
+        assert skipped is True
+        assert len(all_roms) == 2  # reconstructed from registry
+
+    @pytest.mark.asyncio
+    async def test_no_skip_on_first_sync(self, plugin):
+        from unittest.mock import MagicMock
+
+        mock_loop = MagicMock()
+        plugin._sync_service._loop = mock_loop
+
+        platform = {"id": 1, "rom_count": 5}
+        all_roms = []
+
+        # last_sync is None => no skip
+        skipped = await plugin._sync_service._try_incremental_skip(platform, {}, None, "N64", "n64", all_roms, 1, 1)
+        assert skipped is False
+
+    @pytest.mark.asyncio
+    async def test_no_skip_when_registry_empty(self, plugin):
+        from unittest.mock import MagicMock
+
+        mock_loop = MagicMock()
+        plugin._sync_service._loop = mock_loop
+
+        platform = {"id": 1, "rom_count": 5}
+        all_roms = []
+
+        # registry has no entries for this platform
+        skipped = await plugin._sync_service._try_incremental_skip(
+            platform, {}, "2025-01-01T00:00:00", "N64", "n64", all_roms, 1, 1
+        )
+        assert skipped is False
+
+    @pytest.mark.asyncio
+    async def test_no_skip_when_updates_exist(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value={"total": 3})
+        plugin._sync_service._loop = mock_loop
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"name": "Game A", "platform_name": "N64"},
+        }
+        platform = {"id": 1, "rom_count": 1}
+        all_roms = []
+
+        skipped = await plugin._sync_service._try_incremental_skip(
+            platform, plugin._state["shortcut_registry"], "2025-01-01T00:00:00", "N64", "n64", all_roms, 1, 1
+        )
+        assert skipped is False
+        assert len(all_roms) == 0
+
+    @pytest.mark.asyncio
+    async def test_no_skip_when_count_mismatch(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value={"total": 0})
+        plugin._sync_service._loop = mock_loop
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"name": "Game A", "platform_name": "N64"},
+        }
+        platform = {"id": 1, "rom_count": 5}  # server has 5, registry has 1
+        all_roms = []
+
+        skipped = await plugin._sync_service._try_incremental_skip(
+            platform, plugin._state["shortcut_registry"], "2025-01-01T00:00:00", "N64", "n64", all_roms, 1, 1
+        )
+        assert skipped is False
+
+    @pytest.mark.asyncio
+    async def test_falls_back_on_api_error(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("Connection failed"))
+        plugin._sync_service._loop = mock_loop
+
+        plugin._state["shortcut_registry"] = {
+            "1": {"name": "Game A", "platform_name": "N64"},
+        }
+        platform = {"id": 1, "rom_count": 1}
+        all_roms = []
+
+        skipped = await plugin._sync_service._try_incremental_skip(
+            platform, plugin._state["shortcut_registry"], "2025-01-01T00:00:00", "N64", "n64", all_roms, 1, 1
+        )
+        assert skipped is False
+
+
+class TestFullFetchPlatformRoms:
+    """Tests for _full_fetch_platform_roms() — lines 467-503."""
+
+    @pytest.mark.asyncio
+    async def test_fetches_single_page(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value={
+                "items": [
+                    {"id": 1, "name": "Game A", "files": ["f1"]},
+                    {"id": 2, "name": "Game B"},
+                ]
+            }
+        )
+        plugin._sync_service._loop = mock_loop
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        all_roms = []
+        await plugin._sync_service._full_fetch_platform_roms(1, "N64", "n64", all_roms, 1, 1)
+        assert len(all_roms) == 2
+        assert all_roms[0]["platform_name"] == "N64"
+        assert all_roms[0]["platform_slug"] == "n64"
+        # files should be removed
+        assert "files" not in all_roms[0]
+
+    @pytest.mark.asyncio
+    async def test_fetches_multiple_pages(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        page1 = {"items": [{"id": i, "name": f"G{i}"} for i in range(50)]}
+        page2 = {"items": [{"id": 50, "name": "G50"}]}
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=[page1, page2])
+        plugin._sync_service._loop = mock_loop
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        all_roms = []
+        await plugin._sync_service._full_fetch_platform_roms(1, "N64", "n64", all_roms, 1, 1)
+        assert len(all_roms) == 51
+
+    @pytest.mark.asyncio
+    async def test_handles_api_error(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("Server error"))
+        plugin._sync_service._loop = mock_loop
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        all_roms = []
+        await plugin._sync_service._full_fetch_platform_roms(1, "N64", "n64", all_roms, 1, 1)
+        assert len(all_roms) == 0  # gracefully handles error
+
+    @pytest.mark.asyncio
+    async def test_cancelling_during_fetch(self, plugin):
+        from unittest.mock import AsyncMock
+
+        plugin._sync_service._sync_state = SyncState.CANCELLING
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        all_roms = []
+        with pytest.raises(asyncio.CancelledError):
+            await plugin._sync_service._full_fetch_platform_roms(1, "N64", "n64", all_roms, 1, 1)
+
+
+class TestFinalizeCoverPath:
+    """Tests for _finalize_cover_path() — lines 699-712."""
+
+    def test_renames_staging_to_final(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        staging = tmp_path / "romm_1_cover.png"
+        staging.write_text("cover data")
+
+        result = plugin._sync_service._finalize_cover_path(grid, str(staging), 100001, "1")
+        expected = os.path.join(grid, "100001p.png")
+        assert result == expected
+        assert not staging.exists()
+        assert os.path.exists(expected)
+
+    def test_returns_existing_final(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        final = tmp_path / "100001p.png"
+        final.write_text("final data")
+
+        result = plugin._sync_service._finalize_cover_path(grid, "/nonexistent/path.png", 100001, "1")
+        assert result == str(final)
+
+    def test_returns_cover_path_when_no_grid(self, plugin):
+        result = plugin._sync_service._finalize_cover_path(None, "/some/path.png", 100001, "1")
+        assert result == "/some/path.png"
+
+    def test_returns_cover_path_when_empty(self, plugin, tmp_path):
+        result = plugin._sync_service._finalize_cover_path(str(tmp_path), "", 100001, "1")
+        assert result == ""
+
+    def test_handles_rename_os_error(self, plugin, tmp_path):
+        from unittest.mock import patch
+
+        grid = str(tmp_path)
+        staging = tmp_path / "romm_1_cover.png"
+        staging.write_text("data")
+
+        with patch("os.replace", side_effect=OSError("perm denied")):
+            result = plugin._sync_service._finalize_cover_path(grid, str(staging), 100001, "1")
+        # Should return original path on error
+        assert result == str(staging)
+
+
+class TestBuildRegistryEntry:
+    """Tests for _build_registry_entry() — lines 714-727."""
+
+    def test_builds_full_entry(self, plugin):
+        pending = {
+            "name": "Game A",
+            "fs_name": "gamea.z64",
+            "platform_name": "N64",
+            "platform_slug": "n64",
+            "igdb_id": 100,
+            "sgdb_id": 200,
+            "ra_id": 300,
+        }
+        result = plugin._sync_service._build_registry_entry(pending, 100001, "/grid/100001p.png")
+        assert result["app_id"] == 100001
+        assert result["name"] == "Game A"
+        assert result["fs_name"] == "gamea.z64"
+        assert result["platform_name"] == "N64"
+        assert result["platform_slug"] == "n64"
+        assert result["cover_path"] == "/grid/100001p.png"
+        assert result["igdb_id"] == 100
+        assert result["sgdb_id"] == 200
+        assert result["ra_id"] == 300
+
+    def test_omits_none_meta_keys(self, plugin):
+        pending = {
+            "name": "Game B",
+            "fs_name": "",
+            "platform_name": "SNES",
+            "platform_slug": "snes",
+            "igdb_id": None,
+            "sgdb_id": None,
+            "ra_id": None,
+        }
+        result = plugin._sync_service._build_registry_entry(pending, 100002, "")
+        assert "igdb_id" not in result
+        assert "sgdb_id" not in result
+        assert "ra_id" not in result
+
+    def test_missing_keys_default_to_empty(self, plugin):
+        pending = {}
+        result = plugin._sync_service._build_registry_entry(pending, 100003, "")
+        assert result["name"] == ""
+        assert result["fs_name"] == ""
+        assert result["platform_name"] == ""
+        assert result["platform_slug"] == ""
+
+
+class TestFindPlatformNameInRegistry:
+    """Tests for _find_platform_name_in_registry() — lines 888-893."""
+
+    def test_finds_by_slug(self, plugin):
+        plugin._state["shortcut_registry"] = {
+            "1": {"platform_name": "Nintendo 64", "platform_slug": "n64"},
+            "2": {"platform_name": "Super Nintendo", "platform_slug": "snes"},
+        }
+        result = plugin._sync_service._find_platform_name_in_registry("n64")
+        assert result == "Nintendo 64"
+
+    def test_returns_none_when_not_found(self, plugin):
+        plugin._state["shortcut_registry"] = {
+            "1": {"platform_name": "Nintendo 64", "platform_slug": "n64"},
+        }
+        result = plugin._sync_service._find_platform_name_in_registry("gba")
+        assert result is None
+
+    def test_empty_registry(self, plugin):
+        result = plugin._sync_service._find_platform_name_in_registry("n64")
+        assert result is None
+
+
+class TestFindPlatformNameFromApi:
+    """Tests for _find_platform_name_from_api() — lines 895-901."""
+
+    @pytest.mark.asyncio
+    async def test_finds_by_slug(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=[
+                {"slug": "n64", "name": "Nintendo 64"},
+                {"slug": "snes", "name": "Super Nintendo"},
+            ]
+        )
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service._find_platform_name_from_api("snes")
+        assert result == "Super Nintendo"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(return_value=[{"slug": "n64", "name": "Nintendo 64"}])
+        plugin._sync_service._loop = mock_loop
+
+        result = await plugin._sync_service._find_platform_name_from_api("gba")
+        assert result is None
+
+
+class TestIsStagingFileOrphaned:
+    """Tests for _is_staging_file_orphaned() — lines 1070-1078."""
+
+    def test_orphaned_when_not_in_registry(self, plugin, tmp_path):
+        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), {}, "42")
+        assert result is True
+
+    def test_orphaned_when_final_exists(self, plugin, tmp_path):
+        final = tmp_path / "1001p.png"
+        final.write_text("final")
+        registry = {"42": {"app_id": 1001}}
+        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), registry, "42")
+        assert result is True
+
+    def test_not_orphaned_when_no_final(self, plugin, tmp_path):
+        registry = {"42": {"app_id": 1001}}
+        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), registry, "42")
+        assert result is False
+
+    def test_not_orphaned_when_no_app_id(self, plugin, tmp_path):
+        registry = {"42": {"name": "Game"}}
+        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), registry, "42")
+        assert result is False
+
+
+class TestExistingCoverPath:
+    """Tests for _existing_cover_path() — lines 810-825."""
+
+    def test_returns_final_when_exists(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        final = tmp_path / "99999p.png"
+        final.write_text("final")
+        plugin._state["shortcut_registry"]["42"] = {"app_id": 99999}
+
+        result = plugin._sync_service._existing_cover_path(42, grid)
+        assert result == str(final)
+
+    def test_returns_staging_when_exists(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        staging = tmp_path / "romm_42_cover.png"
+        staging.write_text("staging")
+
+        result = plugin._sync_service._existing_cover_path(42, grid)
+        assert result == str(staging)
+
+    def test_returns_none_when_nothing_exists(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        result = plugin._sync_service._existing_cover_path(42, grid)
+        assert result is None
+
+    def test_returns_none_when_registry_no_app_id(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        plugin._state["shortcut_registry"]["42"] = {"name": "Game"}
+        result = plugin._sync_service._existing_cover_path(42, grid)
+        assert result is None
+
+
+class TestRemoveArtworkFiles:
+    """Tests for _remove_artwork_files() — lines 941-965."""
+
+    def test_removes_cover_path(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        cover = tmp_path / "100001p.png"
+        cover.write_text("cover data")
+        entry = {"cover_path": str(cover), "app_id": 100001}
+        plugin._sync_service._remove_artwork_files(grid, "42", entry)
+        assert not cover.exists()
+
+    def test_removes_app_id_fallback(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        art = tmp_path / "100001p.png"
+        art.write_text("data")
+        entry = {"cover_path": "", "app_id": 100001}
+        plugin._sync_service._remove_artwork_files(grid, "42", entry)
+        assert not art.exists()
+
+    def test_removes_legacy_artwork_id(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        art = tmp_path / "12345p.png"
+        art.write_text("data")
+        entry = {"cover_path": "", "artwork_id": 12345}
+        plugin._sync_service._remove_artwork_files(grid, "42", entry)
+        assert not art.exists()
+
+    def test_removes_staging_leftover(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        staging = tmp_path / "romm_42_cover.png"
+        staging.write_text("staging")
+        entry = {"cover_path": ""}
+        plugin._sync_service._remove_artwork_files(grid, "42", entry)
+        assert not staging.exists()
+
+    def test_removes_all_types(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        cover = tmp_path / "mycover.png"
+        cover.write_text("cover")
+        staging = tmp_path / "romm_42_cover.png"
+        staging.write_text("staging")
+        entry = {"cover_path": str(cover), "app_id": 100001}
+        plugin._sync_service._remove_artwork_files(grid, "42", entry)
+        assert not cover.exists()
+        assert not staging.exists()
+
+
+class TestRemovePlatformShortcutsException:
+    """Tests for exception handling in remove_platform_shortcuts — lines 930-932."""
+
+    @pytest.mark.asyncio
+    async def test_handles_exception(self, plugin):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("API Error"))
+        plugin._sync_service._loop = mock_loop
+
+        # No slug match in registry, forces API call which errors
+        result = await plugin._sync_service.remove_platform_shortcuts("broken")
+        assert result["success"] is False
+        assert result["app_ids"] == []
+        assert result["rom_ids"] == []
+
+
+class TestGetArtworkBase64:
+    """Tests for get_artwork_base64() — lines 1004-1033."""
+
+    @pytest.mark.asyncio
+    async def test_returns_base64_from_pending(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: grid
+
+        cover = tmp_path / "romm_42_cover.png"
+        cover.write_bytes(b"fake png data")
+
+        plugin._sync_service._pending_sync = {42: {"cover_path": str(cover)}}
+
+        result = await plugin._sync_service.get_artwork_base64(42)
+        assert result["base64"] is not None
+        import base64
+
+        assert base64.b64decode(result["base64"]) == b"fake png data"
+
+    @pytest.mark.asyncio
+    async def test_returns_base64_from_registry(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: grid
+
+        cover = tmp_path / "100001p.png"
+        cover.write_bytes(b"registry png")
+
+        plugin._state["shortcut_registry"]["42"] = {"cover_path": str(cover)}
+
+        result = await plugin._sync_service.get_artwork_base64(42)
+        assert result["base64"] is not None
+
+    @pytest.mark.asyncio
+    async def test_returns_base64_from_staging_fallback(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: grid
+
+        staging = tmp_path / "romm_42_cover.png"
+        staging.write_bytes(b"staging png")
+
+        result = await plugin._sync_service.get_artwork_base64(42)
+        assert result["base64"] is not None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_grid(self, plugin):
+        plugin._steam_config.grid_dir = lambda: None
+
+        result = await plugin._sync_service.get_artwork_base64(42)
+        assert result["base64"] is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_file_missing(self, plugin, tmp_path):
+        grid = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: grid
+
+        result = await plugin._sync_service.get_artwork_base64(42)
+        assert result["base64"] is None
+
+
+class TestClearSyncCache:
+    """Tests for clear_sync_cache() — lines 1037-1042."""
+
+    def test_clears_last_sync(self, plugin):
+        plugin._state["last_sync"] = "2025-01-01T00:00:00"
+        result = plugin._sync_service.clear_sync_cache()
+        assert result["success"] is True
+        assert plugin._state["last_sync"] is None
+
+
+class TestReportSyncResultsCancelled:
+    """Tests for report_sync_results with cancelled=True — lines 773-788."""
+
+    @pytest.mark.asyncio
+    async def test_emits_cancelled_progress(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        decky.emit.reset_mock()
+
+        plugin._sync_service._pending_sync = {
+            1: {"name": "Game A", "platform_name": "N64", "cover_path": ""},
+        }
+
+        await plugin.report_sync_results({"1": 100001}, [], cancelled=True)
+
+        # Find the sync_progress done emission
+        progress_calls = [c for c in decky.emit.call_args_list if c[0][0] == "sync_progress"]
+        assert len(progress_calls) >= 1
+        last_progress = progress_calls[-1][0][1]
+        assert last_progress["running"] is False
+        assert "cancelled" in last_progress["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_emits_sync_complete_with_cancelled_flag(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        decky.emit.reset_mock()
+
+        plugin._sync_service._pending_sync = {
+            1: {"name": "Game A", "platform_name": "N64", "cover_path": ""},
+        }
+
+        await plugin.report_sync_results({"1": 100001}, [], cancelled=True)
+
+        complete_calls = [c for c in decky.emit.call_args_list if c[0][0] == "sync_complete"]
+        assert len(complete_calls) == 1
+        assert complete_calls[0][0][1]["cancelled"] is True
+
+
+class TestDownloadArtworkEdgeCases:
+    """Tests for _download_artwork edge cases — lines 837-870."""
+
+    @pytest.mark.asyncio
+    async def test_no_grid_returns_empty(self, plugin):
+        plugin._steam_config.grid_dir = lambda: None
+        result = await plugin._sync_service._download_artwork([{"id": 1, "name": "G", "path_cover_large": "/c.png"}])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_skips_rom_without_cover_url(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock
+
+        grid = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: grid
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        roms = [{"id": 1, "name": "No Cover"}]
+        result = await plugin._sync_service._download_artwork(roms)
+        assert 1 not in result
+
+    @pytest.mark.asyncio
+    async def test_download_failure_logged(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock, MagicMock
+
+        grid = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: grid
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("Network error"))
+        plugin._sync_service._loop = mock_loop
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        roms = [{"id": 1, "name": "Game", "path_cover_large": "/cover.png"}]
+        result = await plugin._sync_service._download_artwork(roms)
+        assert 1 not in result
+
+    @pytest.mark.asyncio
+    async def test_cancelling_during_artwork(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock
+
+        grid = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: grid
+        plugin._sync_service._sync_state = SyncState.CANCELLING
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        roms = [{"id": 1, "name": "Game", "path_cover_large": "/cover.png"}]
+        result = await plugin._sync_service._download_artwork(roms)
+        assert result == {}
+
+
+class TestDoSyncErrorHandling:
+    """Tests for _do_sync error/edge handling — lines 587-695."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_error_emits_error_progress(self, plugin):
+        from unittest.mock import AsyncMock
+
+        plugin._sync_service._sync_state = SyncState.RUNNING
+        plugin._sync_service._fetch_and_prepare = AsyncMock(side_effect=Exception("API down"))
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        await plugin._sync_service._do_sync()
+
+        # Should have emitted error progress
+        error_calls = [c for c in plugin._sync_service._emit_progress.call_args_list if c[0][0] == "error"]
+        assert len(error_calls) >= 1
+        assert plugin._sync_service._sync_state == SyncState.IDLE
+
+    @pytest.mark.asyncio
+    async def test_cancel_during_sync(self, plugin):
+        from unittest.mock import AsyncMock
+
+        import decky
+
+        decky.emit.reset_mock()
+
+        plugin._sync_service._sync_state = SyncState.RUNNING
+        plugin._sync_service._fetch_and_prepare = AsyncMock(side_effect=asyncio.CancelledError("Sync cancelled"))
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        # CancelledError is caught, _finish_sync called, then re-raised
+        with pytest.raises(asyncio.CancelledError):
+            await plugin._sync_service._do_sync()
+
+        # Should be idle after _finish_sync
+        assert plugin._sync_service._sync_state == SyncState.IDLE
+
+    @pytest.mark.asyncio
+    async def test_general_exception_in_do_sync(self, plugin):
+
+        import decky
+
+        decky.emit.reset_mock()
+
+        plugin._sync_service._sync_state = SyncState.RUNNING
+
+        async def failing_fetch():
+            # Successfully fetch but then fail during artwork
+            raise RuntimeError("Unexpected error")
+
+        plugin._sync_service._fetch_and_prepare = failing_fetch
+
+        await plugin._sync_service._do_sync()
+
+        assert plugin._sync_service._sync_state == SyncState.IDLE
+
+
+class TestFinishSync:
+    """Tests for _finish_sync() — lines 685-695."""
+
+    @pytest.mark.asyncio
+    async def test_sets_cancelled_state(self, plugin):
+        import decky
+
+        decky.emit.reset_mock()
+        plugin._sync_service._sync_state = SyncState.RUNNING
+        plugin._sync_service._sync_progress = {"running": True, "current": 5, "total": 10}
+
+        await plugin._sync_service._finish_sync("Sync cancelled")
+
+        assert plugin._sync_service._sync_state == SyncState.IDLE
+        assert plugin._sync_service._sync_progress["running"] is False
+        assert plugin._sync_service._sync_progress["phase"] == "cancelled"
+        assert plugin._sync_service._sync_progress["message"] == "Sync cancelled"
+
+
+class TestSyncPreviewErrorHandling:
+    """Tests for sync_preview error paths — lines 210-219."""
+
+    @pytest.mark.asyncio
+    async def test_general_exception_returns_error(self, plugin):
+        from unittest.mock import AsyncMock
+
+        plugin._sync_service._fetch_and_prepare = AsyncMock(side_effect=RuntimeError("Something broke"))
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        result = await plugin._sync_service.sync_preview()
+        assert result["success"] is False
+        assert "error_code" in result
+        assert plugin._sync_service._sync_state == SyncState.IDLE
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_reraises(self, plugin):
+        from unittest.mock import AsyncMock
+
+        import decky
+
+        decky.emit.reset_mock()
+
+        plugin._sync_service._fetch_and_prepare = AsyncMock(side_effect=asyncio.CancelledError("cancelled"))
+        plugin._sync_service._emit_progress = AsyncMock()
+
+        with pytest.raises(asyncio.CancelledError):
+            await plugin._sync_service.sync_preview()
+        assert plugin._sync_service._sync_state == SyncState.IDLE
+
+
+class TestReportRemovalSteamInputCleanup:
+    """Tests for Steam Input cleanup in _report_removal_results_io — lines 967-980."""
+
+    @pytest.mark.asyncio
+    async def test_cleans_steam_input_on_removal(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: str(tmp_path)
+        plugin._steam_config.set_steam_input_config = MagicMock()
+
+        plugin._state["shortcut_registry"] = {
+            "10": {"app_id": 1001, "name": "Game A", "cover_path": ""},
+            "20": {"app_id": 1002, "name": "Game B", "cover_path": ""},
+        }
+
+        await plugin.report_removal_results([10, 20])
+        plugin._steam_config.set_steam_input_config.assert_called_once_with([1001, 1002], mode="default")
+
+    @pytest.mark.asyncio
+    async def test_steam_input_error_doesnt_crash(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._steam_config.grid_dir = lambda: str(tmp_path)
+        plugin._steam_config.set_steam_input_config = MagicMock(side_effect=Exception("VDF error"))
+
+        plugin._state["shortcut_registry"] = {
+            "10": {"app_id": 1001, "name": "Game A", "cover_path": ""},
+        }
+
+        result = await plugin.report_removal_results([10])
+        assert result["success"] is True  # Should not crash

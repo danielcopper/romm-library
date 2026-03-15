@@ -1,4 +1,4 @@
-"""SgdbService — SteamGridDB artwork management extracted from SgdbMixin.
+"""SgdbArtworkService — SteamGridDB artwork management extracted from SgdbMixin.
 
 Handles SGDB API key verification, artwork fetching/caching, icon saving
 to Steam grid directory, and orphaned artwork cache pruning.
@@ -33,22 +33,19 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.client import RommHttpClient
-    from adapters.steam_config import SteamConfigAdapter
-
-    from services.sync import SyncService
+    from services.protocols import HttpAdapter, SteamConfigAdapter
 
 
 _USER_AGENT = "decky-romm-sync/0.1"
 
 
-class SgdbService:
+class SgdbArtworkService:
     """SteamGridDB artwork: API key management, artwork fetch/cache, icon save."""
 
     def __init__(
         self,
         *,
-        http_client: RommHttpClient,
+        http_client: HttpAdapter,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
@@ -57,7 +54,7 @@ class SgdbService:
         runtime_dir: str,
         save_state: Callable[[], None],
         save_settings_to_disk: Callable[[], None],
-        sync_service: SyncService,
+        pending_sync: dict,
     ) -> None:
         self._http_client = http_client
         self._steam_config = steam_config
@@ -68,7 +65,7 @@ class SgdbService:
         self._runtime_dir = runtime_dir
         self._save_state = save_state
         self._save_settings_to_disk = save_settings_to_disk
-        self._sync_service = sync_service
+        self._pending_sync = pending_sync
 
     # -- logging -----------------------------------------------------------
 
@@ -177,7 +174,7 @@ class SgdbService:
         igdb_id = reg.get("igdb_id")
 
         if not sgdb_id:
-            pending = self._sync_service._pending_sync.get(rom_id, {})
+            pending = self._pending_sync.get(rom_id, {})
             sgdb_id = pending.get("sgdb_id")
             igdb_id = igdb_id or pending.get("igdb_id")
 

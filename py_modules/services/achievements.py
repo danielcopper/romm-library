@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.client import RommHttpClient
+    from services.protocols import HttpAdapter
 
 
 class AchievementsService:
@@ -27,7 +27,7 @@ class AchievementsService:
     def __init__(
         self,
         *,
-        http_client: RommHttpClient,
+        http_client: HttpAdapter,
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
