@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from adapters.steam_config import SteamConfigAdapter
 from services.firmware import FirmwareService
-from services.sync import SyncService
+from services.library_sync import LibrarySyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -40,7 +40,7 @@ def plugin():
         save_state=MagicMock(),
     )
 
-    p._sync_service = SyncService(
+    p._sync_service = LibrarySyncService(
         http_client=p._http_client,
         steam_config=steam_config,
         state=p._state,

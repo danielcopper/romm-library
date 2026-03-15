@@ -5,12 +5,12 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-from adapters.romm.client import RommHttpClient
+from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
 from fakes.fake_save_api import FakeSaveApi
+from services.library_sync import LibrarySyncService
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
-from services.sync import SyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -30,7 +30,7 @@ def plugin(tmp_path):
         "enabled_platforms": {},
         "log_level": "warn",
     }
-    p._http_client = RommHttpClient(p.settings, __import__("decky").DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._http_client = RommHttpAdapter(p.settings, __import__("decky").DECKY_PLUGIN_DIR, logging.getLogger("test"))
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
@@ -46,7 +46,7 @@ def plugin(tmp_path):
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = SyncService(
+    p._sync_service = LibrarySyncService(
         http_client=p._http_client,
         steam_config=steam_config,
         state=p._state,

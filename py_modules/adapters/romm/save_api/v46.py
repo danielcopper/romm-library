@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import urllib.parse
 
-from adapters.romm.client import RommHttpClient
+from adapters.romm.http import RommHttpAdapter
 from adapters.romm.save_api.protocol import SaveApiProtocol
 
 
 class SaveApiV46(SaveApiProtocol):
     """Concrete ``SaveApiProtocol`` for RomM 4.6.x."""
 
-    def __init__(self, client: RommHttpClient) -> None:
+    def __init__(self, client: RommHttpAdapter) -> None:
         self._client = client
 
     async def list_saves(self, rom_id: int) -> list[dict]:

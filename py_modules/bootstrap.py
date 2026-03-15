@@ -14,17 +14,17 @@ from collections.abc import Callable
 from typing import Any
 
 from adapters.persistence import PersistenceAdapter
-from adapters.romm.client import RommHttpClient
+from adapters.romm.http import RommHttpAdapter
 from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
+from services.library_sync import LibrarySyncService
 from services.metadata import MetadataService
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
-from services.sgdb import SgdbService
-from services.sync import SyncService
+from services.sgdb_artwork import SgdbArtworkService
 
 
 def bootstrap(
@@ -49,7 +49,7 @@ def bootstrap(
     logger:
         ``decky.logger``
     settings:
-        The live settings dict (passed by reference to ``RommHttpClient``).
+        The live settings dict (passed by reference to ``RommHttpAdapter``).
 
     Returns
     -------
@@ -57,7 +57,7 @@ def bootstrap(
     (a factory callable for deferred service creation).
     """
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
-    http_client = RommHttpClient(settings, plugin_dir, logger)
+    http_client = RommHttpAdapter(settings, plugin_dir, logger)
     version_router = VersionRouter(http_client)
     steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
@@ -73,7 +73,7 @@ def bootstrap(
 def wire_services(
     *,
     save_api: Any,
-    http_client: RommHttpClient,
+    http_client: RommHttpAdapter,
     steam_config: SteamConfigAdapter,
     state: dict,
     settings: dict,
@@ -133,7 +133,7 @@ def wire_services(
         log_debug=log_debug,
     )
 
-    sync_service = SyncService(
+    sync_service = LibrarySyncService(
         http_client=http_client,
         steam_config=steam_config,
         state=state,
@@ -170,7 +170,7 @@ def wire_services(
         save_state=save_state,
     )
 
-    sgdb_service = SgdbService(
+    sgdb_service = SgdbArtworkService(
         http_client=http_client,
         steam_config=steam_config,
         state=state,

@@ -40,7 +40,7 @@ except ImportError:
         return None
 
 
-class RommHttpClient:
+class RommHttpAdapter:
     """Low-level HTTP client for RomM API requests.
 
     Parameters

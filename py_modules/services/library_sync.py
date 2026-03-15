@@ -1,4 +1,4 @@
-"""SyncService — sync engine extracted from SyncMixin.
+"""LibrarySyncService — sync engine extracted from SyncMixin.
 
 Handles platform/ROM fetching, shortcut data preparation, artwork
 downloading, delta preview/apply, and shortcut registry management.
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.client import RommHttpClient
+    from adapters.romm.http import RommHttpAdapter
     from adapters.steam_config import SteamConfigAdapter
 
 
@@ -36,13 +36,13 @@ class SyncState(Enum):
 _SYNC_CANCELLED = "Sync cancelled"
 
 
-class SyncService:
+class LibrarySyncService:
     """Sync engine: fetch ROMs, prepare shortcuts, manage artwork + registry."""
 
     def __init__(
         self,
         *,
-        http_client: RommHttpClient,
+        http_client: RommHttpAdapter,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,

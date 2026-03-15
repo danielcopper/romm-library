@@ -5,9 +5,9 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
-from adapters.romm.client import RommHttpClient
+from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
-from services.sync import SyncService
+from services.library_sync import LibrarySyncService
 
 from lib.errors import (
     RommApiError,
@@ -33,14 +33,14 @@ def plugin():
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     import decky
 
-    p._http_client = RommHttpClient(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._http_client = RommHttpAdapter(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = SyncService(
+    p._sync_service = LibrarySyncService(
         http_client=p._http_client,
         steam_config=steam_config,
         state=p._state,
@@ -513,63 +513,63 @@ class TestRommUploadMultipartErrors:
 
 
 class TestRetryLogic:
-    """Tests for with_retry and is_retryable on RommHttpClient."""
+    """Tests for with_retry and is_retryable on RommHttpAdapter."""
 
     def test_is_retryable_5xx(self, plugin):
         """HTTP 500/502/503 are retryable."""
         for code in (500, 502, 503):
             exc = urllib.error.HTTPError("url", code, "err", {}, None)
-            assert RommHttpClient.is_retryable(exc) is True
+            assert RommHttpAdapter.is_retryable(exc) is True
 
     def test_is_not_retryable_4xx(self, plugin):
         """HTTP 400/401/404/409 are NOT retryable."""
         for code in (400, 401, 403, 404, 409):
             exc = urllib.error.HTTPError("url", code, "err", {}, None)
-            assert RommHttpClient.is_retryable(exc) is False
+            assert RommHttpAdapter.is_retryable(exc) is False
 
     def test_is_retryable_connection_errors(self, plugin):
         """ConnectionError, TimeoutError, URLError are retryable."""
-        assert RommHttpClient.is_retryable(ConnectionError("refused")) is True
-        assert RommHttpClient.is_retryable(TimeoutError("timed out")) is True
-        assert RommHttpClient.is_retryable(urllib.error.URLError("unreachable")) is True
-        assert RommHttpClient.is_retryable(OSError("network down")) is True
+        assert RommHttpAdapter.is_retryable(ConnectionError("refused")) is True
+        assert RommHttpAdapter.is_retryable(TimeoutError("timed out")) is True
+        assert RommHttpAdapter.is_retryable(urllib.error.URLError("unreachable")) is True
+        assert RommHttpAdapter.is_retryable(OSError("network down")) is True
 
     def test_is_not_retryable_other(self, plugin):
         """ValueError, KeyError etc. are NOT retryable."""
-        assert RommHttpClient.is_retryable(ValueError("bad")) is False
-        assert RommHttpClient.is_retryable(KeyError("missing")) is False
+        assert RommHttpAdapter.is_retryable(ValueError("bad")) is False
+        assert RommHttpAdapter.is_retryable(KeyError("missing")) is False
 
     def test_is_retryable_romm_server_error(self, plugin):
         """RommServerError is retryable."""
-        assert RommHttpClient.is_retryable(RommServerError("500")) is True
+        assert RommHttpAdapter.is_retryable(RommServerError("500")) is True
 
     def test_is_retryable_romm_connection_error(self, plugin):
         """RommConnectionError is retryable."""
-        assert RommHttpClient.is_retryable(RommConnectionError("refused")) is True
+        assert RommHttpAdapter.is_retryable(RommConnectionError("refused")) is True
 
     def test_is_retryable_romm_timeout_error(self, plugin):
         """RommTimeoutError is retryable."""
-        assert RommHttpClient.is_retryable(RommTimeoutError("timed out")) is True
+        assert RommHttpAdapter.is_retryable(RommTimeoutError("timed out")) is True
 
     def test_is_not_retryable_romm_auth_error(self, plugin):
         """RommAuthError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommAuthError("401")) is False
+        assert RommHttpAdapter.is_retryable(RommAuthError("401")) is False
 
     def test_is_not_retryable_romm_not_found_error(self, plugin):
         """RommNotFoundError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommNotFoundError("404")) is False
+        assert RommHttpAdapter.is_retryable(RommNotFoundError("404")) is False
 
     def test_is_not_retryable_romm_conflict_error(self, plugin):
         """RommConflictError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommConflictError("409")) is False
+        assert RommHttpAdapter.is_retryable(RommConflictError("409")) is False
 
     def test_is_not_retryable_romm_ssl_error(self, plugin):
         """RommSSLError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommSSLError("cert bad")) is False
+        assert RommHttpAdapter.is_retryable(RommSSLError("cert bad")) is False
 
     def test_is_not_retryable_romm_forbidden_error(self, plugin):
         """RommForbiddenError is NOT retryable."""
-        assert RommHttpClient.is_retryable(RommForbiddenError("403")) is False
+        assert RommHttpAdapter.is_retryable(RommForbiddenError("403")) is False
 
     def test_retry_succeeds_on_first_try(self, plugin):
         """No retries needed when call succeeds."""

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
-from services.sgdb import SgdbService
-from services.sync import SyncService
+from services.library_sync import LibrarySyncService
+from services.sgdb_artwork import SgdbArtworkService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -25,7 +25,7 @@ def plugin():
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = SyncService(
+    p._sync_service = LibrarySyncService(
         http_client=p._http_client,
         steam_config=steam_config,
         state=p._state,
@@ -40,7 +40,7 @@ def plugin():
         log_debug=p._log_debug,
     )
 
-    p._sgdb_service = SgdbService(
+    p._sgdb_service = SgdbArtworkService(
         http_client=p._http_client,
         steam_config=steam_config,
         state=p._state,

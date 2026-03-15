@@ -3,7 +3,7 @@
 import logging
 
 from adapters.persistence import PersistenceAdapter
-from adapters.romm.client import RommHttpClient
+from adapters.romm.http import RommHttpAdapter
 from bootstrap import bootstrap
 
 
@@ -30,7 +30,7 @@ class TestBootstrap:
             settings={},
         )
         assert "http_client" in result
-        assert isinstance(result["http_client"], RommHttpClient)
+        assert isinstance(result["http_client"], RommHttpAdapter)
 
     def test_http_client_shares_settings_reference(self, tmp_path):
         settings = {"romm_url": "http://example.com"}

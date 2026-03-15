@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.client import RommHttpClient
+    from adapters.romm.http import RommHttpAdapter
 
 
 class MetadataService:
@@ -23,7 +23,7 @@ class MetadataService:
     def __init__(
         self,
         *,
-        http_client: RommHttpClient,
+        http_client: RommHttpAdapter,
         state: dict,
         metadata_cache: dict,
         loop: asyncio.AbstractEventLoop,
