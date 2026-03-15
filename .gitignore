@@ -39,3 +39,5 @@ PLAN.md
 
 # Git worktrees
 .worktrees/
+.coverage
+coverage.xml
