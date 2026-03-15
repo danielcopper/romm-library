@@ -34,6 +34,7 @@ class SyncState(Enum):
 
 
 _SYNC_CANCELLED = "Sync cancelled"
+_PLATFORMS_API = "/api/platforms"
 
 
 class LibrarySyncService:
@@ -87,7 +88,7 @@ class LibrarySyncService:
 
     async def get_platforms(self):
         try:
-            platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+            platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
         except Exception as e:
             self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -124,7 +125,7 @@ class LibrarySyncService:
     async def set_all_platforms_sync(self, enabled):
         enabled = bool(enabled)
         try:
-            platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+            platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
         except Exception as e:
             self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -396,7 +397,7 @@ class LibrarySyncService:
 
     async def _fetch_enabled_platforms(self):
         """Fetch and filter platforms by enabled_platforms setting."""
-        platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+        platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
         if not isinstance(platforms, list):
             self._logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
             return []
@@ -806,6 +807,23 @@ class LibrarySyncService:
 
     # ── Artwork ──────────────────────────────────────────────
 
+    def _existing_cover_path(self, rom_id: int, grid: str) -> str | None:
+        """Return an existing cover path for *rom_id*, or ``None`` if a download is needed."""
+        staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
+
+        # If already synced and final artwork exists, reuse it
+        reg = self._state["shortcut_registry"].get(str(rom_id))
+        if reg and reg.get("app_id"):
+            final = os.path.join(grid, f"{reg['app_id']}p.png")
+            if os.path.exists(final):
+                return final
+
+        # If staging file already exists (e.g. retry), reuse it
+        if os.path.exists(staging):
+            return staging
+
+        return None
+
     async def _download_artwork(self, all_roms, progress_step=4, progress_total_steps=6):
         """Download cover artwork to staging filenames (romm_{rom_id}_cover.png).
 
@@ -834,27 +852,17 @@ class LibrarySyncService:
                 total_steps=progress_total_steps,
             )
 
-            # Determine cover URL from ROM data
             cover_url = rom.get("path_cover_large") or rom.get("path_cover_small")
             if not cover_url:
                 continue
 
             rom_id = rom["id"]
-            staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
-
-            # If already synced and final artwork exists, skip download
-            reg = self._state["shortcut_registry"].get(str(rom_id))
-            if reg and reg.get("app_id"):
-                final = os.path.join(grid, f"{reg['app_id']}p.png")
-                if os.path.exists(final):
-                    cover_paths[rom_id] = final
-                    continue
-
-            # If staging file already exists (e.g. retry), skip download
-            if os.path.exists(staging):
-                cover_paths[rom_id] = staging
+            existing = self._existing_cover_path(rom_id, grid)
+            if existing:
+                cover_paths[rom_id] = existing
                 continue
 
+            staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
             try:
                 await self._loop.run_in_executor(None, self._http_client.download, cover_url, staging)
                 cover_paths[rom_id] = staging
@@ -886,7 +894,7 @@ class LibrarySyncService:
 
     async def _find_platform_name_from_api(self, platform_slug):
         """Look up platform name from the RomM API by slug."""
-        platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+        platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
         for p in platforms:
             if p.get("slug") == platform_slug:
                 return p.get("name", "")

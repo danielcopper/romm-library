@@ -108,40 +108,34 @@ class RommHttpAdapter:
     # Error translation & retry logic
     # ------------------------------------------------------------------
 
-    def translate_http_error(self, exc: Exception, url: str, method: str = "GET") -> RommApiError:
-        """Translate urllib/socket exceptions into RommApiError subclasses."""
-        # HTTPError first (most specific HTTP-level error)
-        if isinstance(exc, urllib.error.HTTPError):
-            msg = f"HTTP {exc.code}: {exc.reason} ({method} {url})"
-            if exc.code == 400:
-                return RommApiError(f"Bad request ({method} {url})", url=url, method=method)
-            if exc.code == 401:
-                return RommAuthError(msg, url=url, method=method)
-            if exc.code == 403:
-                return RommForbiddenError(msg, url=url, method=method)
-            if exc.code == 404:
-                return RommNotFoundError(msg, url=url, method=method)
-            if exc.code == 409:
-                return RommConflictError(msg, url=url, method=method)
-            if exc.code == 429:
-                return RommServerError(
-                    f"Rate limited — too many requests ({method} {url})",
-                    status_code=429,
-                    url=url,
-                    method=method,
-                )
-            if exc.code >= 500:
-                return RommServerError(msg, status_code=exc.code, url=url, method=method)
-            return RommApiError(msg, url=url, method=method)
-        # URLError can wrap ssl/timeout in .reason — unwrap first
-        if isinstance(exc, urllib.error.URLError):
-            reason = exc.reason
-            if isinstance(reason, ssl.SSLError):
-                return RommSSLError(str(reason), url=url, method=method)
-            if isinstance(reason, (socket.timeout, TimeoutError)):
-                return RommTimeoutError(str(reason), url=url, method=method)
-            return RommConnectionError(str(exc), url=url, method=method)
-        # Direct ssl/timeout/connection (not wrapped in URLError)
+    # Maps HTTP status codes to (error_class, custom_message_template_or_None).
+    # None means use the default ``msg``.
+    _HTTP_STATUS_MAP: dict[int, tuple[type[RommApiError], str | None]] = {
+        400: (RommApiError, "Bad request ({method} {url})"),
+        401: (RommAuthError, None),
+        403: (RommForbiddenError, None),
+        404: (RommNotFoundError, None),
+        409: (RommConflictError, None),
+        429: (RommServerError, "Rate limited — too many requests ({method} {url})"),
+    }
+
+    def _translate_http_status(self, code: int, msg: str, url: str, method: str) -> RommApiError:
+        """Map an HTTP status code to a typed error."""
+        entry = self._HTTP_STATUS_MAP.get(code)
+        if entry:
+            cls, tpl = entry
+            text = tpl.format(method=method, url=url) if tpl else msg
+            kwargs: dict = {"url": url, "method": method}
+            if cls is RommServerError:
+                kwargs["status_code"] = code
+            return cls(text, **kwargs)
+        if code >= 500:
+            return RommServerError(msg, status_code=code, url=url, method=method)
+        return RommApiError(msg, url=url, method=method)
+
+    @staticmethod
+    def _translate_unwrapped(exc: Exception, url: str, method: str) -> RommApiError:
+        """Translate non-HTTP exceptions (ssl, timeout, connection) to typed errors."""
         if isinstance(exc, ssl.SSLError):
             return RommSSLError(str(exc), url=url, method=method)
         if isinstance(exc, (socket.timeout, TimeoutError)):
@@ -149,6 +143,19 @@ class RommHttpAdapter:
         if isinstance(exc, (ConnectionError, OSError)):
             return RommConnectionError(str(exc), url=url, method=method)
         return RommApiError(f"Unexpected error: {exc}", url=url, method=method)
+
+    def translate_http_error(self, exc: Exception, url: str, method: str = "GET") -> RommApiError:
+        """Translate urllib/socket exceptions into RommApiError subclasses."""
+        if isinstance(exc, urllib.error.HTTPError):
+            msg = f"HTTP {exc.code}: {exc.reason} ({method} {url})"
+            return self._translate_http_status(exc.code, msg, url, method)
+        if isinstance(exc, urllib.error.URLError):
+            return (
+                self._translate_unwrapped(exc.reason, url, method)
+                if isinstance(exc.reason, (ssl.SSLError, socket.timeout, TimeoutError))
+                else RommConnectionError(str(exc), url=url, method=method)
+            )
+        return self._translate_unwrapped(exc, url, method)
 
     @staticmethod
     def is_retryable(exc: Exception) -> bool:
@@ -203,6 +210,32 @@ class RommHttpAdapter:
 
         return self.with_retry(_do_request)
 
+    @staticmethod
+    def _stream_to_file(resp, dest_path: Path, progress_callback=None) -> tuple[int, int]:
+        """Read *resp* into *dest_path* and return ``(total, downloaded)``."""
+        raw_total = resp.headers.get("Content-Length")
+        total = int(raw_total) if raw_total else 0
+        downloaded = 0
+        block_size = 8192
+        with open(dest_path, "wb") as f:
+            while True:
+                chunk = resp.read(block_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback and total:
+                    progress_callback(downloaded, total)
+        return total, downloaded
+
+    @staticmethod
+    def _validate_download(total: int, downloaded: int) -> None:
+        """Raise if the download was incomplete or empty."""
+        if total > 0 and downloaded != total:
+            raise IOError(f"Download incomplete: got {downloaded} bytes, expected {total}")
+        if total == 0 and downloaded == 0:
+            raise IOError("Download produced 0 bytes (no Content-Length header and no data received)")
+
     def download(self, path: str, dest: str, progress_callback=None):
         """Download a file from the RomM API to a local path."""
         encoded_path = urllib.parse.quote(path, safe="/:?=&@")
@@ -216,23 +249,8 @@ class RommHttpAdapter:
             ctx = self.ssl_context()
             try:
                 with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                    total = resp.headers.get("Content-Length")
-                    total = int(total) if total else 0
-                    downloaded = 0
-                    block_size = 8192
-                    with open(dest_path, "wb") as f:
-                        while True:
-                            chunk = resp.read(block_size)
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if progress_callback and total:
-                                progress_callback(downloaded, total)
-                if total > 0 and downloaded != total:
-                    raise IOError(f"Download incomplete: got {downloaded} bytes, expected {total}")
-                if total == 0 and downloaded == 0:
-                    raise IOError("Download produced 0 bytes (no Content-Length header and no data received)")
+                    total, downloaded = self._stream_to_file(resp, dest_path, progress_callback)
+                self._validate_download(total, downloaded)
             except RommApiError:
                 raise
             except Exception as exc:
