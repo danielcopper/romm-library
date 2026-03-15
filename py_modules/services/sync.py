@@ -1,12 +1,30 @@
+"""SyncService — sync engine extracted from SyncMixin.
+
+Handles platform/ROM fetching, shortcut data preparation, artwork
+downloading, delta preview/apply, and shortcut registry management.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import base64
 import os
+import pathlib
 import time
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+
+from lib.errors import classify_error
+
+if TYPE_CHECKING:
+    import logging
+    from collections.abc import Callable
+
+    from adapters.romm.client import RommHttpClient
+    from adapters.steam_config import SteamConfigAdapter
 
 
 class SyncState(Enum):
@@ -15,55 +33,71 @@ class SyncState(Enum):
     CANCELLING = "cancelling"
 
 
-import decky
-
-from lib.errors import classify_error
-
-if TYPE_CHECKING:
-    from typing import Callable, Optional, Protocol
-
-    class _SyncDeps(Protocol):
-        settings: dict
-        _state: dict
-        _sync_state: SyncState
-        _sync_progress: dict
-        _sync_last_heartbeat: float
-        _pending_sync: dict
-        _pending_delta: Optional[dict]
-        _metadata_cache: dict
-        loop: asyncio.AbstractEventLoop
-
-        def _romm_request(self, path: str) -> Any: ...
-        def _romm_download(self, path: str, dest: str, progress_callback: Optional[Callable] = None) -> None: ...
-        def _save_settings_to_disk(self) -> None: ...
-        def _save_state(self) -> None: ...
-        def _save_metadata_cache(self) -> None: ...
-        def _mark_metadata_dirty(self) -> None: ...
-        def _flush_metadata_if_dirty(self) -> None: ...
-        def _log_debug(self, msg: str) -> None: ...
-        def _extract_metadata(self, rom: dict) -> dict: ...
-        def _grid_dir(self) -> Optional[str]: ...
-        def _set_steam_input_config(self, app_ids: list, mode: str = "default") -> None: ...
-        def _generate_app_id(self, exe: str, appname: str) -> int: ...
-        def _generate_artwork_id(self, exe: str, appname: str) -> int: ...
-        def _read_shortcuts(self) -> dict: ...
-        def _write_shortcuts(self, data: dict) -> None: ...
+_SYNC_CANCELLED = "Sync cancelled"
 
 
-class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
+class SyncService:
+    """Sync engine: fetch ROMs, prepare shortcuts, manage artwork + registry."""
+
+    def __init__(
+        self,
+        *,
+        http_client: RommHttpClient,
+        steam_config: SteamConfigAdapter,
+        state: dict,
+        settings: dict,
+        metadata_cache: dict,
+        loop: asyncio.AbstractEventLoop,
+        logger: logging.Logger,
+        plugin_dir: str,
+        emit: Callable,
+        save_state: Callable,
+        save_settings_to_disk: Callable,
+        log_debug: Callable,
+        metadata_service: Any = None,
+    ) -> None:
+        self._http_client = http_client
+        self._steam_config = steam_config
+        self._state = state
+        self._settings = settings
+        self._metadata_cache = metadata_cache
+        self._loop = loop
+        self._logger = logger
+        self._plugin_dir = plugin_dir
+        self._emit = emit
+        self._save_state = save_state
+        self._save_settings_to_disk = save_settings_to_disk
+        self._log_debug = log_debug
+        self._metadata_service = metadata_service
+
+        # Sync-specific state (owned by this service)
+        self._sync_state = SyncState.IDLE
+        self._sync_last_heartbeat = 0.0
+        self._sync_progress: dict = {
+            "running": False,
+            "phase": "",
+            "current": 0,
+            "total": 0,
+            "message": "",
+        }
+        self._pending_sync: dict = {}
+        self._pending_delta: dict | None = None
+
+    # ── Platform & ROM fetching ──────────────────────────────
+
     async def get_platforms(self):
         try:
-            platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+            platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
         except Exception as e:
-            decky.logger.error(f"Failed to fetch platforms: {e}")
+            self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
             return {"success": False, "message": _msg, "error_code": _code}
 
         if not isinstance(platforms, list):
-            decky.logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
+            self._logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
             return {"success": False, "message": "Invalid server response", "error_code": "api_error"}
 
-        enabled = self.settings.get("enabled_platforms", {})
+        enabled = self._settings.get("enabled_platforms", {})
         result = []
         for p in platforms:
             rom_count = p.get("rom_count", 0)
@@ -81,49 +115,53 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
             )
         return {"success": True, "platforms": result}
 
-    async def save_platform_sync(self, platform_id, enabled):
+    def save_platform_sync(self, platform_id, enabled):
         pid = str(platform_id)
-        self.settings["enabled_platforms"][pid] = bool(enabled)
+        self._settings["enabled_platforms"][pid] = bool(enabled)
         self._save_settings_to_disk()
         return {"success": True}
 
     async def set_all_platforms_sync(self, enabled):
         enabled = bool(enabled)
         try:
-            platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+            platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
         except Exception as e:
-            decky.logger.error(f"Failed to fetch platforms: {e}")
+            self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
             return {"success": False, "message": _msg, "error_code": _code}
 
         ep = {}
         for p in platforms:
             ep[str(p["id"])] = enabled
-        self.settings["enabled_platforms"] = ep
+        self._settings["enabled_platforms"] = ep
         self._save_settings_to_disk()
         return {"success": True}
 
-    async def start_sync(self):
+    # ── Sync control ─────────────────────────────────────────
+
+    def start_sync(self):
         if self._sync_state != SyncState.IDLE:
             return {"success": False, "message": "Sync already in progress"}
         self._sync_state = SyncState.RUNNING
         self._sync_last_heartbeat = time.monotonic()
-        self.loop.create_task(self._do_sync())
+        self._loop.create_task(self._do_sync())
         return {"success": True, "message": "Sync started"}
 
-    async def cancel_sync(self):
+    def cancel_sync(self):
         if self._sync_state != SyncState.RUNNING:
             return {"success": True, "message": "No sync in progress"}
         self._sync_state = SyncState.CANCELLING
         return {"success": True, "message": "Sync cancelling..."}
 
-    async def get_sync_progress(self):
+    def get_sync_progress(self):
         return self._sync_progress
 
-    async def sync_heartbeat(self):
+    def sync_heartbeat(self):
         """Called by frontend during shortcut application to keep safety timeout alive."""
         self._sync_last_heartbeat = time.monotonic()
         return {"success": True}
+
+    # ── Preview / Apply ──────────────────────────────────────
 
     async def sync_preview(self):
         if self._sync_state != SyncState.IDLE:
@@ -169,12 +207,12 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 "preview_id": preview_id,
             }
         except asyncio.CancelledError:
-            await self._finish_sync("Sync cancelled")
-            return {"success": False, "message": "Sync cancelled"}
+            await self._finish_sync(_SYNC_CANCELLED)
+            raise
         except Exception as e:
             import traceback
 
-            decky.logger.error(f"Sync preview failed: {e}\n{traceback.format_exc()}")
+            self._logger.error(f"Sync preview failed: {e}\n{traceback.format_exc()}")
             _code, _msg = classify_error(e)
             await self._emit_progress("error", message=_msg, running=False)
             return {"success": False, "message": _msg, "error_code": _code}
@@ -204,7 +242,6 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
         has_artwork = len(delta_roms) > 0
         has_shortcuts = len(delta["new"]) + len(delta["changed"]) > 0
         has_removals = len(delta["remove_rom_ids"]) > 0
-        # Collections step is always counted (unchanged shortcuts need collection updates too)
 
         apply_steps = []
         if has_artwork:
@@ -256,7 +293,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
         )
 
         # Emit delta with step plan for frontend
-        await decky.emit(
+        await self._emit(
             "sync_apply",
             {
                 "shortcuts": delta["new"],
@@ -268,7 +305,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
             },
         )
 
-        decky.logger.info(
+        self._logger.info(
             f"Delta sync emitted: {len(delta['new'])} new, {len(delta['changed'])} changed, "
             f"{len(delta['remove_rom_ids'])} removed"
         )
@@ -278,9 +315,11 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
 
         return {"success": True, "message": "Applying changes"}
 
-    async def sync_cancel_preview(self):
+    def sync_cancel_preview(self):
         self._pending_delta = None
         return {"success": True}
+
+    # ── Progress & safety ────────────────────────────────────
 
     async def _emit_progress(self, phase, current=0, total=0, message="", running=True, step=0, total_steps=0):
         """Update _sync_progress and emit sync_progress event to frontend."""
@@ -293,7 +332,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
             "step": step,
             "totalSteps": total_steps,
         }
-        await decky.emit("sync_progress", self._sync_progress)
+        await self._emit("sync_progress", self._sync_progress)
 
     def _start_safety_timeout(self, heartbeat_timeout_sec=30):
         """Launch a background task that auto-completes sync if no heartbeat arrives."""
@@ -304,7 +343,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 await asyncio.sleep(10)
                 elapsed = time.monotonic() - self._sync_last_heartbeat
                 if elapsed > heartbeat_timeout_sec:
-                    decky.logger.warning(f"Sync safety timeout: no heartbeat for {elapsed:.0f}s")
+                    self._logger.warning(f"Sync safety timeout: no heartbeat for {elapsed:.0f}s")
                     stats = self._state.get("sync_stats", {})
                     await self._emit_progress(
                         "done",
@@ -318,7 +357,9 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                     self._sync_state = SyncState.IDLE
                     return
 
-        self.loop.create_task(_safety_timeout())
+        self._loop.create_task(_safety_timeout())
+
+    # ── Classification ───────────────────────────────────────
 
     def _classify_roms(self, shortcuts_data, fetched_platform_names):
         """Classify each ROM as new/changed/unchanged/stale."""
@@ -351,6 +392,142 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
 
         return new, changed, unchanged_ids, stale, disabled_count
 
+    # ── Fetch & prepare ──────────────────────────────────────
+
+    async def _fetch_enabled_platforms(self):
+        """Fetch and filter platforms by enabled_platforms setting."""
+        platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+        if not isinstance(platforms, list):
+            self._logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
+            return []
+
+        enabled = self._settings.get("enabled_platforms", {})
+        no_prefs = len(enabled) == 0
+        self._logger.info(f"Platform filter: {len(enabled)} prefs saved, no_prefs={no_prefs}")
+        self._logger.info(f"Enabled platforms: {[k for k, v in enabled.items() if v]}")
+        platforms = [p for p in platforms if enabled.get(str(p["id"]), no_prefs)]
+        self._logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
+        return platforms
+
+    def _reconstruct_platform_from_registry(self, registry, platform_name, platform_slug):
+        """Reconstruct ROM list from registry for an unchanged platform."""
+        return [
+            {
+                "id": int(rid),
+                "name": entry["name"],
+                "fs_name": entry.get("fs_name", ""),
+                "platform_name": platform_name,
+                "platform_slug": platform_slug,
+                "platform_display_name": platform_name,
+                "igdb_id": entry.get("igdb_id"),
+                "sgdb_id": entry.get("sgdb_id"),
+                "ra_id": entry.get("ra_id"),
+            }
+            for rid, entry in registry.items()
+            if entry.get("platform_name") == platform_name
+        ]
+
+    async def _try_incremental_skip(
+        self, platform, registry, last_sync, platform_name, platform_slug, all_roms, pi, total_platforms
+    ):
+        """Try incremental fetch; return True if platform was skipped (unchanged)."""
+        registry_count = sum(1 for e in registry.values() if e.get("platform_name") == platform_name)
+        if not last_sync or registry_count == 0:
+            return False
+
+        updated_after = urllib.parse.quote(last_sync)
+        try:
+            delta_resp = await self._loop.run_in_executor(
+                None,
+                self._http_client.request,
+                f"/api/roms?platform_ids={platform['id']}&limit=1&offset=0&updated_after={updated_after}",
+            )
+            server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
+            platform_total = platform.get("rom_count", 0)
+
+            if server_total == 0 and platform_total == registry_count:
+                self._logger.info(f"Skipping {platform_name}: {registry_count} ROMs unchanged")
+                all_roms.extend(self._reconstruct_platform_from_registry(registry, platform_name, platform_slug))
+                await self._emit_progress(
+                    "roms",
+                    current=len(all_roms),
+                    message=f"{platform_name} unchanged ({pi}/{total_platforms})",
+                )
+                return True
+
+            self._logger.info(
+                f"{platform_name}: {server_total} updated, "
+                f"server={platform_total} vs registry={registry_count} — full fetch"
+            )
+        except Exception as e:
+            self._logger.warning(f"Incremental check failed for {platform_name}, falling back to full fetch: {e}")
+        return False
+
+    async def _full_fetch_platform_roms(self, platform_id, platform_name, platform_slug, all_roms, pi, total_platforms):
+        """Full paginated fetch of ROMs for a single platform."""
+        offset = 0
+        limit = 50
+        await self._emit_progress(
+            "roms",
+            current=len(all_roms),
+            message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+        )
+
+        while True:
+            self._check_cancelling()
+            try:
+                roms = await self._loop.run_in_executor(
+                    None,
+                    self._http_client.request,
+                    f"/api/roms?platform_ids={platform_id}&limit={limit}&offset={offset}",
+                )
+            except Exception as e:
+                self._logger.error(f"Failed to fetch ROMs for platform {platform_name}: {e}")
+                break
+
+            rom_list = roms.get("items", []) if isinstance(roms, dict) else roms
+            for rom in rom_list:
+                rom.pop("files", None)
+                rom["platform_name"] = platform_name
+                rom["platform_slug"] = platform_slug
+
+            all_roms.extend(rom_list)
+            await self._emit_progress(
+                "roms",
+                current=len(all_roms),
+                message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+            )
+            if len(rom_list) < limit:
+                break
+            offset += limit
+
+    def _check_cancelling(self):
+        """Raise CancelledError if sync is being cancelled."""
+        if self._sync_state == SyncState.CANCELLING:
+            raise asyncio.CancelledError(_SYNC_CANCELLED)
+
+    def _build_shortcuts_data(self, all_roms):
+        """Build shortcut data list from ROM list."""
+        exe = os.path.join(self._plugin_dir, "bin", "romm-launcher")
+        start_dir = os.path.join(self._plugin_dir, "bin")
+        return [
+            {
+                "rom_id": rom["id"],
+                "name": rom["name"],
+                "fs_name": rom.get("fs_name", ""),
+                "exe": exe,
+                "start_dir": start_dir,
+                "launch_options": f"romm:{rom['id']}",
+                "platform_name": rom.get("platform_name", "Unknown"),
+                "platform_slug": rom.get("platform_slug", ""),
+                "igdb_id": rom.get("igdb_id"),
+                "sgdb_id": rom.get("sgdb_id"),
+                "ra_id": rom.get("ra_id"),
+                "cover_path": "",
+            }
+            for rom in all_roms
+        ]
+
     async def _fetch_and_prepare(self):
         """Fetch platforms + ROMs, prepare shortcut data.
         Returns (all_roms, shortcuts_data, platforms) or raises on cancel/error.
@@ -360,182 +537,57 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
 
         # Phase 1: Fetch platforms
         await self._emit_progress("platforms", message="Fetching platforms...")
-
-        platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
-        if not isinstance(platforms, list):
-            decky.logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
-            platforms = []
-
-        if self._sync_state == SyncState.CANCELLING:
-            raise asyncio.CancelledError("Sync cancelled")
-
-        # Filter platforms by enabled_platforms setting
-        enabled = self.settings.get("enabled_platforms", {})
-        no_prefs = len(enabled) == 0
-        decky.logger.info(f"Platform filter: {len(enabled)} prefs saved, no_prefs={no_prefs}")
-        decky.logger.info(f"Enabled platforms: {[k for k, v in enabled.items() if v]}")
-        platforms = [p for p in platforms if enabled.get(str(p["id"]), no_prefs)]
-        decky.logger.info(f"Syncing {len(platforms)} platforms: {[p['name'] for p in platforms]}")
+        platforms = await self._fetch_enabled_platforms()
+        self._check_cancelling()
 
         # Phase 2: Fetch ROMs per platform (incremental if possible)
         await self._emit_progress("roms", message="Fetching ROMs...")
-
         last_sync = self._state.get("last_sync")
         registry = self._state.get("shortcut_registry", {})
 
         all_roms = []
         total_platforms = len(platforms)
         for pi, platform in enumerate(platforms, 1):
-            if self._sync_state == SyncState.CANCELLING:
-                raise asyncio.CancelledError("Sync cancelled")
-
-            platform_id = platform["id"]
+            self._check_cancelling()
             platform_name = platform.get("name", platform.get("display_name", "Unknown"))
             platform_slug = platform.get("slug", "")
-            offset = 0
-            limit = 50
 
-            # Count how many ROMs we have in registry for this platform
-            registry_count = sum(1 for e in registry.values() if e.get("platform_name") == platform_name)
-
-            # Try incremental fetch if we have a last_sync timestamp
-            if last_sync and registry_count > 0:
-                updated_after = urllib.parse.quote(last_sync)
-                try:
-                    delta_resp = await self.loop.run_in_executor(
-                        None,
-                        self._romm_request,
-                        f"/api/roms?platform_ids={platform_id}&limit=1&offset=0&updated_after={updated_after}",
-                    )
-                    server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
-
-                    # Use rom_count from platform list instead of a separate API call
-                    platform_total = platform.get("rom_count", 0)
-
-                    if server_total == 0 and platform_total == registry_count:
-                        # Nothing changed, nothing deleted — reconstruct from registry
-                        decky.logger.info(f"Skipping {platform_name}: {registry_count} ROMs unchanged")
-                        for rid, entry in registry.items():
-                            if entry.get("platform_name") == platform_name:
-                                all_roms.append(
-                                    {
-                                        "id": int(rid),
-                                        "name": entry["name"],
-                                        "fs_name": entry.get("fs_name", ""),
-                                        "platform_name": platform_name,
-                                        "platform_slug": platform_slug,
-                                        "platform_display_name": platform_name,
-                                        "igdb_id": entry.get("igdb_id"),
-                                        "sgdb_id": entry.get("sgdb_id"),
-                                        "ra_id": entry.get("ra_id"),
-                                    }
-                                )
-                        await self._emit_progress(
-                            "roms", current=len(all_roms), message=f"{platform_name} unchanged ({pi}/{total_platforms})"
-                        )
-                        continue
-                    else:
-                        decky.logger.info(
-                            f"{platform_name}: {server_total} updated, "
-                            f"server={platform_total} vs registry={registry_count} — full fetch"
-                        )
-                except Exception as e:
-                    decky.logger.warning(
-                        f"Incremental check failed for {platform_name}, falling back to full fetch: {e}"
-                    )
-
-            # Full fetch for this platform
-            await self._emit_progress(
-                "roms",
-                current=len(all_roms),
-                message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+            skipped = await self._try_incremental_skip(
+                platform, registry, last_sync, platform_name, platform_slug, all_roms, pi, total_platforms
             )
-
-            while True:
-                if self._sync_state == SyncState.CANCELLING:
-                    raise asyncio.CancelledError("Sync cancelled")
-
-                try:
-                    roms = await self.loop.run_in_executor(
-                        None,
-                        self._romm_request,
-                        f"/api/roms?platform_ids={platform_id}&limit={limit}&offset={offset}",
-                    )
-                except Exception as e:
-                    decky.logger.error(f"Failed to fetch ROMs for platform {platform_name}: {e}")
-                    break
-
-                if isinstance(roms, dict):
-                    rom_list = roms.get("items", [])
-                else:
-                    rom_list = roms
-
-                for rom in rom_list:
-                    rom.pop("files", None)
-                    rom["platform_name"] = platform_name
-                    rom["platform_slug"] = platform_slug
-
-                all_roms.extend(rom_list)
-                await self._emit_progress(
-                    "roms",
-                    current=len(all_roms),
-                    message=f"Fetching {platform_name}... {len(all_roms)} found ({pi}/{total_platforms})",
+            if not skipped:
+                await self._full_fetch_platform_roms(
+                    platform["id"], platform_name, platform_slug, all_roms, pi, total_platforms
                 )
 
-                if len(rom_list) < limit:
-                    break
-                offset += limit
-
-        if self._sync_state == SyncState.CANCELLING:
-            raise asyncio.CancelledError("Sync cancelled")
-
-        decky.logger.info(f"Fetched {len(all_roms)} ROMs from {len(platforms)} platforms")
+        self._check_cancelling()
+        self._logger.info(f"Fetched {len(all_roms)} ROMs from {len(platforms)} platforms")
 
         # Phase 3: Prepare shortcut data
-        exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
-        start_dir = os.path.join(decky.DECKY_PLUGIN_DIR, "bin")
-
-        shortcuts_data = []
-        for i, rom in enumerate(all_roms):
-            shortcuts_data.append(
-                {
-                    "rom_id": rom["id"],
-                    "name": rom["name"],
-                    "fs_name": rom.get("fs_name", ""),
-                    "exe": exe,
-                    "start_dir": start_dir,
-                    "launch_options": f"romm:{rom['id']}",
-                    "platform_name": rom.get("platform_name", "Unknown"),
-                    "platform_slug": rom.get("platform_slug", ""),
-                    "igdb_id": rom.get("igdb_id"),
-                    "sgdb_id": rom.get("sgdb_id"),
-                    "ra_id": rom.get("ra_id"),
-                    "cover_path": "",
-                }
-            )
-
-        if self._sync_state == SyncState.CANCELLING:
-            raise asyncio.CancelledError("Sync cancelled")
+        shortcuts_data = self._build_shortcuts_data(all_roms)
+        self._check_cancelling()
 
         # Cache metadata from sync response
         for rom in all_roms:
             rom_id_str = str(rom["id"])
-            self._metadata_cache[rom_id_str] = self._extract_metadata(rom)
-            self._mark_metadata_dirty()
-        self._flush_metadata_if_dirty()
+            self._metadata_cache[rom_id_str] = self._metadata_service.extract_metadata(rom)
+            self._metadata_service.mark_metadata_dirty()
+        self._metadata_service.flush_metadata_if_dirty()
         self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
         return all_roms, shortcuts_data, platforms
+
+    # ── Full sync ────────────────────────────────────────────
 
     async def _do_sync(self):
         try:
             try:
                 all_roms, shortcuts_data, platforms = await self._fetch_and_prepare()
             except asyncio.CancelledError:
-                await self._finish_sync("Sync cancelled")
-                return
+                await self._finish_sync(_SYNC_CANCELLED)
+                raise
             except Exception as e:
-                decky.logger.error(f"Failed to fetch platforms: {e}")
+                self._logger.error(f"Failed to fetch platforms: {e}")
                 _code, _msg = classify_error(e)
                 await self._emit_progress("error", message=_msg, running=False)
                 self._sync_state = SyncState.IDLE
@@ -569,7 +621,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 cover_paths = {}
 
             if self._sync_state == SyncState.CANCELLING:
-                await self._finish_sync("Sync cancelled")
+                await self._finish_sync(_SYNC_CANCELLED)
                 return
 
             for sd in shortcuts_data:
@@ -599,7 +651,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
             # Store pending data for report_sync_results to reference
             self._pending_sync = {sd["rom_id"]: sd for sd in shortcuts_data}
 
-            await decky.emit(
+            await self._emit(
                 "sync_apply",
                 {
                     "shortcuts": shortcuts_data,
@@ -609,11 +661,11 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 },
             )
 
-            decky.logger.info(f"Sync data emitted: {len(shortcuts_data)} shortcuts, {len(stale_rom_ids)} stale")
+            self._logger.info(f"Sync data emitted: {len(shortcuts_data)} shortcuts, {len(stale_rom_ids)} stale")
         except Exception as e:
             import traceback
 
-            decky.logger.error(f"Sync failed: {e}\n{traceback.format_exc()}")
+            self._logger.error(f"Sync failed: {e}\n{traceback.format_exc()}")
             _code, _msg = classify_error(e)
             self._sync_progress = {
                 "running": False,
@@ -622,13 +674,11 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 "total": 0,
                 "message": f"Sync failed \u2014 {_msg}",
             }
-            self.loop.create_task(decky.emit("sync_progress", self._sync_progress))
+            self._loop.create_task(self._emit("sync_progress", self._sync_progress))
         finally:
-            self._flush_metadata_if_dirty()
+            self._metadata_service.flush_metadata_if_dirty()
             self._sync_state = SyncState.IDLE
-            if self._sync_progress.get("phase") == "error":
-                pass
-            elif self._sync_progress.get("running"):
+            if self._sync_progress.get("phase") != "error" and self._sync_progress.get("running"):
                 self._start_safety_timeout()
 
     async def _finish_sync(self, message):
@@ -639,57 +689,64 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
             "total": self._sync_progress.get("total", 0),
             "message": message,
         }
-        await decky.emit("sync_progress", self._sync_progress)
+        await self._emit("sync_progress", self._sync_progress)
         self._sync_state = SyncState.IDLE
-        decky.logger.info(message)
+        self._logger.info(message)
+
+    # ── Sync results (called by frontend) ────────────────────
+
+    def _finalize_cover_path(self, grid, cover_path, app_id, rom_id_str):
+        """Rename staged artwork to final Steam app_id filename, return final path."""
+        if not grid or not cover_path:
+            return cover_path
+        final_path = os.path.join(grid, f"{app_id}p.png")
+        if cover_path != final_path and os.path.exists(cover_path):
+            try:
+                os.replace(cover_path, final_path)
+                return final_path
+            except OSError as e:
+                self._logger.warning(f"Failed to rename artwork for rom {rom_id_str}: {e}")
+        elif os.path.exists(final_path):
+            return final_path
+        return cover_path
+
+    def _build_registry_entry(self, pending, app_id, cover_path):
+        """Build a registry entry dict from pending sync data."""
+        entry = {
+            "app_id": app_id,
+            "name": pending.get("name", ""),
+            "fs_name": pending.get("fs_name", ""),
+            "platform_name": pending.get("platform_name", ""),
+            "platform_slug": pending.get("platform_slug", ""),
+            "cover_path": cover_path,
+        }
+        for meta_key in ("igdb_id", "sgdb_id", "ra_id"):
+            if pending.get(meta_key):
+                entry[meta_key] = pending[meta_key]
+        return entry
 
     def _report_sync_results_io(self, rom_id_to_app_id, removed_rom_ids):
-        """Sync helper for report_sync_results — artwork renames, VDF writes, state save in executor."""
-        grid = self._grid_dir()
+        """Sync helper for report_sync_results — artwork renames, state save in executor."""
+        grid = self._steam_config.grid_dir()
 
-        # Update registry with new mappings from frontend
         for rom_id_str, app_id in rom_id_to_app_id.items():
             pending = self._pending_sync.get(int(rom_id_str), {})
-            cover_path = pending.get("cover_path", "")
+            cover_path = self._finalize_cover_path(grid, pending.get("cover_path", ""), app_id, rom_id_str)
+            self._state["shortcut_registry"][rom_id_str] = self._build_registry_entry(pending, app_id, cover_path)
 
-            # Rename staged artwork to final Steam app_id filename
-            if grid and cover_path:
-                final_path = os.path.join(grid, f"{app_id}p.png")
-                if cover_path != final_path and os.path.exists(cover_path):
-                    try:
-                        os.replace(cover_path, final_path)
-                        cover_path = final_path
-                    except OSError as e:
-                        decky.logger.warning(f"Failed to rename artwork for rom {rom_id_str}: {e}")
-                elif os.path.exists(final_path):
-                    cover_path = final_path
-
-            registry_entry = {
-                "app_id": app_id,
-                "name": pending.get("name", ""),
-                "fs_name": pending.get("fs_name", ""),
-                "platform_name": pending.get("platform_name", ""),
-                "platform_slug": pending.get("platform_slug", ""),
-                "cover_path": cover_path,
-            }
-            for meta_key in ("igdb_id", "sgdb_id", "ra_id"):
-                if pending.get(meta_key):
-                    registry_entry[meta_key] = pending[meta_key]
-            self._state["shortcut_registry"][rom_id_str] = registry_entry
-
-        # Remove stale entries
         for rom_id in removed_rom_ids:
             self._state["shortcut_registry"].pop(str(rom_id), None)
 
         # Apply Steam Input mode for new shortcuts
-        steam_input_mode = self.settings.get("steam_input_mode", "default")
+        steam_input_mode = self._settings.get("steam_input_mode", "default")
         if steam_input_mode != "default" and rom_id_to_app_id:
             try:
-                self._set_steam_input_config([int(aid) for aid in rom_id_to_app_id.values()], mode=steam_input_mode)
+                self._steam_config.set_steam_input_config(
+                    [int(aid) for aid in rom_id_to_app_id.values()], mode=steam_input_mode
+                )
             except Exception as e:
-                decky.logger.error(f"Failed to set Steam Input config: {e}")
+                self._logger.error(f"Failed to set Steam Input config: {e}")
 
-        # Update timestamp and save
         self._state["last_sync"] = datetime.now(timezone.utc).isoformat()
         self._save_state()
         self._pending_sync = {}
@@ -704,7 +761,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
 
     async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
         """Called by frontend after applying shortcuts via SteamClient."""
-        platform_app_ids = await self.loop.run_in_executor(
+        platform_app_ids = await self._loop.run_in_executor(
             None, self._report_sync_results_io, rom_id_to_app_id, removed_rom_ids
         )
 
@@ -712,7 +769,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
         processed = len(rom_id_to_app_id)
 
         if cancelled:
-            await decky.emit(
+            await self._emit(
                 "sync_complete",
                 {
                     "platform_app_ids": platform_app_ids,
@@ -727,9 +784,9 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 message=f"Sync cancelled: {processed} of {total} games processed",
                 running=False,
             )
-            decky.logger.info(f"Sync cancelled: {processed}/{total} games processed")
+            self._logger.info(f"Sync cancelled: {processed}/{total} games processed")
         else:
-            await decky.emit(
+            await self._emit(
                 "sync_complete",
                 {
                     "platform_app_ids": platform_app_ids,
@@ -743,90 +800,11 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 message=f"Sync complete: {total} games from {len(platform_app_ids)} platforms",
                 running=False,
             )
-            decky.logger.info(f"Sync results reported: {total} games")
+            self._logger.info(f"Sync results reported: {total} games")
         self._sync_state = SyncState.IDLE
         return {"success": True}
 
-    # Deprecated: VDF-based shortcut creation (replaced by frontend SteamClient API)
-    def _create_shortcuts(self, all_roms):
-        data = self._read_shortcuts()
-        shortcuts = data.get("shortcuts", {})
-
-        # Index existing RomM shortcuts by rom_id
-        existing_romm = {}
-        for key, entry in shortcuts.items():
-            launch_opts = entry.get("LaunchOptions", "")
-            if isinstance(launch_opts, str) and launch_opts.startswith("romm:"):
-                try:
-                    rom_id = int(launch_opts.split(":", 1)[1])
-                    existing_romm[rom_id] = key
-                except (ValueError, IndexError):
-                    pass
-
-        exe = os.path.join(decky.DECKY_PLUGIN_DIR, "bin", "romm-launcher")
-        start_dir = os.path.dirname(exe)
-        current_rom_ids = set()
-        platform_apps = {}
-
-        # Find the next available numeric key
-        if shortcuts:
-            next_key = max(int(k) for k in shortcuts) + 1
-        else:
-            next_key = 0
-
-        for rom in all_roms:
-            rom_id = rom["id"]
-            current_rom_ids.add(rom_id)
-            app_id = self._generate_app_id(exe, rom["name"])
-            artwork_id = self._generate_artwork_id(exe, rom["name"])
-            platform_name = rom.get(
-                "platform_name",
-                rom.get("platform_display_name", "Unknown"),
-            )
-
-            entry = {
-                "appid": app_id,
-                "AppName": rom["name"],
-                "Exe": f'"{exe}"',
-                "StartDir": f'"{start_dir}"',
-                "LaunchOptions": f"romm:{rom_id}",
-                "icon": "",
-                "ShortcutPath": "",
-                "IsHidden": 0,
-                "AllowDesktopConfig": 1,
-                "AllowOverlay": 1,
-                "OpenVR": 0,
-                "Devkit": 0,
-                "DevkitGameID": "",
-                "DevkitOverrideAppID": 0,
-                "LastPlayTime": 0,
-                "tags": {"0": "RomM", "1": platform_name},
-            }
-
-            if rom_id in existing_romm:
-                shortcuts[existing_romm[rom_id]] = entry
-            else:
-                shortcuts[str(next_key)] = entry
-                next_key += 1
-
-            # Track for platform_apps return and state
-            platform_apps.setdefault(platform_name, []).append(app_id)
-            self._state["shortcut_registry"][str(rom_id)] = {
-                "app_id": app_id,
-                "artwork_id": artwork_id,
-                "name": rom["name"],
-            }
-
-        # Remove stale RomM shortcuts
-        for rom_id, key in existing_romm.items():
-            if rom_id not in current_rom_ids:
-                del shortcuts[key]
-                self._state["shortcut_registry"].pop(str(rom_id), None)
-
-        data["shortcuts"] = shortcuts
-        self._write_shortcuts(data)
-        decky.logger.info(f"Wrote {len(current_rom_ids)} shortcuts")
-        return platform_apps
+    # ── Artwork ──────────────────────────────────────────────
 
     async def _download_artwork(self, all_roms, progress_step=4, progress_total_steps=6):
         """Download cover artwork to staging filenames (romm_{rom_id}_cover.png).
@@ -836,9 +814,9 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
         Returns dict of rom_id -> local cover path.
         """
         cover_paths = {}
-        grid = self._grid_dir()
+        grid = self._steam_config.grid_dir()
         if not grid:
-            decky.logger.warning("Cannot find grid directory, skipping artwork")
+            self._logger.warning("Cannot find grid directory, skipping artwork")
             return cover_paths
 
         total = len(all_roms)
@@ -878,16 +856,16 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 continue
 
             try:
-                await self.loop.run_in_executor(None, self._romm_download, cover_url, staging)
+                await self._loop.run_in_executor(None, self._http_client.download, cover_url, staging)
                 cover_paths[rom_id] = staging
             except Exception as e:
-                decky.logger.warning(f"Failed to download artwork for {rom['name']}: {e}")
-
-            # sgdb_id is now stored directly from RomM during sync (no SGDB API call needed)
+                self._logger.warning(f"Failed to download artwork for {rom['name']}: {e}")
 
         return cover_paths
 
-    async def get_registry_platforms(self):
+    # ── Registry queries ─────────────────────────────────────
+
+    def get_registry_platforms(self):
         """Return platforms from the shortcut registry (works offline, no RomM API call)."""
         platforms = {}
         for rom_id, entry in self._state["shortcut_registry"].items():
@@ -899,23 +877,27 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
             "platforms": [{"name": k, "slug": v["slug"], "count": v["count"]} for k, v in sorted(platforms.items())],
         }
 
+    def _find_platform_name_in_registry(self, platform_slug):
+        """Look up platform name from the shortcut registry by slug."""
+        for entry in self._state["shortcut_registry"].values():
+            if entry.get("platform_slug") == platform_slug:
+                return entry.get("platform_name")
+        return None
+
+    async def _find_platform_name_from_api(self, platform_slug):
+        """Look up platform name from the RomM API by slug."""
+        platforms = await self._loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+        for p in platforms:
+            if p.get("slug") == platform_slug:
+                return p.get("name", "")
+        return None
+
     async def remove_platform_shortcuts(self, platform_slug):
         """Return app_ids and rom_ids for a platform for the frontend to remove via SteamClient."""
         try:
-            # Try registry first (works offline)
-            platform_name = None
-            for entry in self._state["shortcut_registry"].values():
-                if entry.get("platform_slug") == platform_slug:
-                    platform_name = entry.get("platform_name")
-                    break
-
-            # Fall back to API if slug not in registry
+            platform_name = self._find_platform_name_in_registry(platform_slug)
             if not platform_name:
-                platforms = await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
-                for p in platforms:
-                    if p.get("slug") == platform_slug:
-                        platform_name = p.get("name", "")
-                        break
+                platform_name = await self._find_platform_name_from_api(platform_slug)
 
             if not platform_name:
                 return {
@@ -925,81 +907,79 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                     "rom_ids": [],
                 }
 
-            app_ids = []
-            rom_ids = []
-            for rom_id, entry in self._state["shortcut_registry"].items():
-                if entry.get("platform_name") == platform_name:
-                    if "app_id" in entry:
-                        app_ids.append(entry["app_id"])
-                    rom_ids.append(rom_id)
+            app_ids = [
+                entry["app_id"]
+                for entry in self._state["shortcut_registry"].values()
+                if entry.get("platform_name") == platform_name and "app_id" in entry
+            ]
+            rom_ids = [
+                rom_id
+                for rom_id, entry in self._state["shortcut_registry"].items()
+                if entry.get("platform_name") == platform_name
+            ]
 
-            return {
-                "success": True,
-                "app_ids": app_ids,
-                "rom_ids": rom_ids,
-                "platform_name": platform_name,
-            }
+            return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids, "platform_name": platform_name}
         except Exception as e:
-            decky.logger.error(f"Failed to get platform shortcuts: {e}")
-            return {
-                "success": False,
-                "message": f"Failed: {e}",
-                "app_ids": [],
-                "rom_ids": [],
-            }
+            self._logger.error(f"Failed to get platform shortcuts: {e}")
+            return {"success": False, "message": f"Failed: {e}", "app_ids": [], "rom_ids": []}
 
-    async def remove_all_shortcuts(self):
+    def remove_all_shortcuts(self):
         """Return app_ids and rom_ids for the frontend to remove via SteamClient."""
         registry = self._state.get("shortcut_registry", {})
         app_ids = [entry["app_id"] for entry in registry.values() if "app_id" in entry]
         rom_ids = list(registry.keys())
         return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids}
 
+    def _remove_artwork_files(self, grid, rom_id, entry):
+        """Remove all artwork files for a registry entry."""
+        removed = False
+        # Try cover_path first (stores the final renamed path)
+        cover_path = entry.get("cover_path", "")
+        if cover_path and os.path.exists(cover_path):
+            os.remove(cover_path)
+            removed = True
+        # Try {app_id}p.png (the standard Steam grid filename)
+        if not removed and entry.get("app_id"):
+            app_path = os.path.join(grid, f"{entry['app_id']}p.png")
+            if os.path.exists(app_path):
+                os.remove(app_path)
+                removed = True
+        # Fallback: legacy artwork_id format
+        if not removed:
+            artwork_id = entry.get("artwork_id")
+            if artwork_id:
+                art_path = os.path.join(grid, f"{artwork_id}p.png")
+                if os.path.exists(art_path):
+                    os.remove(art_path)
+        # Clean up any leftover staging file
+        staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
+        if os.path.exists(staging):
+            os.remove(staging)
+
     def _report_removal_results_io(self, removed_rom_ids):
-        """Sync helper for report_removal_results — file deletions, VDF writes, state save in executor."""
+        """Sync helper for report_removal_results — file deletions, state save in executor."""
         # Clean up Steam Input config for removed shortcuts (always reset to default)
-        removed_app_ids = []
-        for rom_id in removed_rom_ids:
-            entry = self._state["shortcut_registry"].get(str(rom_id))
-            if entry and entry.get("app_id"):
-                removed_app_ids.append(entry["app_id"])
+        removed_app_ids = [
+            entry["app_id"]
+            for rom_id in removed_rom_ids
+            for entry in [self._state["shortcut_registry"].get(str(rom_id))]
+            if entry and entry.get("app_id")
+        ]
         if removed_app_ids:
             try:
-                self._set_steam_input_config(removed_app_ids, mode="default")
+                self._steam_config.set_steam_input_config(removed_app_ids, mode="default")
             except Exception as e:
-                decky.logger.error(f"Failed to clean up Steam Input config: {e}")
+                self._logger.error(f"Failed to clean up Steam Input config: {e}")
 
-        grid = self._grid_dir()
+        grid = self._steam_config.grid_dir()
         for rom_id in removed_rom_ids:
             entry = self._state["shortcut_registry"].pop(str(rom_id), None)
             if entry and grid:
-                removed = False
-                # Try cover_path first (stores the final renamed path)
-                cover_path = entry.get("cover_path", "")
-                if cover_path and os.path.exists(cover_path):
-                    os.remove(cover_path)
-                    removed = True
-                # Try {app_id}p.png (the standard Steam grid filename)
-                if not removed and entry.get("app_id"):
-                    app_path = os.path.join(grid, f"{entry['app_id']}p.png")
-                    if os.path.exists(app_path):
-                        os.remove(app_path)
-                        removed = True
-                # Fallback: legacy artwork_id format
-                if not removed:
-                    artwork_id = entry.get("artwork_id")
-                    if artwork_id:
-                        art_path = os.path.join(grid, f"{artwork_id}p.png")
-                        if os.path.exists(art_path):
-                            os.remove(art_path)
-                # Clean up any leftover staging file
-                staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
-                if os.path.exists(staging):
-                    os.remove(staging)
+                self._remove_artwork_files(grid, rom_id, entry)
 
         # Update sync_stats to reflect current registry
         registry = self._state.get("shortcut_registry", {})
-        platforms = set(e.get("platform_name", "") for e in registry.values())
+        platforms = {e.get("platform_name", "") for e in registry.values()}
         self._state["sync_stats"] = {
             "platforms": len(platforms),
             "roms": len(registry),
@@ -1008,13 +988,15 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
 
     async def report_removal_results(self, removed_rom_ids):
         """Called by frontend after removing shortcuts via SteamClient."""
-        await self.loop.run_in_executor(None, self._report_removal_results_io, removed_rom_ids)
+        await self._loop.run_in_executor(None, self._report_removal_results_io, removed_rom_ids)
         return {"success": True, "message": f"Removed {len(removed_rom_ids)} shortcuts"}
+
+    # ── Artwork queries ──────────────────────────────────────
 
     async def get_artwork_base64(self, rom_id):
         """Return base64-encoded cover artwork for a single ROM (callable from frontend)."""
         rom_id = int(rom_id)
-        grid = self._grid_dir()
+        grid = self._steam_config.grid_dir()
         if not grid:
             return {"base64": None}
 
@@ -1035,23 +1017,25 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
 
         if cover_path and os.path.exists(cover_path):
             try:
-                with open(cover_path, "rb") as f:
-                    return {"base64": base64.b64encode(f.read()).decode("ascii")}
+                data = await self._loop.run_in_executor(None, lambda: pathlib.Path(cover_path).read_bytes())
+                return {"base64": base64.b64encode(data).decode("ascii")}
             except Exception as e:
-                decky.logger.warning(f"Failed to read artwork for rom {rom_id}: {e}")
+                self._logger.warning(f"Failed to read artwork for rom {rom_id}: {e}")
 
         return {"base64": None}
 
-    async def clear_sync_cache(self):
+    # ── Cache / stats ────────────────────────────────────────
+
+    def clear_sync_cache(self):
         """Clear last_sync timestamp to force a full re-fetch on next sync."""
         self._state["last_sync"] = None
         self._save_state()
-        decky.logger.info("Sync cache cleared — next sync will do a full fetch")
+        self._logger.info("Sync cache cleared — next sync will do a full fetch")
         return {"success": True, "message": "Next sync will do a full fetch"}
 
-    async def get_sync_stats(self):
+    def get_sync_stats(self):
         registry = self._state.get("shortcut_registry", {})
-        platforms = set(e.get("platform_name", "") for e in registry.values())
+        platforms = {e.get("platform_name", "") for e in registry.values()}
         return {
             "last_sync": self._state.get("last_sync"),
             "platforms": len(platforms),
@@ -1059,7 +1043,7 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
             "total_shortcuts": len(registry),
         }
 
-    async def get_rom_by_steam_app_id(self, app_id):
+    def get_rom_by_steam_app_id(self, app_id):
         app_id = int(app_id)
         for rom_id, entry in self._state["shortcut_registry"].items():
             if entry.get("app_id") == app_id:
@@ -1073,9 +1057,21 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
                 }
         return None
 
-    def _prune_orphaned_staging_artwork(self):
+    # ── Housekeeping ─────────────────────────────────────────
+
+    def _is_staging_file_orphaned(self, grid, registry, rom_id):
+        """Check if a staging artwork file is orphaned (not in registry or has final artwork)."""
+        if rom_id not in registry:
+            return True
+        app_id = registry[rom_id].get("app_id")
+        if app_id:
+            final = os.path.join(grid, f"{app_id}p.png")
+            return os.path.exists(final)
+        return False
+
+    def prune_orphaned_staging_artwork(self):
         """Remove orphaned romm_{rom_id}_cover.png staging files from Steam grid dir."""
-        grid = self._grid_dir()
+        grid = self._steam_config.grid_dir()
         if not grid or not os.path.isdir(grid):
             return
         registry = self._state.get("shortcut_registry", {})
@@ -1083,28 +1079,17 @@ class SyncMixin(_SyncDeps if TYPE_CHECKING else object):
         for filename in os.listdir(grid):
             if not filename.startswith("romm_") or not filename.endswith("_cover.png"):
                 continue
-            # Extract rom_id from "romm_{rom_id}_cover.png"
             try:
                 rom_id = filename[len("romm_") : -len("_cover.png")]
                 int(rom_id)  # validate it's numeric
             except (ValueError, IndexError):
                 continue
-            should_remove = False
-            if rom_id not in registry:
-                # ROM no longer synced
-                should_remove = True
-            else:
-                # Check if final artwork exists (staging is redundant leftover)
-                app_id = registry[rom_id].get("app_id")
-                if app_id:
-                    final = os.path.join(grid, f"{app_id}p.png")
-                    if os.path.exists(final):
-                        should_remove = True
-            if should_remove:
-                try:
-                    os.remove(os.path.join(grid, filename))
-                    pruned.append(filename)
-                except OSError as e:
-                    decky.logger.warning(f"Failed to remove orphaned staging artwork {filename}: {e}")
+            if not self._is_staging_file_orphaned(grid, registry, rom_id):
+                continue
+            try:
+                os.remove(os.path.join(grid, filename))
+                pruned.append(filename)
+            except OSError as e:
+                self._logger.warning(f"Failed to remove orphaned staging artwork {filename}: {e}")
         if pruned:
-            decky.logger.info(f"Pruned {len(pruned)} orphaned staging artwork file(s)")
+            self._logger.info(f"Pruned {len(pruned)} orphaned staging artwork file(s)")

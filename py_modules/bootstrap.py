@@ -10,13 +10,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.client import RommHttpClient
 from adapters.romm.version_router import VersionRouter
+from adapters.steam_config import SteamConfigAdapter
+from services.achievements import AchievementsService
+from services.downloads import DownloadService
+from services.firmware import FirmwareService
+from services.metadata import MetadataService
 from services.playtime import PlaytimeService
 from services.save_sync import SaveSyncService
+from services.sgdb import SgdbService
+from services.sync import SyncService
 
 
 def bootstrap(
@@ -24,6 +32,7 @@ def bootstrap(
     settings_dir: str,
     runtime_dir: str,
     plugin_dir: str,
+    user_home: str,
     logger: logging.Logger,
     settings: dict,
 ) -> dict:
@@ -50,12 +59,14 @@ def bootstrap(
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_client = RommHttpClient(settings, plugin_dir, logger)
     version_router = VersionRouter(http_client)
+    steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
     return {
         "persistence": persistence,
         "http_client": http_client,
         "save_api": version_router,
         "version_router": version_router,
+        "steam_config": steam_config,
     }
 
 
@@ -63,23 +74,32 @@ def wire_services(
     *,
     save_api: Any,
     http_client: RommHttpClient,
+    steam_config: SteamConfigAdapter,
     state: dict,
+    settings: dict,
+    metadata_cache: dict,
     save_sync_state: dict,
     loop: asyncio.AbstractEventLoop,
     logger: logging.Logger,
+    plugin_dir: str,
     runtime_dir: str,
+    emit: Any,
     get_saves_path: Any,
-    save_state_fn: Any,
+    save_state: Callable,
+    save_settings_to_disk: Callable,
+    save_metadata_cache: Callable,
+    log_debug: Callable,
 ) -> dict:
     """Create service instances after plugin state is initialised.
 
-    Called from ``Plugin._main()`` after ``_init_save_sync_state`` /
-    ``_load_save_sync_state`` so that services receive live references
-    to the fully-populated state dicts.
+    Called from ``Plugin._main()`` after save-sync state is populated
+    so that services receive live references to the fully-populated
+    state dicts.
 
     Returns
     -------
-    dict with keys ``save_sync_service`` and ``playtime_service``.
+    dict with keys ``save_sync_service``, ``playtime_service``,
+    ``sync_service``, ``download_service``, and ``firmware_service``.
     """
     save_sync_service = SaveSyncService(
         save_api=save_api,
@@ -100,10 +120,84 @@ def wire_services(
         save_sync_state=save_sync_state,
         loop=loop,
         logger=logger,
-        save_state=save_state_fn,
+        save_state=save_sync_service.save_state,
+    )
+
+    metadata_service = MetadataService(
+        http_client=http_client,
+        state=state,
+        metadata_cache=metadata_cache,
+        loop=loop,
+        logger=logger,
+        save_metadata_cache=save_metadata_cache,
+        log_debug=log_debug,
+    )
+
+    sync_service = SyncService(
+        http_client=http_client,
+        steam_config=steam_config,
+        state=state,
+        settings=settings,
+        metadata_cache=metadata_cache,
+        loop=loop,
+        logger=logger,
+        plugin_dir=plugin_dir,
+        emit=emit,
+        save_state=save_state,
+        save_settings_to_disk=save_settings_to_disk,
+        log_debug=log_debug,
+        metadata_service=metadata_service,
+    )
+
+    download_service = DownloadService(
+        http_client=http_client,
+        state=state,
+        save_sync_state=save_sync_state,
+        loop=loop,
+        logger=logger,
+        runtime_dir=runtime_dir,
+        emit=emit,
+        save_state=save_state,
+        save_save_sync_state=save_sync_service.save_state,
+    )
+
+    firmware_service = FirmwareService(
+        http_client=http_client,
+        state=state,
+        loop=loop,
+        logger=logger,
+        plugin_dir=plugin_dir,
+        save_state=save_state,
+    )
+
+    sgdb_service = SgdbService(
+        http_client=http_client,
+        steam_config=steam_config,
+        state=state,
+        settings=settings,
+        loop=loop,
+        logger=logger,
+        runtime_dir=runtime_dir,
+        save_state=save_state,
+        save_settings_to_disk=save_settings_to_disk,
+        sync_service=sync_service,
+    )
+
+    achievements_service = AchievementsService(
+        http_client=http_client,
+        state=state,
+        loop=loop,
+        logger=logger,
+        log_debug=log_debug,
     )
 
     return {
         "save_sync_service": save_sync_service,
         "playtime_service": playtime_service,
+        "sync_service": sync_service,
+        "download_service": download_service,
+        "firmware_service": firmware_service,
+        "sgdb_service": sgdb_service,
+        "metadata_service": metadata_service,
+        "achievements_service": achievements_service,
     }

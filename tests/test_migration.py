@@ -1,9 +1,11 @@
 import asyncio
 import os
+from unittest.mock import MagicMock
 
 import pytest
-
-from lib.sync import SyncState
+from adapters.steam_config import SteamConfigAdapter
+from services.firmware import FirmwareService
+from services.sync import SyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -13,8 +15,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._sync_state = SyncState.IDLE
-    p._sync_progress = {"running": False}
+    p._http_client = MagicMock()
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
@@ -23,13 +24,36 @@ def plugin():
         "downloaded_bios": {},
         "retrodeck_home_path": "",
     }
-    p._pending_sync = {}
-    p._download_tasks = {}
-    p._download_queue = {}
-    p._download_in_progress = set()
     p._metadata_cache = {}
-    p._bios_registry = {}
-    p._bios_files_index = {}
+
+    import decky
+
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
+    p._firmware_service = FirmwareService(
+        http_client=p._http_client,
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        save_state=MagicMock(),
+    )
+
+    p._sync_service = SyncService(
+        http_client=p._http_client,
+        steam_config=steam_config,
+        state=p._state,
+        settings=p.settings,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        emit=decky.emit,
+        save_state=p._save_state,
+        save_settings_to_disk=p._save_settings_to_disk,
+        log_debug=p._log_debug,
+    )
     return p
 
 

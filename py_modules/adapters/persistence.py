@@ -19,7 +19,7 @@ DEFAULT_SETTINGS: dict = {
     "steam_input_mode": "default",
     "steamgriddb_api_key": "",
     "romm_allow_insecure_ssl": False,
-    # NOTE: log_level default is NOT here — it's applied in StateMixin._load_settings()
+    # NOTE: log_level default is NOT here — it's applied in Plugin._load_settings()
     # AFTER the debug_logging → log_level migration runs.
 }
 
@@ -52,7 +52,7 @@ class PersistenceAdapter:
         """Read ``settings.json``, apply defaults, and fix permissions.
 
         Migration logic (e.g. renaming old keys) is intentionally NOT
-        included here — that belongs in ``StateMixin``.
+        included here — that belongs in ``Plugin._load_settings()``.
         """
         settings_path = os.path.join(self._settings_dir, "settings.json")
         try:

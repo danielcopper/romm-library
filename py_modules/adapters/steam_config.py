@@ -1,25 +1,33 @@
+"""Adapter wrapping Steam VDF file access and shortcut ID generation.
+
+Mostly stateless helpers — the only external dependency is the user's
+Steam ``userdata`` directory (resolved from ``DECKY_USER_HOME``).
+"""
+
+from __future__ import annotations
+
 import binascii
+import logging
 import os
 import struct
-from typing import TYPE_CHECKING
 
-import decky
 import vdf
 
-if TYPE_CHECKING:
-    from typing import Protocol
 
-    class _SteamConfigDeps(Protocol):
-        settings: dict
-        _state: dict
+class SteamConfigAdapter:
+    """Thin wrapper around Steam's on-disk config files."""
 
+    def __init__(self, *, user_home: str, logger: logging.Logger) -> None:
+        self._user_home = user_home
+        self._logger = logger
 
-class SteamConfigMixin(_SteamConfigDeps if TYPE_CHECKING else object):
-    def _find_steam_user_dir(self):
+    # -- Steam user directory -------------------------------------------------
+
+    def find_steam_user_dir(self) -> str | None:
         """Find the active Steam user's userdata directory."""
         steam_paths = [
-            os.path.join(decky.DECKY_USER_HOME, ".local", "share", "Steam", "userdata"),
-            os.path.join(decky.DECKY_USER_HOME, ".steam", "steam", "userdata"),
+            os.path.join(self._user_home, ".local", "share", "Steam", "userdata"),
+            os.path.join(self._user_home, ".steam", "steam", "userdata"),
         ]
         for base in steam_paths:
             if os.path.isdir(base):
@@ -27,52 +35,54 @@ class SteamConfigMixin(_SteamConfigDeps if TYPE_CHECKING else object):
                 if len(users) == 1:
                     return os.path.join(base, users[0])
                 if len(users) > 1:
-                    # Sort by mtime descending — most recently modified first
                     users.sort(
-                        key=lambda u: os.path.getmtime(os.path.join(base, u)),
+                        key=lambda u, base=base: os.path.getmtime(os.path.join(base, u)),
                         reverse=True,
                     )
                     return os.path.join(base, users[0])
         return None
 
-    def _shortcuts_vdf_path(self):
-        user_dir = self._find_steam_user_dir()
+    def shortcuts_vdf_path(self) -> str | None:
+        user_dir = self.find_steam_user_dir()
         if not user_dir:
             return None
         return os.path.join(user_dir, "config", "shortcuts.vdf")
 
-    def _grid_dir(self):
-        user_dir = self._find_steam_user_dir()
+    def grid_dir(self) -> str | None:
+        user_dir = self.find_steam_user_dir()
         if not user_dir:
             return None
         grid = os.path.join(user_dir, "config", "grid")
         os.makedirs(grid, exist_ok=True)
         return grid
 
-    # Deprecated: frontend now gets app_id from SteamClient.Apps.AddShortcut()
-    def _generate_app_id(self, exe, appname):
+    # -- Shortcut ID generation -----------------------------------------------
+
+    @staticmethod
+    def generate_app_id(exe: str, appname: str) -> int:
         """Generate Steam shortcut app ID (signed int32). Deprecated."""
         key = exe + appname
         crc = binascii.crc32(key.encode("utf-8")) & 0xFFFFFFFF
         return struct.unpack("i", struct.pack("I", crc | 0x80000000))[0]
 
-    def _generate_artwork_id(self, exe, appname):
+    @staticmethod
+    def generate_artwork_id(exe: str, appname: str) -> int:
         """Generate unsigned artwork ID for grid filenames."""
         key = exe + appname
         crc = binascii.crc32(key.encode("utf-8")) & 0xFFFFFFFF
         return crc | 0x80000000
 
-    # Deprecated: VDF read/write replaced by frontend SteamClient API
-    def _read_shortcuts(self):
-        path = self._shortcuts_vdf_path()
+    # -- VDF read/write (deprecated — frontend uses SteamClient API) ----------
+
+    def read_shortcuts(self) -> dict:
+        path = self.shortcuts_vdf_path()
         if not path or not os.path.exists(path):
             return {"shortcuts": {}}
         with open(path, "rb") as f:
             return vdf.binary_loads(f.read())
 
-    # Deprecated: VDF read/write replaced by frontend SteamClient API
-    def _write_shortcuts(self, data):
-        path = self._shortcuts_vdf_path()
+    def write_shortcuts(self, data: dict) -> None:
+        path = self.shortcuts_vdf_path()
         if not path:
             raise RuntimeError("Cannot find Steam shortcuts.vdf path")
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -81,26 +91,28 @@ class SteamConfigMixin(_SteamConfigDeps if TYPE_CHECKING else object):
             f.write(vdf.binary_dumps(data))
         os.replace(tmp_path, path)
 
-    def _set_steam_input_config(self, app_ids, mode="default"):
+    # -- Steam Input config ---------------------------------------------------
+
+    def set_steam_input_config(self, app_ids: list, mode: str = "default") -> None:
         """Set UseSteamControllerConfig for given app_ids in localconfig.vdf.
 
         mode: "default" (remove key / "1"), "force_on" ("2"), "force_off" ("0")
         """
-        user_dir = self._find_steam_user_dir()
+        user_dir = self.find_steam_user_dir()
         if not user_dir:
-            decky.logger.warning("Cannot find Steam user dir, skipping Steam Input config")
+            self._logger.warning("Cannot find Steam user dir, skipping Steam Input config")
             return
 
         localconfig_path = os.path.join(user_dir, "config", "localconfig.vdf")
         if not os.path.exists(localconfig_path):
-            decky.logger.warning(f"localconfig.vdf not found at {localconfig_path}")
+            self._logger.warning(f"localconfig.vdf not found at {localconfig_path}")
             return
 
         try:
             with open(localconfig_path, "r", encoding="utf-8") as f:
                 data = vdf.load(f)
         except Exception as e:
-            decky.logger.error(f"Failed to parse localconfig.vdf: {e}")
+            self._logger.error(f"Failed to parse localconfig.vdf: {e}")
             return
 
         # Navigate to the Apps section
@@ -136,24 +148,13 @@ class SteamConfigMixin(_SteamConfigDeps if TYPE_CHECKING else object):
                 with open(tmp_path, "w", encoding="utf-8") as f:
                     vdf.dump(data, f, pretty=True)
                 os.replace(tmp_path, localconfig_path)
-                decky.logger.info(f"Steam Input mode '{mode}' applied for {len(app_ids)} app(s)")
+                self._logger.info(f"Steam Input mode '{mode}' applied for {len(app_ids)} app(s)")
             except Exception as e:
-                decky.logger.error(f"Failed to write localconfig.vdf: {e}")
+                self._logger.error(f"Failed to write localconfig.vdf: {e}")
 
-    async def apply_steam_input_setting(self):
-        """Apply current Steam Input setting to all existing ROM shortcuts."""
-        mode = self.settings.get("steam_input_mode", "default")
-        app_ids = [entry["app_id"] for entry in self._state["shortcut_registry"].values() if "app_id" in entry]
-        if not app_ids:
-            return {"success": True, "message": "No shortcuts to update"}
-        try:
-            self._set_steam_input_config(app_ids, mode=mode)
-            return {"success": True, "message": f"Steam Input set to '{mode}' for {len(app_ids)} shortcuts"}
-        except Exception as e:
-            decky.logger.error(f"Failed to apply Steam Input setting: {e}")
-            return {"success": False, "message": "Operation failed"}
+    # -- RetroArch input driver check -----------------------------------------
 
-    def _check_retroarch_input_driver(self):
+    def check_retroarch_input_driver(self) -> dict | None:
         """Check if RetroArch input_driver is set to a problematic value."""
         candidates = [
             "~/.var/app/net.retrodeck.retrodeck/config/retroarch/retroarch.cfg",
@@ -179,9 +180,9 @@ class SteamConfigMixin(_SteamConfigDeps if TYPE_CHECKING else object):
                 continue
         return None
 
-    async def fix_retroarch_input_driver(self):
+    def fix_retroarch_input_driver(self) -> dict:
         """Change RetroArch input_driver from 'x' to 'sdl2'."""
-        check = self._check_retroarch_input_driver()
+        check = self.check_retroarch_input_driver()
         if not check or not check.get("warning"):
             return {"success": False, "message": "No fix needed"}
         cfg_path = check["config_path"]
@@ -196,5 +197,5 @@ class SteamConfigMixin(_SteamConfigDeps if TYPE_CHECKING else object):
                         f.write(line)
             return {"success": True, "message": "Changed input_driver to sdl2"}
         except Exception as e:
-            decky.logger.error(f"Failed to fix RetroArch input_driver: {e}")
+            self._logger.error(f"Failed to fix RetroArch input_driver: {e}")
             return {"success": False, "message": "Operation failed"}

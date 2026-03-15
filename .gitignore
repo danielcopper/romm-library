@@ -36,3 +36,6 @@ PLAN.md
 # Claude Code
 .claude/
 .venv/
+
+# Git worktrees
+.worktrees/

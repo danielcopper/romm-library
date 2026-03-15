@@ -13,6 +13,7 @@ class TestBootstrap:
             settings_dir=str(tmp_path / "settings"),
             runtime_dir=str(tmp_path / "runtime"),
             plugin_dir=str(tmp_path / "plugin"),
+            user_home=str(tmp_path / "home"),
             logger=logging.getLogger("test"),
             settings={},
         )
@@ -24,6 +25,7 @@ class TestBootstrap:
             settings_dir=str(tmp_path / "settings"),
             runtime_dir=str(tmp_path / "runtime"),
             plugin_dir=str(tmp_path / "plugin"),
+            user_home=str(tmp_path / "home"),
             logger=logging.getLogger("test"),
             settings={},
         )
@@ -36,6 +38,7 @@ class TestBootstrap:
             settings_dir=str(tmp_path / "settings"),
             runtime_dir=str(tmp_path / "runtime"),
             plugin_dir=str(tmp_path / "plugin"),
+            user_home=str(tmp_path / "home"),
             logger=logging.getLogger("test"),
             settings=settings,
         )
@@ -50,6 +53,7 @@ class TestBootstrap:
             settings_dir=settings_dir,
             runtime_dir=runtime_dir,
             plugin_dir=str(tmp_path / "p"),
+            user_home=str(tmp_path / "home"),
             logger=logging.getLogger("test"),
             settings={},
         )

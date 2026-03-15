@@ -7,59 +7,119 @@ sys.path.insert(0, os.path.join(plugin_dir, "py_modules"))
 sys.path.insert(0, plugin_dir)
 
 import decky
+from adapters.persistence import PersistenceAdapter
 from bootstrap import bootstrap, wire_services
+from services.sync import SyncState
 
 from lib import retrodeck_config
-from lib.achievements import AchievementsMixin
-from lib.downloads import DownloadMixin
-from lib.firmware import FirmwareMixin
-from lib.metadata import MetadataMixin
-from lib.romm_client import RommClientMixin
-from lib.save_sync import SaveSyncMixin
-from lib.sgdb import SgdbMixin
-from lib.state import StateMixin
-from lib.steam_config import SteamConfigMixin
-from lib.sync import SyncMixin, SyncState
 
 
-class Plugin(
-    StateMixin,
-    RommClientMixin,
-    SgdbMixin,
-    SteamConfigMixin,
-    FirmwareMixin,
-    MetadataMixin,
-    AchievementsMixin,
-    DownloadMixin,
-    SyncMixin,
-    SaveSyncMixin,
-):
+class Plugin:
     settings: dict
     loop: asyncio.AbstractEventLoop
 
+    # -- logging ---------------------------------------------------------------
+
+    LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+
+    def _log_debug(self, msg):
+        """Log a message only when log_level allows debug messages."""
+        configured = self.settings.get("log_level", "warn")
+        if self.LOG_LEVELS.get("debug", 0) >= self.LOG_LEVELS.get(configured, 2):
+            decky.logger.info(msg)
+
+    # -- persistence delegates -------------------------------------------------
+
+    @property
+    def _persistence(self) -> PersistenceAdapter:
+        """Lazy-init persistence adapter; overwritten by _main() with the bootstrap instance."""
+        if not hasattr(self, "_persistence_instance"):
+            self._persistence_instance = PersistenceAdapter(
+                decky.DECKY_PLUGIN_SETTINGS_DIR,
+                decky.DECKY_PLUGIN_RUNTIME_DIR,
+                decky.logger,
+            )
+        return self._persistence_instance
+
+    @_persistence.setter
+    def _persistence(self, value: PersistenceAdapter) -> None:
+        self._persistence_instance = value
+
+    def _save_state(self):
+        self._persistence.save_state(self._state)
+
+    def _save_settings_to_disk(self):
+        self._persistence.save_settings(self.settings)
+
+    def _save_metadata_cache(self):
+        self._persistence.save_metadata_cache(self._metadata_cache)
+
+    def _load_metadata_cache(self):
+        self._metadata_cache = self._persistence.load_metadata_cache()
+
+    # -- pruning ---------------------------------------------------------------
+
+    def _prune_stale_installed_roms(self):
+        """Remove installed_roms entries whose files no longer exist on disk."""
+        pruned = []
+        for rom_id, entry in list(self._state["installed_roms"].items()):
+            file_path = entry.get("file_path", "")
+            rom_dir = entry.get("rom_dir", "")
+            if (file_path and os.path.exists(file_path)) or (rom_dir and os.path.exists(rom_dir)):
+                continue
+            decky.logger.info(f"Pruned stale installed_roms entry: {rom_id} ({file_path})")
+            pruned.append(rom_id)
+        for rom_id in pruned:
+            del self._state["installed_roms"][rom_id]
+        if pruned:
+            self._save_state()
+
+    def _prune_stale_registry(self):
+        """Remove shortcut_registry entries with missing or invalid app_id."""
+        pruned = []
+        for rom_id, entry in list(self._state["shortcut_registry"].items()):
+            app_id = entry.get("app_id")
+            if not app_id or not isinstance(app_id, int):
+                decky.logger.info(f"Pruned stale registry entry: rom_id={rom_id} (invalid app_id={app_id})")
+                pruned.append(rom_id)
+        for rom_id in pruned:
+            del self._state["shortcut_registry"][rom_id]
+        if pruned:
+            self._save_state()
+
+    # -- settings loading with migrations --------------------------------------
+
+    def _load_settings(self):
+        self.settings = self._persistence.load_settings()
+        # Migrate old boolean setting
+        if "disable_steam_input" in self.settings:
+            if self.settings.pop("disable_steam_input"):
+                self.settings["steam_input_mode"] = "force_off"
+            self._save_settings_to_disk()
+        # Migrate old boolean debug_logging to log_level
+        if "debug_logging" in self.settings:
+            if self.settings.pop("debug_logging"):
+                self.settings.setdefault("log_level", "debug")
+            self._save_settings_to_disk()
+        self.settings.setdefault("log_level", "warn")
+
     async def _main(self):
         self.loop = asyncio.get_event_loop()
+        # ── Load settings (uses lazy _persistence property) ──
         self._load_settings()
         # ── Wire adapters from composition root ──
         adapters = bootstrap(
             settings_dir=decky.DECKY_PLUGIN_SETTINGS_DIR,
             runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
             plugin_dir=decky.DECKY_PLUGIN_DIR,
+            user_home=decky.DECKY_USER_HOME,
             logger=decky.logger,
             settings=self.settings,
         )
         self._persistence = adapters["persistence"]
         self._http_client = adapters["http_client"]
         self._version_router = adapters["version_router"]
-        self._sync_state = SyncState.IDLE
-        self._sync_last_heartbeat = 0.0
-        self._sync_progress = {
-            "running": False,
-            "phase": "",
-            "current": 0,
-            "total": 0,
-            "message": "",
-        }
+        self._steam_config = adapters["steam_config"]
         self._state = {
             "shortcut_registry": {},
             "installed_roms": {},
@@ -68,48 +128,56 @@ class Plugin(
             "downloaded_bios": {},
             "retrodeck_home_path": "",
         }
-        self._pending_sync = {}
-        self._pending_delta = None
-        self._download_tasks = {}  # rom_id -> asyncio.Task
-        self._download_queue = {}  # rom_id -> DownloadItem dict
-        self._download_in_progress = set()  # rom_ids currently being processed
         self._metadata_cache = {}
-        self._achievements_cache = {}
         self._romm_version = None  # Detected on test_connection
-        self._load_state()
-        self._load_bios_registry()
-        self._load_metadata_cache()
-        self._init_save_sync_state()
-        self._load_save_sync_state()
+        self._state = self._persistence.load_state(self._state)
+        self._metadata_cache = self._persistence.load_metadata_cache()
+        # ── Save sync state (owned by SaveSyncService) ──
+        from services.save_sync import SaveSyncService
+
+        self._save_sync_state = SaveSyncService.make_default_state()
         # ── Wire services (composition, uses live state refs) ──
-        try:
-            services = wire_services(
-                save_api=adapters["save_api"],
-                http_client=self._http_client,
-                state=self._state,
-                save_sync_state=self._save_sync_state,
-                loop=self.loop,
-                logger=decky.logger,
-                runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
-                get_saves_path=retrodeck_config.get_saves_path,
-                save_state_fn=self._save_save_sync_state,
-            )
-            self._save_sync_service = services["save_sync_service"]
-            self._playtime_service = services["playtime_service"]
-        except Exception as e:
-            decky.logger.error(f"Failed to wire services, falling back to mixins: {e}")
-            self._save_sync_service = None
-            self._playtime_service = None
+        services = wire_services(
+            save_api=adapters["save_api"],
+            http_client=self._http_client,
+            steam_config=self._steam_config,
+            state=self._state,
+            settings=self.settings,
+            metadata_cache=self._metadata_cache,
+            save_sync_state=self._save_sync_state,
+            loop=self.loop,
+            logger=decky.logger,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
+            runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+            emit=decky.emit,
+            get_saves_path=retrodeck_config.get_saves_path,
+            save_state=self._save_state,
+            save_settings_to_disk=self._save_settings_to_disk,
+            save_metadata_cache=self._save_metadata_cache,
+            log_debug=self._log_debug,
+        )
+        self._save_sync_service = services["save_sync_service"]
+        self._playtime_service = services["playtime_service"]
+        self._sync_service = services["sync_service"]
+        self._download_service = services["download_service"]
+        self._firmware_service = services["firmware_service"]
+        self._sgdb_service = services["sgdb_service"]
+        self._metadata_service = services["metadata_service"]
+        self._achievements_service = services["achievements_service"]
+        self._firmware_service.load_bios_registry()
+        # Load persisted state into the live dict
+        self._save_sync_service.init_state()
+        self._save_sync_service.load_state()
         # ── Startup state healing ──
-        self._prune_stale_installed_roms()  # lib/state.py
-        self._prune_stale_registry()  # lib/state.py
-        self._prune_orphaned_save_sync_state()  # lib/save_sync.py
-        self._prune_orphaned_artwork_cache()  # lib/sgdb.py
-        self._prune_orphaned_staging_artwork()  # lib/sync.py
-        self._cleanup_leftover_tmp_files()  # lib/downloads.py
+        self._prune_stale_installed_roms()
+        self._prune_stale_registry()
+        self._save_sync_service.prune_orphaned_state()  # services/save_sync.py
+        self._sgdb_service.prune_orphaned_artwork_cache()  # services/sgdb.py
+        self._sync_service.prune_orphaned_staging_artwork()  # services/sync.py
+        self._download_service.cleanup_leftover_tmp_files()  # services/downloads.py
         # ── RetroDECK path change detection ──
         self._detect_retrodeck_path_change()
-        self.loop.create_task(self._poll_download_requests())
+        self.loop.create_task(self._download_service.poll_download_requests())
         decky.logger.info("RomM Sync plugin loaded")
 
     def _detect_retrodeck_path_change(self):
@@ -210,7 +278,7 @@ class Plugin(
         old_bios = os.path.join(old_home, "bios")
         new_bios = retrodeck_config.get_bios_path()
         if os.path.isdir(old_bios):
-            for file_name, reg_entry in self._bios_files_index.items():
+            for file_name, reg_entry in self._firmware_service._bios_files_index.items():
                 if file_name in self._state.get("downloaded_bios", {}):
                     continue
                 firmware_path = reg_entry.get("firmware_path", file_name)
@@ -380,12 +448,12 @@ class Plugin(
         return await self.loop.run_in_executor(None, self._get_migration_status_io, old_home, new_home)
 
     async def _unload(self):
-        if self._sync_state == SyncState.RUNNING:
-            self._sync_state = SyncState.CANCELLING
+        if self._sync_service._sync_state == SyncState.RUNNING:
+            self._sync_service._sync_state = SyncState.CANCELLING
         # Cancel all active downloads
-        for rom_id, task in list(self._download_tasks.items()):
+        for rom_id, task in self._download_service._download_tasks.items():
             task.cancel()
-        self._download_tasks.clear()
+        self._download_service._download_tasks.clear()
         decky.logger.info("RomM Sync plugin unloaded")
 
     _MIN_TESTED_VERSION = "4.6.1"
@@ -397,7 +465,7 @@ class Plugin(
             return {"success": False, "message": "No server URL configured", "error_code": "config_error"}
         # Test basic connectivity (heartbeat may not require auth)
         try:
-            heartbeat = await self.loop.run_in_executor(None, self._romm_request, "/api/heartbeat")
+            heartbeat = await self.loop.run_in_executor(None, self._http_client.request, "/api/heartbeat")
         except Exception as e:
             self._romm_version = None
             return error_response(e)
@@ -416,7 +484,7 @@ class Plugin(
 
         # Test authenticated access
         try:
-            await self.loop.run_in_executor(None, self._romm_request, "/api/platforms")
+            await self.loop.run_in_executor(None, self._http_client.request, "/api/platforms")
         except Exception as e:
             resp = error_response(e)
             if resp["error_code"] not in ("auth_error", "forbidden_error"):
@@ -484,6 +552,23 @@ class Plugin(
         self._save_settings_to_disk()
         return {"success": True}
 
+    async def apply_steam_input_setting(self):
+        """Apply current Steam Input setting to all existing ROM shortcuts."""
+        mode = self.settings.get("steam_input_mode", "default")
+        app_ids = [entry["app_id"] for entry in self._state["shortcut_registry"].values() if "app_id" in entry]
+        if not app_ids:
+            return {"success": True, "message": "No shortcuts to update"}
+        try:
+            self._steam_config.set_steam_input_config(app_ids, mode=mode)
+            return {"success": True, "message": f"Steam Input set to '{mode}' for {len(app_ids)} shortcuts"}
+        except Exception as e:
+            decky.logger.error(f"Failed to apply Steam Input setting: {e}")
+            return {"success": False, "message": "Operation failed"}
+
+    async def fix_retroarch_input_driver(self):
+        """Change RetroArch input_driver from 'x' to 'sdl2'."""
+        return self._steam_config.fix_retroarch_input_driver()
+
     async def get_settings(self):
         has_credentials = bool(self.settings.get("romm_user") and self.settings.get("romm_pass"))
         return {
@@ -493,7 +578,7 @@ class Plugin(
             "has_credentials": has_credentials,
             "steam_input_mode": self.settings.get("steam_input_mode", "default"),
             "sgdb_api_key_masked": "••••" if self.settings.get("steamgriddb_api_key") else "",
-            "retroarch_input_check": self._check_retroarch_input_driver(),
+            "retroarch_input_check": self._steam_config.check_retroarch_input_driver(),
             "log_level": self.settings.get("log_level", "warn"),
             "romm_allow_insecure_ssl": self.settings.get("romm_allow_insecure_ssl", False),
         }
@@ -559,7 +644,7 @@ class Plugin(
         bios_status = None
         if platform_slug:
             try:
-                bios = await self.check_platform_bios(platform_slug, rom_filename=rom_file or None)
+                bios = await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_file or None)
                 if bios.get("needs_bios"):
                     bios_status = {
                         "platform_slug": platform_slug,
@@ -579,9 +664,9 @@ class Plugin(
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
         achievement_summary = None
-        if ra_id and self._get_ra_username():
+        if ra_id and self._achievements_service._get_ra_username():
             # Try cache first for quick badge rendering
-            cached_progress = self._get_progress_cache_entry(rom_id_str)
+            cached_progress = self._achievements_service._get_progress_cache_entry(rom_id_str)
             if cached_progress:
                 achievement_summary = {
                     "earned": cached_progress.get("earned", 0),
@@ -635,7 +720,7 @@ class Plugin(
             return {"success": False, "message": "RetroDECK home not found"}
         try:
             await self.loop.run_in_executor(None, self._set_system_core_io, retrodeck_home, platform_slug, core_label)
-            bios = await self.check_platform_bios(platform_slug)
+            bios = await self._firmware_service.check_platform_bios(platform_slug)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set system core: {e}")
@@ -660,116 +745,199 @@ class Plugin(
             )
             # Extract rom filename from path for per-game core detection
             rom_filename = rom_path.lstrip("./") if rom_path else None
-            bios = await self.check_platform_bios(platform_slug, rom_filename=rom_filename)
+            bios = await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_filename)
             return {"success": True, "bios_status": bios}
         except Exception as e:
             decky.logger.error(f"Failed to set game core: {e}")
             return {"success": False, "message": str(e)}
 
-    # ── Save Sync / Playtime delegation to new services ──────────
-    # When the service is wired, delegate to it; otherwise fall back
-    # to the inherited mixin method.  Use getattr() because tests
-    # instantiate Plugin without calling _main(), so the attrs may
-    # not exist.
+    # ── Firmware delegation to FirmwareService ──────────────
+
+    async def get_firmware_status(self):
+        return await self._firmware_service.get_firmware_status()
+
+    async def download_firmware(self, firmware_id):
+        return await self._firmware_service.download_firmware(firmware_id)
+
+    async def download_all_firmware(self, platform_slug):
+        return await self._firmware_service.download_all_firmware(platform_slug)
+
+    async def download_required_firmware(self, platform_slug):
+        return await self._firmware_service.download_required_firmware(platform_slug)
+
+    async def check_platform_bios(self, platform_slug, rom_filename=None):
+        return await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_filename)
+
+    async def delete_platform_bios(self, platform_slug):
+        return await self._firmware_service.delete_platform_bios(platform_slug)
+
+    # ── Sync delegation to SyncService ─────────────────────
+
+    async def get_platforms(self):
+        return await self._sync_service.get_platforms()
+
+    async def save_platform_sync(self, platform_id, enabled):
+        return self._sync_service.save_platform_sync(platform_id, enabled)
+
+    async def set_all_platforms_sync(self, enabled):
+        return await self._sync_service.set_all_platforms_sync(enabled)
+
+    async def start_sync(self):
+        return self._sync_service.start_sync()
+
+    async def cancel_sync(self):
+        return self._sync_service.cancel_sync()
+
+    async def get_sync_progress(self):
+        return self._sync_service.get_sync_progress()
+
+    async def sync_heartbeat(self):
+        return self._sync_service.sync_heartbeat()
+
+    async def sync_preview(self):
+        return await self._sync_service.sync_preview()
+
+    async def sync_apply_delta(self, preview_id):
+        return await self._sync_service.sync_apply_delta(preview_id)
+
+    async def sync_cancel_preview(self):
+        return self._sync_service.sync_cancel_preview()
+
+    async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
+        return await self._sync_service.report_sync_results(rom_id_to_app_id, removed_rom_ids, cancelled)
+
+    async def get_registry_platforms(self):
+        return self._sync_service.get_registry_platforms()
+
+    async def remove_platform_shortcuts(self, platform_slug):
+        return await self._sync_service.remove_platform_shortcuts(platform_slug)
+
+    async def remove_all_shortcuts(self):
+        return self._sync_service.remove_all_shortcuts()
+
+    async def report_removal_results(self, removed_rom_ids):
+        return await self._sync_service.report_removal_results(removed_rom_ids)
+
+    async def get_artwork_base64(self, rom_id):
+        return await self._sync_service.get_artwork_base64(rom_id)
+
+    async def clear_sync_cache(self):
+        return self._sync_service.clear_sync_cache()
+
+    async def get_sync_stats(self):
+        return self._sync_service.get_sync_stats()
+
+    async def get_rom_by_steam_app_id(self, app_id):
+        return self._sync_service.get_rom_by_steam_app_id(app_id)
+
+    # ── Download delegation to DownloadService ──────────────
+
+    async def start_download(self, rom_id):
+        return await self._download_service.start_download(rom_id)
+
+    async def cancel_download(self, rom_id):
+        return await self._download_service.cancel_download(rom_id)
+
+    async def get_download_queue(self):
+        return self._download_service.get_download_queue()
+
+    async def clear_completed_downloads(self):
+        return self._download_service.clear_completed_downloads()
+
+    async def get_installed_rom(self, rom_id):
+        return self._download_service.get_installed_rom(rom_id)
+
+    async def remove_rom(self, rom_id):
+        return await self._download_service.remove_rom(rom_id)
+
+    async def uninstall_all_roms(self):
+        return await self._download_service.uninstall_all_roms()
+
+    # ── Save Sync / Playtime delegation to services ──────────
 
     async def ensure_device_registered(self):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.ensure_device_registered()
-        return await SaveSyncMixin.ensure_device_registered(self)
+        return await self._save_sync_service.ensure_device_registered()
 
     async def get_save_status(self, rom_id):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.get_save_status(rom_id)
-        return await SaveSyncMixin.get_save_status(self, rom_id)
+        return await self._save_sync_service.get_save_status(rom_id)
 
     async def check_save_status_lightweight(self, rom_id):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.check_save_status_lightweight(rom_id)
-        return await SaveSyncMixin.check_save_status_lightweight(self, rom_id)
+        return await self._save_sync_service.check_save_status_lightweight(rom_id)
 
     async def pre_launch_sync(self, rom_id):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.pre_launch_sync(rom_id)
-        return await SaveSyncMixin.pre_launch_sync(self, rom_id)
+        return await self._save_sync_service.pre_launch_sync(rom_id)
 
     async def post_exit_sync(self, rom_id):
-        save_svc = getattr(self, "_save_sync_service", None)
-        if save_svc:
-            return await save_svc.post_exit_sync(rom_id)
-        return await SaveSyncMixin.post_exit_sync(self, rom_id)
+        return await self._save_sync_service.post_exit_sync(rom_id)
 
     async def sync_rom_saves(self, rom_id):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.sync_rom_saves(rom_id)
-        return await SaveSyncMixin.sync_rom_saves(self, rom_id)
+        return await self._save_sync_service.sync_rom_saves(rom_id)
 
     async def sync_all_saves(self):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.sync_all_saves()
-        return await SaveSyncMixin.sync_all_saves(self)
+        return await self._save_sync_service.sync_all_saves()
 
     async def resolve_conflict(self, rom_id, filename, resolution, server_save_id=None, local_path=None):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.resolve_conflict(rom_id, filename, resolution, server_save_id, local_path)
-        return await SaveSyncMixin.resolve_conflict(self, rom_id, filename, resolution, server_save_id, local_path)
+        return await self._save_sync_service.resolve_conflict(rom_id, filename, resolution, server_save_id, local_path)
 
     async def get_pending_conflicts(self):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.get_pending_conflicts()
-        return await SaveSyncMixin.get_pending_conflicts(self)
+        return await self._save_sync_service.get_pending_conflicts()
 
     async def get_save_sync_settings(self):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.get_save_sync_settings()
-        return await SaveSyncMixin.get_save_sync_settings(self)
+        return await self._save_sync_service.get_save_sync_settings()
 
     async def update_save_sync_settings(self, settings):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.update_save_sync_settings(settings)
-        return await SaveSyncMixin.update_save_sync_settings(self, settings)
+        return await self._save_sync_service.update_save_sync_settings(settings)
 
     async def delete_local_saves(self, rom_id):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.delete_local_saves(rom_id)
-        return await SaveSyncMixin.delete_local_saves(self, rom_id)
+        return await self._save_sync_service.delete_local_saves(rom_id)
 
     async def delete_platform_saves(self, platform_slug):
-        svc = getattr(self, "_save_sync_service", None)
-        if svc:
-            return await svc.delete_platform_saves(platform_slug)
-        return await SaveSyncMixin.delete_platform_saves(self, platform_slug)
+        return await self._save_sync_service.delete_platform_saves(platform_slug)
 
     async def record_session_start(self, rom_id):
-        svc = getattr(self, "_playtime_service", None)
-        if svc:
-            return await svc.record_session_start(rom_id)
-        return await SaveSyncMixin.record_session_start(self, rom_id)
+        return await self._playtime_service.record_session_start(rom_id)
 
     async def record_session_end(self, rom_id):
-        svc = getattr(self, "_playtime_service", None)
-        if svc:
-            return await svc.record_session_end(rom_id)
-        return await SaveSyncMixin.record_session_end(self, rom_id)
+        return await self._playtime_service.record_session_end(rom_id)
 
     async def get_server_playtime(self, rom_id):
-        svc = getattr(self, "_playtime_service", None)
-        if svc:
-            return await svc.get_server_playtime(rom_id)
-        return await SaveSyncMixin.get_server_playtime(self, rom_id)
+        return await self._playtime_service.get_server_playtime(rom_id)
 
     async def get_all_playtime(self):
-        svc = getattr(self, "_playtime_service", None)
-        if svc:
-            return await svc.get_all_playtime()
-        return await SaveSyncMixin.get_all_playtime(self)
+        return await self._playtime_service.get_all_playtime()
+
+    # ── SGDB delegation to SgdbService ───────────────────────
+
+    async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
+        return await self._sgdb_service.get_sgdb_artwork_base64(rom_id, asset_type_num)
+
+    async def verify_sgdb_api_key(self, api_key=None):
+        return await self._sgdb_service.verify_sgdb_api_key(api_key)
+
+    async def save_sgdb_api_key(self, api_key):
+        return await self._sgdb_service.save_sgdb_api_key(api_key)
+
+    async def save_shortcut_icon(self, app_id, icon_base64):
+        return await self._sgdb_service.save_shortcut_icon(app_id, icon_base64)
+
+    # ── Metadata delegation to MetadataService ────────────────
+
+    async def get_rom_metadata(self, rom_id):
+        return await self._metadata_service.get_rom_metadata(rom_id)
+
+    async def get_all_metadata_cache(self):
+        return self._metadata_service.get_all_metadata_cache()
+
+    async def get_app_id_rom_id_map(self):
+        return self._metadata_service.get_app_id_rom_id_map()
+
+    # ── Achievements delegation to AchievementsService ───────
+
+    async def get_achievements(self, rom_id):
+        return await self._achievements_service.get_achievements(rom_id)
+
+    async def get_achievement_progress(self, rom_id):
+        return await self._achievements_service.get_achievement_progress(rom_id)
+
+    async def sync_achievements_after_session(self, rom_id):
+        return await self._achievements_service.sync_achievements_after_session(rom_id)

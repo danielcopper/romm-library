@@ -1,24 +1,48 @@
-import time
-from typing import TYPE_CHECKING, Any
+"""MetadataService — metadata caching extracted from MetadataMixin.
 
-import decky
+Handles ROM metadata extraction, caching (with periodic flush),
+on-demand API fetches, and app_id→rom_id mapping.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import asyncio
-    from typing import Protocol
+    import logging
+    from collections.abc import Callable
 
-    class _MetadataDeps(Protocol):
-        _metadata_cache: dict
-        _state: dict
-        loop: asyncio.AbstractEventLoop
-
-        def _log_debug(self, msg: str) -> None: ...
-        def _romm_request(self, path: str) -> Any: ...
-        def _save_metadata_cache(self) -> None: ...
+    from adapters.romm.client import RommHttpClient
 
 
-class MetadataMixin(_MetadataDeps if TYPE_CHECKING else object):
-    def _extract_metadata(self, rom):
+class MetadataService:
+    """ROM metadata cache: extract, store, flush, and fetch on demand."""
+
+    def __init__(
+        self,
+        *,
+        http_client: RommHttpClient,
+        state: dict,
+        metadata_cache: dict,
+        loop: asyncio.AbstractEventLoop,
+        logger: logging.Logger,
+        save_metadata_cache: Callable,
+        log_debug: Callable,
+    ) -> None:
+        self._http_client = http_client
+        self._state = state
+        self._metadata_cache = metadata_cache
+        self._loop = loop
+        self._logger = logger
+        self._save_metadata_cache = save_metadata_cache
+        self._log_debug = log_debug
+
+        self._metadata_dirty_count = 0
+        self._METADATA_FLUSH_INTERVAL = 50
+
+    def extract_metadata(self, rom):
         """Extract metadata fields from a ROM dict into cache format."""
         metadatum = rom.get("metadatum") or {}
         first_release_date = metadatum.get("first_release_date")
@@ -38,17 +62,14 @@ class MetadataMixin(_MetadataDeps if TYPE_CHECKING else object):
             "cached_at": time.time(),
         }
 
-    _metadata_dirty_count = 0
-    _METADATA_FLUSH_INTERVAL = 50
-
-    def _mark_metadata_dirty(self):
+    def mark_metadata_dirty(self):
         """Track metadata cache changes and flush to disk periodically."""
         self._metadata_dirty_count += 1
         if self._metadata_dirty_count >= self._METADATA_FLUSH_INTERVAL:
             self._save_metadata_cache()
             self._metadata_dirty_count = 0
 
-    def _flush_metadata_if_dirty(self):
+    def flush_metadata_if_dirty(self):
         """Flush metadata cache to disk if any pending writes."""
         if self._metadata_dirty_count > 0:
             self._save_metadata_cache()
@@ -70,13 +91,13 @@ class MetadataMixin(_MetadataDeps if TYPE_CHECKING else object):
         # Cache miss or stale — fetch from RomM API
         self._log_debug(f"Metadata cache miss for rom_id={rom_id}, fetching from API")
         try:
-            rom_data = await self.loop.run_in_executor(None, self._romm_request, f"/api/roms/{rom_id}")
-            metadata = self._extract_metadata(rom_data)
+            rom_data = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+            metadata = self.extract_metadata(rom_data)
             self._metadata_cache[rom_id_str] = metadata
             self._save_metadata_cache()
             return metadata
         except Exception as e:
-            decky.logger.warning(f"Failed to fetch metadata for rom_id={rom_id}: {e}")
+            self._logger.warning(f"Failed to fetch metadata for rom_id={rom_id}: {e}")
             # Return stale cache if available
             if cached:
                 return cached
@@ -91,11 +112,11 @@ class MetadataMixin(_MetadataDeps if TYPE_CHECKING else object):
                 "cached_at": 0,
             }
 
-    async def get_all_metadata_cache(self):
+    def get_all_metadata_cache(self):
         """Return the full metadata cache dict for frontend to load on plugin start."""
         return self._metadata_cache
 
-    async def get_app_id_rom_id_map(self):
+    def get_app_id_rom_id_map(self):
         """Return {app_id: rom_id} mapping from shortcut_registry for frontend lookup."""
         result = {}
         for rom_id, entry in self._state["shortcut_registry"].items():

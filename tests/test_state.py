@@ -1,9 +1,12 @@
+import asyncio
 import json
 import os
+from unittest.mock import MagicMock
 
 import pytest
-
-from lib.sync import SyncState
+from adapters.steam_config import SteamConfigAdapter
+from services.sgdb import SgdbService
+from services.sync import SyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -13,14 +16,42 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._sync_state = SyncState.IDLE
-    p._sync_progress = {"running": False}
+    p._http_client = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
-    p._pending_sync = {}
-    p._download_tasks = {}
-    p._download_queue = {}
-    p._download_in_progress = set()
     p._metadata_cache = {}
+
+    import decky
+
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
+    p._sync_service = SyncService(
+        http_client=p._http_client,
+        steam_config=steam_config,
+        state=p._state,
+        settings=p.settings,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        emit=decky.emit,
+        save_state=p._save_state,
+        save_settings_to_disk=p._save_settings_to_disk,
+        log_debug=p._log_debug,
+    )
+
+    p._sgdb_service = SgdbService(
+        http_client=p._http_client,
+        steam_config=steam_config,
+        state=p._state,
+        settings=p.settings,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+        save_state=MagicMock(),
+        save_settings_to_disk=MagicMock(),
+        sync_service=p._sync_service,
+    )
     return p
 
 
@@ -233,7 +264,7 @@ class TestLogLevel:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._sgdb_service._runtime_dir = str(tmp_path)
 
         plugin.settings["log_level"] = "warn"
         with patch.object(decky.logger, "info") as mock_info:
@@ -249,7 +280,7 @@ class TestLogLevel:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._sgdb_service._runtime_dir = str(tmp_path)
 
         plugin.settings["log_level"] = "debug"
         plugin.settings["steamgriddb_api_key"] = ""

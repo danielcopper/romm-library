@@ -1,10 +1,11 @@
 import asyncio
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-
-from lib.sync import SyncState
+from adapters.steam_config import SteamConfigAdapter
+from services.achievements import AchievementsService
+from services.sync import SyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -20,21 +21,53 @@ def plugin():
         "enabled_platforms": {},
         "log_level": "warn",
     }
-    p._sync_state = SyncState.IDLE
-    p._sync_progress = {"running": False}
+    p._http_client = MagicMock()
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
         "last_sync": None,
         "sync_stats": {},
     }
-    p._pending_sync = {}
-    p._download_tasks = {}
-    p._download_queue = {}
-    p._download_in_progress = set()
     p._metadata_cache = {}
-    p._achievements_cache = {}
+
+    import decky
+
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
+    p._sync_service = SyncService(
+        http_client=p._http_client,
+        steam_config=steam_config,
+        state=p._state,
+        settings=p.settings,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        emit=decky.emit,
+        save_state=p._save_state,
+        save_settings_to_disk=p._save_settings_to_disk,
+        log_debug=p._log_debug,
+    )
+    p._achievements_service = AchievementsService(
+        http_client=p._http_client,
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        log_debug=p._log_debug,
+    )
     return p
+
+
+@pytest.fixture(autouse=True)
+async def _set_event_loop(plugin):
+    """Ensure service loops match the running event loop for async tests."""
+    plugin._achievements_service._loop = asyncio.get_event_loop()
+
+
+@pytest.fixture
+def svc(plugin):
+    return plugin._achievements_service
 
 
 # ── Sample data helpers ──────────────────────────────────────
@@ -98,9 +131,9 @@ def _sample_user_data(ra_id, earned=5, total=10, earned_hardcore=3, ra_username=
     }
 
 
-def _seed_ra_username_cache(plugin, username="RetroPlayer"):
+def _seed_ra_username_cache(svc, username="RetroPlayer"):
     """Pre-populate the RA username cache to simulate a known user."""
-    plugin._achievements_cache["_ra_user"] = {
+    svc._achievements_cache["_ra_user"] = {
         "username": username,
         "cached_at": time.time(),
     }
@@ -112,26 +145,26 @@ def _seed_ra_username_cache(plugin, username="RetroPlayer"):
 
 
 class TestGetRaUsername:
-    def test_returns_username_from_cache(self, plugin):
-        _seed_ra_username_cache(plugin, "RetroPlayer")
-        assert plugin._get_ra_username() == "RetroPlayer"
+    def test_returns_username_from_cache(self, svc):
+        _seed_ra_username_cache(svc, "RetroPlayer")
+        assert svc._get_ra_username() == "RetroPlayer"
 
-    def test_returns_empty_when_no_cache(self, plugin):
-        assert plugin._get_ra_username() == ""
+    def test_returns_empty_when_no_cache(self, svc):
+        assert svc._get_ra_username() == ""
 
-    def test_returns_empty_when_cache_expired(self, plugin):
-        plugin._achievements_cache["_ra_user"] = {
+    def test_returns_empty_when_cache_expired(self, svc):
+        svc._achievements_cache["_ra_user"] = {
             "username": "RetroPlayer",
             "cached_at": time.time() - (2 * 3600),  # 2h old > 1h TTL
         }
-        assert plugin._get_ra_username() == ""
+        assert svc._get_ra_username() == ""
 
-    def test_returns_cached_when_fresh(self, plugin):
-        plugin._achievements_cache["_ra_user"] = {
+    def test_returns_cached_when_fresh(self, svc):
+        svc._achievements_cache["_ra_user"] = {
             "username": "JohnDoe",
             "cached_at": time.time() - 1800,  # 30min old < 1h TTL
         }
-        assert plugin._get_ra_username() == "JohnDoe"
+        assert svc._get_ra_username() == "JohnDoe"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -141,55 +174,49 @@ class TestGetRaUsername:
 
 class TestFetchRaUsername:
     @pytest.mark.asyncio
-    async def test_fetches_and_caches(self, plugin):
-        plugin.loop = asyncio.get_event_loop()
+    async def test_fetches_and_caches(self, svc, plugin):
         user_data = {"ra_username": "  RetroPlayer  "}
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
-            result = await plugin._fetch_ra_username()
+        with patch.object(plugin._http_client, "request", return_value=user_data):
+            result = await svc._fetch_ra_username()
 
         assert result == "RetroPlayer"
-        assert plugin._achievements_cache["_ra_user"]["username"] == "RetroPlayer"
+        assert svc._achievements_cache["_ra_user"]["username"] == "RetroPlayer"
 
     @pytest.mark.asyncio
-    async def test_returns_empty_when_no_ra_username_on_user(self, plugin):
-        plugin.loop = asyncio.get_event_loop()
+    async def test_returns_empty_when_no_ra_username_on_user(self, svc, plugin):
         user_data = {"ra_username": None}
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
-            result = await plugin._fetch_ra_username()
+        with patch.object(plugin._http_client, "request", return_value=user_data):
+            result = await svc._fetch_ra_username()
 
         assert result == ""
 
     @pytest.mark.asyncio
-    async def test_returns_empty_on_api_error(self, plugin):
-        plugin.loop = asyncio.get_event_loop()
-
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Network error")):
-            result = await plugin._fetch_ra_username()
+    async def test_returns_empty_on_api_error(self, svc, plugin):
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Network error")):
+            result = await svc._fetch_ra_username()
 
         assert result == ""
 
     @pytest.mark.asyncio
-    async def test_returns_stale_cache_on_api_error(self, plugin):
-        plugin.loop = asyncio.get_event_loop()
-        plugin._achievements_cache["_ra_user"] = {
+    async def test_returns_stale_cache_on_api_error(self, svc, plugin):
+        svc._achievements_cache["_ra_user"] = {
             "username": "OldUser",
             "cached_at": time.time() - (2 * 3600),  # expired
         }
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Network error")):
-            result = await plugin._fetch_ra_username()
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Network error")):
+            result = await svc._fetch_ra_username()
 
         assert result == "OldUser"
 
     @pytest.mark.asyncio
-    async def test_empty_string_ra_username(self, plugin):
-        plugin.loop = asyncio.get_event_loop()
+    async def test_empty_string_ra_username(self, svc, plugin):
         user_data = {"ra_username": ""}
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
-            result = await plugin._fetch_ra_username()
+        with patch.object(plugin._http_client, "request", return_value=user_data):
+            result = await svc._fetch_ra_username()
 
         assert result == ""
 
@@ -200,9 +227,9 @@ class TestFetchRaUsername:
 
 
 class TestExtractAchievementsFromRom:
-    def test_full_achievement_list(self, plugin):
+    def test_full_achievement_list(self, svc):
         rom_data = _sample_rom_data()
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert len(result) == 2
         assert result[0]["ra_id"] == 1001
         assert result[0]["title"] == "First Blood"
@@ -218,53 +245,53 @@ class TestExtractAchievementsFromRom:
         assert result[1]["ra_id"] == 1002
         assert result[1]["title"] == "Completionist"
 
-    def test_empty_ra_metadata(self, plugin):
+    def test_empty_ra_metadata(self, svc):
         rom_data = {"ra_metadata": {}}
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert result == []
 
-    def test_none_ra_metadata(self, plugin):
+    def test_none_ra_metadata(self, svc):
         rom_data = {"ra_metadata": None}
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert result == []
 
-    def test_missing_ra_metadata_key(self, plugin):
+    def test_missing_ra_metadata_key(self, svc):
         rom_data = {"id": 1}
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert result == []
 
-    def test_fallback_to_merged_ra_metadata(self, plugin):
+    def test_fallback_to_merged_ra_metadata(self, svc):
         """When ra_metadata is empty, falls back to merged_ra_metadata."""
         rom_data = {
             "ra_metadata": {},
             "merged_ra_metadata": {"achievements": _sample_achievements()},
         }
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert len(result) == 2
         assert result[0]["ra_id"] == 1001
 
-    def test_fallback_to_merged_when_ra_metadata_is_none(self, plugin):
+    def test_fallback_to_merged_when_ra_metadata_is_none(self, svc):
         rom_data = {
             "ra_metadata": None,
             "merged_ra_metadata": {"achievements": _sample_achievements()},
         }
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert len(result) == 2
 
-    def test_ra_metadata_takes_priority_over_merged(self, plugin):
+    def test_ra_metadata_takes_priority_over_merged(self, svc):
         """When ra_metadata has achievements, merged_ra_metadata is not used."""
         rom_data = {
             "ra_metadata": {"achievements": [_sample_achievements()[0]]},
             "merged_ra_metadata": {"achievements": _sample_achievements()},
         }
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert len(result) == 1
         assert result[0]["ra_id"] == 1001
 
-    def test_missing_fields_get_defaults(self, plugin):
+    def test_missing_fields_get_defaults(self, svc):
         """Achievement entries with missing fields get default values."""
         rom_data = {"ra_metadata": {"achievements": [{"ra_id": 2000}]}}
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert len(result) == 1
         a = result[0]
         assert a["ra_id"] == 2000
@@ -278,14 +305,14 @@ class TestExtractAchievementsFromRom:
         assert a["num_awarded"] == 0
         assert a["num_awarded_hardcore"] == 0
 
-    def test_empty_achievements_list(self, plugin):
+    def test_empty_achievements_list(self, svc):
         rom_data = {"ra_metadata": {"achievements": []}}
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert result == []
 
-    def test_achievements_none_in_metadata(self, plugin):
+    def test_achievements_none_in_metadata(self, svc):
         rom_data = {"ra_metadata": {"achievements": None}}
-        result = plugin._extract_achievements_from_rom(rom_data)
+        result = svc._extract_achievements_from_rom(rom_data)
         assert result == []
 
 
@@ -295,78 +322,78 @@ class TestExtractAchievementsFromRom:
 
 
 class TestAchievementsCacheEntry:
-    def test_returns_entry_when_fresh(self, plugin):
-        plugin._achievements_cache["42"] = {
+    def test_returns_entry_when_fresh(self, svc):
+        svc._achievements_cache["42"] = {
             "achievements": [{"ra_id": 1}],
             "cached_at": time.time(),
         }
-        result = plugin._get_achievements_cache_entry("42")
+        result = svc._get_achievements_cache_entry("42")
         assert result is not None
         assert result["achievements"] == [{"ra_id": 1}]
 
-    def test_returns_none_when_expired(self, plugin):
-        plugin._achievements_cache["42"] = {
+    def test_returns_none_when_expired(self, svc):
+        svc._achievements_cache["42"] = {
             "achievements": [{"ra_id": 1}],
             "cached_at": time.time() - (25 * 3600),  # 25h old > 24h TTL
         }
-        result = plugin._get_achievements_cache_entry("42")
+        result = svc._get_achievements_cache_entry("42")
         assert result is None
 
-    def test_returns_none_when_missing(self, plugin):
-        result = plugin._get_achievements_cache_entry("42")
+    def test_returns_none_when_missing(self, svc):
+        result = svc._get_achievements_cache_entry("42")
         assert result is None
 
-    def test_returns_none_when_empty_entry(self, plugin):
-        plugin._achievements_cache["42"] = {}
-        result = plugin._get_achievements_cache_entry("42")
+    def test_returns_none_when_empty_entry(self, svc):
+        svc._achievements_cache["42"] = {}
+        result = svc._get_achievements_cache_entry("42")
         assert result is None
 
-    def test_boundary_exactly_at_ttl(self, plugin):
+    def test_boundary_exactly_at_ttl(self, svc):
         """Entry at exactly TTL age is considered expired."""
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": [{"ra_id": 1}],
             "cached_at": time.time() - (24 * 3600 + 1),
         }
-        result = plugin._get_achievements_cache_entry("42")
+        result = svc._get_achievements_cache_entry("42")
         assert result is None
 
 
 class TestProgressCacheEntry:
-    def test_returns_entry_when_fresh(self, plugin):
-        plugin._achievements_cache["42"] = {
+    def test_returns_entry_when_fresh(self, svc):
+        svc._achievements_cache["42"] = {
             "user_progress": {
                 "earned": 5,
                 "total": 10,
                 "cached_at": time.time(),
             },
         }
-        result = plugin._get_progress_cache_entry("42")
+        result = svc._get_progress_cache_entry("42")
         assert result is not None
         assert result["earned"] == 5
 
-    def test_returns_none_when_expired(self, plugin):
-        plugin._achievements_cache["42"] = {
+    def test_returns_none_when_expired(self, svc):
+        svc._achievements_cache["42"] = {
             "user_progress": {
                 "earned": 5,
                 "total": 10,
                 "cached_at": time.time() - (2 * 3600),  # 2h old > 1h TTL
             },
         }
-        result = plugin._get_progress_cache_entry("42")
+        result = svc._get_progress_cache_entry("42")
         assert result is None
 
-    def test_returns_none_when_missing(self, plugin):
-        result = plugin._get_progress_cache_entry("42")
+    def test_returns_none_when_missing(self, svc):
+        result = svc._get_progress_cache_entry("42")
         assert result is None
 
-    def test_returns_none_when_no_user_progress_key(self, plugin):
-        plugin._achievements_cache["42"] = {"achievements": []}
-        result = plugin._get_progress_cache_entry("42")
+    def test_returns_none_when_no_user_progress_key(self, svc):
+        svc._achievements_cache["42"] = {"achievements": []}
+        result = svc._get_progress_cache_entry("42")
         assert result is None
 
-    def test_returns_none_when_user_progress_is_none(self, plugin):
-        plugin._achievements_cache["42"] = {"user_progress": None}
-        result = plugin._get_progress_cache_entry("42")
+    def test_returns_none_when_user_progress_is_none(self, svc):
+        svc._achievements_cache["42"] = {"user_progress": None}
+        result = svc._get_progress_cache_entry("42")
         assert result is None
 
 
@@ -377,35 +404,34 @@ class TestProgressCacheEntry:
 
 class TestGetAchievements:
     @pytest.mark.asyncio
-    async def test_happy_path_fetches_and_caches(self, plugin):
+    async def test_happy_path_fetches_and_caches(self, svc, plugin):
         """Fetches from API, returns achievements, caches result."""
-        plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999, "app_id": 100}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
-            result = await plugin.get_achievements(42)
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
+            result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["total"] == 2
         assert len(result["achievements"]) == 2
         assert result["achievements"][0]["title"] == "First Blood"
         # Verify cached
-        assert "42" in plugin._achievements_cache
-        assert len(plugin._achievements_cache["42"]["achievements"]) == 2
-        assert plugin._achievements_cache["42"]["ra_id"] == 9999
+        assert "42" in svc._achievements_cache
+        assert len(svc._achievements_cache["42"]["achievements"]) == 2
+        assert svc._achievements_cache["42"]["ra_id"] == 9999
 
     @pytest.mark.asyncio
-    async def test_cache_hit_returns_without_api_call(self, plugin):
+    async def test_cache_hit_returns_without_api_call(self, svc, plugin):
         """Returns cached data without calling _romm_request."""
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": [{"ra_id": 1001, "title": "Cached"}],
             "cached_at": time.time(),
         }
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request") as mock_req:
-            result = await plugin.get_achievements(42)
+        with patch.object(plugin._http_client, "request") as mock_req:
+            result = await svc.get_achievements(42)
 
         mock_req.assert_not_called()
         assert result["success"] is True
@@ -413,29 +439,28 @@ class TestGetAchievements:
         assert result["achievements"][0]["title"] == "Cached"
 
     @pytest.mark.asyncio
-    async def test_cache_expired_refetches(self, plugin):
+    async def test_cache_expired_refetches(self, svc, plugin):
         """Refetches from API when cache is older than TTL."""
-        plugin.loop = asyncio.get_event_loop()
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": [{"ra_id": 1001, "title": "Old"}],
             "cached_at": time.time() - (25 * 3600),
         }
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
-            result = await plugin.get_achievements(42)
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
+            result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["total"] == 2
         assert result["achievements"][0]["title"] == "First Blood"
 
     @pytest.mark.asyncio
-    async def test_no_ra_id_returns_empty(self, plugin):
+    async def test_no_ra_id_returns_empty(self, svc, plugin):
         """When no ra_id in registry, returns empty with no_ra_id flag."""
         plugin._state["shortcut_registry"]["42"] = {"app_id": 100}
 
-        result = await plugin.get_achievements(42)
+        result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["achievements"] == []
@@ -443,39 +468,37 @@ class TestGetAchievements:
         assert result["no_ra_id"] is True
 
     @pytest.mark.asyncio
-    async def test_no_registry_entry_returns_empty(self, plugin):
+    async def test_no_registry_entry_returns_empty(self, svc):
         """When rom_id not in registry at all, returns empty with no_ra_id flag."""
-        result = await plugin.get_achievements(42)
+        result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["achievements"] == []
         assert result["no_ra_id"] is True
 
     @pytest.mark.asyncio
-    async def test_api_error_returns_stale_cache(self, plugin):
+    async def test_api_error_returns_stale_cache(self, svc, plugin):
         """On API error, returns stale cache if available."""
-        plugin.loop = asyncio.get_event_loop()
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": [{"ra_id": 1001, "title": "Stale"}],
             "cached_at": time.time() - (25 * 3600),  # expired
         }
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Connection refused")):
-            result = await plugin.get_achievements(42)
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Connection refused")):
+            result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["stale"] is True
         assert result["achievements"][0]["title"] == "Stale"
 
     @pytest.mark.asyncio
-    async def test_api_error_no_cache_returns_error(self, plugin):
+    async def test_api_error_no_cache_returns_error(self, svc, plugin):
         """On API error with no cache, returns error with empty list."""
-        plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Connection refused")):
-            result = await plugin.get_achievements(42)
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Connection refused")):
+            result = await svc.get_achievements(42)
 
         assert result["success"] is False
         assert result["achievements"] == []
@@ -483,27 +506,25 @@ class TestGetAchievements:
         assert "Connection refused" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_rom_id_cast_to_int(self, plugin):
+    async def test_rom_id_cast_to_int(self, svc, plugin):
         """rom_id is cast to int, so string input works too."""
-        plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
-            result = await plugin.get_achievements("42")
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
+            result = await svc.get_achievements("42")
 
         assert result["success"] is True
         assert result["total"] == 2
 
     @pytest.mark.asyncio
-    async def test_empty_achievements_from_api(self, plugin):
+    async def test_empty_achievements_from_api(self, svc, plugin):
         """API returns ROM with no achievements."""
-        plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = {"id": 42, "ra_metadata": {"achievements": []}}
 
-        with patch.object(plugin, "_romm_request", return_value=rom_data):
-            result = await plugin.get_achievements(42)
+        with patch.object(plugin._http_client, "request", return_value=rom_data):
+            result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["total"] == 0
@@ -517,17 +538,16 @@ class TestGetAchievements:
 
 class TestGetAchievementProgress:
     @pytest.mark.asyncio
-    async def test_happy_path(self, plugin):
+    async def test_happy_path(self, svc, plugin):
         """Fetches user progression, returns earned/total."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10, earned_hardcore=3)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 5
@@ -536,9 +556,8 @@ class TestGetAchievementProgress:
         assert len(result["earned_achievements"]) == 5
 
     @pytest.mark.asyncio
-    async def test_no_ra_username_fetches_from_romm(self, plugin):
+    async def test_no_ra_username_fetches_from_romm(self, svc, plugin):
         """When no cached RA username, fetches from /api/users/me."""
-        plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         # First call: _fetch_ra_username -> /api/users/me
@@ -546,39 +565,38 @@ class TestGetAchievementProgress:
         # Third call: get_achievement_progress -> /api/users/me
         user_data_with_username = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [
                 {"ra_username": "RetroPlayer"},  # _fetch_ra_username
                 rom_data,  # get_achievements
                 user_data_with_username,  # progression fetch
             ]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 5
         # RA username should now be cached
-        assert plugin._achievements_cache["_ra_user"]["username"] == "RetroPlayer"
+        assert svc._achievements_cache["_ra_user"]["username"] == "RetroPlayer"
 
     @pytest.mark.asyncio
-    async def test_no_ra_username_anywhere_returns_error(self, plugin):
+    async def test_no_ra_username_anywhere_returns_error(self, svc, plugin):
         """When no RA username in cache and RomM user has none, returns error."""
-        plugin.loop = asyncio.get_event_loop()
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin, "_romm_request", return_value={"ra_username": None}):
-            result = await plugin.get_achievement_progress(42)
+        with patch.object(plugin._http_client, "request", return_value={"ra_username": None}):
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is False
         assert "No RA username" in result["message"]
         assert result["earned"] == 0
 
     @pytest.mark.asyncio
-    async def test_no_ra_id_returns_zeros(self, plugin):
+    async def test_no_ra_id_returns_zeros(self, svc, plugin):
         """When no ra_id in registry, returns zeros with no_ra_id flag."""
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"app_id": 100}
 
-        result = await plugin.get_achievement_progress(42)
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 0
@@ -586,11 +604,11 @@ class TestGetAchievementProgress:
         assert result["no_ra_id"] is True
 
     @pytest.mark.asyncio
-    async def test_cache_hit(self, plugin):
+    async def test_cache_hit(self, svc, plugin):
         """Returns cached progress without API call."""
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "user_progress": {
                 "earned": 3,
                 "earned_hardcore": 1,
@@ -600,8 +618,8 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
-            result = await plugin.get_achievement_progress(42)
+        with patch.object(plugin._http_client, "request") as mock_req:
+            result = await svc.get_achievement_progress(42)
 
         mock_req.assert_not_called()
         assert result["success"] is True
@@ -609,10 +627,9 @@ class TestGetAchievementProgress:
         assert result["total"] == 10
 
     @pytest.mark.asyncio
-    async def test_game_not_found_in_progression(self, plugin):
+    async def test_game_not_found_in_progression(self, svc, plugin):
         """When the game's ra_id is not in progression results, returns zeros."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         # User data has progression for a different game
@@ -621,22 +638,21 @@ class TestGetAchievementProgress:
             "ra_progression": {"results": [{"rom_ra_id": 1111, "num_awarded": 5}]},
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 0
         assert result["total"] == 2  # total from achievements list
 
     @pytest.mark.asyncio
-    async def test_api_error_returns_stale_cache(self, plugin):
+    async def test_api_error_returns_stale_cache(self, svc, plugin):
         """On API error, returns stale progress cache if available."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         # Pre-populate achievements cache so get_achievements succeeds from cache
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": _sample_achievements(),
             "cached_at": time.time(),
             "user_progress": {
@@ -648,29 +664,28 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             # get_achievements cache hit, then /api/users/me fails
             mock_req.side_effect = Exception("Network error")
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["stale"] is True
         assert result["earned"] == 2
 
     @pytest.mark.asyncio
-    async def test_api_error_no_cache_returns_error(self, plugin):
+    async def test_api_error_no_cache_returns_error(self, svc, plugin):
         """On API error with no stale cache, returns error."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         # Pre-populate achievements cache so get_achievements succeeds
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": _sample_achievements(),
             "cached_at": time.time(),
         }
 
-        with patch.object(plugin, "_romm_request", side_effect=Exception("Network error")):
-            result = await plugin.get_achievement_progress(42)
+        with patch.object(plugin._http_client, "request", side_effect=Exception("Network error")):
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is False
         assert result["earned"] == 0
@@ -678,76 +693,71 @@ class TestGetAchievementProgress:
         assert "Network error" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_empty_ra_progression(self, plugin):
+    async def test_empty_ra_progression(self, svc, plugin):
         """User data with empty ra_progression returns zeros."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = {"ra_username": "RetroPlayer", "ra_progression": {"results": []}}
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 0
         assert result["total"] == 2  # from achievement list count
 
     @pytest.mark.asyncio
-    async def test_none_ra_progression(self, plugin):
+    async def test_none_ra_progression(self, svc, plugin):
         """User data with None ra_progression returns zeros."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = {"ra_username": "RetroPlayer", "ra_progression": None}
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 0
 
     @pytest.mark.asyncio
-    async def test_progress_caches_result(self, plugin):
+    async def test_progress_caches_result(self, svc, plugin):
         """Successful progress fetch is cached in _achievements_cache."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=7, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            await plugin.get_achievement_progress(42)
+            await svc.get_achievement_progress(42)
 
-        cached = plugin._achievements_cache["42"]["user_progress"]
+        cached = svc._achievements_cache["42"]["user_progress"]
         assert cached["earned"] == 7
         assert cached["total"] == 10
         assert "cached_at" in cached
 
     @pytest.mark.asyncio
-    async def test_cached_at_not_in_response(self, plugin):
+    async def test_cached_at_not_in_response(self, svc, plugin):
         """The cached_at timestamp is not leaked into the response."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=7, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert "cached_at" not in result
 
     @pytest.mark.asyncio
-    async def test_max_possible_fallback_to_total(self, plugin):
+    async def test_max_possible_fallback_to_total(self, svc, plugin):
         """When max_possible is None/0, falls back to total from achievements list."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = {
@@ -759,18 +769,17 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         # Fallback: total should be len(achievements) = 2
         assert result["total"] == 2
 
     @pytest.mark.asyncio
-    async def test_none_num_awarded_treated_as_zero(self, plugin):
+    async def test_none_num_awarded_treated_as_zero(self, svc, plugin):
         """When num_awarded is None in progression, treat as 0."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = {
@@ -787,28 +796,27 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.get_achievement_progress(42)
+            result = await svc.get_achievement_progress(42)
 
         assert result["earned"] == 0
         assert result["earned_hardcore"] == 0
 
     @pytest.mark.asyncio
-    async def test_caches_ra_username_from_users_me_response(self, plugin):
+    async def test_caches_ra_username_from_users_me_response(self, svc, plugin):
         """The /api/users/me call in progress fetch also caches ra_username."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10, ra_username="NewUser")
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            await plugin.get_achievement_progress(42)
+            await svc.get_achievement_progress(42)
 
         # RA username should have been updated from the users/me response
-        assert plugin._achievements_cache["_ra_user"]["username"] == "NewUser"
+        assert svc._achievements_cache["_ra_user"]["username"] == "NewUser"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -818,14 +826,13 @@ class TestGetAchievementProgress:
 
 class TestSyncAchievementsAfterSession:
     @pytest.mark.asyncio
-    async def test_invalidates_cache_and_refetches(self, plugin):
+    async def test_invalidates_cache_and_refetches(self, svc, plugin):
         """Invalidates progress cache and fetches fresh data."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
         # Pre-populate cache with old progress
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": _sample_achievements(),
             "cached_at": time.time(),
             "user_progress": {
@@ -837,21 +844,20 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
-            result = await plugin.sync_achievements_after_session(42)
+        with patch.object(plugin._http_client, "request", return_value=user_data):
+            result = await svc.sync_achievements_after_session(42)
 
         assert result["success"] is True
         assert result["earned"] == 5
         # Old progress should have been replaced
-        assert plugin._achievements_cache["42"]["user_progress"]["earned"] == 5
+        assert svc._achievements_cache["42"]["user_progress"]["earned"] == 5
 
     @pytest.mark.asyncio
-    async def test_cache_cleared_before_refetch(self, plugin):
+    async def test_cache_cleared_before_refetch(self, svc, plugin):
         """Verifies that user_progress is deleted before get_achievement_progress is called."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": _sample_achievements(),
             "cached_at": time.time(),
             "user_progress": {
@@ -863,47 +869,45 @@ class TestSyncAchievementsAfterSession:
 
         call_order = []
 
-        original_get_progress = plugin.get_achievement_progress
+        original_get_progress = svc.get_achievement_progress
 
         async def spy_get_progress(rom_id):
             # At the time get_achievement_progress is called, user_progress should be gone
-            entry = plugin._achievements_cache.get("42", {})
+            entry = svc._achievements_cache.get("42", {})
             call_order.append("user_progress" not in entry)
             return await original_get_progress(rom_id)
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
         with (
-            patch.object(plugin, "get_achievement_progress", side_effect=spy_get_progress),
-            patch.object(plugin, "_romm_request", return_value=user_data),
+            patch.object(svc, "get_achievement_progress", side_effect=spy_get_progress),
+            patch.object(plugin._http_client, "request", return_value=user_data),
         ):
-            await plugin.sync_achievements_after_session(42)
+            await svc.sync_achievements_after_session(42)
 
         assert call_order == [True], "user_progress should have been deleted before refetch"
 
     @pytest.mark.asyncio
-    async def test_works_when_no_prior_cache(self, plugin):
+    async def test_works_when_no_prior_cache(self, svc, plugin):
         """Works correctly when no prior cache exists."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=3, total=10)
 
-        with patch.object(plugin, "_romm_request") as mock_req:
+        with patch.object(plugin._http_client, "request") as mock_req:
             mock_req.side_effect = [rom_data, user_data]
-            result = await plugin.sync_achievements_after_session(42)
+            result = await svc.sync_achievements_after_session(42)
 
         assert result["success"] is True
         assert result["earned"] == 3
 
     @pytest.mark.asyncio
-    async def test_preserves_achievements_cache_on_invalidation(self, plugin):
+    async def test_preserves_achievements_cache_on_invalidation(self, svc, plugin):
         """Invalidating progress cache preserves the achievements list cache."""
-        plugin.loop = asyncio.get_event_loop()
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "achievements": _sample_achievements(),
             "cached_at": time.time(),
             "ra_id": 9999,
@@ -916,12 +920,12 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin, "_romm_request", return_value=user_data):
-            await plugin.sync_achievements_after_session(42)
+        with patch.object(plugin._http_client, "request", return_value=user_data):
+            await svc.sync_achievements_after_session(42)
 
         # Achievements list should still be cached
-        assert len(plugin._achievements_cache["42"]["achievements"]) == 2
-        assert plugin._achievements_cache["42"]["ra_id"] == 9999
+        assert len(svc._achievements_cache["42"]["achievements"]) == 2
+        assert svc._achievements_cache["42"]["ra_id"] == 9999
 
 
 # ══════════════════════════════════════════════════════════════
@@ -931,16 +935,16 @@ class TestSyncAchievementsAfterSession:
 
 class TestGetCachedGameDetailAchievements:
     @pytest.mark.asyncio
-    async def test_includes_ra_id_and_summary_with_cache(self, plugin):
+    async def test_includes_ra_id_and_summary_with_cache(self, svc, plugin):
         """When ra_id exists, RA username cached, and progress cached: includes achievement_summary."""
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {
             "ra_id": 9999,
             "app_id": 100,
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "user_progress": {
                 "earned": 5,
                 "total": 10,
@@ -960,7 +964,7 @@ class TestGetCachedGameDetailAchievements:
         assert result["achievement_summary"]["earned_hardcore"] == 3
 
     @pytest.mark.asyncio
-    async def test_no_ra_username_returns_none_summary(self, plugin):
+    async def test_no_ra_username_returns_none_summary(self, svc, plugin):
         """When ra_id exists but no RA username cached, achievement_summary is None."""
         plugin._state["shortcut_registry"]["42"] = {
             "ra_id": 9999,
@@ -977,7 +981,7 @@ class TestGetCachedGameDetailAchievements:
         assert result["achievement_summary"] is None
 
     @pytest.mark.asyncio
-    async def test_no_ra_id_returns_none(self, plugin):
+    async def test_no_ra_id_returns_none(self, svc, plugin):
         """When no ra_id in registry, ra_id is None and achievement_summary is None."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 100,
@@ -993,9 +997,9 @@ class TestGetCachedGameDetailAchievements:
         assert result["achievement_summary"] is None
 
     @pytest.mark.asyncio
-    async def test_ra_username_cached_but_no_progress(self, plugin):
+    async def test_ra_username_cached_but_no_progress(self, svc, plugin):
         """When RA username cached and ra_id exists but no progress cache, summary is None."""
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {
             "ra_id": 9999,
             "app_id": 100,
@@ -1011,16 +1015,16 @@ class TestGetCachedGameDetailAchievements:
         assert result["achievement_summary"] is None
 
     @pytest.mark.asyncio
-    async def test_expired_progress_cache_returns_none_summary(self, plugin):
+    async def test_expired_progress_cache_returns_none_summary(self, svc, plugin):
         """Expired progress cache returns None for achievement_summary."""
-        _seed_ra_username_cache(plugin)
+        _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {
             "ra_id": 9999,
             "app_id": 100,
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._achievements_cache["42"] = {
+        svc._achievements_cache["42"] = {
             "user_progress": {
                 "earned": 5,
                 "total": 10,

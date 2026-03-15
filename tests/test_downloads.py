@@ -4,8 +4,9 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from lib.sync import SyncState
+from adapters.steam_config import SteamConfigAdapter
+from services.downloads import DownloadService
+from services.sync import SyncService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -15,14 +16,41 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._sync_state = SyncState.IDLE
-    p._sync_progress = {"running": False}
+    p._http_client = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
-    p._pending_sync = {}
-    p._download_tasks = {}
-    p._download_queue = {}
-    p._download_in_progress = set()
     p._metadata_cache = {}
+
+    import decky
+
+    steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
+    p._steam_config = steam_config
+
+    p._sync_service = SyncService(
+        http_client=p._http_client,
+        steam_config=steam_config,
+        state=p._state,
+        settings=p.settings,
+        metadata_cache=p._metadata_cache,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        emit=decky.emit,
+        save_state=p._save_state,
+        save_settings_to_disk=p._save_settings_to_disk,
+        log_debug=p._log_debug,
+    )
+    p._save_sync_state = {"saves": {}, "playtime": {}, "settings": {}}
+    p._download_service = DownloadService(
+        http_client=p._http_client,
+        state=p._state,
+        save_sync_state=p._save_sync_state,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+        emit=decky.emit,
+        save_state=MagicMock(),
+        save_save_sync_state=MagicMock(),
+    )
     return p
 
 
@@ -30,6 +58,7 @@ def plugin():
 async def _set_event_loop(plugin):
     """Ensure plugin.loop matches the running event loop for async tests."""
     plugin.loop = asyncio.get_event_loop()
+    plugin._download_service._loop = asyncio.get_event_loop()
 
 
 class TestStartDownload:
@@ -50,8 +79,8 @@ class TestStartDownload:
             "platform_name": "Nintendo 64",
         }
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
         _create_task_calls = []
 
         def _close_coro_task(coro):
@@ -59,19 +88,19 @@ class TestStartDownload:
             _create_task_calls.append(coro)
             return MagicMock()
 
-        plugin.loop.create_task = _close_coro_task
+        plugin._download_service._loop.create_task = _close_coro_task
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
             result = await plugin.start_download(42)
 
         assert result["success"] is True
-        assert 42 in plugin._download_queue
-        assert plugin._download_queue[42]["status"] == "downloading"
+        assert 42 in plugin._download_service._download_queue
+        assert plugin._download_service._download_queue[42]["status"] == "downloading"
         assert len(_create_task_calls) == 1
 
     @pytest.mark.asyncio
     async def test_rejects_already_downloading(self, plugin):
-        plugin._download_in_progress.add(42)
+        plugin._download_service._download_in_progress.add(42)
         result = await plugin.start_download(42)
         assert result["success"] is False
         assert "Already downloading" in result["message"]
@@ -80,8 +109,8 @@ class TestStartDownload:
     async def test_rejects_if_rom_not_found(self, plugin):
         from unittest.mock import AsyncMock
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(side_effect=Exception("HTTP Error 404: Not Found"))
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(side_effect=Exception("HTTP Error 404: Not Found"))
 
         result = await plugin.start_download(9999)
         assert result["success"] is False
@@ -104,8 +133,8 @@ class TestStartDownload:
             "platform_name": "Nintendo 64",
         }
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=50 * 1024 * 1024)):
             result = await plugin.start_download(42)
@@ -122,8 +151,8 @@ class TestCancelDownload:
         fut = loop.create_future()
         fut.cancel()
 
-        plugin._download_tasks[42] = fut
-        plugin._download_queue[42] = {"status": "downloading"}
+        plugin._download_service._download_tasks[42] = fut
+        plugin._download_service._download_queue[42] = {"status": "downloading"}
 
         result = await plugin.cancel_download(42)
         assert result["success"] is True
@@ -143,7 +172,7 @@ class TestGetDownloadQueue:
 
     @pytest.mark.asyncio
     async def test_returns_active_downloads(self, plugin):
-        plugin._download_queue[1] = {
+        plugin._download_service._download_queue[1] = {
             "rom_id": 1,
             "rom_name": "Game A",
             "status": "downloading",
@@ -156,13 +185,13 @@ class TestGetDownloadQueue:
 
     @pytest.mark.asyncio
     async def test_returns_completed_downloads(self, plugin):
-        plugin._download_queue[1] = {
+        plugin._download_service._download_queue[1] = {
             "rom_id": 1,
             "rom_name": "Game A",
             "status": "downloading",
             "progress": 0.5,
         }
-        plugin._download_queue[2] = {
+        plugin._download_service._download_queue[2] = {
             "rom_id": 2,
             "rom_name": "Game B",
             "status": "completed",
@@ -210,13 +239,13 @@ class TestRemoveRom:
             "file_path": str(rom_file),
             "system": "n64",
         }
-        plugin._download_queue[42] = {"status": "completed"}
+        plugin._download_service._download_queue[42] = {"status": "completed"}
 
         result = await plugin.remove_rom(42)
         assert result["success"] is True
         assert not rom_file.exists()
         assert "42" not in plugin._state["installed_roms"]
-        assert 42 not in plugin._download_queue
+        assert 42 not in plugin._download_service._download_queue
 
     @pytest.mark.asyncio
     async def test_returns_error_not_installed(self, plugin):
@@ -288,21 +317,21 @@ class TestDetectLaunchFile:
         (tmp_path / "disc1.cue").write_text("cue data")
         (tmp_path / "disc1.bin").write_bytes(b"\x00" * 1000)
 
-        result = plugin._detect_launch_file(str(tmp_path))
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
         assert result.endswith(".m3u")
 
     def test_falls_back_to_cue(self, plugin, tmp_path):
         (tmp_path / "disc1.cue").write_text("cue data")
         (tmp_path / "disc1.bin").write_bytes(b"\x00" * 1000)
 
-        result = plugin._detect_launch_file(str(tmp_path))
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
         assert result.endswith(".cue")
 
     def test_falls_back_to_largest(self, plugin, tmp_path):
         (tmp_path / "small.bin").write_bytes(b"\x00" * 100)
         (tmp_path / "large.bin").write_bytes(b"\x00" * 10000)
 
-        result = plugin._detect_launch_file(str(tmp_path))
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
         assert result.endswith("large.bin")
 
 
@@ -417,7 +446,7 @@ class TestMaybeGenerateM3u:
         (tmp_path / "Game - Disc 2.bin").write_bytes(b"\x00" * 1000)
 
         rom_detail = {"fs_name_no_ext": "Final Fantasy VII", "name": "Final Fantasy VII"}
-        plugin._maybe_generate_m3u(str(tmp_path), rom_detail)
+        plugin._download_service._maybe_generate_m3u(str(tmp_path), rom_detail)
 
         m3u_path = tmp_path / "Final Fantasy VII.m3u"
         assert m3u_path.exists()
@@ -433,7 +462,7 @@ class TestMaybeGenerateM3u:
         (tmp_path / "Game (Disc 2).chd").write_bytes(b"\x00" * 100)
 
         rom_detail = {"fs_name_no_ext": "Game", "name": "Game"}
-        plugin._maybe_generate_m3u(str(tmp_path), rom_detail)
+        plugin._download_service._maybe_generate_m3u(str(tmp_path), rom_detail)
 
         m3u_path = tmp_path / "Game.m3u"
         assert m3u_path.exists()
@@ -447,7 +476,7 @@ class TestMaybeGenerateM3u:
         (tmp_path / "disc2.cue").write_text("cue 2")
 
         rom_detail = {"fs_name_no_ext": "Game"}
-        plugin._maybe_generate_m3u(str(tmp_path), rom_detail)
+        plugin._download_service._maybe_generate_m3u(str(tmp_path), rom_detail)
 
         # Only the original M3U should exist, unchanged
         assert (tmp_path / "existing.m3u").read_text() == "original content"
@@ -459,7 +488,7 @@ class TestMaybeGenerateM3u:
         (tmp_path / "game.bin").write_bytes(b"\x00" * 1000)
 
         rom_detail = {"fs_name_no_ext": "Game"}
-        plugin._maybe_generate_m3u(str(tmp_path), rom_detail)
+        plugin._download_service._maybe_generate_m3u(str(tmp_path), rom_detail)
 
         assert not (tmp_path / "Game.m3u").exists()
 
@@ -469,7 +498,7 @@ class TestMaybeGenerateM3u:
         (tmp_path / "d2.chd").write_bytes(b"\x00" * 100)
 
         rom_detail = {"name": "My Game"}
-        plugin._maybe_generate_m3u(str(tmp_path), rom_detail)
+        plugin._download_service._maybe_generate_m3u(str(tmp_path), rom_detail)
 
         assert (tmp_path / "My Game.m3u").exists()
 
@@ -504,11 +533,11 @@ class TestDoDownloadSingleFile:
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 512)
 
-        plugin.loop = asyncio.get_event_loop()
-        plugin._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin, "_romm_download", side_effect=fake_download):
-            await plugin._do_download(42, rom_detail, target_path, "n64")
+        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+            await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
         # File ends up at target_path (not .tmp)
         assert os.path.exists(target_path)
@@ -525,7 +554,7 @@ class TestDoDownloadSingleFile:
         assert len(emit_calls) == 1
         assert emit_calls[0][0][1]["rom_id"] == 42
         # download_queue status is completed
-        assert plugin._download_queue[42]["status"] == "completed"
+        assert plugin._download_service._download_queue[42]["status"] == "completed"
 
 
 class TestDoDownloadMultiFile:
@@ -569,11 +598,11 @@ class TestDoDownloadMultiFile:
             with open(dest, "wb") as f:
                 f.write(zip_bytes)
 
-        plugin.loop = asyncio.get_event_loop()
-        plugin._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin, "_romm_download", side_effect=fake_download):
-            await plugin._do_download(55, rom_detail, target_path, "psx")
+        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+            await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
 
         # ZIP is extracted to extract_dir
         extract_dir = roms_dir / "FF7"
@@ -590,7 +619,7 @@ class TestDoDownloadMultiFile:
         # (M3U auto-generated by _maybe_generate_m3u)
         assert installed["file_path"].endswith((".m3u", ".cue"))
         # Status is completed
-        assert plugin._download_queue[55]["status"] == "completed"
+        assert plugin._download_service._download_queue[55]["status"] == "completed"
 
 
 class TestPathTraversalDeleteRomFiles:
@@ -665,21 +694,21 @@ class TestPathTraversalFsName:
             "platform_name": "Nintendo 64",
         }
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
 
         def _close_coro_task(coro):
             coro.close()
             return MagicMock()
 
-        plugin.loop.create_task = _close_coro_task
+        plugin._download_service._loop.create_task = _close_coro_task
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
             result = await plugin.start_download(77)
 
         assert result["success"] is True
         # The target path should use sanitized basename only
-        queue_entry = plugin._download_queue[77]
+        queue_entry = plugin._download_service._download_queue[77]
         assert queue_entry["file_name"] == "passwd"
         # The coroutine was created — just verify the queue entry is safe
         assert ".." not in queue_entry["file_name"]
@@ -693,7 +722,7 @@ class TestCleanupPartialDownload:
         tmp_file = tmp_path / "game.z64.tmp"
         tmp_file.write_text("partial")
 
-        plugin._cleanup_partial_download(target, False, "game.z64")
+        plugin._download_service._cleanup_partial_download(target, False, "game.z64")
         assert not tmp_file.exists()
 
     def test_cleans_zip_tmp_multi(self, plugin, tmp_path):
@@ -701,7 +730,7 @@ class TestCleanupPartialDownload:
         zip_tmp = tmp_path / "game.zip.zip.tmp"
         zip_tmp.write_text("partial zip")
 
-        plugin._cleanup_partial_download(target, True, "game.zip")
+        plugin._download_service._cleanup_partial_download(target, True, "game.zip")
         assert not zip_tmp.exists()
 
     def test_cleans_extract_dir(self, plugin, tmp_path):
@@ -710,15 +739,15 @@ class TestCleanupPartialDownload:
         extract_dir.mkdir()
         (extract_dir / "disc1.bin").write_bytes(b"\x00" * 100)
 
-        plugin._cleanup_partial_download(target, True, "game.zip")
+        plugin._download_service._cleanup_partial_download(target, True, "game.zip")
         assert not extract_dir.exists()
 
     def test_cleanup_errors_are_caught(self, plugin, tmp_path):
         """Cleanup should not raise even if files don't exist."""
         target = str(tmp_path / "nonexistent.z64")
         # Should not raise
-        plugin._cleanup_partial_download(target, False, "nonexistent.z64")
-        plugin._cleanup_partial_download(target, True, "nonexistent.zip")
+        plugin._download_service._cleanup_partial_download(target, False, "nonexistent.z64")
+        plugin._download_service._cleanup_partial_download(target, True, "nonexistent.zip")
 
 
 class TestDoDownloadCancelled:
@@ -749,13 +778,14 @@ class TestDoDownloadCancelled:
         def fake_download_cancel(path, dest, progress_callback=None):
             raise asyncio.CancelledError()
 
-        plugin.loop = asyncio.get_event_loop()
-        plugin._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin, "_romm_download", side_effect=fake_download_cancel):
-            await plugin._do_download(42, rom_detail, target_path, "n64")
+        with patch.object(plugin._http_client, "download", side_effect=fake_download_cancel):
+            with pytest.raises(asyncio.CancelledError):
+                await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
-        assert plugin._download_queue[42]["status"] == "cancelled"
+        assert plugin._download_service._download_queue[42]["status"] == "cancelled"
         assert not os.path.exists(target_path)
         assert "42" not in plugin._state["installed_roms"]
 
@@ -790,13 +820,13 @@ class TestDoDownloadZipFailure:
             with open(dest, "wb") as f:
                 f.write(b"not a zip file")
 
-        plugin.loop = asyncio.get_event_loop()
-        plugin._download_queue[66] = {"rom_id": 66, "status": "downloading", "progress": 0}
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[66] = {"rom_id": 66, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin, "_romm_download", side_effect=fake_download):
-            await plugin._do_download(66, rom_detail, target_path, "psx")
+        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+            await plugin._download_service._do_download(66, rom_detail, target_path, "psx")
 
-        assert plugin._download_queue[66]["status"] == "failed"
+        assert plugin._download_service._download_queue[66]["status"] == "failed"
         # .zip.tmp should be cleaned up
         assert not os.path.exists(target_path + ".zip.tmp")
 
@@ -821,23 +851,23 @@ class TestStartDownloadReDownload:
             "platform_name": "Nintendo 64",
         }
 
-        plugin.loop = MagicMock()
-        plugin.loop.run_in_executor = AsyncMock(return_value=rom_detail)
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
 
         def _close_coro_task(coro):
             coro.close()
             return MagicMock()
 
-        plugin.loop.create_task = _close_coro_task
+        plugin._download_service._loop.create_task = _close_coro_task
 
         # Set status to completed (previous download)
-        plugin._download_queue[42] = {"status": "completed"}
+        plugin._download_service._download_queue[42] = {"status": "completed"}
 
         with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
             result = await plugin.start_download(42)
 
         assert result["success"] is True
-        assert plugin._download_queue[42]["status"] == "downloading"
+        assert plugin._download_service._download_queue[42]["status"] == "downloading"
 
 
 class TestMaybeGenerateM3uMixedFormats:
@@ -848,7 +878,7 @@ class TestMaybeGenerateM3uMixedFormats:
         (tmp_path / "disc2.chd").write_bytes(b"\x00" * 100)
 
         rom_detail = {"fs_name_no_ext": "Mixed Game", "name": "Mixed Game"}
-        plugin._maybe_generate_m3u(str(tmp_path), rom_detail)
+        plugin._download_service._maybe_generate_m3u(str(tmp_path), rom_detail)
 
         m3u_path = tmp_path / "Mixed Game.m3u"
         assert m3u_path.exists()
@@ -873,7 +903,7 @@ class TestMaybeGenerateM3uSpecialCharacters:
             (tmp_path / name).write_text("cue data")
 
         rom_detail = {"fs_name_no_ext": "Game", "name": "Game"}
-        plugin._maybe_generate_m3u(str(tmp_path), rom_detail)
+        plugin._download_service._maybe_generate_m3u(str(tmp_path), rom_detail)
 
         m3u_path = tmp_path / "Game.m3u"
         assert m3u_path.exists()
@@ -984,11 +1014,11 @@ class TestUrlEncodedFilenameRename:
             with open(dest, "wb") as f:
                 f.write(zip_bytes)
 
-        plugin.loop = asyncio.get_event_loop()
-        plugin._download_queue[99] = {"rom_id": 99, "status": "downloading", "progress": 0}
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[99] = {"rom_id": 99, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin, "_romm_download", side_effect=fake_download):
-            await plugin._do_download(99, rom_detail, target_path, "psx")
+        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+            await plugin._download_service._do_download(99, rom_detail, target_path, "psx")
 
         extract_dir = roms_dir / "Vagrant Story (USA)"
         # URL-encoded filenames should be decoded
@@ -1035,11 +1065,11 @@ class TestUrlEncodedFilenameRename:
             with open(dest, "wb") as f:
                 f.write(zip_bytes)
 
-        plugin.loop = asyncio.get_event_loop()
-        plugin._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin, "_romm_download", side_effect=fake_download):
-            await plugin._do_download(55, rom_detail, target_path, "psx")
+        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+            await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
 
         extract_dir = roms_dir / "FF7"
         # Normal filenames should be unchanged
@@ -1060,7 +1090,7 @@ class TestCleanupLeftoverTmpFiles:
         tmp_file = system_dir / "zelda.z64.tmp"
         tmp_file.write_text("partial download")
 
-        plugin._cleanup_leftover_tmp_files()
+        plugin._download_service.cleanup_leftover_tmp_files()
         assert not tmp_file.exists()
 
     def test_removes_zip_tmp_file(self, plugin, tmp_path):
@@ -1073,7 +1103,7 @@ class TestCleanupLeftoverTmpFiles:
         tmp_file = system_dir / "game.zip.tmp"
         tmp_file.write_text("partial zip")
 
-        plugin._cleanup_leftover_tmp_files()
+        plugin._download_service.cleanup_leftover_tmp_files()
         assert not tmp_file.exists()
 
     def test_keeps_real_rom_files(self, plugin, tmp_path):
@@ -1090,7 +1120,7 @@ class TestCleanupLeftoverTmpFiles:
         cue_file = system_dir / "game.cue"
         cue_file.write_text("real cue")
 
-        plugin._cleanup_leftover_tmp_files()
+        plugin._download_service.cleanup_leftover_tmp_files()
         assert real_rom.exists()
         assert bin_file.exists()
         assert cue_file.exists()
@@ -1105,7 +1135,7 @@ class TestCleanupLeftoverTmpFiles:
         tmp_file = bios_dir / "dc_boot.bin.tmp"
         tmp_file.write_text("partial bios")
 
-        plugin._cleanup_leftover_tmp_files()
+        plugin._download_service.cleanup_leftover_tmp_files()
         assert not tmp_file.exists()
 
     def test_no_roms_dir_no_crash(self, plugin, tmp_path):
@@ -1113,7 +1143,7 @@ class TestCleanupLeftoverTmpFiles:
 
         decky.DECKY_USER_HOME = str(tmp_path)
         # No retrodeck/roms directory exists — should not crash
-        plugin._cleanup_leftover_tmp_files()
+        plugin._download_service.cleanup_leftover_tmp_files()
 
     def test_handles_permission_error(self, plugin, tmp_path):
         import decky
@@ -1127,7 +1157,7 @@ class TestCleanupLeftoverTmpFiles:
 
         with patch("os.remove", side_effect=OSError("Permission denied")):
             # Should not raise
-            plugin._cleanup_leftover_tmp_files()
+            plugin._download_service.cleanup_leftover_tmp_files()
         # File still exists since os.remove was mocked to fail
         assert tmp_file.exists()
 
@@ -1149,22 +1179,23 @@ class TestRemoveRomCleansSaveSyncState:
             "file_path": str(rom_file),
             "system": "n64",
         }
-        plugin._save_sync_state = {
+        save_sync_state = {
             "saves": {"42": {"last_sync": "2024-01-01"}, "99": {"last_sync": "2024-02-01"}},
             "playtime": {"42": {"total_seconds": 3600}, "99": {"total_seconds": 7200}},
             "settings": {"save_sync_enabled": False},
         }
+        plugin._download_service._save_sync_state = save_sync_state
         save_calls = []
-        plugin._save_save_sync_state = lambda: save_calls.append(1)
+        plugin._download_service._save_save_sync_state = lambda: save_calls.append(1)
 
         result = await plugin.remove_rom(42)
         assert result["success"] is True
         # Save sync state for ROM 42 should be cleaned
-        assert "42" not in plugin._save_sync_state["saves"]
-        assert "42" not in plugin._save_sync_state["playtime"]
+        assert "42" not in save_sync_state["saves"]
+        assert "42" not in save_sync_state["playtime"]
         # Other ROM's state should be untouched
-        assert "99" in plugin._save_sync_state["saves"]
-        assert "99" in plugin._save_sync_state["playtime"]
+        assert "99" in save_sync_state["saves"]
+        assert "99" in save_sync_state["playtime"]
         # _save_save_sync_state should have been called
         assert len(save_calls) == 1
 
@@ -1186,20 +1217,21 @@ class TestRemoveRomCleansSaveSyncState:
             "1": {"rom_id": 1, "file_path": str(file_a), "system": "n64"},
             "2": {"rom_id": 2, "file_path": str(file_b), "system": "n64"},
         }
-        plugin._save_sync_state = {
+        save_sync_state = {
             "saves": {"1": {"last_sync": "2024-01-01"}, "2": {"last_sync": "2024-02-01"}},
             "playtime": {"1": {"total_seconds": 100}, "2": {"total_seconds": 200}},
             "settings": {"save_sync_enabled": False},
         }
+        plugin._download_service._save_sync_state = save_sync_state
         save_calls = []
-        plugin._save_save_sync_state = lambda: save_calls.append(1)
+        plugin._download_service._save_save_sync_state = lambda: save_calls.append(1)
 
         result = await plugin.uninstall_all_roms()
         assert result["success"] is True
         assert result["removed_count"] == 2
         # All save sync state should be cleaned
-        assert plugin._save_sync_state["saves"] == {}
-        assert plugin._save_sync_state["playtime"] == {}
+        assert save_sync_state["saves"] == {}
+        assert save_sync_state["playtime"] == {}
         # _save_save_sync_state should have been called
         assert len(save_calls) == 1
 
@@ -1208,94 +1240,94 @@ class TestPruneDownloadQueue:
     def test_keeps_active_downloads(self, plugin):
         """Active (downloading) items are never pruned."""
         for i in range(60):
-            plugin._download_queue[i] = {"rom_id": i, "status": "downloading"}
-        plugin._prune_download_queue()
-        assert len(plugin._download_queue) == 60
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "downloading"}
+        plugin._download_service._prune_download_queue()
+        assert len(plugin._download_service._download_queue) == 60
 
     def test_removes_oldest_terminal_when_over_limit(self, plugin):
         """When there are more than 50 terminal items, remove the oldest."""
         # Insert 60 completed items (rom_id 0..59)
         for i in range(60):
-            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
-        plugin._prune_download_queue()
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "completed"}
+        plugin._download_service._prune_download_queue()
         # Should keep the 50 most recent (10..59)
-        assert len(plugin._download_queue) == 50
+        assert len(plugin._download_service._download_queue) == 50
         for i in range(10):
-            assert i not in plugin._download_queue
+            assert i not in plugin._download_service._download_queue
         for i in range(10, 60):
-            assert i in plugin._download_queue
+            assert i in plugin._download_service._download_queue
 
     def test_does_nothing_when_under_limit(self, plugin):
         """No pruning if terminal count is at or below the limit."""
         for i in range(30):
-            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
-        plugin._prune_download_queue()
-        assert len(plugin._download_queue) == 30
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "completed"}
+        plugin._download_service._prune_download_queue()
+        assert len(plugin._download_service._download_queue) == 30
 
     def test_does_nothing_at_exactly_limit(self, plugin):
         """No pruning when terminal count is exactly 50."""
         for i in range(50):
-            plugin._download_queue[i] = {"rom_id": i, "status": "failed"}
-        plugin._prune_download_queue()
-        assert len(plugin._download_queue) == 50
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "failed"}
+        plugin._download_service._prune_download_queue()
+        assert len(plugin._download_service._download_queue) == 50
 
     def test_mixed_active_and_terminal(self, plugin):
         """Active items are kept; only terminal items count toward the limit."""
         # 5 active + 55 completed = 55 terminal -> prune 5 oldest terminal
         for i in range(5):
-            plugin._download_queue[1000 + i] = {"rom_id": 1000 + i, "status": "downloading"}
+            plugin._download_service._download_queue[1000 + i] = {"rom_id": 1000 + i, "status": "downloading"}
         for i in range(55):
-            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
-        plugin._prune_download_queue()
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "completed"}
+        plugin._download_service._prune_download_queue()
         # 5 active + 50 terminal = 55 total
-        assert len(plugin._download_queue) == 55
+        assert len(plugin._download_service._download_queue) == 55
         # All active still present
         for i in range(5):
-            assert 1000 + i in plugin._download_queue
+            assert 1000 + i in plugin._download_service._download_queue
         # Oldest 5 terminal removed (0..4)
         for i in range(5):
-            assert i not in plugin._download_queue
+            assert i not in plugin._download_service._download_queue
         # Remaining terminal still present (5..54)
         for i in range(5, 55):
-            assert i in plugin._download_queue
+            assert i in plugin._download_service._download_queue
 
     def test_handles_all_terminal_statuses(self, plugin):
         """Completed, failed, and cancelled items are all treated as terminal."""
         for i in range(20):
-            plugin._download_queue[i] = {"rom_id": i, "status": "completed"}
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "completed"}
         for i in range(20, 40):
-            plugin._download_queue[i] = {"rom_id": i, "status": "failed"}
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "failed"}
         for i in range(40, 60):
-            plugin._download_queue[i] = {"rom_id": i, "status": "cancelled"}
-        plugin._prune_download_queue()
-        assert len(plugin._download_queue) == 50
+            plugin._download_service._download_queue[i] = {"rom_id": i, "status": "cancelled"}
+        plugin._download_service._prune_download_queue()
+        assert len(plugin._download_service._download_queue) == 50
         # Oldest 10 (all completed, 0..9) should be removed
         for i in range(10):
-            assert i not in plugin._download_queue
+            assert i not in plugin._download_service._download_queue
 
 
 class TestClearCompletedDownloads:
     @pytest.mark.asyncio
     async def test_removes_all_terminal_items(self, plugin):
-        plugin._download_queue[1] = {"rom_id": 1, "status": "completed"}
-        plugin._download_queue[2] = {"rom_id": 2, "status": "failed"}
-        plugin._download_queue[3] = {"rom_id": 3, "status": "cancelled"}
+        plugin._download_service._download_queue[1] = {"rom_id": 1, "status": "completed"}
+        plugin._download_service._download_queue[2] = {"rom_id": 2, "status": "failed"}
+        plugin._download_service._download_queue[3] = {"rom_id": 3, "status": "cancelled"}
         result = await plugin.clear_completed_downloads()
         assert result["success"] is True
         assert result["removed"] == 3
-        assert len(plugin._download_queue) == 0
+        assert len(plugin._download_service._download_queue) == 0
 
     @pytest.mark.asyncio
     async def test_keeps_active_downloads(self, plugin):
-        plugin._download_queue[1] = {"rom_id": 1, "status": "downloading"}
-        plugin._download_queue[2] = {"rom_id": 2, "status": "completed"}
-        plugin._download_queue[3] = {"rom_id": 3, "status": "downloading"}
+        plugin._download_service._download_queue[1] = {"rom_id": 1, "status": "downloading"}
+        plugin._download_service._download_queue[2] = {"rom_id": 2, "status": "completed"}
+        plugin._download_service._download_queue[3] = {"rom_id": 3, "status": "downloading"}
         result = await plugin.clear_completed_downloads()
         assert result["success"] is True
         assert result["removed"] == 1
-        assert len(plugin._download_queue) == 2
-        assert 1 in plugin._download_queue
-        assert 3 in plugin._download_queue
+        assert len(plugin._download_service._download_queue) == 2
+        assert 1 in plugin._download_service._download_queue
+        assert 3 in plugin._download_service._download_queue
 
     @pytest.mark.asyncio
     async def test_empty_queue(self, plugin):
@@ -1305,9 +1337,9 @@ class TestClearCompletedDownloads:
 
     @pytest.mark.asyncio
     async def test_only_active_items(self, plugin):
-        plugin._download_queue[1] = {"rom_id": 1, "status": "downloading"}
-        plugin._download_queue[2] = {"rom_id": 2, "status": "downloading"}
+        plugin._download_service._download_queue[1] = {"rom_id": 1, "status": "downloading"}
+        plugin._download_service._download_queue[2] = {"rom_id": 2, "status": "downloading"}
         result = await plugin.clear_completed_downloads()
         assert result["success"] is True
         assert result["removed"] == 0
-        assert len(plugin._download_queue) == 2
+        assert len(plugin._download_service._download_queue) == 2
