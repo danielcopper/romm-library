@@ -50,7 +50,7 @@ def plugin():
         runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
         save_state=MagicMock(),
         save_settings_to_disk=MagicMock(),
-        sync_service=p._sync_service,
+        pending_sync=p._sync_service._pending_sync,
     )
     return p
 

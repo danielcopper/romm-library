@@ -33,10 +33,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.http import RommHttpAdapter
-    from adapters.steam_config import SteamConfigAdapter
-
-    from services.library_sync import LibrarySyncService
+    from services.protocols import HttpAdapter, SteamConfigAdapter
 
 
 _USER_AGENT = "decky-romm-sync/0.1"
@@ -48,7 +45,7 @@ class SgdbArtworkService:
     def __init__(
         self,
         *,
-        http_client: RommHttpAdapter,
+        http_client: HttpAdapter,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
@@ -57,7 +54,7 @@ class SgdbArtworkService:
         runtime_dir: str,
         save_state: Callable[[], None],
         save_settings_to_disk: Callable[[], None],
-        sync_service: LibrarySyncService,
+        pending_sync: dict,
     ) -> None:
         self._http_client = http_client
         self._steam_config = steam_config
@@ -68,7 +65,7 @@ class SgdbArtworkService:
         self._runtime_dir = runtime_dir
         self._save_state = save_state
         self._save_settings_to_disk = save_settings_to_disk
-        self._sync_service = sync_service
+        self._pending_sync = pending_sync
 
     # -- logging -----------------------------------------------------------
 
@@ -177,7 +174,7 @@ class SgdbArtworkService:
         igdb_id = reg.get("igdb_id")
 
         if not sgdb_id:
-            pending = self._sync_service._pending_sync.get(rom_id, {})
+            pending = self._pending_sync.get(rom_id, {})
             sgdb_id = pending.get("sgdb_id")
             igdb_id = igdb_id or pending.get("igdb_id")
 

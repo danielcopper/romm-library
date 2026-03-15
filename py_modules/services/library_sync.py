@@ -23,8 +23,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.http import RommHttpAdapter
-    from adapters.steam_config import SteamConfigAdapter
+    from services.protocols import HttpAdapter, SteamConfigAdapter
 
 
 class SyncState(Enum):
@@ -43,7 +42,7 @@ class LibrarySyncService:
     def __init__(
         self,
         *,
-        http_client: RommHttpAdapter,
+        http_client: HttpAdapter,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,

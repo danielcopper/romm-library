@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.http import RommHttpAdapter
+    from services.protocols import HttpAdapter
 
 
 _FIRMWARE_API = "/api/firmware"
@@ -33,7 +33,7 @@ class FirmwareService:
     def __init__(
         self,
         *,
-        http_client: RommHttpAdapter,
+        http_client: HttpAdapter,
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,

@@ -180,7 +180,7 @@ def wire_services(
         runtime_dir=runtime_dir,
         save_state=save_state,
         save_settings_to_disk=save_settings_to_disk,
-        sync_service=sync_service,
+        pending_sync=sync_service._pending_sync,
     )
 
     achievements_service = AchievementsService(

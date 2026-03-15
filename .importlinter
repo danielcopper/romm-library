@@ -5,24 +5,18 @@ root_packages =
     lib
 
 # Services must not import concrete adapters (protocols are OK).
-# FIXME: services import RommHttpAdapter and SteamConfigAdapter for TYPE_CHECKING
-# type hints. import-linter cannot distinguish TYPE_CHECKING from runtime imports,
-# so these are ignored here. When PM-8 (Type Annotations) introduces Protocols for
-# these adapters, remove the ignore_imports and add the adapter modules to
-# forbidden_modules instead.
 [importlinter:contract:no-adapter-impl-in-services]
 name = Services must not import concrete adapter implementations
 type = forbidden
 source_modules =
     services
 forbidden_modules =
+    adapters.romm.http
     adapters.romm.save_api.v46
     adapters.romm.save_api.v47
     adapters.romm.version_router
+    adapters.steam_config
     adapters.persistence
-ignore_imports =
-    services.* -> adapters.romm.http
-    services.* -> adapters.steam_config
 
 # Adapters must not import services
 [importlinter:contract:no-services-in-adapters]
@@ -44,8 +38,6 @@ forbidden_modules =
     adapters
 
 # Services must be independent of each other
-# FIXME: sgdb_artwork -> library_sync is a TYPE_CHECKING import for _pending_sync
-# access. Replace with a dict ref or Protocol in PM-8 (Type Annotations).
 [importlinter:contract:service-independence]
 name = Services must not import other services
 type = independence
@@ -58,5 +50,3 @@ modules =
     services.sgdb_artwork
     services.metadata
     services.achievements
-ignore_imports =
-    services.sgdb_artwork -> services.library_sync

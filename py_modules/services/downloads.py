@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from adapters.romm.http import RommHttpAdapter
+    from services.protocols import HttpAdapter
 
 _DOWNLOAD_QUEUE_MAX_TERMINAL = 50
 _ZIP_TMP_EXT = ".zip.tmp"
@@ -37,7 +37,7 @@ class DownloadService:
     def __init__(
         self,
         *,
-        http_client: RommHttpAdapter,
+        http_client: HttpAdapter,
         state: dict,
         save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
