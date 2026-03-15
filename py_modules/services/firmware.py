@@ -376,7 +376,7 @@ class FirmwareService:
                 is_required = reg_entry["cores"][active_core_so]["required"]
             else:
                 is_required = False
-            description = reg_entry.get("description", file_name) if reg_entry else file_name
+            description = reg_entry.get("description", file_name)
             classification = "required" if is_required else "optional"
         elif reg_entry:
             is_required = reg_entry.get("required", True)

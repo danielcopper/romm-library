@@ -1,5 +1,11 @@
 ![decky-romm-sync](assets/store_image.png)
 
+[![CI](https://github.com/danielcopper/decky-romm-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/danielcopper/decky-romm-sync/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=danielcopper_decky-romm-sync&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=danielcopper_decky-romm-sync)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=danielcopper_decky-romm-sync&metric=coverage)](https://sonarcloud.io/summary/new_code?id=danielcopper_decky-romm-sync)
+[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=danielcopper_decky-romm-sync&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=danielcopper_decky-romm-sync)
+[![License](https://img.shields.io/github/license/danielcopper/decky-romm-sync)](LICENSE)
+
 # decky-romm-sync
 
 A [Decky Loader](https://decky.xyz/) plugin that syncs your [RomM](https://github.com/rommapp/romm) game library to

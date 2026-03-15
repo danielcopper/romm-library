@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import pathlib
 import time
 import urllib.parse
 import uuid
@@ -1016,7 +1017,7 @@ class SyncService:
 
         if cover_path and os.path.exists(cover_path):
             try:
-                data = await self._loop.run_in_executor(None, lambda: open(cover_path, "rb").read())
+                data = await self._loop.run_in_executor(None, lambda: pathlib.Path(cover_path).read_bytes())
                 return {"base64": base64.b64encode(data).decode("ascii")}
             except Exception as e:
                 self._logger.warning(f"Failed to read artwork for rom {rom_id}: {e}")

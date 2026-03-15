@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import pathlib
 import ssl
 import struct
 import urllib.error
@@ -162,7 +163,7 @@ class SgdbService:
     async def _read_file_as_base64(self, path):
         """Read a file and return base64-encoded string, or None on failure."""
         try:
-            data = await self._loop.run_in_executor(None, lambda: open(path, "rb").read())
+            data = await self._loop.run_in_executor(None, lambda: pathlib.Path(path).read_bytes())
             return base64.b64encode(data).decode("ascii")
         except Exception as e:
             self._logger.warning(f"Failed to read file {path}: {e}")
