@@ -335,6 +335,38 @@ class TestDetectLaunchFile:
         assert result.endswith("large.bin")
 
 
+class TestPollDownloadRequestsIO:
+    """Tests for _poll_download_requests_io — file-based IPC."""
+
+    def test_reads_and_clears_requests(self, plugin, tmp_path):
+        requests_path = tmp_path / "download_requests.json"
+        requests_path.write_text(json.dumps([{"rom_id": 42}, {"rom_id": 99}]))
+        result = plugin._download_service._poll_download_requests_io(str(requests_path))
+        assert len(result) == 2
+        assert result[0]["rom_id"] == 42
+        assert result[1]["rom_id"] == 99
+        # File should be cleared
+        with open(str(requests_path), "r") as f:
+            remaining = json.load(f)
+        assert remaining == []
+
+    def test_empty_file_returns_empty(self, plugin, tmp_path):
+        requests_path = tmp_path / "download_requests.json"
+        requests_path.write_text(json.dumps([]))
+        result = plugin._download_service._poll_download_requests_io(str(requests_path))
+        assert result == []
+
+    def test_missing_file_returns_empty(self, plugin, tmp_path):
+        result = plugin._download_service._poll_download_requests_io(str(tmp_path / "nonexistent.json"))
+        assert result == []
+
+    def test_invalid_json_returns_empty(self, plugin, tmp_path):
+        requests_path = tmp_path / "download_requests.json"
+        requests_path.write_text("not valid json {{{{")
+        result = plugin._download_service._poll_download_requests_io(str(requests_path))
+        assert result == []
+
+
 class TestDownloadRequestPolling:
     @pytest.mark.asyncio
     async def test_processes_download_request(self, plugin, tmp_path):
@@ -1304,6 +1336,58 @@ class TestPruneDownloadQueue:
         # Oldest 10 (all completed, 0..9) should be removed
         for i in range(10):
             assert i not in plugin._download_service._download_queue
+
+
+class TestStartDownloadCreateTaskFailure:
+    """Tests for start_download when create_task raises."""
+
+    @pytest.mark.asyncio
+    async def test_create_task_failure_returns_error(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock, patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        rom_detail = {
+            "id": 42,
+            "name": "Zelda",
+            "fs_name": "zelda.z64",
+            "fs_size_bytes": 1024,
+            "platform_slug": "n64",
+            "platform_name": "Nintendo 64",
+        }
+
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
+        plugin._download_service._loop.create_task = MagicMock(side_effect=RuntimeError("loop closed"))
+
+        with patch("shutil.disk_usage", return_value=MagicMock(free=500 * 1024 * 1024)):
+            result = await plugin.start_download(42)
+
+        assert result["success"] is False
+        assert "Failed to start download" in result["message"]
+        # Should not remain in download_in_progress
+        assert 42 not in plugin._download_service._download_in_progress
+
+
+class TestRemoveTmpFile:
+    """Tests for _remove_tmp_file helper."""
+
+    def test_removes_existing_file(self, plugin, tmp_path):
+        f = tmp_path / "test.tmp"
+        f.write_text("data")
+        assert plugin._download_service._remove_tmp_file(str(f)) is True
+        assert not f.exists()
+
+    def test_nonexistent_file_returns_false(self, plugin, tmp_path):
+        assert plugin._download_service._remove_tmp_file(str(tmp_path / "nope.tmp")) is False
+
+    def test_os_error_returns_false(self, plugin, tmp_path):
+        f = tmp_path / "test.tmp"
+        f.write_text("data")
+        with patch("os.remove", side_effect=OSError("perm denied")):
+            assert plugin._download_service._remove_tmp_file(str(f)) is False
 
 
 class TestClearCompletedDownloads:

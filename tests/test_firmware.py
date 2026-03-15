@@ -1365,3 +1365,154 @@ class TestPerCoreFiltering:
         assert gba_file["used_by_active"] is True
         gb_file = [f for f in result["files"] if f["file_name"] == "gb_bios.bin"][0]
         assert gb_file["used_by_active"] is False
+
+
+class TestLoadBiosRegistryErrors:
+    """Tests for load_bios_registry error handling."""
+
+    def test_json_parse_error(self, fw, tmp_path):
+        """Non-JSON file should log error but not crash."""
+        bad_file = tmp_path / "bios_registry.json"
+        bad_file.write_text("not valid json {{{")
+        fw._plugin_dir = str(tmp_path)
+        fw.load_bios_registry()
+        assert fw._bios_registry == {}
+
+    def test_file_not_found(self, fw, tmp_path):
+        """Missing file should log warning but not crash."""
+        fw._plugin_dir = str(tmp_path / "nonexistent")
+        fw.load_bios_registry()
+        assert fw._bios_registry == {}
+
+
+class TestFirmwareSlugEdgeCases:
+    """Tests for _firmware_slug edge cases."""
+
+    def test_single_part_returns_empty(self, fw):
+        assert fw._firmware_slug("bios") == ""
+
+    def test_non_bios_prefix(self, fw):
+        assert fw._firmware_slug("firmware/dc/boot.bin") == "firmware"
+
+    def test_empty_path(self, fw):
+        assert fw._firmware_slug("") == ""
+
+
+class TestDownloadFirmwarePostIORegistryHash:
+    """Tests for _download_firmware_post_io registry hash verification."""
+
+    def test_verifies_registry_hash_when_no_server_md5(self, fw, tmp_path):
+        """Registry hash should be checked even when server md5 is missing."""
+        from unittest.mock import patch
+
+        bios_dir = tmp_path / "bios"
+        bios_dir.mkdir()
+        dest = str(bios_dir / "test.bin")
+        tmp_path_file = dest + ".tmp"
+
+        with open(tmp_path_file, "wb") as f:
+            f.write(b"test content")
+
+        import hashlib
+
+        expected_md5 = hashlib.md5(b"test content").hexdigest()
+        fw._bios_files_index["test.bin"] = {
+            "md5": expected_md5,
+            "platform": "test",
+        }
+        fw._state["downloaded_bios"] = {}
+
+        fw_data = {"file_name": "test.bin", "file_path": "bios/test/test.bin", "md5_hash": ""}
+        with patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+            md5_match, reg_hash_valid = fw._download_firmware_post_io(fw_data, 1, dest, tmp_path_file)
+
+        assert md5_match is None
+        assert reg_hash_valid is True
+
+    def test_registry_hash_mismatch(self, fw, tmp_path):
+        """Registry hash mismatch returns False."""
+        from unittest.mock import patch
+
+        bios_dir = tmp_path / "bios"
+        bios_dir.mkdir()
+        dest = str(bios_dir / "bad.bin")
+        tmp_path_file = dest + ".tmp"
+
+        with open(tmp_path_file, "wb") as f:
+            f.write(b"bad content")
+
+        fw._bios_files_index["bad.bin"] = {
+            "md5": "0000000000000000000000000000dead",
+            "platform": "test",
+        }
+        fw._state["downloaded_bios"] = {}
+
+        fw_data = {"file_name": "bad.bin", "file_path": "bios/test/bad.bin", "md5_hash": ""}
+        with patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+            md5_match, reg_hash_valid = fw._download_firmware_post_io(fw_data, 2, dest, tmp_path_file)
+
+        assert reg_hash_valid is False
+
+
+class TestDownloadFirmwareErrors:
+    """Tests for download_firmware error handling."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_metadata_error(self, fw):
+        """Fetch firmware metadata failure returns error."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        fw._loop = MagicMock()
+        fw._loop.run_in_executor = AsyncMock(side_effect=Exception("not found"))
+
+        result = await fw.download_firmware(999)
+        assert result["success"] is False
+
+
+class TestGetFirmwareStatusOfflineFallback:
+    """Tests for get_firmware_status offline fallback to registry."""
+
+    @pytest.mark.asyncio
+    async def test_offline_uses_registry(self, fw, plugin, tmp_path):
+        from unittest.mock import patch
+
+        fw._bios_registry = {
+            "platforms": {
+                "dc": {
+                    "dc_boot.bin": {
+                        "description": "DC BIOS",
+                        "required": True,
+                        "firmware_path": "dc/dc_boot.bin",
+                        "md5": "abc",
+                    }
+                }
+            }
+        }
+        fw._bios_files_index = {
+            "dc_boot.bin": {
+                "description": "DC BIOS",
+                "required": True,
+                "firmware_path": "dc/dc_boot.bin",
+                "md5": "abc",
+                "platform": "dc",
+            }
+        }
+        plugin._state["shortcut_registry"] = {}
+
+        bios_dir = tmp_path / "bios"
+        bios_dir.mkdir()
+
+        fw._loop = asyncio.get_event_loop()
+
+        with (
+            patch.object(plugin._http_client, "request", side_effect=Exception("offline")),
+            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch("services.firmware.es_de_config.get_active_core", return_value=(None, None)),
+            patch("services.firmware.es_de_config.get_available_cores", return_value=[]),
+        ):
+            result = await fw.get_firmware_status()
+
+        assert result["success"] is True
+        assert result["server_offline"] is True
+        assert len(result["platforms"]) == 1
+        assert result["platforms"][0]["platform_slug"] == "dc"
