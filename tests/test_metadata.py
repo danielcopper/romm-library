@@ -592,3 +592,69 @@ class TestGetRomMetadata404:
 
         assert result["summary"] == "Old cached data"
         assert result["genres"] == ["Action"]
+
+
+# ── Tests for uncovered MetadataService methods ──────────
+
+
+class TestMarkMetadataDirty:
+    """Tests for mark_metadata_dirty() — covers lines 67-70."""
+
+    def test_increments_count(self, plugin):
+        plugin._metadata_service._metadata_dirty_count = 0
+        plugin._metadata_service.mark_metadata_dirty()
+        assert plugin._metadata_service._metadata_dirty_count == 1
+
+    def test_flushes_at_interval(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._metadata_service._metadata_dirty_count = 49
+        plugin._metadata_service.mark_metadata_dirty()
+        # After reaching 50, should have flushed and reset
+        assert plugin._metadata_service._metadata_dirty_count == 0
+
+    def test_does_not_flush_below_interval(self, plugin):
+        plugin._metadata_service._metadata_dirty_count = 10
+        plugin._metadata_service.mark_metadata_dirty()
+        assert plugin._metadata_service._metadata_dirty_count == 11
+
+
+class TestFlushMetadataIfDirty:
+    """Tests for flush_metadata_if_dirty() — covers lines 75-76."""
+
+    def test_flushes_when_dirty(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+
+        plugin._metadata_service._metadata_dirty_count = 5
+        plugin._metadata_service.flush_metadata_if_dirty()
+        assert plugin._metadata_service._metadata_dirty_count == 0
+
+    def test_noop_when_clean(self, plugin):
+        plugin._metadata_service._metadata_dirty_count = 0
+        # Ensure _save_metadata_cache is NOT called (we'd get an error if it tried to write)
+        plugin._metadata_service._save_metadata_cache = MagicMock()
+        plugin._metadata_service.flush_metadata_if_dirty()
+        plugin._metadata_service._save_metadata_cache.assert_not_called()
+
+
+class TestGetAppIdRomIdMap:
+    """Tests for get_app_id_rom_id_map() — covers lines 121-126."""
+
+    def test_builds_mapping(self, plugin):
+        plugin._state["shortcut_registry"] = {
+            "10": {"app_id": 1001, "name": "Game A"},
+            "20": {"app_id": 1002, "name": "Game B"},
+            "30": {"name": "Game C"},  # no app_id
+        }
+        result = plugin._metadata_service.get_app_id_rom_id_map()
+        assert result["1001"] == 10
+        assert result["1002"] == 20
+        assert "30" not in result
+
+    def test_empty_registry(self, plugin):
+        result = plugin._metadata_service.get_app_id_rom_id_map()
+        assert result == {}

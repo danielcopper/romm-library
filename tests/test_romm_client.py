@@ -836,3 +836,162 @@ class TestVersionDetection:
             result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "timeout_error"
+
+
+# ── Tests for uncovered HTTP adapter methods ──────────
+
+
+class TestTranslateHttpStatus:
+    """Tests for _translate_http_status() — covers lines 122-134."""
+
+    def _make_client(self):
+        import logging
+
+        return RommHttpAdapter(
+            {"romm_url": "http://test", "romm_user": "u", "romm_pass": "p"},
+            "/tmp",
+            logging.getLogger("test"),
+        )
+
+    def test_400_bad_request(self):
+        client = self._make_client()
+        err = client._translate_http_status(400, "Bad request", "/api/test", "GET")
+        assert isinstance(err, RommApiError)
+        assert "Bad request" in str(err)
+
+    def test_401_auth_error(self):
+        client = self._make_client()
+        err = client._translate_http_status(401, "Unauthorized", "/api/test", "GET")
+        assert isinstance(err, RommAuthError)
+
+    def test_403_forbidden(self):
+        client = self._make_client()
+        err = client._translate_http_status(403, "Forbidden", "/api/test", "GET")
+        assert isinstance(err, RommForbiddenError)
+
+    def test_404_not_found(self):
+        client = self._make_client()
+        err = client._translate_http_status(404, "Not Found", "/api/test", "GET")
+        assert isinstance(err, RommNotFoundError)
+
+    def test_409_conflict(self):
+        client = self._make_client()
+        err = client._translate_http_status(409, "Conflict", "/api/test", "POST")
+        assert isinstance(err, RommConflictError)
+
+    def test_429_rate_limited(self):
+        client = self._make_client()
+        err = client._translate_http_status(429, "Too Many", "/api/test", "GET")
+        assert isinstance(err, RommServerError)
+        assert "Rate limited" in str(err)
+
+    def test_500_server_error(self):
+        client = self._make_client()
+        err = client._translate_http_status(500, "Internal Server Error", "/api/test", "GET")
+        assert isinstance(err, RommServerError)
+
+    def test_502_server_error(self):
+        client = self._make_client()
+        err = client._translate_http_status(502, "Bad Gateway", "/api/test", "GET")
+        assert isinstance(err, RommServerError)
+
+    def test_unknown_4xx(self):
+        client = self._make_client()
+        err = client._translate_http_status(418, "I'm a teapot", "/api/test", "GET")
+        assert isinstance(err, RommApiError)
+        assert not isinstance(err, RommServerError)
+
+
+class TestTranslateUnwrapped:
+    """Tests for _translate_unwrapped() — covers lines 137-145."""
+
+    def test_ssl_error(self):
+        err = RommHttpAdapter._translate_unwrapped(ssl.SSLError("cert error"), "/api", "GET")
+        assert isinstance(err, RommSSLError)
+
+    def test_socket_timeout(self):
+        err = RommHttpAdapter._translate_unwrapped(socket.timeout("timed out"), "/api", "GET")
+        assert isinstance(err, RommTimeoutError)
+
+    def test_timeout_error(self):
+        err = RommHttpAdapter._translate_unwrapped(TimeoutError("timed out"), "/api", "GET")
+        assert isinstance(err, RommTimeoutError)
+
+    def test_connection_error(self):
+        err = RommHttpAdapter._translate_unwrapped(ConnectionError("refused"), "/api", "GET")
+        assert isinstance(err, RommConnectionError)
+
+    def test_os_error(self):
+        err = RommHttpAdapter._translate_unwrapped(OSError("disk full"), "/api", "GET")
+        assert isinstance(err, RommConnectionError)
+
+    def test_unexpected_error(self):
+        err = RommHttpAdapter._translate_unwrapped(ValueError("weird"), "/api", "GET")
+        assert isinstance(err, RommApiError)
+        assert "Unexpected" in str(err)
+
+
+class TestStreamToFile:
+    """Tests for _stream_to_file() — covers lines 214-229."""
+
+    def test_writes_data_to_file(self, tmp_path):
+        from io import BytesIO
+
+        data = b"hello world" * 100
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        resp.read = stream.read
+
+        dest = tmp_path / "output.bin"
+        total, downloaded = RommHttpAdapter._stream_to_file(resp, dest)
+        assert total == len(data)
+        assert downloaded == len(data)
+        assert dest.read_bytes() == data
+
+    def test_no_content_length(self, tmp_path):
+        from io import BytesIO
+
+        data = b"some data"
+        resp = MagicMock()
+        resp.headers = {}
+        stream = BytesIO(data)
+        resp.read = stream.read
+
+        dest = tmp_path / "output.bin"
+        total, downloaded = RommHttpAdapter._stream_to_file(resp, dest)
+        assert total == 0
+        assert downloaded == len(data)
+
+    def test_progress_callback(self, tmp_path):
+        from io import BytesIO
+
+        data = b"x" * 16384  # 2 blocks
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        resp.read = stream.read
+
+        progress_calls = []
+        dest = tmp_path / "output.bin"
+        RommHttpAdapter._stream_to_file(resp, dest, progress_callback=lambda d, t: progress_calls.append((d, t)))
+        assert len(progress_calls) >= 1
+        assert progress_calls[-1][0] == len(data)
+
+
+class TestValidateDownload:
+    """Tests for _validate_download() — covers lines 232-237."""
+
+    def test_valid_download(self):
+        RommHttpAdapter._validate_download(1000, 1000)  # should not raise
+
+    def test_incomplete_download(self):
+        with pytest.raises(IOError, match="incomplete"):
+            RommHttpAdapter._validate_download(1000, 500)
+
+    def test_zero_bytes_no_content_length(self):
+        with pytest.raises(IOError, match="0 bytes"):
+            RommHttpAdapter._validate_download(0, 0)
+
+    def test_no_content_length_but_data_received(self):
+        RommHttpAdapter._validate_download(0, 500)  # should not raise
