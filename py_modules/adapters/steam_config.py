@@ -98,33 +98,52 @@ class SteamConfigAdapter:
 
         mode: "default" (remove key / "1"), "force_on" ("2"), "force_off" ("0")
         """
+        data, localconfig_path = self._load_localconfig()
+        if data is None:
+            return
+
+        apps = self._navigate_to_apps_section(data, create=mode != "default")
+        if apps is None:
+            return
+
+        changed = self._apply_steam_input_mode(apps, app_ids, mode)
+        if changed:
+            self._write_localconfig(data, localconfig_path, mode, len(app_ids))
+
+    def _load_localconfig(self) -> tuple:
+        """Load and parse localconfig.vdf. Returns (data, path) or (None, None)."""
         user_dir = self.find_steam_user_dir()
         if not user_dir:
             self._logger.warning("Cannot find Steam user dir, skipping Steam Input config")
-            return
+            return None, None
 
-        localconfig_path = os.path.join(user_dir, "config", "localconfig.vdf")
-        if not os.path.exists(localconfig_path):
-            self._logger.warning(f"localconfig.vdf not found at {localconfig_path}")
-            return
+        path = os.path.join(user_dir, "config", "localconfig.vdf")
+        if not os.path.exists(path):
+            self._logger.warning(f"localconfig.vdf not found at {path}")
+            return None, None
 
         try:
-            with open(localconfig_path, "r", encoding="utf-8") as f:
-                data = vdf.load(f)
+            with open(path, "r", encoding="utf-8") as f:
+                return vdf.load(f), path
         except Exception as e:
             self._logger.error(f"Failed to parse localconfig.vdf: {e}")
-            return
+            return None, None
 
-        # Navigate to the Apps section
-        apps = data
+    def _navigate_to_apps_section(self, data: dict, *, create: bool) -> dict | None:
+        """Navigate to UserLocalConfigStore.Apps, optionally creating missing keys."""
+        node = data
         for key in ("UserLocalConfigStore", "Apps"):
-            if key not in apps:
-                if mode != "default":
-                    apps[key] = {}
+            if key not in node:
+                if create:
+                    node[key] = {}
                 else:
-                    return  # Nothing to clean up
-            apps = apps[key]
+                    return None
+            node = node[key]
+        return node
 
+    @staticmethod
+    def _apply_steam_input_mode(apps: dict, app_ids: list, mode: str) -> bool:
+        """Apply or remove UseSteamControllerConfig for each app_id. Returns True if changed."""
         value_map = {"force_on": "2", "force_off": "0"}
         changed = False
         for app_id in app_ids:
@@ -134,23 +153,23 @@ class SteamConfigAdapter:
                     apps[app_key] = {}
                 apps[app_key]["UseSteamControllerConfig"] = value_map[mode]
                 changed = True
-            else:
-                # Default: remove the override so Steam uses global settings
-                if app_key in apps and "UseSteamControllerConfig" in apps[app_key]:
-                    del apps[app_key]["UseSteamControllerConfig"]
-                    if not apps[app_key]:
-                        del apps[app_key]
-                    changed = True
+            elif app_key in apps and "UseSteamControllerConfig" in apps[app_key]:
+                del apps[app_key]["UseSteamControllerConfig"]
+                if not apps[app_key]:
+                    del apps[app_key]
+                changed = True
+        return changed
 
-        if changed:
-            try:
-                tmp_path = localconfig_path + ".tmp"
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    vdf.dump(data, f, pretty=True)
-                os.replace(tmp_path, localconfig_path)
-                self._logger.info(f"Steam Input mode '{mode}' applied for {len(app_ids)} app(s)")
-            except Exception as e:
-                self._logger.error(f"Failed to write localconfig.vdf: {e}")
+    def _write_localconfig(self, data: dict, path: str, mode: str, count: int) -> None:
+        """Atomically write localconfig.vdf back to disk."""
+        try:
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                vdf.dump(data, f, pretty=True)
+            os.replace(tmp_path, path)
+            self._logger.info(f"Steam Input mode '{mode}' applied for {count} app(s)")
+        except Exception as e:
+            self._logger.error(f"Failed to write localconfig.vdf: {e}")
 
     # -- RetroArch input driver check -----------------------------------------
 
