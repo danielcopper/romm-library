@@ -30,7 +30,7 @@ def plugin(tmp_path):
         "enabled_platforms": {},
         "log_level": "warn",
     }
-    p._http_client = RommHttpAdapter(p.settings, __import__("decky").DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._http_adapter = RommHttpAdapter(p.settings, __import__("decky").DECKY_PLUGIN_DIR, logging.getLogger("test"))
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
@@ -47,7 +47,7 @@ def plugin(tmp_path):
     p._steam_config = steam_config
 
     p._sync_service = LibrarySyncService(
-        http_client=p._http_client,
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -559,12 +559,12 @@ class TestPendingConflicts:
 
 
 class TestRetryMRO:
-    """Verify with_retry is accessible on Plugin via _http_client."""
+    """Verify with_retry is accessible on Plugin via _http_adapter."""
 
-    def test_with_retry_accessible_via_http_client(self, plugin):
-        """with_retry should be accessible via _http_client."""
+    def test_with_retry_accessible_via_http_adapter(self, plugin):
+        """with_retry should be accessible via _http_adapter."""
         fn = MagicMock(return_value="ok")
-        result = plugin._http_client.with_retry(fn, "arg1")
+        result = plugin._http_adapter.with_retry(fn, "arg1")
         assert result == "ok"
         fn.assert_called_once_with("arg1")
 

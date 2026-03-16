@@ -1,7 +1,7 @@
 """PlaytimeService — playtime tracking via RomM Notes API.
 
 All RomM communication goes through ``SaveApiProtocol``.
-No ``import decky`` or ``from lib.*`` imports.
+No ``import decky``.
 """
 
 from __future__ import annotations
@@ -10,9 +10,8 @@ import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from adapters.romm.save_api.protocol import SaveApiProtocol
-
 from services._util import run_api_sync
+from services.protocols import SaveApiProtocol
 
 if TYPE_CHECKING:
     import asyncio

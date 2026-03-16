@@ -1,4 +1,9 @@
-"""Domain dataclasses for save sync."""
+"""Domain dataclasses for save sync.
+
+NOTE: These dataclasses are not yet consumed by services — they exist as
+the target domain model for a future refactor that replaces raw dicts
+in SaveSyncService and PlaytimeService with typed dataclasses.
+"""
 
 from __future__ import annotations
 

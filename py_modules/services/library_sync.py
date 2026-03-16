@@ -1,4 +1,4 @@
-"""LibrarySyncService — sync engine extracted from SyncMixin.
+"""LibrarySyncService — library sync engine.
 
 Handles platform/ROM fetching, shortcut data preparation, artwork
 downloading, delta preview/apply, and shortcut registry management.
@@ -42,7 +42,7 @@ class LibrarySyncService:
     def __init__(
         self,
         *,
-        http_client: HttpAdapter,
+        http_adapter: HttpAdapter,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
@@ -56,7 +56,7 @@ class LibrarySyncService:
         log_debug: Callable,
         metadata_service: Any = None,
     ) -> None:
-        self._http_client = http_client
+        self._http_adapter = http_adapter
         self._steam_config = steam_config
         self._state = state
         self._settings = settings
@@ -83,11 +83,16 @@ class LibrarySyncService:
         self._pending_sync: dict = {}
         self._pending_delta: dict | None = None
 
+    @property
+    def pending_sync(self) -> dict:
+        """Public accessor for pending sync data (used by SgdbArtworkService)."""
+        return self._pending_sync
+
     # ── Platform & ROM fetching ──────────────────────────────
 
     async def get_platforms(self):
         try:
-            platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
+            platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
         except Exception as e:
             self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -124,7 +129,7 @@ class LibrarySyncService:
     async def set_all_platforms_sync(self, enabled):
         enabled = bool(enabled)
         try:
-            platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
+            platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
         except Exception as e:
             self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -396,7 +401,7 @@ class LibrarySyncService:
 
     async def _fetch_enabled_platforms(self):
         """Fetch and filter platforms by enabled_platforms setting."""
-        platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
+        platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
         if not isinstance(platforms, list):
             self._logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
             return []
@@ -439,7 +444,7 @@ class LibrarySyncService:
         try:
             delta_resp = await self._loop.run_in_executor(
                 None,
-                self._http_client.request,
+                self._http_adapter.request,
                 f"/api/roms?platform_ids={platform['id']}&limit=1&offset=0&updated_after={updated_after}",
             )
             server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
@@ -478,7 +483,7 @@ class LibrarySyncService:
             try:
                 roms = await self._loop.run_in_executor(
                     None,
-                    self._http_client.request,
+                    self._http_adapter.request,
                     f"/api/roms?platform_ids={platform_id}&limit={limit}&offset={offset}",
                 )
             except Exception as e:
@@ -863,7 +868,7 @@ class LibrarySyncService:
 
             staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
             try:
-                await self._loop.run_in_executor(None, self._http_client.download, cover_url, staging)
+                await self._loop.run_in_executor(None, self._http_adapter.download, cover_url, staging)
                 cover_paths[rom_id] = staging
             except Exception as e:
                 self._logger.warning(f"Failed to download artwork for {rom['name']}: {e}")
@@ -893,7 +898,7 @@ class LibrarySyncService:
 
     async def _find_platform_name_from_api(self, platform_slug):
         """Look up platform name from the RomM API by slug."""
-        platforms = await self._loop.run_in_executor(None, self._http_client.request, _PLATFORMS_API)
+        platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
         for p in platforms:
             if p.get("slug") == platform_slug:
                 return p.get("name", "")

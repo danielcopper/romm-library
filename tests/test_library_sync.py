@@ -15,7 +15,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._http_client = MagicMock()
+    p._http_adapter = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -25,7 +25,7 @@ def plugin():
     p._steam_config = steam_config
 
     metadata_service = MetadataService(
-        http_client=p._http_client,
+        http_adapter=p._http_adapter,
         state=p._state,
         metadata_cache=p._metadata_cache,
         loop=asyncio.get_event_loop(),
@@ -36,7 +36,7 @@ def plugin():
     p._metadata_service = metadata_service
 
     p._sync_service = LibrarySyncService(
-        http_client=p._http_client,
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,

@@ -33,7 +33,7 @@ def plugin():
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     import decky
 
-    p._http_client = RommHttpAdapter(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._http_adapter = RommHttpAdapter(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -41,7 +41,7 @@ def plugin():
     p._steam_config = steam_config
 
     p._sync_service = LibrarySyncService(
-        http_client=p._http_client,
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -59,16 +59,16 @@ def plugin():
 
 class TestResolveSystem:
     def test_exact_slug_match(self, plugin):
-        result = plugin._http_client.resolve_system("n64")
+        result = plugin._http_adapter.resolve_system("n64")
         assert result == "n64"
 
     def test_fs_slug_fallback(self, plugin):
         # A slug not in the map but its fs_slug is
-        result = plugin._http_client.resolve_system("nonexistent-slug", "n64")
+        result = plugin._http_adapter.resolve_system("nonexistent-slug", "n64")
         assert result == "n64"
 
     def test_fallback_returns_slug_as_is(self, plugin):
-        result = plugin._http_client.resolve_system("totally-unknown-platform")
+        result = plugin._http_adapter.resolve_system("totally-unknown-platform")
         assert result == "totally-unknown-platform"
 
 
@@ -100,7 +100,7 @@ class TestRommSslContext:
         import ssl
 
         plugin.settings["romm_allow_insecure_ssl"] = False
-        ctx = plugin._http_client.ssl_context()
+        ctx = plugin._http_adapter.ssl_context()
         assert ctx.check_hostname is True
         assert ctx.verify_mode == ssl.CERT_REQUIRED
 
@@ -109,7 +109,7 @@ class TestRommSslContext:
         import ssl
 
         plugin.settings["romm_allow_insecure_ssl"] = True
-        ctx = plugin._http_client.ssl_context()
+        ctx = plugin._http_adapter.ssl_context()
         assert ctx.check_hostname is False
         assert ctx.verify_mode == ssl.CERT_NONE
 
@@ -118,7 +118,7 @@ class TestRommSslContext:
         import ssl
 
         plugin.settings.pop("romm_allow_insecure_ssl", None)
-        ctx = plugin._http_client.ssl_context()
+        ctx = plugin._http_adapter.ssl_context()
         assert ctx.check_hostname is True
         assert ctx.verify_mode == ssl.CERT_REQUIRED
 
@@ -129,7 +129,7 @@ class TestRommAuthHeader:
 
         plugin.settings["romm_user"] = "admin"
         plugin.settings["romm_pass"] = "secret"
-        header = plugin._http_client.auth_header()
+        header = plugin._http_adapter.auth_header()
         assert header.startswith("Basic ")
         decoded = base64.b64decode(header.split(" ", 1)[1]).decode()
         assert decoded == "admin:secret"
@@ -139,7 +139,7 @@ class TestRommAuthHeader:
 
         plugin.settings["romm_user"] = "user"
         plugin.settings["romm_pass"] = "p@ss:w0rd!"
-        header = plugin._http_client.auth_header()
+        header = plugin._http_adapter.auth_header()
         decoded = base64.b64decode(header.split(" ", 1)[1]).decode()
         assert decoded == "user:p@ss:w0rd!"
 
@@ -160,7 +160,7 @@ class TestRommRequest:
         fake_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            result = plugin._http_client.request("/api/test")
+            result = plugin._http_adapter.request("/api/test")
 
         assert result == {"ok": True}
         req = mock_open.call_args[0][0]
@@ -183,7 +183,7 @@ class TestRommJsonRequest:
         fake_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            result = plugin._http_client.post_json("/api/saves", {"filename": "test.srm"})
+            result = plugin._http_adapter.post_json("/api/saves", {"filename": "test.srm"})
 
         assert result == {"id": 1}
         req = mock_open.call_args[0][0]
@@ -206,7 +206,7 @@ class TestRommJsonRequest:
         fake_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            plugin._http_client.put_json("/api/saves/1", {"filename": "test.srm"})
+            plugin._http_adapter.put_json("/api/saves/1", {"filename": "test.srm"})
 
         req = mock_open.call_args[0][0]
         assert req.get_method() == "PUT"
@@ -231,7 +231,7 @@ class TestRommUploadMultipart:
         fake_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            result = plugin._http_client.upload_multipart("/api/saves", str(save_file))
+            result = plugin._http_adapter.upload_multipart("/api/saves", str(save_file))
 
         assert result == {"id": 42}
         req = mock_open.call_args[0][0]
@@ -267,7 +267,7 @@ class TestRommUploadMultipart:
             patch("urllib.request.urlopen", return_value=fake_resp) as mock_open,
             patch("os.path.basename", return_value=evil_name),
         ):
-            plugin._http_client.upload_multipart("/api/saves", str(save_file))
+            plugin._http_adapter.upload_multipart("/api/saves", str(save_file))
 
         req = mock_open.call_args[0][0]
         body = req.data
@@ -280,7 +280,7 @@ class TestRommUploadMultipart:
 
 class TestPlatformMap:
     def test_loads_config_json(self, plugin):
-        pm = plugin._http_client.load_platform_map()
+        pm = plugin._http_adapter.load_platform_map()
         assert isinstance(pm, dict)
         assert "n64" in pm
         assert "snes" in pm
@@ -305,7 +305,7 @@ class TestTranslateHttpError:
 
     def test_401_becomes_auth_error(self, plugin):
         exc = urllib.error.HTTPError("http://romm.local/api/test", 401, "Unauthorized", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/test", "GET")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/test", "GET")
         assert isinstance(result, RommAuthError)
         assert result.status_code == 401
         assert result.url == "http://romm.local/api/test"
@@ -314,99 +314,99 @@ class TestTranslateHttpError:
 
     def test_403_becomes_forbidden_error(self, plugin):
         exc = urllib.error.HTTPError("url", 403, "Forbidden", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x", "POST")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x", "POST")
         assert isinstance(result, RommForbiddenError)
         assert result.status_code == 403
 
     def test_404_becomes_not_found_error(self, plugin):
         exc = urllib.error.HTTPError("url", 404, "Not Found", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommNotFoundError)
         assert result.status_code == 404
 
     def test_409_becomes_conflict_error(self, plugin):
         exc = urllib.error.HTTPError("url", 409, "Conflict", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x", "PUT")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x", "PUT")
         assert isinstance(result, RommConflictError)
         assert result.status_code == 409
 
     def test_500_becomes_server_error(self, plugin):
         exc = urllib.error.HTTPError("url", 500, "Internal Server Error", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommServerError)
         assert result.status_code == 500
 
     def test_502_becomes_server_error(self, plugin):
         exc = urllib.error.HTTPError("url", 502, "Bad Gateway", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommServerError)
         assert result.status_code == 502
 
     def test_429_becomes_server_error(self, plugin):
         exc = urllib.error.HTTPError("url", 429, "Too Many Requests", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommServerError)
         assert result.status_code == 429
         assert "Rate limited" in str(result)
 
     def test_other_4xx_becomes_generic_api_error(self, plugin):
         exc = urllib.error.HTTPError("url", 418, "I'm a Teapot", {}, None)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommApiError)
         assert not isinstance(result, RommServerError)
         assert "418" in str(result)
 
     def test_url_error_plain_becomes_connection_error(self, plugin):
         exc = urllib.error.URLError("Connection refused")
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommConnectionError)
 
     def test_url_error_wrapping_ssl_becomes_ssl_error(self, plugin):
         ssl_exc = ssl.SSLError("certificate verify failed")
         exc = urllib.error.URLError(ssl_exc)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommSSLError)
 
     def test_url_error_wrapping_timeout_becomes_timeout_error(self, plugin):
         timeout_exc = socket.timeout("timed out")
         exc = urllib.error.URLError(timeout_exc)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommTimeoutError)
 
     def test_url_error_wrapping_timeout_error_becomes_timeout_error(self, plugin):
         timeout_exc = TimeoutError("timed out")
         exc = urllib.error.URLError(timeout_exc)
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommTimeoutError)
 
     def test_direct_ssl_error(self, plugin):
         exc = ssl.SSLError("bad cert")
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommSSLError)
 
     def test_direct_socket_timeout(self, plugin):
         exc = socket.timeout("timed out")
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommTimeoutError)
 
     def test_direct_timeout_error(self, plugin):
         exc = TimeoutError("timed out")
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommTimeoutError)
 
     def test_connection_error(self, plugin):
         exc = ConnectionRefusedError("refused")
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommConnectionError)
 
     def test_os_error(self, plugin):
         exc = OSError("network unreachable")
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommConnectionError)
 
     def test_unknown_exception_wrapped_in_romm_api_error(self, plugin):
         exc = ValueError("bad value")
-        result = plugin._http_client.translate_http_error(exc, "http://romm.local/api/x")
+        result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommApiError)
         assert "Unexpected error: bad value" in str(result)
 
@@ -424,27 +424,27 @@ class TestRommRequestErrors:
         exc = urllib.error.HTTPError("http://romm.local/api/test", 401, "Unauthorized", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommAuthError) as exc_info:
-                plugin._http_client.request("/api/test")
+                plugin._http_adapter.request("/api/test")
         assert exc_info.value.status_code == 401
 
     def test_connection_refused_raises_connection_error(self, plugin):
         _setup_plugin(plugin)
         with patch("urllib.request.urlopen", side_effect=ConnectionRefusedError("refused")):
             with pytest.raises(RommConnectionError):
-                plugin._http_client.request("/api/test")
+                plugin._http_adapter.request("/api/test")
 
     def test_timeout_raises_timeout_error(self, plugin):
         _setup_plugin(plugin)
         with patch("urllib.request.urlopen", side_effect=socket.timeout("timed out")):
             with pytest.raises(RommTimeoutError):
-                plugin._http_client.request("/api/test")
+                plugin._http_adapter.request("/api/test")
 
     def test_500_raises_server_error(self, plugin):
         _setup_plugin(plugin)
         exc = urllib.error.HTTPError("http://romm.local/api/test", 500, "Internal Server Error", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommServerError) as exc_info:
-                plugin._http_client.request("/api/test")
+                plugin._http_adapter.request("/api/test")
         assert exc_info.value.status_code == 500
 
     def test_preserves_cause_chain(self, plugin):
@@ -452,7 +452,7 @@ class TestRommRequestErrors:
         original = ConnectionRefusedError("refused")
         with patch("urllib.request.urlopen", side_effect=original):
             with pytest.raises(RommConnectionError) as exc_info:
-                plugin._http_client.request("/api/test")
+                plugin._http_adapter.request("/api/test")
         assert exc_info.value.__cause__ is original
 
     def test_already_translated_error_not_rewrapped(self, plugin):
@@ -461,7 +461,7 @@ class TestRommRequestErrors:
         original_err = RommAuthError("already translated")
         with patch("urllib.request.urlopen", side_effect=original_err):
             with pytest.raises(RommAuthError) as exc_info:
-                plugin._http_client.request("/api/test")
+                plugin._http_adapter.request("/api/test")
         assert str(exc_info.value) == "already translated"
 
 
@@ -473,13 +473,13 @@ class TestRommJsonRequestErrors:
         exc = urllib.error.HTTPError("http://romm.local/api/saves", 404, "Not Found", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommNotFoundError):
-                plugin._http_client.post_json("/api/saves", {"data": 1})
+                plugin._http_adapter.post_json("/api/saves", {"data": 1})
 
     def test_timeout_raises_timeout_error(self, plugin):
         _setup_plugin(plugin)
         with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
             with pytest.raises(RommTimeoutError):
-                plugin._http_client.put_json("/api/saves/1", {"data": 1})
+                plugin._http_adapter.put_json("/api/saves/1", {"data": 1})
 
 
 class TestRommDownloadErrors:
@@ -491,7 +491,7 @@ class TestRommDownloadErrors:
         dest = str(tmp_path / "rom.zip")
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommForbiddenError):
-                plugin._http_client.download("/assets/rom.zip", dest)
+                plugin._http_adapter.download("/assets/rom.zip", dest)
 
 
 class TestRommUploadMultipartErrors:
@@ -504,7 +504,7 @@ class TestRommUploadMultipartErrors:
         exc = urllib.error.HTTPError("http://romm.local/api/saves", 409, "Conflict", {}, None)
         with patch("urllib.request.urlopen", side_effect=exc):
             with pytest.raises(RommConflictError):
-                plugin._http_client.upload_multipart("/api/saves", str(save_file))
+                plugin._http_adapter.upload_multipart("/api/saves", str(save_file))
 
 
 # ============================================================================
@@ -574,7 +574,7 @@ class TestRetryLogic:
     def test_retry_succeeds_on_first_try(self, plugin):
         """No retries needed when call succeeds."""
         fn = MagicMock(return_value="ok")
-        result = plugin._http_client.with_retry(fn, "arg1", key="val")
+        result = plugin._http_adapter.with_retry(fn, "arg1", key="val")
         assert result == "ok"
         fn.assert_called_once_with("arg1", key="val")
 
@@ -582,7 +582,7 @@ class TestRetryLogic:
         """Retries on transient error, succeeds on second attempt."""
         fn = MagicMock(side_effect=[ConnectionError("refused"), "ok"])
         with patch("time.sleep"):
-            result = plugin._http_client.with_retry(fn, max_attempts=3, base_delay=0)
+            result = plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
         assert result == "ok"
         assert fn.call_count == 2
 
@@ -591,7 +591,7 @@ class TestRetryLogic:
         fn = MagicMock(side_effect=ConnectionError("refused"))
         with patch("time.sleep"):
             with pytest.raises(ConnectionError):
-                plugin._http_client.with_retry(fn, max_attempts=3, base_delay=0)
+                plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
         assert fn.call_count == 3
 
     def test_retry_no_retry_on_4xx(self, plugin):
@@ -599,14 +599,14 @@ class TestRetryLogic:
         err = urllib.error.HTTPError("url", 404, "not found", {}, None)
         fn = MagicMock(side_effect=err)
         with pytest.raises(urllib.error.HTTPError):
-            plugin._http_client.with_retry(fn, max_attempts=3, base_delay=0)
+            plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
         fn.assert_called_once()
 
     def test_retry_delays_exponential(self, plugin):
         """Delays follow base_delay * 3^attempt pattern."""
         fn = MagicMock(side_effect=[ConnectionError("1"), ConnectionError("2"), "ok"])
         with patch("time.sleep") as mock_sleep:
-            plugin._http_client.with_retry(fn, max_attempts=3, base_delay=1)
+            plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=1)
         assert mock_sleep.call_count == 2
         mock_sleep.assert_any_call(1)  # 1 * 3^0
         mock_sleep.assert_any_call(3)  # 1 * 3^1
@@ -615,14 +615,14 @@ class TestRetryLogic:
         """RommAuthError raises immediately without retry."""
         fn = MagicMock(side_effect=RommAuthError("401"))
         with pytest.raises(RommAuthError):
-            plugin._http_client.with_retry(fn, max_attempts=3, base_delay=0)
+            plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
         fn.assert_called_once()
 
     def test_retry_retries_romm_server_error(self, plugin):
         """RommServerError is retried."""
         fn = MagicMock(side_effect=[RommServerError("500"), "ok"])
         with patch("time.sleep"):
-            result = plugin._http_client.with_retry(fn, max_attempts=3, base_delay=0)
+            result = plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
         assert result == "ok"
         assert fn.call_count == 2
 
@@ -630,7 +630,7 @@ class TestRetryLogic:
         """RommConnectionError is retried."""
         fn = MagicMock(side_effect=[RommConnectionError("refused"), "ok"])
         with patch("time.sleep"):
-            result = plugin._http_client.with_retry(fn, max_attempts=3, base_delay=0)
+            result = plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
         assert result == "ok"
         assert fn.call_count == 2
 
@@ -661,7 +661,7 @@ class TestTestConnectionErrors:
         plugin.loop = asyncio.get_event_loop()
         # Heartbeat succeeds, platforms raises auth error
         heartbeat_response = {"status": "ok"}
-        with patch.object(plugin._http_client, "request", side_effect=[heartbeat_response, RommAuthError("401")]):
+        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat_response, RommAuthError("401")]):
             result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "auth_error"
@@ -674,7 +674,7 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        with patch.object(plugin._http_client, "request", side_effect=RommConnectionError("refused")):
+        with patch.object(plugin._http_adapter, "request", side_effect=RommConnectionError("refused")):
             result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "connection_error"
@@ -687,7 +687,7 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        with patch.object(plugin._http_client, "request", side_effect=RommSSLError("cert fail")):
+        with patch.object(plugin._http_adapter, "request", side_effect=RommSSLError("cert fail")):
             result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "ssl_error"
@@ -701,7 +701,7 @@ class TestTestConnectionErrors:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         heartbeat = {"SYSTEM": {"VERSION": "4.7.0"}, "status": "ok"}
-        with patch.object(plugin._http_client, "request", side_effect=[heartbeat, {"platforms": []}]):
+        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
             result = await plugin.test_connection()
         assert result["success"] is True
         assert "Connected to RomM 4.7.0" in result["message"]
@@ -717,7 +717,7 @@ class TestTestConnectionErrors:
         plugin.loop = asyncio.get_event_loop()
         heartbeat_response = {"SYSTEM": {"VERSION": "4.7.0"}}
         with patch.object(
-            plugin._http_client, "request", side_effect=[heartbeat_response, RommServerError("500", status_code=500)]
+            plugin._http_adapter, "request", side_effect=[heartbeat_response, RommServerError("500", status_code=500)]
         ):
             result = await plugin.test_connection()
         assert result["success"] is False
@@ -736,7 +736,7 @@ class TestVersionDetection:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         heartbeat = {"SYSTEM": {"VERSION": "4.7.0"}}
-        with patch.object(plugin._http_client, "request", side_effect=[heartbeat, {"platforms": []}]):
+        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
             result = await plugin.test_connection()
         assert result["romm_version"] == "4.7.0"
         assert plugin._romm_version == "4.7.0"
@@ -749,7 +749,7 @@ class TestVersionDetection:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         heartbeat = {"SYSTEM": {"VERSION": "4.5.0"}}
-        with patch.object(plugin._http_client, "request", side_effect=[heartbeat, {"platforms": []}]):
+        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
             result = await plugin.test_connection()
         assert result["success"] is True
         assert result["romm_version"] == "4.5.0"
@@ -765,7 +765,7 @@ class TestVersionDetection:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         heartbeat = {"SYSTEM": {"VERSION": "4.6.1"}}
-        with patch.object(plugin._http_client, "request", side_effect=[heartbeat, {"platforms": []}]):
+        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
             result = await plugin.test_connection()
         assert result["success"] is True
         assert "version_warning" not in result
@@ -778,7 +778,7 @@ class TestVersionDetection:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         heartbeat = {"SYSTEM": {"VERSION": "development"}}
-        with patch.object(plugin._http_client, "request", side_effect=[heartbeat, {"platforms": []}]):
+        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
             result = await plugin.test_connection()
         assert result["success"] is True
         assert result.get("romm_version") == "development"
@@ -792,7 +792,7 @@ class TestVersionDetection:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         heartbeat = {"status": "ok"}
-        with patch.object(plugin._http_client, "request", side_effect=[heartbeat, {"platforms": []}]):
+        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
             result = await plugin.test_connection()
         assert result["success"] is True
         assert plugin._romm_version is None
@@ -806,7 +806,7 @@ class TestVersionDetection:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         plugin._romm_version = "4.7.0"  # previously detected
-        with patch.object(plugin._http_client, "request", side_effect=RommConnectionError("refused")):
+        with patch.object(plugin._http_adapter, "request", side_effect=RommConnectionError("refused")):
             result = await plugin.test_connection()
         assert result["success"] is False
         assert plugin._romm_version is None
@@ -832,7 +832,7 @@ class TestVersionDetection:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        with patch.object(plugin._http_client, "request", side_effect=RommTimeoutError("timed out")):
+        with patch.object(plugin._http_adapter, "request", side_effect=RommTimeoutError("timed out")):
             result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "timeout_error"

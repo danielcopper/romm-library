@@ -1,4 +1,4 @@
-"""DownloadService — ROM download engine extracted from DownloadMixin.
+"""DownloadService — ROM download engine.
 
 Handles ROM downloads (single and multi-file), disk space checks,
 download queue management, ROM removal, and partial download cleanup.
@@ -37,7 +37,7 @@ class DownloadService:
     def __init__(
         self,
         *,
-        http_client: HttpAdapter,
+        http_adapter: HttpAdapter,
         state: dict,
         save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
@@ -47,7 +47,7 @@ class DownloadService:
         save_state: Callable,
         save_save_sync_state: Callable,
     ):
-        self._http_client = http_client
+        self._http_adapter = http_adapter
         self._state = state
         self._save_sync_state = save_sync_state
         self._loop = loop
@@ -182,7 +182,7 @@ class DownloadService:
 
         self._download_in_progress.add(rom_id)
         try:
-            rom_detail = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+            rom_detail = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/roms/{rom_id}")
         except Exception as e:
             self._download_in_progress.discard(rom_id)
             self._logger.error(f"Failed to fetch ROM {rom_id}: {e}")
@@ -190,7 +190,7 @@ class DownloadService:
 
         platform_slug = rom_detail.get("platform_slug", "")
         platform_fs_slug = rom_detail.get("platform_fs_slug")
-        system = self._http_client.resolve_system(platform_slug, platform_fs_slug)
+        system = self._http_adapter.resolve_system(platform_slug, platform_fs_slug)
 
         roms_dir = os.path.join(retrodeck_config.get_roms_path(), system)
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
@@ -351,7 +351,7 @@ class DownloadService:
                 # Multi-file ROM: API returns ZIP, download to temp then extract
                 tmp_zip = target_path + _ZIP_TMP_EXT
                 await self._loop.run_in_executor(
-                    None, self._http_client.download, download_path, tmp_zip, progress_callback
+                    None, self._http_adapter.download, download_path, tmp_zip, progress_callback
                 )
                 final_path = await self._loop.run_in_executor(
                     None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
@@ -359,7 +359,7 @@ class DownloadService:
             else:
                 tmp_path = target_path + _TMP_EXT
                 await self._loop.run_in_executor(
-                    None, self._http_client.download, download_path, tmp_path, progress_callback
+                    None, self._http_adapter.download, download_path, tmp_path, progress_callback
                 )
                 final_path = await self._loop.run_in_executor(
                     None, self._post_download_single_io, rom_id, rom_detail, target_path, file_name, system

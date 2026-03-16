@@ -1,7 +1,7 @@
-"""SaveSyncService — save sync business logic extracted from SaveSyncMixin.
+"""SaveSyncService — save sync business logic.
 
 All RomM communication goes through ``SaveApiProtocol``.
-No ``import decky`` or ``from lib.*`` imports.
+No ``import decky`` — error utilities come from ``lib.errors``.
 """
 
 from __future__ import annotations
@@ -17,10 +17,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from adapters.romm.save_api.protocol import SaveApiProtocol
-
 from lib.errors import RommApiError, RommConflictError, classify_error
 from services._util import run_api_sync
+from services.protocols import SaveApiProtocol
 
 if TYPE_CHECKING:
     import asyncio

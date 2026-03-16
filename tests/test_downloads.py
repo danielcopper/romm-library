@@ -16,7 +16,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._http_client = MagicMock()
+    p._http_adapter = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -26,7 +26,7 @@ def plugin():
     p._steam_config = steam_config
 
     p._sync_service = LibrarySyncService(
-        http_client=p._http_client,
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -41,7 +41,7 @@ def plugin():
     )
     p._save_sync_state = {"saves": {}, "playtime": {}, "settings": {}}
     p._download_service = DownloadService(
-        http_client=p._http_client,
+        http_adapter=p._http_adapter,
         state=p._state,
         save_sync_state=p._save_sync_state,
         loop=asyncio.get_event_loop(),
@@ -568,7 +568,7 @@ class TestDoDownloadSingleFile:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
         # File ends up at target_path (not .tmp)
@@ -633,7 +633,7 @@ class TestDoDownloadMultiFile:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
 
         # ZIP is extracted to extract_dir
@@ -813,7 +813,7 @@ class TestDoDownloadCancelled:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download_cancel):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download_cancel):
             with pytest.raises(asyncio.CancelledError):
                 await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
@@ -855,7 +855,7 @@ class TestDoDownloadZipFailure:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[66] = {"rom_id": 66, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(66, rom_detail, target_path, "psx")
 
         assert plugin._download_service._download_queue[66]["status"] == "failed"
@@ -1049,7 +1049,7 @@ class TestUrlEncodedFilenameRename:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[99] = {"rom_id": 99, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(99, rom_detail, target_path, "psx")
 
         extract_dir = roms_dir / "Vagrant Story (USA)"
@@ -1100,7 +1100,7 @@ class TestUrlEncodedFilenameRename:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
 
         extract_dir = roms_dir / "FF7"

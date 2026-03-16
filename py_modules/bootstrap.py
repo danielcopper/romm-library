@@ -23,6 +23,8 @@ from services.firmware import FirmwareService
 from services.library_sync import LibrarySyncService
 from services.metadata import MetadataService
 from services.playtime import PlaytimeService
+from services.protocols import HttpAdapter
+from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.save_sync import SaveSyncService
 from services.sgdb_artwork import SgdbArtworkService
 
@@ -53,17 +55,17 @@ def bootstrap(
 
     Returns
     -------
-    dict with keys ``persistence``, ``http_client``, and ``wire_services``
+    dict with keys ``persistence``, ``http_adapter``, and ``wire_services``
     (a factory callable for deferred service creation).
     """
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
-    http_client = RommHttpAdapter(settings, plugin_dir, logger)
-    version_router = VersionRouter(http_client)
+    http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
+    version_router = VersionRouter(http_adapter)
     steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
     return {
         "persistence": persistence,
-        "http_client": http_client,
+        "http_adapter": http_adapter,
         "save_api": version_router,
         "version_router": version_router,
         "steam_config": steam_config,
@@ -73,8 +75,8 @@ def bootstrap(
 def wire_services(
     *,
     save_api: Any,
-    http_client: RommHttpAdapter,
-    steam_config: SteamConfigAdapter,
+    http_adapter: HttpAdapter,
+    steam_config: SteamConfigProtocol,
     state: dict,
     settings: dict,
     metadata_cache: dict,
@@ -103,8 +105,8 @@ def wire_services(
     """
     save_sync_service = SaveSyncService(
         save_api=save_api,
-        with_retry=http_client.with_retry,
-        is_retryable=http_client.is_retryable,
+        with_retry=http_adapter.with_retry,
+        is_retryable=http_adapter.is_retryable,
         state=state,
         save_sync_state=save_sync_state,
         loop=loop,
@@ -115,8 +117,8 @@ def wire_services(
 
     playtime_service = PlaytimeService(
         save_api=save_api,
-        with_retry=http_client.with_retry,
-        is_retryable=http_client.is_retryable,
+        with_retry=http_adapter.with_retry,
+        is_retryable=http_adapter.is_retryable,
         save_sync_state=save_sync_state,
         loop=loop,
         logger=logger,
@@ -124,7 +126,7 @@ def wire_services(
     )
 
     metadata_service = MetadataService(
-        http_client=http_client,
+        http_adapter=http_adapter,
         state=state,
         metadata_cache=metadata_cache,
         loop=loop,
@@ -134,7 +136,7 @@ def wire_services(
     )
 
     sync_service = LibrarySyncService(
-        http_client=http_client,
+        http_adapter=http_adapter,
         steam_config=steam_config,
         state=state,
         settings=settings,
@@ -150,7 +152,7 @@ def wire_services(
     )
 
     download_service = DownloadService(
-        http_client=http_client,
+        http_adapter=http_adapter,
         state=state,
         save_sync_state=save_sync_state,
         loop=loop,
@@ -162,7 +164,7 @@ def wire_services(
     )
 
     firmware_service = FirmwareService(
-        http_client=http_client,
+        http_adapter=http_adapter,
         state=state,
         loop=loop,
         logger=logger,
@@ -171,7 +173,7 @@ def wire_services(
     )
 
     sgdb_service = SgdbArtworkService(
-        http_client=http_client,
+        http_adapter=http_adapter,
         steam_config=steam_config,
         state=state,
         settings=settings,
@@ -180,11 +182,11 @@ def wire_services(
         runtime_dir=runtime_dir,
         save_state=save_state,
         save_settings_to_disk=save_settings_to_disk,
-        pending_sync=sync_service._pending_sync,
+        pending_sync=sync_service.pending_sync,
     )
 
     achievements_service = AchievementsService(
-        http_client=http_client,
+        http_adapter=http_adapter,
         state=state,
         loop=loop,
         logger=logger,

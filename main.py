@@ -117,7 +117,7 @@ class Plugin:
             settings=self.settings,
         )
         self._persistence = adapters["persistence"]
-        self._http_client = adapters["http_client"]
+        self._http_adapter = adapters["http_adapter"]
         self._version_router = adapters["version_router"]
         self._steam_config = adapters["steam_config"]
         self._state = {
@@ -139,7 +139,7 @@ class Plugin:
         # ── Wire services (composition, uses live state refs) ──
         services = wire_services(
             save_api=adapters["save_api"],
-            http_client=self._http_client,
+            http_adapter=self._http_adapter,
             steam_config=self._steam_config,
             state=self._state,
             settings=self.settings,
@@ -465,7 +465,7 @@ class Plugin:
             return {"success": False, "message": "No server URL configured", "error_code": "config_error"}
         # Test basic connectivity (heartbeat may not require auth)
         try:
-            heartbeat = await self.loop.run_in_executor(None, self._http_client.request, "/api/heartbeat")
+            heartbeat = await self.loop.run_in_executor(None, self._http_adapter.request, "/api/heartbeat")
         except Exception as e:
             self._romm_version = None
             return error_response(e)
@@ -484,7 +484,7 @@ class Plugin:
 
         # Test authenticated access
         try:
-            await self.loop.run_in_executor(None, self._http_client.request, "/api/platforms")
+            await self.loop.run_in_executor(None, self._http_adapter.request, "/api/platforms")
         except Exception as e:
             resp = error_response(e)
             if resp["error_code"] not in ("auth_error", "forbidden_error"):
