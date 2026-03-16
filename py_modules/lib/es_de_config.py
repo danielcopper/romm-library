@@ -517,9 +517,11 @@ class GamelistXmlEditor:
             if core_label:
                 escaped_path = self.escape_xml(rom_path)
                 escaped_label = self.escape_xml(core_label)
-                new_games_xml.append(
-                    f"<game>\n    <path>{escaped_path}</path>\n    <altemulator>{escaped_label}</altemulator>\n  </game>"
+                game_xml = (
+                    f"<game>\n    <path>{escaped_path}</path>\n"
+                    f"    <altemulator>{escaped_label}</altemulator>\n  </game>"
                 )
+                new_games_xml.append(game_xml)
 
         content = self.reconstruct_gamelist(alt_label, new_games_xml)
         self.write_gamelist_atomic(path, content)
@@ -684,9 +686,8 @@ class GamelistXmlEditor:
         """
         parts = ['<?xml version="1.0"?>\n<gameList>']
         if alt_label:
-            parts.append(
-                f"\n  <alternativeEmulator>\n    <label>{GamelistXmlEditor.escape_xml(alt_label)}</label>\n  </alternativeEmulator>"
-            )
+            escaped = GamelistXmlEditor.escape_xml(alt_label)
+            parts.append(f"\n  <alternativeEmulator>\n    <label>{escaped}</label>\n  </alternativeEmulator>")
         for game_xml in games_xml_list:
             parts.append(f"\n  {game_xml}")
         parts.append("\n</gameList>\n")

@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
-from services.steamgrid import SteamGridService
 from services.library import LibraryService
+from services.steamgrid import SteamGridService
 
 # conftest.py patches decky before this import
 from main import Plugin
