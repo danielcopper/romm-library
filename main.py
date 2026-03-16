@@ -62,7 +62,7 @@ class Plugin:
     def _prune_stale_installed_roms(self):
         """Remove installed_roms entries whose files no longer exist on disk."""
         pruned = []
-        for rom_id, entry in list(self._state["installed_roms"].items()):
+        for rom_id, entry in list(self._state["installed_roms"].items()):  # list(): dict mutated below
             file_path = entry.get("file_path", "")
             rom_dir = entry.get("rom_dir", "")
             if (file_path and os.path.exists(file_path)) or (rom_dir and os.path.exists(rom_dir)):
@@ -77,7 +77,7 @@ class Plugin:
     def _prune_stale_registry(self):
         """Remove shortcut_registry entries with missing or invalid app_id."""
         pruned = []
-        for rom_id, entry in list(self._state["shortcut_registry"].items()):
+        for rom_id, entry in list(self._state["shortcut_registry"].items()):  # list(): dict mutated below
             app_id = entry.get("app_id")
             if not app_id or not isinstance(app_id, int):
                 decky.logger.info(f"Pruned stale registry entry: rom_id={rom_id} (invalid app_id={app_id})")
@@ -103,7 +103,7 @@ class Plugin:
             self._save_settings_to_disk()
         self.settings.setdefault("log_level", "warn")
 
-    async def _main(self):
+    async def _main(self):  # Decky lifecycle — must be async
         self.loop = asyncio.get_event_loop()
         # ── Load settings (uses lazy _persistence property) ──
         self._load_settings()
@@ -191,7 +191,7 @@ class Plugin:
         """Delegate to MigrationService."""
         return await self._migration_service.get_migration_status()
 
-    async def _unload(self):
+    async def _unload(self):  # Decky lifecycle — must be async
         if self._sync_service._sync_state == SyncState.RUNNING:
             self._sync_service._sync_state = SyncState.CANCELLING
         # Cancel all active downloads
