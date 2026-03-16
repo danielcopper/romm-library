@@ -598,7 +598,7 @@ class Plugin:
     # ── Save Sync / Playtime delegation to services ──────────
 
     async def ensure_device_registered(self):
-        return await self._save_sync_service.ensure_device_registered()
+        return self._save_sync_service.ensure_device_registered()
 
     async def get_save_status(self, rom_id):
         return await self._save_sync_service.get_save_status(rom_id)
@@ -622,19 +622,19 @@ class Plugin:
         return await self._save_sync_service.resolve_conflict(rom_id, filename, resolution, server_save_id, local_path)
 
     async def get_pending_conflicts(self):
-        return await self._save_sync_service.get_pending_conflicts()
+        return self._save_sync_service.get_pending_conflicts()
 
     async def get_save_sync_settings(self):
-        return await self._save_sync_service.get_save_sync_settings()
+        return self._save_sync_service.get_save_sync_settings()
 
     async def update_save_sync_settings(self, settings):
-        return await self._save_sync_service.update_save_sync_settings(settings)
+        return self._save_sync_service.update_save_sync_settings(settings)
 
     async def delete_local_saves(self, rom_id):
-        return await self._save_sync_service.delete_local_saves(rom_id)
+        return self._save_sync_service.delete_local_saves(rom_id)
 
     async def delete_platform_saves(self, platform_slug):
-        return await self._save_sync_service.delete_platform_saves(platform_slug)
+        return self._save_sync_service.delete_platform_saves(platform_slug)
 
     async def record_session_start(self, rom_id):
         return self._playtime_service.record_session_start(rom_id)

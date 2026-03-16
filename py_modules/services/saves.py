@@ -826,7 +826,7 @@ class SaveService:
     # Public async API (callable endpoints)
     # ------------------------------------------------------------------
 
-    async def ensure_device_registered(self) -> dict:
+    def ensure_device_registered(self) -> dict:
         """Ensure this device has a unique ID for save sync tracking.
 
         Generates a local UUID on first use — no server registration needed.
@@ -949,7 +949,7 @@ class SaveService:
             return {"success": True, "message": "Pre-launch sync disabled", "synced": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -981,7 +981,7 @@ class SaveService:
             return {"success": True, "message": "Post-exit sync disabled", "synced": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -1013,7 +1013,7 @@ class SaveService:
             return {"success": False, "message": "Save sync is disabled", "synced": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -1037,7 +1037,7 @@ class SaveService:
             return {"success": False, "message": "Save sync is disabled", "synced": 0, "conflicts": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -1126,11 +1126,11 @@ class SaveService:
             self._logger.error(f"Conflict resolution failed: {e}")
             return {"success": False, "message": "Conflict resolution failed"}
 
-    async def get_pending_conflicts(self) -> dict:
+    def get_pending_conflicts(self) -> dict:
         """Deprecated — conflicts are now returned inline from sync operations."""
         return {"conflicts": []}
 
-    async def get_save_sync_settings(self) -> dict:
+    def get_save_sync_settings(self) -> dict:
         """Return current save sync settings."""
         return self._save_sync_state.get(
             "settings",
@@ -1143,7 +1143,7 @@ class SaveService:
             },
         )
 
-    async def update_save_sync_settings(self, settings: dict) -> dict:
+    def update_save_sync_settings(self, settings: dict) -> dict:
         """Update save sync settings (conflict_mode, sync toggles, etc.)."""
         allowed_keys = {
             "save_sync_enabled",
@@ -1170,7 +1170,7 @@ class SaveService:
         self.save_state()
         return {"success": True, "settings": current}
 
-    async def delete_local_saves(self, rom_id: int) -> dict:
+    def delete_local_saves(self, rom_id: int) -> dict:
         """Delete local save files (.srm, .rtc) for a ROM."""
         rom_id = int(rom_id)
         rom_id_str = str(rom_id)
@@ -1204,7 +1204,7 @@ class SaveService:
             "message": f"Deleted {deleted} save file(s)",
         }
 
-    async def delete_platform_saves(self, platform_slug: str) -> dict:
+    def delete_platform_saves(self, platform_slug: str) -> dict:
         """Delete local save files for all installed ROMs on a platform."""
         total_deleted = 0
         total_errors: list[str] = []
