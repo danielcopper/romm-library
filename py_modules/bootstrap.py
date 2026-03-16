@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from adapters.persistence import PersistenceAdapter
@@ -42,24 +42,24 @@ class WiringConfig:
     steam_config: SteamConfigProtocol
 
     # State (live dict refs)
-    state: dict = field(default_factory=dict)
-    settings: dict = field(default_factory=dict)
-    metadata_cache: dict = field(default_factory=dict)
-    save_sync_state: dict = field(default_factory=dict)
+    state: dict
+    settings: dict
+    metadata_cache: dict
+    save_sync_state: dict
 
     # Runtime
-    loop: asyncio.AbstractEventLoop | None = None
-    logger: logging.Logger | None = None
-    plugin_dir: str = ""
-    runtime_dir: str = ""
-    emit: Any = None
+    loop: asyncio.AbstractEventLoop
+    logger: logging.Logger
+    plugin_dir: str
+    runtime_dir: str
+    emit: Any
 
     # Callbacks
-    get_saves_path: Callable | None = None
-    save_state: Callable | None = None
-    save_settings_to_disk: Callable | None = None
-    save_metadata_cache: Callable | None = None
-    log_debug: Callable | None = None
+    get_saves_path: Callable
+    save_state: Callable
+    save_settings_to_disk: Callable
+    save_metadata_cache: Callable
+    log_debug: Callable
 
 
 def bootstrap(
