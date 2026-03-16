@@ -455,7 +455,7 @@ class Plugin:
         from lib import es_de_config
 
         es_de_config.set_system_override(retrodeck_home, platform_slug, core_label or None)
-        es_de_config._reset_cache()
+        es_de_config._resolver.reset_cache()
 
     async def set_system_core(self, platform_slug, core_label):
         """Set system-wide core override. Pass empty string to reset to default."""
@@ -476,7 +476,7 @@ class Plugin:
         from lib import es_de_config
 
         es_de_config.set_game_override(retrodeck_home, platform_slug, rom_path, core_label or None)
-        es_de_config._reset_cache()
+        es_de_config._resolver.reset_cache()
 
     async def set_game_core(self, platform_slug, rom_path, core_label):
         """Set per-game core override. Pass empty string to reset to platform default."""
