@@ -7,6 +7,7 @@ import re
 import decky  # for DECKY_USER_HOME and logging
 
 _CORE_SO_RE = re.compile(r"%CORE_RETROARCH%/([\w-]+_libretro)\.so")
+_GAMELIST_FILENAME = "gamelist.xml"
 
 _FLATPAK_SYSTEMS_DIR = (
     "/var/lib/flatpak/app/net.retrodeck.retrodeck/current/active"
@@ -181,7 +182,7 @@ class CoreResolver:
 
         Returns the label string or None.
         """
-        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, "gamelist.xml")
+        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, _GAMELIST_FILENAME)
         if not os.path.exists(gamelist_path):
             return None
 
@@ -199,7 +200,7 @@ class CoreResolver:
         result = {"label": None}
         state = {"path": [], "text": ""}
 
-        def start_element(name, attrs):
+        def start_element(name, _attrs):
             state["path"].append(name)
             state["text"] = ""
 
@@ -238,7 +239,7 @@ class CoreResolver:
 
         Returns the altemulator label string or None.
         """
-        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, "gamelist.xml")
+        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, _GAMELIST_FILENAME)
         if not os.path.exists(gamelist_path):
             return None
 
@@ -553,7 +554,7 @@ class GamelistXmlEditor:
     @staticmethod
     def gamelist_path(retrodeck_home, system_name):
         """Return the gamelist.xml path for a system."""
-        return os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, "gamelist.xml")
+        return os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, _GAMELIST_FILENAME)
 
     @staticmethod
     def read_gamelist_raw(path):
