@@ -880,7 +880,7 @@ class LibraryService:
     def get_registry_platforms(self):
         """Return platforms from the shortcut registry (works offline, no RomM API call)."""
         platforms = {}
-        for rom_id, entry in self._state["shortcut_registry"].items():
+        for entry in self._state["shortcut_registry"].values():
             pname = entry.get("platform_name", "Unknown")
             slug = entry.get("platform_slug", "")
             platforms.setdefault(pname, {"count": 0, "slug": slug})
