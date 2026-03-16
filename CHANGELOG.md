@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.13.0...decky-romm-sync-v0.13.1) (2026-03-16)
+
+
+### Bug Fixes
+
+* code quality fixes — external review, SonarCloud, encapsulation ([#108](https://github.com/danielcopper/decky-romm-sync/issues/108)) ([8dfb215](https://github.com/danielcopper/decky-romm-sync/commit/8dfb21511c7ba54e9ab708a2d374d7f3d3573905))
+
 ## [0.13.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.12.0...decky-romm-sync-v0.13.0) (2026-03-15)
 
 
