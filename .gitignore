@@ -30,9 +30,6 @@ __pycache__/
 *.log
 log.txt
 
-# Planning docs
-PLAN.md
-
 # Claude Code
 .claude/
 .venv/
