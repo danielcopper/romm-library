@@ -402,14 +402,14 @@ class DownloadService:
     def _maybe_generate_m3u(self, extract_dir, rom_detail):
         """Auto-generate an M3U playlist if none exists and multiple disc files are found."""
         # Check if an M3U already exists (search recursively)
-        for root, dirs, files in os.walk(extract_dir):
+        for root, _dirs, files in os.walk(extract_dir):
             for f in files:
                 if f.lower().endswith(".m3u"):
                     return
 
         # Collect disc files: .cue, .chd, .iso (search recursively)
         disc_files = []
-        for root, dirs, files in os.walk(extract_dir):
+        for root, _dirs, files in os.walk(extract_dir):
             for f in files:
                 if f.lower().endswith((".cue", ".chd", ".iso")):
                     # Store path relative to extract_dir for M3U entries
@@ -431,7 +431,7 @@ class DownloadService:
     def _detect_launch_file(self, extract_dir):
         """Find the best launch file in an extracted multi-file ROM directory."""
         all_files = []
-        for root, dirs, files in os.walk(extract_dir):
+        for root, _dirs, files in os.walk(extract_dir):
             for f in files:
                 all_files.append(os.path.join(root, f))
 
@@ -489,13 +489,12 @@ class DownloadService:
             except Exception as e:
                 self._logger.warning(f"Cleanup failed for directory {extract_dir}: {e}")
 
-    async def cancel_download(self, rom_id):
+    def cancel_download(self, rom_id):
         rom_id = int(rom_id)
         task = self._download_tasks.get(rom_id)
         if not task:
             return {"success": False, "message": "No active download for this ROM"}
         task.cancel()
-        # Don't await — _do_download's finally block handles cleanup
         return {"success": True, "message": "Download cancelled"}
 
     def get_download_queue(self):
@@ -572,7 +571,7 @@ class DownloadService:
         count = 0
         errors = []
         successfully_deleted = []
-        for rom_id_str, installed in list(self._state["installed_roms"].items()):
+        for rom_id_str, installed in self._state["installed_roms"].items():
             try:
                 self._delete_rom_files(installed)
                 count += 1

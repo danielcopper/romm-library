@@ -578,7 +578,7 @@ class Plugin:
         return await self._download_service.start_download(rom_id)
 
     async def cancel_download(self, rom_id):
-        return await self._download_service.cancel_download(rom_id)
+        return self._download_service.cancel_download(rom_id)
 
     async def get_download_queue(self):
         return self._download_service.get_download_queue()
