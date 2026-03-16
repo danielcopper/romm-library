@@ -93,8 +93,12 @@ class RommHttpAdapter:
 
     def ssl_context(self) -> ssl.SSLContext:
         """SSL context for RomM connections. Respects user insecure toggle."""
+        # create_default_context uses secure defaults (TLS 1.2+, cert verification).
+        # S4423 is a false positive — Python 3.10+ defaults are safe.
         ctx = ssl.create_default_context(cafile=_ca_bundle())
         if self._settings.get("romm_allow_insecure_ssl", False):
+            # Intentionally disabled for self-hosted RomM with self-signed certs.
+            # User opts in via settings toggle with UI warning. (S5527, S4830)
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
         return ctx
