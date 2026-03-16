@@ -116,7 +116,7 @@ Working:
 - Native Steam metadata display (descriptions, genres, release date, controller support)
 - RetroAchievements integration with tabbed game detail page
 
-See PLAN.md for the full roadmap.
+Roadmap and open work tracked on the [GitHub Projects board](https://github.com/users/danielcopper/projects/2).
 
 ## Development
 
@@ -157,4 +157,4 @@ Tests are split per module in `tests/test_*.py` with shared mocks in `tests/conf
 - **Use team-swarm agents** for everything beyond trivial single-file edits — including research, exploration, and implementation. Keep main context clean and focused on architecture and coordination by delegating to agents.
 - **Sequential agent discipline.** When running agents sequentially, each agent's prompt MUST include: "When done, report back and wait for shutdown. Do NOT pick up other tasks from the task list." This prevents agents from grabbing the next unblocked task before the lead can shut them down and spawn a dedicated agent.
 - **Preserve context.** Avoid back-and-forth code changes in the main conversation. Get alignment first, then implement cleanly in one pass (via agents).
-- Refer to PLAN.md for the full phase roadmap.
+- Refer to the [GitHub Projects board](https://github.com/users/danielcopper/projects/2) for the roadmap.
