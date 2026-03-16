@@ -172,9 +172,9 @@ class Plugin:
         # ── Startup state healing ──
         self._prune_stale_installed_roms()
         self._prune_stale_registry()
-        self._save_sync_service.prune_orphaned_state()  # services/save_sync.py
-        self._sgdb_service.prune_orphaned_artwork_cache()  # services/sgdb.py
-        self._sync_service.prune_orphaned_staging_artwork()  # services/sync.py
+        self._save_sync_service.prune_orphaned_state()  # services/saves.py
+        self._sgdb_service.prune_orphaned_artwork_cache()  # services/steamgrid.py
+        self._sync_service.prune_orphaned_staging_artwork()  # services/library.py
         self._download_service.cleanup_leftover_tmp_files()  # services/downloads.py
         # ── RetroDECK path change detection ──
         self._migration_service.detect_retrodeck_path_change()
