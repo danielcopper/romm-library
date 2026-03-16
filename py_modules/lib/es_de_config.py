@@ -827,11 +827,6 @@ _resolver = CoreResolver()
 _editor = GamelistXmlEditor()
 
 
-def _reset_cache():  # Used by tests for cache isolation
-    """Reset the singleton caches (for testing)."""
-    _resolver.reset_cache()
-
-
 # CoreResolver delegates
 find_es_systems_xml = CoreResolver.find_es_systems_xml
 parse_es_systems = CoreResolver.parse_es_systems

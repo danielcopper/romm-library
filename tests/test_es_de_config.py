@@ -4,11 +4,20 @@ import os
 import tempfile
 from unittest import mock
 
+import pytest
+
 from lib import es_de_config
 
 # conftest.py patches decky before this import
 # main.py adds py_modules to sys.path (provides vdf, etc.)
 from main import Plugin  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def _reset_es_de_cache():
+    """Reset CoreResolver singleton caches between tests."""
+    es_de_config._resolver.reset_cache()
+
 
 # --- Helpers ---
 
@@ -59,9 +68,6 @@ def _write_temp_xml(content):
 
 
 class TestFindEsSystemsXml:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     @mock.patch("lib.es_de_config.os.path.exists")
     def test_finds_xml_in_linux_path(self, mock_exists):
         mock_exists.return_value = True
@@ -85,9 +91,6 @@ class TestFindEsSystemsXml:
 
 
 class TestParseEsSystems:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     def test_parses_system_with_retroarch_cores(self):
         path = _write_temp_xml(SAMPLE_ES_SYSTEMS_XML)
         try:
@@ -181,9 +184,6 @@ class TestParseEsSystems:
 
 
 class TestGetSystemOverride:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     def test_no_gamelist_returns_none(self):
         result = es_de_config.get_system_override("/nonexistent/path", "gba")
         assert result is None
@@ -223,9 +223,6 @@ class TestGetSystemOverride:
 
 
 class TestGetActiveCore:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     GBA_SYSTEM_INFO = {
         "gba": {
             "default_core": "mgba_libretro",
@@ -294,9 +291,6 @@ class TestGetActiveCore:
 
 
 class TestGetAvailableCores:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     GBA_SYSTEM_INFO = {
         "gba": {
             "default_core": "mgba_libretro",
@@ -352,9 +346,6 @@ class TestGetAvailableCores:
 
 
 class TestSetSystemOverride:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     def test_creates_new_gamelist(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             es_de_config.set_system_override(tmpdir, "gba", "gpSP")
@@ -404,9 +395,6 @@ class TestSetSystemOverride:
 
 
 class TestSetGameOverride:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     def test_creates_new_game_entry(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
@@ -494,9 +482,6 @@ class TestSetGameOverride:
 
 
 class TestGetGameOverride:
-    def setup_method(self):
-        es_de_config._reset_cache()
-
     def test_returns_none_when_no_gamelist(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             result = es_de_config.get_game_override(tmpdir, "gba", "Pokemon.gba")
@@ -528,9 +513,6 @@ class TestGetGameOverride:
 
 class TestGetActiveCoreWithGameOverride:
     """Test that get_active_core reads per-game overrides when rom_filename is provided."""
-
-    def setup_method(self):
-        es_de_config._reset_cache()
 
     GBA_SYSTEM_INFO = {
         "gba": {
@@ -583,9 +565,6 @@ class TestGetActiveCoreWithGameOverride:
 
 class TestMtimeInvalidation:
     """Test that caches invalidate when underlying files change on disk."""
-
-    def setup_method(self):
-        es_de_config._reset_cache()
 
     def test_es_systems_reloads_on_mtime_change(self):
         """_load_es_systems should re-parse if es_systems.xml mtime changes."""
