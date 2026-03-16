@@ -46,29 +46,29 @@ class VersionRouter:
 
     # -- Delegate all SaveApiProtocol methods to self._active --
 
-    async def list_saves(self, rom_id: int) -> list[dict]:
-        return await self._active.list_saves(rom_id)
+    def list_saves(self, rom_id: int) -> list[dict]:
+        return self._active.list_saves(rom_id)
 
-    async def upload_save(
+    def upload_save(
         self,
         rom_id: int,
         file_path: str,
         emulator: str,
         save_id: int | None = None,
     ) -> dict:
-        return await self._active.upload_save(rom_id, file_path, emulator, save_id)
+        return self._active.upload_save(rom_id, file_path, emulator, save_id)
 
-    async def download_save(self, save_id: int, dest_path: str) -> None:
-        return await self._active.download_save(save_id, dest_path)
+    def download_save(self, save_id: int, dest_path: str) -> None:
+        return self._active.download_save(save_id, dest_path)
 
-    async def get_save_metadata(self, save_id: int) -> dict:
-        return await self._active.get_save_metadata(save_id)
+    def get_save_metadata(self, save_id: int) -> dict:
+        return self._active.get_save_metadata(save_id)
 
-    async def get_rom_detail(self, rom_id: int) -> dict:
-        return await self._active.get_rom_detail(rom_id)
+    def get_rom_detail(self, rom_id: int) -> dict:
+        return self._active.get_rom_detail(rom_id)
 
-    async def create_note(self, rom_id: int, data: dict) -> dict:
-        return await self._active.create_note(rom_id, data)
+    def create_note(self, rom_id: int, data: dict) -> dict:
+        return self._active.create_note(rom_id, data)
 
-    async def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
-        return await self._active.update_note(rom_id, note_id, data)
+    def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
+        return self._active.update_note(rom_id, note_id, data)

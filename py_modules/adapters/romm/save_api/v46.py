@@ -20,14 +20,14 @@ class SaveApiV46:
     def __init__(self, client: RommHttpAdapter) -> None:
         self._client = client
 
-    async def list_saves(self, rom_id: int) -> list[dict]:
+    def list_saves(self, rom_id: int) -> list[dict]:
         """List saves for a ROM. Returns plain array."""
         result = self._client.request(f"/api/saves?rom_id={rom_id}")
         if isinstance(result, list):
             return result
         return []
 
-    async def upload_save(
+    def upload_save(
         self,
         rom_id: int,
         file_path: str,
@@ -45,7 +45,7 @@ class SaveApiV46:
             return self._client.upload_multipart(f"/api/saves/{save_id}?{params}", file_path, method="PUT")
         return self._client.upload_multipart(f"/api/saves?{params}", file_path, method="POST")
 
-    async def download_save(self, save_id: int, dest_path: str) -> None:
+    def download_save(self, save_id: int, dest_path: str) -> None:
         """Download a save file.
 
         GET /api/saves/{id}/content does NOT exist on 4.6.1.
@@ -59,21 +59,21 @@ class SaveApiV46:
         encoded_path = urllib.parse.quote(download_path, safe="/")
         self._client.download(encoded_path, dest_path)
 
-    async def get_save_metadata(self, save_id: int) -> dict:
+    def get_save_metadata(self, save_id: int) -> dict:
         """Fetch metadata for a single save. No content_hash on 4.6.x."""
         return self._client.request(f"/api/saves/{save_id}")
 
-    async def get_rom_detail(self, rom_id: int) -> dict:
+    def get_rom_detail(self, rom_id: int) -> dict:
         """Fetch full ROM detail including all_user_notes.
 
         Used because GET /api/roms/{id}/notes returns 500 on 4.6.1.
         """
         return self._client.request(f"/api/roms/{rom_id}")
 
-    async def create_note(self, rom_id: int, data: dict) -> dict:
+    def create_note(self, rom_id: int, data: dict) -> dict:
         """Create a note on a ROM (POST /api/roms/{rom_id}/notes)."""
         return self._client.post_json(f"/api/roms/{rom_id}/notes", data)
 
-    async def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
+    def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
         """Update an existing note (PUT /api/roms/{rom_id}/notes/{note_id})."""
         return self._client.put_json(f"/api/roms/{rom_id}/notes/{note_id}", data)

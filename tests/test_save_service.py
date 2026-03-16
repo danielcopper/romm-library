@@ -681,12 +681,12 @@ class TestSyncAllSaves:
 
         call_count = 0
 
-        async def flaky_list(rom_id):
+        def flaky_list(rom_id):
             nonlocal call_count
             call_count += 1
             if call_count == 2:
                 raise RommApiError("Server error")
-            return await original_list(rom_id)
+            return original_list(rom_id)
 
         fake.list_saves = flaky_list
 

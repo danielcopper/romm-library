@@ -10,7 +10,6 @@ import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from services._util import run_api_sync
 from services.protocols import SaveApiProtocol
 
 if TYPE_CHECKING:
@@ -78,7 +77,7 @@ class PlaytimeService:
 
         Reads ``all_user_notes`` from ROM detail and filters by title.
         """
-        rom_detail = run_api_sync(self._save_api.get_rom_detail(rom_id))
+        rom_detail = self._save_api.get_rom_detail(rom_id)
         if not isinstance(rom_detail, dict):
             return None
         notes = rom_detail.get("all_user_notes", [])
@@ -91,15 +90,13 @@ class PlaytimeService:
 
     def _create_playtime_note(self, rom_id: int, playtime_data: dict) -> dict:
         """Create a new playtime note for a ROM."""
-        result = run_api_sync(
-            self._save_api.create_note(
-                rom_id,
-                {
-                    "title": self.PLAYTIME_NOTE_TITLE,
-                    "content": json.dumps(playtime_data),
-                    "is_public": False,
-                },
-            )
+        result = self._save_api.create_note(
+            rom_id,
+            {
+                "title": self.PLAYTIME_NOTE_TITLE,
+                "content": json.dumps(playtime_data),
+                "is_public": False,
+            },
         )
         # Store note_id in state for future updates
         if isinstance(result, dict) and result.get("id"):
@@ -112,12 +109,10 @@ class PlaytimeService:
 
     def _update_playtime_note(self, rom_id: int, note_id: int, playtime_data: dict) -> dict:
         """Update an existing playtime note."""
-        return run_api_sync(
-            self._save_api.update_note(
-                rom_id,
-                note_id,
-                {"content": json.dumps(playtime_data)},
-            )
+        return self._save_api.update_note(
+            rom_id,
+            note_id,
+            {"content": json.dumps(playtime_data)},
         )
 
     @staticmethod
