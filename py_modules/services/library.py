@@ -1,4 +1,4 @@
-"""LibrarySyncService — library sync engine.
+"""LibraryService — library sync engine.
 
 Handles platform/ROM fetching, shortcut data preparation, artwork
 downloading, delta preview/apply, and shortcut registry management.
@@ -36,7 +36,7 @@ _SYNC_CANCELLED = "Sync cancelled"
 _PLATFORMS_API = "/api/platforms"
 
 
-class LibrarySyncService:
+class LibraryService:
     """Sync engine: fetch ROMs, prepare shortcuts, manage artwork + registry."""
 
     def __init__(
@@ -85,7 +85,7 @@ class LibrarySyncService:
 
     @property
     def pending_sync(self) -> dict:
-        """Public accessor for pending sync data (used by SgdbArtworkService)."""
+        """Public accessor for pending sync data (used by ArtworkService)."""
         return self._pending_sync
 
     # ── Platform & ROM fetching ──────────────────────────────

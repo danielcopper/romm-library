@@ -1,4 +1,4 @@
-"""Tests for SaveSyncService with FakeSaveApi (no HTTP, no mocking)."""
+"""Tests for SaveService with FakeSaveApi (no HTTP, no mocking)."""
 
 import asyncio
 import hashlib
@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pytest
 from fakes.fake_save_api import FakeSaveApi
-from services.save_sync import SaveSyncService
+from services.saves import SaveService
 
 from lib.errors import RommApiError
 
@@ -23,21 +23,21 @@ def _no_retry(fn, *a, **kw):
 
 
 def make_service(tmp_path, fake_api=None, **overrides):
-    """Create a SaveSyncService with sensible defaults for testing."""
+    """Create a SaveService with sensible defaults for testing."""
     fake = fake_api or FakeSaveApi()
     defaults = dict(
         save_api=fake,
         with_retry=_no_retry,
         is_retryable=lambda e: False,
         state={"shortcut_registry": {}, "installed_roms": {}},
-        save_sync_state=SaveSyncService.make_default_state(),
+        save_sync_state=SaveService.make_default_state(),
         loop=asyncio.get_event_loop(),
         logger=logging.getLogger("test"),
         runtime_dir=str(tmp_path),
         get_saves_path=lambda: str(tmp_path / "saves"),
     )
     defaults.update(overrides)
-    svc = SaveSyncService(**defaults)
+    svc = SaveService(**defaults)
     svc.init_state()
     return svc, defaults.get("save_api", fake) if fake_api is None else fake
 
@@ -92,7 +92,7 @@ def _file_md5(path):
 
 class TestStateManagement:
     def test_make_default_state(self):
-        state = SaveSyncService.make_default_state()
+        state = SaveService.make_default_state()
         assert state["device_id"] is None
         assert state["saves"] == {}
         assert state["settings"]["save_sync_enabled"] is False
@@ -103,7 +103,7 @@ class TestStateManagement:
         assert svc._save_sync_state["saves"] == {}
 
     def test_init_state_preserves_existing(self, tmp_path):
-        state = SaveSyncService.make_default_state()
+        state = SaveService.make_default_state()
         state["device_id"] = "existing-id"
         svc, _ = make_service(tmp_path, save_sync_state=state)
         assert svc._save_sync_state["device_id"] == "existing-id"
@@ -1072,20 +1072,20 @@ class TestFileMd5:
         content = b"Hello, save file!"
         f.write_bytes(content)
 
-        assert SaveSyncService._file_md5(str(f)) == hashlib.md5(content).hexdigest()
+        assert SaveService._file_md5(str(f)) == hashlib.md5(content).hexdigest()
 
     def test_empty_file(self, tmp_path):
         f = tmp_path / "empty.srm"
         f.write_bytes(b"")
 
-        assert SaveSyncService._file_md5(str(f)) == hashlib.md5(b"").hexdigest()
+        assert SaveService._file_md5(str(f)) == hashlib.md5(b"").hexdigest()
 
     def test_large_file_chunked(self, tmp_path):
         f = tmp_path / "large.srm"
         content = os.urandom(2 * 1024 * 1024)
         f.write_bytes(content)
 
-        assert SaveSyncService._file_md5(str(f)) == hashlib.md5(content).hexdigest()
+        assert SaveService._file_md5(str(f)) == hashlib.md5(content).hexdigest()
 
     def test_permission_error(self, tmp_path):
         f = tmp_path / "locked.srm"
@@ -1094,7 +1094,7 @@ class TestFileMd5:
 
         try:
             with pytest.raises(PermissionError):
-                SaveSyncService._file_md5(str(f))
+                SaveService._file_md5(str(f))
         finally:
             f.chmod(0o644)
 
@@ -1311,7 +1311,7 @@ class TestUpdateFileSyncState:
         svc._update_file_sync_state("42", "pokemon.srm", server_resp, str(save_file), "gba")
 
         entry = svc._save_sync_state["saves"]["42"]["files"]["pokemon.srm"]
-        assert entry["last_sync_hash"] == SaveSyncService._file_md5(str(save_file))
+        assert entry["last_sync_hash"] == SaveService._file_md5(str(save_file))
         assert entry["last_sync_at"] is not None
         assert entry["last_sync_server_save_id"] == 200
 

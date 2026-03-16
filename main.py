@@ -9,7 +9,7 @@ sys.path.insert(0, plugin_dir)
 import decky
 from adapters.persistence import PersistenceAdapter
 from bootstrap import bootstrap, wire_services
-from services.library_sync import SyncState
+from services.library import SyncState
 
 from lib import retrodeck_config
 
@@ -132,10 +132,10 @@ class Plugin:
         self._romm_version = None  # Detected on test_connection
         self._state = self._persistence.load_state(self._state)
         self._metadata_cache = self._persistence.load_metadata_cache()
-        # ── Save sync state (owned by SaveSyncService) ──
-        from services.save_sync import SaveSyncService
+        # ── Save sync state (owned by SaveService) ──
+        from services.saves import SaveService
 
-        self._save_sync_state = SaveSyncService.make_default_state()
+        self._save_sync_state = SaveService.make_default_state()
         # ── Wire services (composition, uses live state refs) ──
         services = wire_services(
             save_api=adapters["save_api"],
@@ -771,7 +771,7 @@ class Plugin:
     async def delete_platform_bios(self, platform_slug):
         return await self._firmware_service.delete_platform_bios(platform_slug)
 
-    # ── Sync delegation to LibrarySyncService ─────────────────────
+    # ── Sync delegation to LibraryService ─────────────────────
 
     async def get_platforms(self):
         return await self._sync_service.get_platforms()
@@ -906,7 +906,7 @@ class Plugin:
     async def get_all_playtime(self):
         return await self._playtime_service.get_all_playtime()
 
-    # ── SGDB delegation to SgdbArtworkService ───────────────────────
+    # ── SGDB delegation to ArtworkService ───────────────────────
 
     async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
         return await self._sgdb_service.get_sgdb_artwork_base64(rom_id, asset_type_num)

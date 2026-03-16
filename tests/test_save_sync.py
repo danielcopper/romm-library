@@ -8,9 +8,9 @@ import pytest
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
 from fakes.fake_save_api import FakeSaveApi
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 from services.playtime import PlaytimeService
-from services.save_sync import SaveSyncService
+from services.saves import SaveService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -46,7 +46,7 @@ def plugin(tmp_path):
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = LibrarySyncService(
+    p._sync_service = LibraryService(
         http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
@@ -64,10 +64,10 @@ def plugin(tmp_path):
 
     # Wire services with FakeSaveApi
     fake_api = FakeSaveApi()
-    p._save_sync_state = SaveSyncService.make_default_state()
+    p._save_sync_state = SaveService.make_default_state()
     saves_path = str(tmp_path / "retrodeck" / "saves")
 
-    p._save_sync_service = SaveSyncService(
+    p._save_sync_service = SaveService(
         save_api=fake_api,
         with_retry=_no_retry,
         is_retryable=lambda e: isinstance(e, ConnectionError),
@@ -641,9 +641,7 @@ class TestSaveSyncFeatureFlag:
     @pytest.mark.asyncio
     async def test_default_disabled(self, plugin):
         """save_sync_enabled defaults to False in fresh state."""
-        plugin._save_sync_state.update(
-            SaveSyncService.make_default_state()
-        )  # Reset to defaults (no test fixture override)
+        plugin._save_sync_state.update(SaveService.make_default_state())  # Reset to defaults (no test fixture override)
         settings = plugin._save_sync_state["settings"]
         assert settings["save_sync_enabled"] is False
 

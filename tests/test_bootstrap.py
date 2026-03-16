@@ -10,13 +10,13 @@ from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from bootstrap import bootstrap, wire_services
 from services.achievements import AchievementsService
+from services.artwork import ArtworkService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 from services.metadata import MetadataService
 from services.playtime import PlaytimeService
-from services.save_sync import SaveSyncService
-from services.sgdb_artwork import SgdbArtworkService
+from services.saves import SaveService
 
 
 class TestBootstrap:
@@ -137,12 +137,12 @@ class TestWireServices:
     def test_returns_all_services(self, tmp_path):
         deps = self._make_deps(tmp_path)
         result = wire_services(**deps)
-        assert isinstance(result["save_sync_service"], SaveSyncService)
+        assert isinstance(result["save_sync_service"], SaveService)
         assert isinstance(result["playtime_service"], PlaytimeService)
-        assert isinstance(result["sync_service"], LibrarySyncService)
+        assert isinstance(result["sync_service"], LibraryService)
         assert isinstance(result["download_service"], DownloadService)
         assert isinstance(result["firmware_service"], FirmwareService)
-        assert isinstance(result["sgdb_service"], SgdbArtworkService)
+        assert isinstance(result["sgdb_service"], ArtworkService)
         assert isinstance(result["metadata_service"], MetadataService)
         assert isinstance(result["achievements_service"], AchievementsService)
         deps["loop"].close()

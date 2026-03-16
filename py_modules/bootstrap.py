@@ -18,15 +18,15 @@ from adapters.romm.http import RommHttpAdapter
 from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
+from services.artwork import ArtworkService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 from services.metadata import MetadataService
 from services.playtime import PlaytimeService
 from services.protocols import HttpAdapter
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
-from services.save_sync import SaveSyncService
-from services.sgdb_artwork import SgdbArtworkService
+from services.saves import SaveService
 
 
 def bootstrap(
@@ -103,7 +103,7 @@ def wire_services(
     dict with keys ``save_sync_service``, ``playtime_service``,
     ``sync_service``, ``download_service``, and ``firmware_service``.
     """
-    save_sync_service = SaveSyncService(
+    save_sync_service = SaveService(
         save_api=save_api,
         with_retry=http_adapter.with_retry,
         is_retryable=http_adapter.is_retryable,
@@ -135,7 +135,7 @@ def wire_services(
         log_debug=log_debug,
     )
 
-    sync_service = LibrarySyncService(
+    sync_service = LibraryService(
         http_adapter=http_adapter,
         steam_config=steam_config,
         state=state,
@@ -172,7 +172,7 @@ def wire_services(
         save_state=save_state,
     )
 
-    sgdb_service = SgdbArtworkService(
+    sgdb_service = ArtworkService(
         http_adapter=http_adapter,
         steam_config=steam_config,
         state=state,

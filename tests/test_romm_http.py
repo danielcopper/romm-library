@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 
 from lib.errors import (
     RommApiError,
@@ -40,7 +40,7 @@ def plugin():
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = LibrarySyncService(
+    p._sync_service = LibraryService(
         http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,

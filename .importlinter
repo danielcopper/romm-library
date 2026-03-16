@@ -42,11 +42,11 @@ forbidden_modules =
 name = Services must not import other services
 type = independence
 modules =
-    services.library_sync
-    services.save_sync
+    services.library
+    services.saves
     services.playtime
     services.downloads
     services.firmware
-    services.sgdb_artwork
+    services.artwork
     services.metadata
     services.achievements

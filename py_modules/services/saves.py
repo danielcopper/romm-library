@@ -1,4 +1,4 @@
-"""SaveSyncService — save sync business logic.
+"""SaveService — save sync business logic.
 
 All RomM communication goes through ``SaveApiProtocol``.
 No ``import decky`` — error utilities come from ``lib.errors``.
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-class SaveSyncService:
+class SaveService:
     """Bidirectional save file sync between local RetroDECK and RomM server.
 
     Parameters

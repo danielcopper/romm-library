@@ -1,4 +1,4 @@
-"""SgdbArtworkService — SteamGridDB artwork management.
+"""ArtworkService — SteamGridDB artwork management.
 
 Handles SGDB API key verification, artwork fetching/caching, icon saving
 to Steam grid directory, and orphaned artwork cache pruning.
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 _USER_AGENT = "decky-romm-sync/0.1"
 
 
-class SgdbArtworkService:
+class ArtworkService:
     """SteamGridDB artwork: API key management, artwork fetch/cache, icon save."""
 
     def __init__(
