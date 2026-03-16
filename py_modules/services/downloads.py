@@ -171,7 +171,7 @@ class DownloadService:
                     if rom_id:
                         await self.start_download(rom_id)
             except asyncio.CancelledError:
-                return
+                raise
             except Exception as e:
                 self._logger.warning(f"Download request poll error: {e}")
 
@@ -469,10 +469,7 @@ class DownloadService:
         if not task:
             return {"success": False, "message": "No active download for this ROM"}
         task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        # Don't await — _do_download's finally block handles cleanup
         return {"success": True, "message": "Download cancelled"}
 
     def get_download_queue(self):
