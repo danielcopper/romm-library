@@ -60,7 +60,7 @@ py_modules/
     playtime.py                           # PlaytimeService — session recording, RomM notes
     downloads.py                          # DownloadService — ZIP extraction, M3U, queue, progress
     firmware.py                           # FirmwareService — registry, downloads, per-core filtering
-    artwork.py                            # ArtworkService — SteamGridDB fetch, cache, icons
+    steamgrid.py                          # SteamGridService — SteamGridDB fetch, cache, icons
     metadata.py                           # MetadataService — ROM metadata caching (TTL, app_id mapping)
     achievements.py                       # AchievementsService — RetroAchievements progress, caching
     migration.py                          # MigrationService — RetroDECK path change detection, file migration
