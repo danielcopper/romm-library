@@ -51,6 +51,54 @@ class CoreResolver:
 
     # -- public API ----------------------------------------------------------
 
+    def _resolve_label(self, system_name, system_info, override_label):
+        """Resolve a core label to (core_so, label) tuple, or None."""
+        if system_info and override_label in system_info.get("label_to_core", {}):
+            core_so = system_info["label_to_core"][override_label]
+            return (core_so, override_label)
+        # Try core_defaults fallback for label resolution
+        defaults = self._load_core_defaults()
+        default_cores = defaults.get(system_name, {}).get("cores", {})
+        for core_so, label in default_cores.items():
+            if label == override_label:
+                return (core_so, override_label)
+        return None
+
+    def _try_gamelist_overrides(self, system_name, system_info, rom_filename):
+        """Try per-game and per-system overrides from gamelist.xml.
+
+        Returns (core_so, label) or None.
+        """
+        try:
+            from lib import retrodeck_config
+
+            retrodeck_home = retrodeck_config.get_retrodeck_home()
+        except Exception:
+            return None
+
+        if not retrodeck_home:
+            return None
+
+        # Per-game override (if rom_filename provided)
+        if rom_filename:
+            game_label = _editor.get_game_override(retrodeck_home, system_name, rom_filename)
+            if game_label:
+                resolved = self._resolve_label(system_name, system_info, game_label)
+                if resolved:
+                    decky.logger.debug(
+                        "es_de_config: per-game override for %s/%s -> %s",
+                        system_name,
+                        rom_filename,
+                        game_label,
+                    )
+                    return resolved
+
+        # Per-system override
+        override_label = _editor.get_system_override(retrodeck_home, system_name)
+        if not override_label:
+            return None
+        return self._resolve_label(system_name, system_info, override_label)
+
     def get_active_core(self, system_name, rom_filename=None):
         """Resolve the active core for a system (or specific game).
 
@@ -66,47 +114,10 @@ class CoreResolver:
         es_systems = self._load_es_systems()
         system_info = es_systems.get(system_name)
 
-        def _resolve_label(override_label):
-            """Resolve a core label to (core_so, label) tuple."""
-            if system_info and override_label in system_info.get("label_to_core", {}):
-                core_so = system_info["label_to_core"][override_label]
-                return (core_so, override_label)
-            # Try core_defaults fallback for label resolution
-            defaults = self._load_core_defaults()
-            default_info = defaults.get(system_name, {})
-            default_cores = default_info.get("cores", {})
-            for core_so, label in default_cores.items():
-                if label == override_label:
-                    return (core_so, override_label)
-            return None
-
-        try:
-            from lib import retrodeck_config
-
-            retrodeck_home = retrodeck_config.get_retrodeck_home()
-            if retrodeck_home:
-                # Try per-game override first (if rom_filename provided)
-                if rom_filename:
-                    game_label = _editor.get_game_override(retrodeck_home, system_name, rom_filename)
-                    if game_label:
-                        resolved = _resolve_label(game_label)
-                        if resolved:
-                            decky.logger.debug(
-                                "es_de_config: per-game override for %s/%s -> %s",
-                                system_name,
-                                rom_filename,
-                                game_label,
-                            )
-                            return resolved
-
-                # Try per-system override
-                override_label = _editor.get_system_override(retrodeck_home, system_name)
-                if override_label:
-                    resolved = _resolve_label(override_label)
-                    if resolved:
-                        return resolved
-        except Exception:
-            pass
+        # Try gamelist.xml overrides first
+        override = self._try_gamelist_overrides(system_name, system_info, rom_filename)
+        if override:
+            return override
 
         # Use live es_systems.xml default
         if system_info and system_info.get("default_core"):
@@ -565,6 +576,56 @@ class GamelistXmlEditor:
         os.replace(tmp_path, path)
 
     @staticmethod
+    def _build_attr_str(attrs):
+        """Build an XML attribute string from a dict."""
+        parts = []
+        for k, v in attrs.items():
+            parts.append(f' {k}="{GamelistXmlEditor.escape_xml(v)}"')
+        return "".join(parts)
+
+    @staticmethod
+    def _handle_game_start(state, name, attrs):
+        """Handle start_element when inside or entering a <game> tag."""
+        if name == "game" and state["path"] == ["gameList", "game"]:
+            state["in_game"] = True
+            state["game_depth"] = len(state["path"])
+            state["game_xml_parts"] = []
+            state["game_path"] = None
+            state["game_altemulator"] = None
+            attr_str = GamelistXmlEditor._build_attr_str(attrs)
+            state["game_xml_parts"].append(f"<game{attr_str}>")
+        elif state["in_game"]:
+            attr_str = GamelistXmlEditor._build_attr_str(attrs)
+            state["game_xml_parts"].append(f"<{name}{attr_str}>")
+
+    @staticmethod
+    def _handle_game_end(state, result, name):
+        """Handle end_element for game content. Returns True if handled."""
+        if not state["in_game"]:
+            return False
+
+        text = state["text"].strip()
+        if name == "game" and len(state["path"]) == state["game_depth"]:
+            state["game_xml_parts"].append("</game>")
+            result["games"].append(
+                {
+                    "path": state["game_path"],
+                    "altemulator": state["game_altemulator"],
+                    "raw_xml": "".join(state["game_xml_parts"]),
+                }
+            )
+            state["in_game"] = False
+        else:
+            if state["text"]:
+                state["game_xml_parts"].append(GamelistXmlEditor.escape_xml(state["text"]))
+            state["game_xml_parts"].append(f"</{name}>")
+            if name == "path":
+                state["game_path"] = text
+            elif name == "altemulator":
+                state["game_altemulator"] = text
+        return True
+
+    @staticmethod
     def parse_gamelist_preserving(data):
         """Parse gamelist.xml into a structured representation that can be modified and reconstructed.
 
@@ -601,51 +662,12 @@ class GamelistXmlEditor:
         def start_element(name, attrs):
             state["path"].append(name)
             state["text"] = ""
-
-            if name == "game" and state["path"] == ["gameList", "game"]:
-                state["in_game"] = True
-                state["game_depth"] = len(state["path"])
-                state["game_xml_parts"] = []
-                state["game_path"] = None
-                state["game_altemulator"] = None
-                # Build opening tag
-                attr_str = ""
-                for k, v in attrs.items():
-                    attr_str += f' {k}="{GamelistXmlEditor.escape_xml(v)}"'
-                state["game_xml_parts"].append(f"<game{attr_str}>")
-            elif state["in_game"]:
-                attr_str = ""
-                for k, v in attrs.items():
-                    attr_str += f' {k}="{GamelistXmlEditor.escape_xml(v)}"'
-                state["game_xml_parts"].append(f"<{name}{attr_str}>")
+            GamelistXmlEditor._handle_game_start(state, name, attrs)
 
         def end_element(name):
-            text = state["text"].strip()
-
-            if state["in_game"]:
-                if name == "game" and len(state["path"]) == state["game_depth"]:
-                    # Close game element
-                    state["game_xml_parts"].append("</game>")
-                    result["games"].append(
-                        {
-                            "path": state["game_path"],
-                            "altemulator": state["game_altemulator"],
-                            "raw_xml": "".join(state["game_xml_parts"]),
-                        }
-                    )
-                    state["in_game"] = False
-                else:
-                    # Inside game: capture text and closing tag
-                    if state["text"]:
-                        state["game_xml_parts"].append(GamelistXmlEditor.escape_xml(state["text"]))
-                    state["game_xml_parts"].append(f"</{name}>")
-                    # Track specific child elements
-                    if name == "path":
-                        state["game_path"] = text
-                    elif name == "altemulator":
-                        state["game_altemulator"] = text
-            else:
+            if not GamelistXmlEditor._handle_game_end(state, result, name):
                 # Outside game: look for alternativeEmulator/label
+                text = state["text"].strip()
                 if (
                     len(state["path"]) >= 2
                     and state["path"][-1] == "label"
@@ -653,7 +675,6 @@ class GamelistXmlEditor:
                     and text
                 ):
                     result["alt_emulator_label"] = text
-
             state["path"].pop()
             state["text"] = ""
 
@@ -694,19 +715,8 @@ class GamelistXmlEditor:
         return "".join(parts)
 
     @staticmethod
-    def rebuild_game_xml(raw_xml, core_label):
-        """Rebuild a <game> XML string with updated <altemulator> value.
-
-        If core_label is None/empty, removes <altemulator> entirely.
-        Preserves all other child elements.
-        """
-        try:
-            from xml.parsers import expat
-        except ImportError:
-            return raw_xml
-
-        elements = []  # list of (type, data) tuples
-        state = {"path": [], "text": "", "skip_altemulator": False}
+    def _rebuild_start_handler(state, elements):
+        """Create a start_element handler for rebuild_game_xml."""
 
         def start_element(name, attrs):
             state["path"].append(name)
@@ -714,14 +724,16 @@ class GamelistXmlEditor:
             if name == "altemulator":
                 state["skip_altemulator"] = True
                 return
-            if state["skip_altemulator"]:
+            if state["skip_altemulator"] or name == "game":
                 return
-            if name == "game":
-                return  # skip root game tag, we add it ourselves
-            attr_str = ""
-            for k, v in attrs.items():
-                attr_str += f' {k}="{GamelistXmlEditor.escape_xml(v)}"'
+            attr_str = GamelistXmlEditor._build_attr_str(attrs)
             elements.append(("open", f"<{name}{attr_str}>"))
+
+        return start_element
+
+    @staticmethod
+    def _rebuild_end_handler(state, elements):
+        """Create an end_element handler for rebuild_game_xml."""
 
         def end_element(name):
             if name == "altemulator":
@@ -736,20 +748,38 @@ class GamelistXmlEditor:
             if name == "game" and len(state["path"]) == 1:
                 state["path"].pop()
                 state["text"] = ""
-                return  # skip root close
+                return
             if state["text"]:
                 elements.append(("text", GamelistXmlEditor.escape_xml(state["text"])))
             elements.append(("close", f"</{name}>"))
             state["path"].pop()
             state["text"] = ""
 
+        return end_element
+
+    @staticmethod
+    def rebuild_game_xml(raw_xml, core_label):
+        """Rebuild a <game> XML string with updated <altemulator> value.
+
+        If core_label is None/empty, removes <altemulator> entirely.
+        Preserves all other child elements.
+        """
+        try:
+            from xml.parsers import expat
+        except ImportError:
+            return raw_xml
+
+        elements = []
+        state = {"path": [], "text": "", "skip_altemulator": False}
+
+        parser = expat.ParserCreate()
+        parser.StartElementHandler = GamelistXmlEditor._rebuild_start_handler(state, elements)
+        parser.EndElementHandler = GamelistXmlEditor._rebuild_end_handler(state, elements)
+
         def char_data(data):
             if not state["skip_altemulator"]:
                 state["text"] += data
 
-        parser = expat.ParserCreate()
-        parser.StartElementHandler = start_element
-        parser.EndElementHandler = end_element
         parser.CharacterDataHandler = char_data
 
         try:

@@ -582,6 +582,51 @@ class SaveService:
                     pass
         return False
 
+    def _process_single_file_sync(
+        self,
+        rom_id: int,
+        rom_id_str: str,
+        filename: str,
+        local: dict | None,
+        server: dict | None,
+        saves_dir: str,
+        system: str,
+        errors: list[str],
+        conflicts: list[dict],
+    ) -> bool:
+        """Process sync for one save file. Returns True if a file was synced."""
+        t_file = time.time()
+        action, local_hash = self._sync_single_save_file(rom_id, filename, local, server)
+
+        self._log_debug(
+            f"[TIMING] _sync_rom_saves({rom_id}): detect {filename} -> {action} {time.time() - t_file:.3f}s"
+        )
+
+        if action in ("skip", "none"):
+            return False
+
+        if action == "ask":
+            if local and server:
+                conflicts.append(self._build_conflict_dict(rom_id, filename, local, local_hash, server))
+            return False
+
+        t_action = time.time()
+        result = self._execute_sync_action(
+            action,
+            rom_id,
+            rom_id_str,
+            filename,
+            local,
+            server,
+            local_hash,
+            saves_dir,
+            system,
+            errors,
+            conflicts,
+        )
+        self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time() - t_action:.3f}s")
+        return result
+
     def _sync_rom_saves(self, rom_id: int) -> tuple[int, list[str], list[dict]]:
         """Sync saves for a single ROM (always bidirectional).
 
@@ -628,40 +673,18 @@ class SaveService:
         conflicts: list[dict] = []
 
         for filename in sorted(all_filenames):
-            t_file = time.time()
-            local = local_by_name.get(filename)
-            server = server_by_name.get(filename)
-
-            action, local_hash = self._sync_single_save_file(rom_id, filename, local, server)
-
-            self._log_debug(
-                f"[TIMING] _sync_rom_saves({rom_id}): detect {filename} -> {action} {time.time() - t_file:.3f}s"
-            )
-
-            if action in ("skip", "none"):
-                continue
-
-            if action == "ask":
-                if local and server:
-                    conflicts.append(self._build_conflict_dict(rom_id, filename, local, local_hash, server))
-                continue
-
-            t_action = time.time()
-            if self._execute_sync_action(
-                action,
+            if self._process_single_file_sync(
                 rom_id,
                 rom_id_str,
                 filename,
-                local,
-                server,
-                local_hash,
+                local_by_name.get(filename),
+                server_by_name.get(filename),
                 saves_dir,
                 system,
                 errors,
                 conflicts,
             ):
                 synced += 1
-            self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time() - t_action:.3f}s")
 
         # Record when this sync check ran (regardless of whether files transferred)
         save_entry = self._save_sync_state["saves"].setdefault(rom_id_str, {})
@@ -725,11 +748,12 @@ class SaveService:
             local_hash = self._file_md5(lf["path"])
             server = server_by_name.get(fn)
 
-            action = (
-                self._detect_conflict(rom_id, fn, local_hash, server)
-                if server
-                else ("upload" if local_hash else "skip")
-            )
+            if server:
+                action = self._detect_conflict(rom_id, fn, local_hash, server)
+            elif local_hash:
+                action = "upload"
+            else:
+                action = "skip"
 
             file_statuses.append(
                 self._build_file_status(
