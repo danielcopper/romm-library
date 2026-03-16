@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from adapters.persistence import PersistenceAdapter
@@ -28,6 +29,37 @@ from services.protocols import HttpAdapter
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.saves import SaveService
 from services.steamgrid import SteamGridService
+
+
+@dataclass
+class WiringConfig:
+    """Configuration bundle for wire_services — groups the 17 parameters
+    into a single object to keep the composition root readable."""
+
+    # Adapters
+    save_api: Any
+    http_adapter: HttpAdapter
+    steam_config: SteamConfigProtocol
+
+    # State (live dict refs)
+    state: dict = field(default_factory=dict)
+    settings: dict = field(default_factory=dict)
+    metadata_cache: dict = field(default_factory=dict)
+    save_sync_state: dict = field(default_factory=dict)
+
+    # Runtime
+    loop: asyncio.AbstractEventLoop | None = None
+    logger: logging.Logger | None = None
+    plugin_dir: str = ""
+    runtime_dir: str = ""
+    emit: Any = None
+
+    # Callbacks
+    get_saves_path: Callable | None = None
+    save_state: Callable | None = None
+    save_settings_to_disk: Callable | None = None
+    save_metadata_cache: Callable | None = None
+    log_debug: Callable | None = None
 
 
 def bootstrap(
@@ -73,26 +105,7 @@ def bootstrap(
     }
 
 
-def wire_services(
-    *,
-    save_api: Any,
-    http_adapter: HttpAdapter,
-    steam_config: SteamConfigProtocol,
-    state: dict,
-    settings: dict,
-    metadata_cache: dict,
-    save_sync_state: dict,
-    loop: asyncio.AbstractEventLoop,
-    logger: logging.Logger,
-    plugin_dir: str,
-    runtime_dir: str,
-    emit: Any,
-    get_saves_path: Any,
-    save_state: Callable,
-    save_settings_to_disk: Callable,
-    save_metadata_cache: Callable,
-    log_debug: Callable,
-) -> dict:
+def wire_services(cfg: WiringConfig) -> dict:
     """Create service instances after plugin state is initialised.
 
     Called from ``Plugin._main()`` after save-sync state is populated
@@ -105,101 +118,101 @@ def wire_services(
     ``sync_service``, ``download_service``, and ``firmware_service``.
     """
     save_sync_service = SaveService(
-        save_api=save_api,
-        with_retry=http_adapter.with_retry,
-        is_retryable=http_adapter.is_retryable,
-        state=state,
-        save_sync_state=save_sync_state,
-        loop=loop,
-        logger=logger,
-        runtime_dir=runtime_dir,
-        get_saves_path=get_saves_path,
+        save_api=cfg.save_api,
+        with_retry=cfg.http_adapter.with_retry,
+        is_retryable=cfg.http_adapter.is_retryable,
+        state=cfg.state,
+        save_sync_state=cfg.save_sync_state,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        runtime_dir=cfg.runtime_dir,
+        get_saves_path=cfg.get_saves_path,
     )
 
     playtime_service = PlaytimeService(
-        save_api=save_api,
-        with_retry=http_adapter.with_retry,
-        is_retryable=http_adapter.is_retryable,
-        save_sync_state=save_sync_state,
-        loop=loop,
-        logger=logger,
+        save_api=cfg.save_api,
+        with_retry=cfg.http_adapter.with_retry,
+        is_retryable=cfg.http_adapter.is_retryable,
+        save_sync_state=cfg.save_sync_state,
+        loop=cfg.loop,
+        logger=cfg.logger,
         save_state=save_sync_service.save_state,
     )
 
     metadata_service = MetadataService(
-        http_adapter=http_adapter,
-        state=state,
-        metadata_cache=metadata_cache,
-        loop=loop,
-        logger=logger,
-        save_metadata_cache=save_metadata_cache,
-        log_debug=log_debug,
+        http_adapter=cfg.http_adapter,
+        state=cfg.state,
+        metadata_cache=cfg.metadata_cache,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        save_metadata_cache=cfg.save_metadata_cache,
+        log_debug=cfg.log_debug,
     )
 
     sync_service = LibraryService(
-        http_adapter=http_adapter,
-        steam_config=steam_config,
-        state=state,
-        settings=settings,
-        metadata_cache=metadata_cache,
-        loop=loop,
-        logger=logger,
-        plugin_dir=plugin_dir,
-        emit=emit,
-        save_state=save_state,
-        save_settings_to_disk=save_settings_to_disk,
-        log_debug=log_debug,
+        http_adapter=cfg.http_adapter,
+        steam_config=cfg.steam_config,
+        state=cfg.state,
+        settings=cfg.settings,
+        metadata_cache=cfg.metadata_cache,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        plugin_dir=cfg.plugin_dir,
+        emit=cfg.emit,
+        save_state=cfg.save_state,
+        save_settings_to_disk=cfg.save_settings_to_disk,
+        log_debug=cfg.log_debug,
         metadata_service=metadata_service,
     )
 
     download_service = DownloadService(
-        http_adapter=http_adapter,
-        state=state,
-        save_sync_state=save_sync_state,
-        loop=loop,
-        logger=logger,
-        runtime_dir=runtime_dir,
-        emit=emit,
-        save_state=save_state,
+        http_adapter=cfg.http_adapter,
+        state=cfg.state,
+        save_sync_state=cfg.save_sync_state,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        runtime_dir=cfg.runtime_dir,
+        emit=cfg.emit,
+        save_state=cfg.save_state,
         save_save_sync_state=save_sync_service.save_state,
     )
 
     firmware_service = FirmwareService(
-        http_adapter=http_adapter,
-        state=state,
-        loop=loop,
-        logger=logger,
-        plugin_dir=plugin_dir,
-        save_state=save_state,
+        http_adapter=cfg.http_adapter,
+        state=cfg.state,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        plugin_dir=cfg.plugin_dir,
+        save_state=cfg.save_state,
     )
 
     sgdb_service = SteamGridService(
-        http_adapter=http_adapter,
-        steam_config=steam_config,
-        state=state,
-        settings=settings,
-        loop=loop,
-        logger=logger,
-        runtime_dir=runtime_dir,
-        save_state=save_state,
-        save_settings_to_disk=save_settings_to_disk,
+        http_adapter=cfg.http_adapter,
+        steam_config=cfg.steam_config,
+        state=cfg.state,
+        settings=cfg.settings,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        runtime_dir=cfg.runtime_dir,
+        save_state=cfg.save_state,
+        save_settings_to_disk=cfg.save_settings_to_disk,
         pending_sync=sync_service.pending_sync,
     )
 
     achievements_service = AchievementsService(
-        http_adapter=http_adapter,
-        state=state,
-        loop=loop,
-        logger=logger,
-        log_debug=log_debug,
+        http_adapter=cfg.http_adapter,
+        state=cfg.state,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        log_debug=cfg.log_debug,
     )
 
     migration_service = MigrationService(
-        state=state,
-        loop=loop,
-        logger=logger,
-        save_state=save_state,
-        emit=emit,
+        state=cfg.state,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        save_state=cfg.save_state,
+        emit=cfg.emit,
         firmware_service_bios_files_index=firmware_service._bios_files_index,
     )
 

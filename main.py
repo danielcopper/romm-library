@@ -8,7 +8,7 @@ sys.path.insert(0, plugin_dir)
 
 import decky
 from adapters.persistence import PersistenceAdapter
-from bootstrap import bootstrap, wire_services
+from bootstrap import WiringConfig, bootstrap, wire_services
 from services.library import SyncState
 
 from lib import retrodeck_config
@@ -138,23 +138,25 @@ class Plugin:
         self._save_sync_state = SaveService.make_default_state()
         # ── Wire services (composition, uses live state refs) ──
         services = wire_services(
-            save_api=adapters["save_api"],
-            http_adapter=self._http_adapter,
-            steam_config=self._steam_config,
-            state=self._state,
-            settings=self.settings,
-            metadata_cache=self._metadata_cache,
-            save_sync_state=self._save_sync_state,
-            loop=self.loop,
-            logger=decky.logger,
-            plugin_dir=decky.DECKY_PLUGIN_DIR,
-            runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
-            emit=decky.emit,
-            get_saves_path=retrodeck_config.get_saves_path,
-            save_state=self._save_state,
-            save_settings_to_disk=self._save_settings_to_disk,
-            save_metadata_cache=self._save_metadata_cache,
-            log_debug=self._log_debug,
+            WiringConfig(
+                save_api=adapters["save_api"],
+                http_adapter=self._http_adapter,
+                steam_config=self._steam_config,
+                state=self._state,
+                settings=self.settings,
+                metadata_cache=self._metadata_cache,
+                save_sync_state=self._save_sync_state,
+                loop=self.loop,
+                logger=decky.logger,
+                plugin_dir=decky.DECKY_PLUGIN_DIR,
+                runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+                emit=decky.emit,
+                get_saves_path=retrodeck_config.get_saves_path,
+                save_state=self._save_state,
+                save_settings_to_disk=self._save_settings_to_disk,
+                save_metadata_cache=self._save_metadata_cache,
+                log_debug=self._log_debug,
+            )
         )
         self._save_sync_service = services["save_sync_service"]
         self._playtime_service = services["playtime_service"]
