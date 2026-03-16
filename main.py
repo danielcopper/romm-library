@@ -657,7 +657,7 @@ class Plugin:
         return await self._sgdb_service.verify_sgdb_api_key(api_key)
 
     async def save_sgdb_api_key(self, api_key):
-        return await self._sgdb_service.save_sgdb_api_key(api_key)
+        return self._sgdb_service.save_sgdb_api_key(api_key)
 
     async def save_shortcut_icon(self, app_id, icon_base64):
         return await self._sgdb_service.save_shortcut_icon(app_id, icon_base64)

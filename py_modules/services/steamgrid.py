@@ -93,6 +93,7 @@ class SteamGridService:
         req = urllib.request.Request(url, method="GET")
         req.add_header("Authorization", f"Bearer {api_key}")
         req.add_header("User-Agent", _USER_AGENT)
+        # S4423: false positive — Python 3.10+ defaults are TLS 1.2+ secure
         ctx = ssl.create_default_context(cafile=_ca_bundle())
         with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
             return json.loads(resp.read().decode())
@@ -135,6 +136,7 @@ class SteamGridService:
             image_url = result["data"][0]["url"]
             req = urllib.request.Request(image_url, method="GET")
             req.add_header("User-Agent", _USER_AGENT)
+            # S4423: false positive — Python 3.10+ defaults are TLS 1.2+ secure
             ctx = ssl.create_default_context(cafile=_ca_bundle())
             tmp_path = cached + ".tmp"
             with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
@@ -258,6 +260,7 @@ class SteamGridService:
         req = urllib.request.Request(url, method="GET")
         req.add_header("Authorization", f"Bearer {api_key}")
         req.add_header("User-Agent", _USER_AGENT)
+        # S4423: false positive — Python 3.10+ defaults are TLS 1.2+ secure
         ctx = ssl.create_default_context(cafile=_ca_bundle())
         with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
             return json.loads(resp.read().decode())
@@ -282,7 +285,7 @@ class SteamGridService:
             self._logger.error(f"SGDB API key verification failed: {e}")
             return {"success": False, "message": f"Connection failed: {e}"}
 
-    async def save_sgdb_api_key(self, api_key):
+    def save_sgdb_api_key(self, api_key):
         if api_key and api_key != "••••":
             self._settings["steamgriddb_api_key"] = api_key
             self._save_settings_to_disk()
