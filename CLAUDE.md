@@ -18,7 +18,7 @@ RomM Server <-HTTP-> Python Backend (main.py + services/ + adapters/)
 
 **Backend layers** (dependency direction: services → protocols ← adapters):
 - **`main.py`** — Plugin entry point, callable routing, composition root
-- **`py_modules/services/`** — Business logic (8 services, depend on Protocols only)
+- **`py_modules/services/`** — Business logic (9 services, depend on Protocols only)
 - **`py_modules/adapters/`** — I/O boundaries (HTTP, persistence, Steam VDF, save API)
 - **`py_modules/models/`** — Domain dataclasses
 - **`py_modules/lib/`** — Utilities (errors, ES-DE config, RetroDECK paths)
@@ -54,31 +54,32 @@ main.py                                   # Plugin entry point, callable routing
 py_modules/
   bootstrap.py                            # Composition root — wires adapters and services
   services/
-    protocols.py                          # Protocol interfaces (HttpAdapter, SteamConfigAdapter)
-    library_sync.py                       # Library sync engine (fetch ROMs, create shortcuts, artwork)
-    save_sync.py                          # Save file sync (upload/download .srm, conflict detection)
-    playtime.py                           # Playtime tracking (session recording, RomM notes)
-    downloads.py                          # ROM download engine (ZIP extraction, M3U, queue)
-    firmware.py                           # BIOS/firmware management (registry, downloads, per-core filtering)
-    sgdb_artwork.py                       # SteamGridDB artwork (fetch, cache, icons)
-    metadata.py                           # ROM metadata caching (TTL refresh, app_id mapping)
-    achievements.py                       # RetroAchievements (progress, caching, RA username)
+    protocols.py                          # Protocol interfaces (HttpAdapter, SteamConfigAdapter, SaveApiProtocol)
+    library.py                            # LibraryService — fetch ROMs, create shortcuts, artwork staging
+    saves.py                              # SaveService — upload/download .srm, conflict detection
+    playtime.py                           # PlaytimeService — session recording, RomM notes
+    downloads.py                          # DownloadService — ZIP extraction, M3U, queue, progress
+    firmware.py                           # FirmwareService — registry, downloads, per-core filtering
+    steamgrid.py                          # SteamGridService — SteamGridDB fetch, cache, icons
+    metadata.py                           # MetadataService — ROM metadata caching (TTL, app_id mapping)
+    achievements.py                       # AchievementsService — RetroAchievements progress, caching
+    migration.py                          # MigrationService — RetroDECK path change detection, file migration
+    _util.py                              # Shared service utilities (run_api_sync)
   adapters/
-    persistence.py                        # Settings/state/cache JSON I/O (atomic writes)
-    steam_config.py                       # Steam VDF read/write, grid dir, Steam Input config
+    persistence.py                        # PersistenceAdapter — settings/state/cache JSON I/O (atomic writes)
+    steam_config.py                       # SteamConfigAdapter — VDF read/write, grid dir, Steam Input
     romm/
       http.py                             # RommHttpAdapter — HTTP client for RomM API
-      version_router.py                   # Proxy selecting v46/v47 SaveApi by server version
+      version_router.py                   # VersionRouter — proxy selecting v46/v47 SaveApi by server version
       save_api/
-        protocol.py                       # SaveApiProtocol interface
-        v46.py                            # RomM 4.6.1 save API adapter
-        v47.py                            # RomM 4.7.0 save API adapter
-  models/
-    save_sync.py                          # Domain dataclasses (SaveFile, SaveConflict, PlaytimeEntry)
+        v46.py                            # SaveApiV46 — RomM 4.6.1 save API adapter
+        v47.py                            # SaveApiV47 — RomM 4.7.0 save API adapter
+  models/                                 # Domain dataclasses (currently empty — types inlined in services)
   lib/
     errors.py                             # Exception hierarchy (RommApiError, classify_error)
-    es_de_config.py                       # ES-DE config parser (core resolution, gamelist.xml)
+    es_de_config.py                       # CoreResolver + GamelistXmlEditor classes (core resolution, gamelist.xml)
     retrodeck_config.py                   # RetroDECK path resolution (roms, saves, BIOS, states)
+  vdf/                                    # Vendored VDF library (binary VDF read/write)
 src/
   index.tsx                               # Plugin entry, event listeners, QAM router
   components/                             # React components (MainPage, ConnectionSettings, etc.)
@@ -88,15 +89,15 @@ src/
   utils/                                  # Shortcut management, sync, downloads, collections, sessions
 bin/romm-launcher                         # Bash launcher for RetroDECK
 defaults/config.json                      # 149 platform slug → RetroDECK system mappings
-tests/test_*.py                           # Per-module backend tests (949 tests)
+tests/test_*.py                           # Per-module backend tests (951 tests)
 tests/conftest.py                         # Mock decky module for test isolation
 ```
 
 ## Current State
 
-**Latest release**: v0.12.0 on main
+**Latest release**: v0.13.0 on main
 
-Working (Phases 1-7 + R1-R2 complete, post-migration cleanup done):
+Working:
 - Full sync engine (fetch ROMs, create shortcuts, apply cover art)
 - On-demand ROM downloads with progress tracking
 - BIOS file management per platform with per-core annotations

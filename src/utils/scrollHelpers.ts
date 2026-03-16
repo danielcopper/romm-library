@@ -15,11 +15,23 @@
 function findScrollParent(el: HTMLElement): HTMLElement | null {
   let parent: HTMLElement | null = el.parentElement;
   while (parent) {
-    const ov = window.getComputedStyle(parent).overflowY;
+    const ov = globalThis.getComputedStyle(parent).overflowY;
     if (ov === "scroll" || ov === "auto") return parent;
     parent = parent.parentElement;
   }
   return null;
+}
+
+/** Find the outermost ancestor with overflowY scroll/auto */
+function findOutermostScrollParent(el: HTMLElement): HTMLElement | null {
+  let parent: HTMLElement | null = el.parentElement;
+  let outermost: HTMLElement | null = null;
+  while (parent) {
+    const ov = globalThis.getComputedStyle(parent).overflowY;
+    if (ov === "scroll" || ov === "auto") outermost = parent;
+    parent = parent.parentElement;
+  }
+  return outermost;
 }
 
 /**
@@ -48,7 +60,10 @@ export function scrollToTop(e: FocusEvent): void {
   const el = e.currentTarget as HTMLElement;
   setTimeout(() => {
     if (!el) return;
-    const scrollParent = findScrollParent(el);
+    // Use outermost scroll parent to ensure the banner/hero is fully visible.
+    // Steam Deck has nested scrollable containers — the nearest one may not
+    // be the page-level viewport.
+    const scrollParent = findOutermostScrollParent(el) ?? findScrollParent(el);
     if (scrollParent) {
       scrollParent.scrollTo({ top: 0, behavior: "smooth" });
     }

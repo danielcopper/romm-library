@@ -243,24 +243,24 @@ class TestGetActiveCore:
         }
     }
 
-    @mock.patch("lib.es_de_config._load_es_systems")
-    @mock.patch("lib.es_de_config.get_system_override", return_value=None)
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "get_system_override", return_value=None)
     @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value="/fake/retrodeck")
     def test_default_core_from_live_xml(self, mock_home, mock_override, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         result = es_de_config.get_active_core("gba")
         assert result == ("mgba_libretro", "mGBA")
 
-    @mock.patch("lib.es_de_config._load_es_systems")
-    @mock.patch("lib.es_de_config.get_system_override", return_value="gpSP")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "get_system_override", return_value="gpSP")
     @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value="/fake/retrodeck")
     def test_system_override_takes_precedence(self, mock_home, mock_override, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         result = es_de_config.get_active_core("gba")
         assert result == ("gpsp_libretro", "gpSP")
 
-    @mock.patch("lib.es_de_config._load_es_systems")
-    @mock.patch("lib.es_de_config._load_core_defaults")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
     @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value=None)
     def test_fallback_to_core_defaults(self, mock_home, mock_defaults, mock_load):
         mock_load.return_value = {}
@@ -274,8 +274,8 @@ class TestGetActiveCore:
         result = es_de_config.get_active_core("gba")
         assert result == ("mgba_libretro", "mGBA")
 
-    @mock.patch("lib.es_de_config._load_es_systems")
-    @mock.patch("lib.es_de_config._load_core_defaults")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
     @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value=None)
     def test_returns_none_when_all_fail(self, mock_home, mock_defaults, mock_load):
         mock_load.return_value = {}
@@ -283,8 +283,8 @@ class TestGetActiveCore:
         result = es_de_config.get_active_core("gba")
         assert result == (None, None)
 
-    @mock.patch("lib.es_de_config._load_es_systems")
-    @mock.patch("lib.es_de_config._load_core_defaults")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
     @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value=None)
     def test_unknown_system_returns_none(self, mock_home, mock_defaults, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
@@ -314,7 +314,7 @@ class TestGetAvailableCores:
         }
     }
 
-    @mock.patch("lib.es_de_config._load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     def test_returns_cores_from_live_xml(self, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         result = es_de_config.get_available_cores("gba")
@@ -328,8 +328,8 @@ class TestGetAvailableCores:
         assert len(default) == 1
         assert default[0]["core_so"] == "mgba_libretro"
 
-    @mock.patch("lib.es_de_config._load_es_systems")
-    @mock.patch("lib.es_de_config._load_core_defaults")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
     def test_falls_back_to_core_defaults(self, mock_defaults, mock_load):
         mock_load.return_value = {}
         mock_defaults.return_value = {
@@ -342,8 +342,8 @@ class TestGetAvailableCores:
         result = es_de_config.get_available_cores("gba")
         assert len(result) == 2
 
-    @mock.patch("lib.es_de_config._load_es_systems")
-    @mock.patch("lib.es_de_config._load_core_defaults")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
     def test_unknown_system_returns_empty(self, mock_defaults, mock_load):
         mock_load.return_value = {}
         mock_defaults.return_value = {}
@@ -549,7 +549,7 @@ class TestGetActiveCoreWithGameOverride:
         }
     }
 
-    @mock.patch("lib.es_de_config._load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     @mock.patch("lib.retrodeck_config.get_retrodeck_home")
     def test_per_game_override_takes_precedence(self, mock_home, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
@@ -568,7 +568,7 @@ class TestGetActiveCoreWithGameOverride:
             result = es_de_config.get_active_core("gba", rom_filename="Pokemon.gba")
             assert result == ("gpsp_libretro", "gpSP")
 
-    @mock.patch("lib.es_de_config._load_es_systems")
+    @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     @mock.patch("lib.retrodeck_config.get_retrodeck_home")
     def test_falls_through_to_system_when_no_game_override(self, mock_home, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
@@ -610,7 +610,7 @@ class TestMtimeInvalidation:
 """
         path = _write_temp_xml(xml_v1)
         try:
-            with mock.patch("lib.es_de_config.find_es_systems_xml", return_value=path):
+            with mock.patch.object(es_de_config.CoreResolver, "find_es_systems_xml", return_value=path):
                 result1 = es_de_config._load_es_systems()
                 assert len(result1["gba"]["cores"]) == 1
 
@@ -630,7 +630,7 @@ class TestMtimeInvalidation:
         """_load_es_systems should return cached result if mtime unchanged."""
         path = _write_temp_xml(SAMPLE_ES_SYSTEMS_XML)
         try:
-            with mock.patch("lib.es_de_config.find_es_systems_xml", return_value=path):
+            with mock.patch.object(es_de_config.CoreResolver, "find_es_systems_xml", return_value=path):
                 result1 = es_de_config._load_es_systems()
                 result2 = es_de_config._load_es_systems()
                 # Same object reference means cache was used

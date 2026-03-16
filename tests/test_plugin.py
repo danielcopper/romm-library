@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
-from services.library_sync import LibrarySyncService
-from services.sgdb_artwork import SgdbArtworkService
+from services.library import LibraryService
+from services.steamgrid import SteamGridService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -16,7 +16,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._http_client = MagicMock()
+    p._http_adapter = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -25,8 +25,8 @@ def plugin():
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = LibrarySyncService(
-        http_client=p._http_client,
+    p._sync_service = LibraryService(
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -40,8 +40,8 @@ def plugin():
         log_debug=p._log_debug,
     )
 
-    p._sgdb_service = SgdbArtworkService(
-        http_client=p._http_client,
+    p._sgdb_service = SteamGridService(
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,

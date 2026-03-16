@@ -8,9 +8,9 @@ import pytest
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
 from fakes.fake_save_api import FakeSaveApi
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 from services.playtime import PlaytimeService
-from services.save_sync import SaveSyncService
+from services.saves import SaveService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -30,7 +30,7 @@ def plugin(tmp_path):
         "enabled_platforms": {},
         "log_level": "warn",
     }
-    p._http_client = RommHttpAdapter(p.settings, __import__("decky").DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._http_adapter = RommHttpAdapter(p.settings, __import__("decky").DECKY_PLUGIN_DIR, logging.getLogger("test"))
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
@@ -46,8 +46,8 @@ def plugin(tmp_path):
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = LibrarySyncService(
-        http_client=p._http_client,
+    p._sync_service = LibraryService(
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -64,10 +64,10 @@ def plugin(tmp_path):
 
     # Wire services with FakeSaveApi
     fake_api = FakeSaveApi()
-    p._save_sync_state = SaveSyncService.make_default_state()
+    p._save_sync_state = SaveService.make_default_state()
     saves_path = str(tmp_path / "retrodeck" / "saves")
 
-    p._save_sync_service = SaveSyncService(
+    p._save_sync_service = SaveService(
         save_api=fake_api,
         with_retry=_no_retry,
         is_retryable=lambda e: isinstance(e, ConnectionError),
@@ -559,12 +559,12 @@ class TestPendingConflicts:
 
 
 class TestRetryMRO:
-    """Verify with_retry is accessible on Plugin via _http_client."""
+    """Verify with_retry is accessible on Plugin via _http_adapter."""
 
-    def test_with_retry_accessible_via_http_client(self, plugin):
-        """with_retry should be accessible via _http_client."""
+    def test_with_retry_accessible_via_http_adapter(self, plugin):
+        """with_retry should be accessible via _http_adapter."""
         fn = MagicMock(return_value="ok")
-        result = plugin._http_client.with_retry(fn, "arg1")
+        result = plugin._http_adapter.with_retry(fn, "arg1")
         assert result == "ok"
         fn.assert_called_once_with("arg1")
 
@@ -641,9 +641,7 @@ class TestSaveSyncFeatureFlag:
     @pytest.mark.asyncio
     async def test_default_disabled(self, plugin):
         """save_sync_enabled defaults to False in fresh state."""
-        plugin._save_sync_state.update(
-            SaveSyncService.make_default_state()
-        )  # Reset to defaults (no test fixture override)
+        plugin._save_sync_state.update(SaveService.make_default_state())  # Reset to defaults (no test fixture override)
         settings = plugin._save_sync_state["settings"]
         assert settings["save_sync_enabled"] is False
 

@@ -1,4 +1,4 @@
-"""DownloadService — ROM download engine extracted from DownloadMixin.
+"""DownloadService — ROM download engine.
 
 Handles ROM downloads (single and multi-file), disk space checks,
 download queue management, ROM removal, and partial download cleanup.
@@ -37,7 +37,7 @@ class DownloadService:
     def __init__(
         self,
         *,
-        http_client: HttpAdapter,
+        http_adapter: HttpAdapter,
         state: dict,
         save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
@@ -47,7 +47,7 @@ class DownloadService:
         save_state: Callable,
         save_save_sync_state: Callable,
     ):
-        self._http_client = http_client
+        self._http_adapter = http_adapter
         self._state = state
         self._save_sync_state = save_sync_state
         self._loop = loop
@@ -171,7 +171,7 @@ class DownloadService:
                     if rom_id:
                         await self.start_download(rom_id)
             except asyncio.CancelledError:
-                return
+                raise
             except Exception as e:
                 self._logger.warning(f"Download request poll error: {e}")
 
@@ -182,7 +182,7 @@ class DownloadService:
 
         self._download_in_progress.add(rom_id)
         try:
-            rom_detail = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+            rom_detail = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/roms/{rom_id}")
         except Exception as e:
             self._download_in_progress.discard(rom_id)
             self._logger.error(f"Failed to fetch ROM {rom_id}: {e}")
@@ -190,7 +190,7 @@ class DownloadService:
 
         platform_slug = rom_detail.get("platform_slug", "")
         platform_fs_slug = rom_detail.get("platform_fs_slug")
-        system = self._http_client.resolve_system(platform_slug, platform_fs_slug)
+        system = self._http_adapter.resolve_system(platform_slug, platform_fs_slug)
 
         roms_dir = os.path.join(retrodeck_config.get_roms_path(), system)
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
@@ -201,10 +201,14 @@ class DownloadService:
             file_name = safe_name
         file_size = rom_detail.get("fs_size_bytes", 0)
 
-        # Check disk space (need file size + 100MB buffer)
+        # Check disk space: multi-file ROMs need space for ZIP + extracted contents
         os.makedirs(roms_dir, exist_ok=True)
         free_space = shutil.disk_usage(roms_dir).free
-        required = file_size + (100 * 1024 * 1024)
+        buffer = 100 * 1024 * 1024
+        if rom_detail.get("has_multiple_files"):
+            required = file_size * 2 + buffer  # ZIP + extracted + buffer
+        else:
+            required = file_size + buffer
         if file_size and free_space < required:
             self._download_in_progress.discard(rom_id)
             free_mb = free_space // (1024 * 1024)
@@ -351,7 +355,7 @@ class DownloadService:
                 # Multi-file ROM: API returns ZIP, download to temp then extract
                 tmp_zip = target_path + _ZIP_TMP_EXT
                 await self._loop.run_in_executor(
-                    None, self._http_client.download, download_path, tmp_zip, progress_callback
+                    None, self._http_adapter.download, download_path, tmp_zip, progress_callback
                 )
                 final_path = await self._loop.run_in_executor(
                     None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
@@ -359,7 +363,7 @@ class DownloadService:
             else:
                 tmp_path = target_path + _TMP_EXT
                 await self._loop.run_in_executor(
-                    None, self._http_client.download, download_path, tmp_path, progress_callback
+                    None, self._http_adapter.download, download_path, tmp_path, progress_callback
                 )
                 final_path = await self._loop.run_in_executor(
                     None, self._post_download_single_io, rom_id, rom_detail, target_path, file_name, system
@@ -431,8 +435,30 @@ class DownloadService:
             for f in files:
                 all_files.append(os.path.join(root, f))
 
-        # Prefer M3U > CUE > largest file
+        # Prefer M3U > CUE
         for ext in (".m3u", ".cue"):
+            matches = [f for f in all_files if f.lower().endswith(ext)]
+            if matches:
+                return matches[0]
+
+        # WiiU: loadiine format has .rpx in code/ subdirectory
+        rpx_files = [f for f in all_files if f.lower().endswith(".rpx")]
+        if rpx_files:
+            return rpx_files[0]
+
+        # WiiU disc images
+        for ext in (".wud", ".wux", ".wua"):
+            matches = [f for f in all_files if f.lower().endswith(ext)]
+            if matches:
+                return matches[0]
+
+        # PS3: EBOOT.BIN in PS3_GAME/USRDIR/
+        eboot_files = [f for f in all_files if f.endswith("EBOOT.BIN")]
+        if eboot_files:
+            return eboot_files[0]
+
+        # 3DS: prefer .3ds > .cia > .cxi
+        for ext in (".3ds", ".cia", ".cxi"):
             matches = [f for f in all_files if f.lower().endswith(ext)]
             if matches:
                 return matches[0]
@@ -469,10 +495,7 @@ class DownloadService:
         if not task:
             return {"success": False, "message": "No active download for this ROM"}
         task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        # Don't await — _do_download's finally block handles cleanup
         return {"success": True, "message": "Download cancelled"}
 
     def get_download_queue(self):

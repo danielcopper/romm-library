@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 import pytest
 from adapters.steam_config import SteamConfigAdapter
 from fakes.fake_save_api import FakeSaveApi
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 from services.playtime import PlaytimeService
-from services.save_sync import SaveSyncService
+from services.saves import SaveService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -38,8 +38,8 @@ def plugin(tmp_path):
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = LibrarySyncService(
-        http_client=MagicMock(),
+    p._sync_service = LibraryService(
+        http_adapter=MagicMock(),
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -56,10 +56,10 @@ def plugin(tmp_path):
 
     # Wire services with FakeSaveApi
     fake_api = FakeSaveApi()
-    p._save_sync_state = SaveSyncService.make_default_state()
+    p._save_sync_state = SaveService.make_default_state()
     saves_path = str(tmp_path / "retrodeck" / "saves")
 
-    p._save_sync_service = SaveSyncService(
+    p._save_sync_service = SaveService(
         save_api=fake_api,
         with_retry=_no_retry,
         is_retryable=lambda e: isinstance(e, ConnectionError),

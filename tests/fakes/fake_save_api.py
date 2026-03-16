@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from adapters.romm.save_api.protocol import SaveApiProtocol
 
-
-class FakeSaveApi(SaveApiProtocol):
+class FakeSaveApi:
     """In-memory fake that satisfies SaveApiProtocol without HTTP."""
 
     def __init__(self) -> None:

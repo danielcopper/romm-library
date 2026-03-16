@@ -1,7 +1,7 @@
-"""SaveSyncService — save sync business logic extracted from SaveSyncMixin.
+"""SaveService — save sync business logic.
 
 All RomM communication goes through ``SaveApiProtocol``.
-No ``import decky`` or ``from lib.*`` imports.
+No ``import decky`` — error utilities come from ``lib.errors``.
 """
 
 from __future__ import annotations
@@ -17,10 +17,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from adapters.romm.save_api.protocol import SaveApiProtocol
-
 from lib.errors import RommApiError, RommConflictError, classify_error
 from services._util import run_api_sync
+from services.protocols import SaveApiProtocol
+
+_DEVICE_NOT_REGISTERED = "Device not registered"
 
 if TYPE_CHECKING:
     import asyncio
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-class SaveSyncService:
+class SaveService:
     """Bidirectional save file sync between local RetroDECK and RomM server.
 
     Parameters
@@ -258,6 +259,49 @@ class SaveSyncService:
     # Conflict Detection
     # ------------------------------------------------------------------
 
+    def _check_local_changes(self, local_hash: str, last_sync_hash: str) -> bool:
+        """Compare local hash against baseline to detect local modifications."""
+        return local_hash != last_sync_hash
+
+    def _check_server_changes(self, file_state: dict, server_save: dict, last_sync_hash: str) -> bool:
+        """Compare server metadata/hash against baseline to detect server modifications."""
+        stored_updated_at = file_state.get("last_sync_server_updated_at")
+        stored_size = file_state.get("last_sync_server_size")
+        server_updated_at = server_save.get("updated_at", "")
+        server_size = server_save.get("file_size_bytes")
+
+        # Fast path: timestamp unchanged
+        if stored_updated_at and server_updated_at == stored_updated_at:
+            if stored_size is not None and server_size is not None and server_size != stored_size:
+                return True  # size changed
+            return False  # unchanged
+
+        # Slow path: timestamp changed or no stored timestamp — download and hash
+        try:
+            server_hash = self._with_retry(self._get_server_save_hash, server_save)
+        except Exception:
+            server_hash = None
+        if server_hash and server_hash != last_sync_hash:
+            return True
+
+        # False alarm — update stored metadata
+        if file_state:
+            file_state["last_sync_server_updated_at"] = server_updated_at
+            if server_size is not None:
+                file_state["last_sync_server_size"] = server_size
+        return False
+
+    @staticmethod
+    def _determine_action(local_changed: bool, server_changed: bool) -> str:
+        """Decide skip/upload/download/conflict based on local and server change flags."""
+        if not local_changed and not server_changed:
+            return "skip"
+        if not local_changed:
+            return "download"
+        if not server_changed:
+            return "upload"
+        return "conflict"
+
     def _detect_conflict(self, rom_id: int, filename: str, local_hash: str, server_save: dict) -> str:
         """Hybrid conflict detection (no content_hash on RomM 4.6.1).
 
@@ -280,43 +324,9 @@ class SaveSyncService:
                 return "skip" if local_hash == server_hash else "conflict"
             return "download"
 
-        local_changed = local_hash != last_sync_hash
-
-        # Server change detection — fast path
-        server_changed = False
-        stored_updated_at = file_state.get("last_sync_server_updated_at")
-        stored_size = file_state.get("last_sync_server_size")
-        server_updated_at = server_save.get("updated_at", "")
-        server_size = server_save.get("file_size_bytes")
-
-        if stored_updated_at and server_updated_at == stored_updated_at:
-            if stored_size is None or server_size is None or server_size == stored_size:
-                server_changed = False  # fast path: unchanged
-            else:
-                server_changed = True  # size changed
-        else:
-            # Timestamp changed or no stored timestamp → slow path
-            try:
-                server_hash = self._with_retry(self._get_server_save_hash, server_save)
-            except Exception:
-                server_hash = None
-            if server_hash and server_hash != last_sync_hash:
-                server_changed = True
-            else:
-                # False alarm — update stored metadata
-                if file_state:
-                    file_state["last_sync_server_updated_at"] = server_updated_at
-                    if server_size is not None:
-                        file_state["last_sync_server_size"] = server_size
-
-        if not local_changed and not server_changed:
-            result = "skip"
-        elif not local_changed and server_changed:
-            result = "download"
-        elif local_changed and not server_changed:
-            result = "upload"
-        else:
-            result = "conflict"
+        local_changed = self._check_local_changes(local_hash, last_sync_hash)
+        server_changed = self._check_server_changes(file_state, server_save, last_sync_hash)
+        result = self._determine_action(local_changed, server_changed)
 
         self._log_debug(
             f"_detect_conflict({rom_id}, {filename}): "
@@ -369,9 +379,7 @@ class SaveSyncService:
 
         # Never synced — can't determine state without hashing
         if not last_sync_hash:
-            if server_save:
-                return "conflict"
-            return "upload"
+            return "conflict" if server_save else "upload"
 
         # Local change: compare mtime against stored sync mtime
         stored_local_mtime = file_state.get("last_sync_local_mtime")
@@ -390,19 +398,12 @@ class SaveSyncService:
             server_updated_at = server_save.get("updated_at", "")
             server_size = server_save.get("file_size_bytes")
 
-            if stored_updated_at and server_updated_at != stored_updated_at:
-                server_changed = True
-            elif stored_size is not None and server_size is not None and server_size != stored_size:
+            if (stored_updated_at and server_updated_at != stored_updated_at) or (
+                stored_size is not None and server_size is not None and server_size != stored_size
+            ):
                 server_changed = True
 
-        if not local_changed and not server_changed:
-            return "skip"
-        elif not local_changed and server_changed:
-            return "download"
-        elif local_changed and not server_changed:
-            return "upload"
-        else:
-            return "conflict"
+        return self._determine_action(local_changed, server_changed)
 
     def _update_file_sync_state(
         self, rom_id_str: str, filename: str, server_response: dict, local_path: str, system: str
@@ -478,6 +479,154 @@ class SaveSyncService:
         self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str}")
         return result
 
+    @staticmethod
+    def _build_conflict_dict(
+        rom_id: int,
+        filename: str,
+        local: dict | None,
+        local_hash: str | None,
+        server: dict,
+    ) -> dict:
+        """Build a conflict descriptor for the frontend."""
+        local_mtime_val = os.path.getmtime(local["path"]) if local and os.path.isfile(local["path"]) else None
+        return {
+            "rom_id": rom_id,
+            "filename": filename,
+            "local_path": local["path"] if local else None,
+            "local_hash": local_hash,
+            "local_mtime": (
+                datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat() if local_mtime_val else None
+            ),
+            "local_size": (os.path.getsize(local["path"]) if local and os.path.isfile(local["path"]) else None),
+            "server_save_id": server.get("id"),
+            "server_updated_at": server.get("updated_at", ""),
+            "server_size": server.get("file_size_bytes"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def _sync_single_save_file(
+        self,
+        rom_id: int,
+        filename: str,
+        local: dict | None,
+        server: dict | None,
+    ) -> tuple[str, str]:
+        """Determine and resolve the sync action for one save file.
+
+        Returns ``(action, local_hash)`` where action is the *resolved*
+        action after conflict-mode processing (may be ``"ask"``).
+        """
+        local_hash = ""
+        if local and server:
+            local_hash = self._file_md5(local["path"])
+            action = self._detect_conflict(rom_id, filename, local_hash, server)
+        elif local:
+            action = "upload"
+        elif server:
+            action = "download"
+        else:
+            return "none", local_hash
+
+        if action == "skip":
+            return "skip", local_hash
+
+        if action == "conflict":
+            assert server is not None
+            local_mtime = os.path.getmtime(local["path"]) if local else 0
+            resolution = self._resolve_conflict_by_mode(local_mtime, server)
+            if resolution == "ask":
+                return "ask", local_hash
+            action = resolution
+
+        return action, local_hash
+
+    def _execute_sync_action(
+        self,
+        action: str,
+        rom_id: int,
+        rom_id_str: str,
+        filename: str,
+        local: dict | None,
+        server: dict | None,
+        local_hash: str,
+        saves_dir: str,
+        system: str,
+        errors: list[str],
+        conflicts: list[dict],
+    ) -> bool:
+        """Execute a resolved sync action (download/upload). Returns True if synced."""
+        try:
+            if action == "download":
+                assert server is not None
+                self._do_download_save(server, saves_dir, filename, rom_id_str, system)
+                return True
+            if action == "upload" and local:
+                self._do_upload_save(rom_id, local["path"], filename, rom_id_str, system, server)
+                return True
+        except RommConflictError:
+            if local and server:
+                conflicts.append(self._build_conflict_dict(rom_id, filename, local, local_hash, server))
+            else:
+                errors.append(f"{filename}: conflict without matching local+server")
+        except RommApiError as e:
+            _code, _msg = classify_error(e)
+            errors.append(f"{filename}: {_msg}")
+        except Exception as e:
+            _code, _msg = classify_error(e)
+            errors.append(f"{filename}: {_msg}")
+            tmp = os.path.join(saves_dir, filename + ".tmp")
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+        return False
+
+    def _process_single_file_sync(
+        self,
+        rom_id: int,
+        rom_id_str: str,
+        filename: str,
+        local: dict | None,
+        server: dict | None,
+        saves_dir: str,
+        system: str,
+        errors: list[str],
+        conflicts: list[dict],
+    ) -> bool:
+        """Process sync for one save file. Returns True if a file was synced."""
+        t_file = time.time()
+        action, local_hash = self._sync_single_save_file(rom_id, filename, local, server)
+
+        self._log_debug(
+            f"[TIMING] _sync_rom_saves({rom_id}): detect {filename} -> {action} {time.time() - t_file:.3f}s"
+        )
+
+        if action in ("skip", "none"):
+            return False
+
+        if action == "ask":
+            if local and server:
+                conflicts.append(self._build_conflict_dict(rom_id, filename, local, local_hash, server))
+            return False
+
+        t_action = time.time()
+        result = self._execute_sync_action(
+            action,
+            rom_id,
+            rom_id_str,
+            filename,
+            local,
+            server,
+            local_hash,
+            saves_dir,
+            system,
+            errors,
+            conflicts,
+        )
+        self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time() - t_action:.3f}s")
+        return result
+
     def _sync_rom_saves(self, rom_id: int) -> tuple[int, list[str], list[dict]]:
         """Sync saves for a single ROM (always bidirectional).
 
@@ -524,108 +673,18 @@ class SaveSyncService:
         conflicts: list[dict] = []
 
         for filename in sorted(all_filenames):
-            t_file = time.time()
-            local = local_by_name.get(filename)
-            server = server_by_name.get(filename)
-
-            local_hash = ""
-            if local and server:
-                local_hash = self._file_md5(local["path"])
-                action = self._detect_conflict(rom_id, filename, local_hash, server)
-            elif local and not server:
-                action = "upload"
-            elif server and not local:
-                action = "download"
-            else:
-                continue
-
-            self._log_debug(
-                f"[TIMING] _sync_rom_saves({rom_id}): detect {filename} -> {action} {time.time() - t_file:.3f}s"
-            )
-
-            if action == "skip":
-                continue
-
-            # Resolve conflicts
-            if action == "conflict":
-                assert server is not None  # conflict requires both local and server
-                local_mtime = os.path.getmtime(local["path"]) if local else 0
-                resolution = self._resolve_conflict_by_mode(local_mtime, server)
-
-                if resolution == "ask":
-                    if local:
-                        assert server is not None  # guaranteed: conflict requires both sides
-                        local_mtime_val = os.path.getmtime(local["path"]) if os.path.isfile(local["path"]) else None
-                        conflicts.append(
-                            {
-                                "rom_id": rom_id,
-                                "filename": filename,
-                                "local_path": local["path"],
-                                "local_hash": local_hash,
-                                "local_mtime": (
-                                    datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat()
-                                    if local_mtime_val
-                                    else None
-                                ),
-                                "local_size": (
-                                    os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None
-                                ),
-                                "server_save_id": server.get("id"),
-                                "server_updated_at": server.get("updated_at", ""),
-                                "server_size": server.get("file_size_bytes"),
-                                "created_at": datetime.now(timezone.utc).isoformat(),
-                            }
-                        )
-                    continue
-                action = resolution
-
-            t_action = time.time()
-            try:
-                if action == "download":
-                    assert server is not None  # download requires server save
-                    self._do_download_save(server, saves_dir, filename, rom_id_str, system)
-                    synced += 1
-                elif action == "upload" and local:
-                    self._do_upload_save(rom_id, local["path"], filename, rom_id_str, system, server)
-                    synced += 1
-                self._log_debug(
-                    f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time() - t_action:.3f}s"
-                )
-            except RommConflictError:
-                if local and server:
-                    local_mtime_val = os.path.getmtime(local["path"]) if os.path.isfile(local["path"]) else None
-                    conflicts.append(
-                        {
-                            "rom_id": rom_id,
-                            "filename": filename,
-                            "local_path": local["path"],
-                            "local_hash": local_hash if local else None,
-                            "local_mtime": (
-                                datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat()
-                                if local_mtime_val
-                                else None
-                            ),
-                            "local_size": (os.path.getsize(local["path"]) if os.path.isfile(local["path"]) else None),
-                            "server_save_id": server.get("id"),
-                            "server_updated_at": server.get("updated_at", ""),
-                            "server_size": server.get("file_size_bytes"),
-                            "created_at": datetime.now(timezone.utc).isoformat(),
-                        }
-                    )
-                else:
-                    errors.append(f"{filename}: conflict without matching local+server")
-            except RommApiError as e:
-                _code, _msg = classify_error(e)
-                errors.append(f"{filename}: {_msg}")
-            except Exception as e:
-                _code, _msg = classify_error(e)
-                errors.append(f"{filename}: {_msg}")
-                tmp = os.path.join(saves_dir, filename + ".tmp")
-                if os.path.exists(tmp):
-                    try:
-                        os.remove(tmp)
-                    except OSError:
-                        pass
+            if self._process_single_file_sync(
+                rom_id,
+                rom_id_str,
+                filename,
+                local_by_name.get(filename),
+                server_by_name.get(filename),
+                saves_dir,
+                system,
+                errors,
+                conflicts,
+            ):
+                synced += 1
 
         # Record when this sync check ran (regardless of whether files transferred)
         save_entry = self._save_sync_state["saves"].setdefault(rom_id_str, {})
@@ -640,6 +699,32 @@ class SaveSyncService:
     def _is_save_sync_enabled(self) -> bool:
         """Check if save sync feature is enabled."""
         return self._save_sync_state.get("settings", {}).get("save_sync_enabled", False)
+
+    @staticmethod
+    def _build_file_status(
+        filename: str,
+        *,
+        local_path: str | None,
+        local_hash: str | None,
+        local_mtime: str | None,
+        local_size: int | None,
+        server: dict | None,
+        last_sync_at: str | None,
+        status: str,
+    ) -> dict:
+        """Build a file status dict for the frontend."""
+        return {
+            "filename": filename,
+            "local_path": local_path,
+            "local_hash": local_hash,
+            "local_mtime": local_mtime,
+            "local_size": local_size,
+            "server_save_id": server.get("id") if server else None,
+            "server_updated_at": server.get("updated_at", "") if server else None,
+            "server_size": server.get("file_size_bytes") if server else None,
+            "last_sync_at": last_sync_at,
+            "status": status,
+        }
 
     def _get_save_status_io(self, rom_id: int, server_saves: list[dict]) -> dict:
         """Sync helper for get_save_status — runs in executor.
@@ -665,40 +750,38 @@ class SaveSyncService:
 
             if server:
                 action = self._detect_conflict(rom_id, fn, local_hash, server)
+            elif local_hash:
+                action = "upload"
             else:
-                action = "upload" if local_hash else "skip"
+                action = "skip"
 
             file_statuses.append(
-                {
-                    "filename": fn,
-                    "local_path": lf["path"],
-                    "local_hash": local_hash,
-                    "local_mtime": datetime.fromtimestamp(os.path.getmtime(lf["path"]), tz=timezone.utc).isoformat(),
-                    "local_size": os.path.getsize(lf["path"]),
-                    "server_save_id": server.get("id") if server else None,
-                    "server_updated_at": server.get("updated_at", "") if server else None,
-                    "server_size": server.get("file_size_bytes") if server else None,
-                    "last_sync_at": files_state.get(fn, {}).get("last_sync_at"),
-                    "status": action,
-                }
+                self._build_file_status(
+                    fn,
+                    local_path=lf["path"],
+                    local_hash=local_hash,
+                    local_mtime=datetime.fromtimestamp(os.path.getmtime(lf["path"]), tz=timezone.utc).isoformat(),
+                    local_size=os.path.getsize(lf["path"]),
+                    server=server,
+                    last_sync_at=files_state.get(fn, {}).get("last_sync_at"),
+                    status=action,
+                )
             )
 
         # Server-only saves (not present locally)
         for fn, ss in server_by_name.items():
             if fn not in seen_filenames:
                 file_statuses.append(
-                    {
-                        "filename": fn,
-                        "local_path": None,
-                        "local_hash": None,
-                        "local_mtime": None,
-                        "local_size": None,
-                        "server_save_id": ss.get("id"),
-                        "server_updated_at": ss.get("updated_at", ""),
-                        "server_size": ss.get("file_size_bytes"),
-                        "last_sync_at": None,
-                        "status": "download",
-                    }
+                    self._build_file_status(
+                        fn,
+                        local_path=None,
+                        local_hash=None,
+                        local_mtime=None,
+                        local_size=None,
+                        server=ss,
+                        last_sync_at=None,
+                        status="download",
+                    )
                 )
 
         playtime = self._save_sync_state.get("playtime", {}).get(rom_id_str, {})
@@ -871,7 +954,7 @@ class SaveSyncService:
         if not self._save_sync_state.get("device_id"):
             reg = await self.ensure_device_registered()
             if not reg.get("success"):
-                return {"success": False, "message": "Device not registered"}
+                return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
         synced, errors, conflicts = await self._loop.run_in_executor(None, self._sync_rom_saves, rom_id)
         self.save_state()
@@ -903,7 +986,7 @@ class SaveSyncService:
         if not self._save_sync_state.get("device_id"):
             reg = await self.ensure_device_registered()
             if not reg.get("success"):
-                return {"success": False, "message": "Device not registered"}
+                return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
         synced, errors, conflicts = await self._loop.run_in_executor(None, self._sync_rom_saves, rom_id)
         self.save_state()
@@ -935,7 +1018,7 @@ class SaveSyncService:
         if not self._save_sync_state.get("device_id"):
             reg = await self.ensure_device_registered()
             if not reg.get("success"):
-                return {"success": False, "message": "Device not registered"}
+                return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
         synced, errors, conflicts = await self._loop.run_in_executor(None, self._sync_rom_saves, int(rom_id))
         self.save_state()
@@ -959,7 +1042,7 @@ class SaveSyncService:
         if not self._save_sync_state.get("device_id"):
             reg = await self.ensure_device_registered()
             if not reg.get("success"):
-                return {"success": False, "message": "Device not registered"}
+                return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
         total_synced = 0
         total_errors: list[str] = []
@@ -1130,7 +1213,7 @@ class SaveSyncService:
         total_errors: list[str] = []
         rom_count = 0
 
-        for rom_id_str, entry in list(self._state["installed_roms"].items()):
+        for rom_id_str, entry in self._state["installed_roms"].items():
             if entry.get("platform_slug") != platform_slug:
                 continue
             rom_count += 1

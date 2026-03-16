@@ -1,7 +1,7 @@
 """AchievementsService — RetroAchievements data fetching via RomM server.
 
-Extracted from AchievementsMixin. Owns the achievements cache and handles
-achievement list fetching, user progress tracking, and post-session refresh.
+Owns the achievements cache and handles achievement list fetching,
+user progress tracking, and post-session refresh.
 """
 
 from __future__ import annotations
@@ -27,13 +27,13 @@ class AchievementsService:
     def __init__(
         self,
         *,
-        http_client: HttpAdapter,
+        http_adapter: HttpAdapter,
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         log_debug: Callable,
     ) -> None:
-        self._http_client = http_client
+        self._http_adapter = http_adapter
         self._state = state
         self._loop = loop
         self._logger = logger
@@ -57,7 +57,7 @@ class AchievementsService:
     async def _fetch_ra_username(self):
         """Fetch RA username from RomM user profile and cache it."""
         try:
-            user_data = await self._loop.run_in_executor(None, self._http_client.request, "/api/users/me")
+            user_data = await self._loop.run_in_executor(None, self._http_adapter.request, "/api/users/me")
             ra_username = (user_data.get("ra_username") or "").strip()
             self._achievements_cache["_ra_user"] = {
                 "username": ra_username,
@@ -135,7 +135,7 @@ class AchievementsService:
 
         # Fetch ROM detail from RomM (includes ra_metadata)
         try:
-            rom_data = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+            rom_data = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/roms/{rom_id}")
             achievements = self._extract_achievements_from_rom(rom_data)
 
             # Cache it
@@ -209,7 +209,7 @@ class AchievementsService:
         total = (await self.get_achievements(rom_id)).get("total", 0)
 
         try:
-            user_data = await self._loop.run_in_executor(None, self._http_client.request, "/api/users/me")
+            user_data = await self._loop.run_in_executor(None, self._http_adapter.request, "/api/users/me")
             fetched_username = (user_data.get("ra_username") or "").strip()
             if fetched_username:
                 self._achievements_cache["_ra_user"] = {"username": fetched_username, "cached_at": time.time()}

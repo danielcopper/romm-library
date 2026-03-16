@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from adapters.steam_config import SteamConfigAdapter
 from services.downloads import DownloadService
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -16,7 +16,7 @@ from main import Plugin
 def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
-    p._http_client = MagicMock()
+    p._http_adapter = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -25,8 +25,8 @@ def plugin():
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
-    p._sync_service = LibrarySyncService(
-        http_client=p._http_client,
+    p._sync_service = LibraryService(
+        http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -41,7 +41,7 @@ def plugin():
     )
     p._save_sync_state = {"saves": {}, "playtime": {}, "settings": {}}
     p._download_service = DownloadService(
-        http_client=p._http_client,
+        http_adapter=p._http_adapter,
         state=p._state,
         save_sync_state=p._save_sync_state,
         loop=asyncio.get_event_loop(),
@@ -334,6 +334,128 @@ class TestDetectLaunchFile:
         result = plugin._download_service._detect_launch_file(str(tmp_path))
         assert result.endswith("large.bin")
 
+    def test_wiiu_rpx_in_code_subdir(self, plugin, tmp_path):
+        code_dir = tmp_path / "code"
+        code_dir.mkdir()
+        (code_dir / "game.rpx").write_bytes(b"\x00" * 500)
+        (tmp_path / "meta" / "meta.xml").parent.mkdir()
+        (tmp_path / "meta" / "meta.xml").write_text("<xml/>")
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".rpx")
+
+    def test_wiiu_disc_image(self, plugin, tmp_path):
+        (tmp_path / "game.wux").write_bytes(b"\x00" * 1000)
+        (tmp_path / "readme.txt").write_text("info")
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".wux")
+
+    def test_wiiu_wud_format(self, plugin, tmp_path):
+        (tmp_path / "game.wud").write_bytes(b"\x00" * 1000)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".wud")
+
+    def test_wiiu_wua_format(self, plugin, tmp_path):
+        (tmp_path / "game.wua").write_bytes(b"\x00" * 1000)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".wua")
+
+    def test_ps3_eboot_bin(self, plugin, tmp_path):
+        usrdir = tmp_path / "PS3_GAME" / "USRDIR"
+        usrdir.mkdir(parents=True)
+        (usrdir / "EBOOT.BIN").write_bytes(b"\x00" * 500)
+        (tmp_path / "PS3_GAME" / "PARAM.SFO").write_bytes(b"\x00" * 100)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith("EBOOT.BIN")
+
+    def test_3ds_prefers_3ds_over_cia(self, plugin, tmp_path):
+        (tmp_path / "game.3ds").write_bytes(b"\x00" * 500)
+        (tmp_path / "game.cia").write_bytes(b"\x00" * 500)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".3ds")
+
+    def test_3ds_falls_back_to_cia(self, plugin, tmp_path):
+        (tmp_path / "game.cia").write_bytes(b"\x00" * 500)
+        (tmp_path / "game.cxi").write_bytes(b"\x00" * 500)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".cia")
+
+    def test_m3u_still_preferred_over_platform_specific(self, plugin, tmp_path):
+        """M3U takes priority even when platform-specific files exist."""
+        (tmp_path / "game.m3u").write_text("disc1.cue")
+        code_dir = tmp_path / "code"
+        code_dir.mkdir()
+        (code_dir / "game.rpx").write_bytes(b"\x00" * 500)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".m3u")
+
+
+class TestDiskSpaceMultiFile:
+    @pytest.mark.asyncio
+    async def test_multi_file_rom_requires_double_space(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock, patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        file_size = 500 * 1024 * 1024  # 500MB
+        rom_detail = {
+            "id": 42,
+            "name": "WiiU Game",
+            "fs_name": "game.zip",
+            "fs_size_bytes": file_size,
+            "platform_slug": "wiiu",
+            "platform_name": "Wii U",
+            "has_multiple_files": True,
+        }
+
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
+
+        # 700MB free: enough for single-file (600MB) but not multi-file (1100MB)
+        with patch("shutil.disk_usage", return_value=MagicMock(free=700 * 1024 * 1024)):
+            result = await plugin.start_download(42)
+
+        assert result["success"] is False
+        assert "disk space" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_single_file_rom_uses_normal_space_check(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock, patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        file_size = 500 * 1024 * 1024  # 500MB
+        rom_detail = {
+            "id": 43,
+            "name": "N64 Game",
+            "fs_name": "game.z64",
+            "fs_size_bytes": file_size,
+            "platform_slug": "n64",
+            "platform_name": "Nintendo 64",
+            "has_multiple_files": False,
+        }
+
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
+        plugin._download_service._loop.create_task = MagicMock()
+
+        # 700MB free: enough for single-file (600MB)
+        with patch("shutil.disk_usage", return_value=MagicMock(free=700 * 1024 * 1024)):
+            result = await plugin.start_download(43)
+
+        assert result["success"] is True
+
 
 class TestPollDownloadRequestsIO:
     """Tests for _poll_download_requests_io — file-based IPC."""
@@ -568,7 +690,7 @@ class TestDoDownloadSingleFile:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
         # File ends up at target_path (not .tmp)
@@ -633,7 +755,7 @@ class TestDoDownloadMultiFile:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
 
         # ZIP is extracted to extract_dir
@@ -813,7 +935,7 @@ class TestDoDownloadCancelled:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download_cancel):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download_cancel):
             with pytest.raises(asyncio.CancelledError):
                 await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
@@ -855,7 +977,7 @@ class TestDoDownloadZipFailure:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[66] = {"rom_id": 66, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(66, rom_detail, target_path, "psx")
 
         assert plugin._download_service._download_queue[66]["status"] == "failed"
@@ -1049,7 +1171,7 @@ class TestUrlEncodedFilenameRename:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[99] = {"rom_id": 99, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(99, rom_detail, target_path, "psx")
 
         extract_dir = roms_dir / "Vagrant Story (USA)"
@@ -1100,7 +1222,7 @@ class TestUrlEncodedFilenameRename:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._http_client, "download", side_effect=fake_download):
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
             await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
 
         extract_dir = roms_dir / "FF7"

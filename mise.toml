@@ -8,7 +8,7 @@ _.python.venv = { path = ".venv", create = true }
 
 [tasks.setup]
 description = "Install JS and Python dependencies"
-run = ["pnpm install", "pip install pytest pytest-asyncio import-linter ruff basedpyright", "git config core.hooksPath .githooks"]
+run = ["pnpm install", "pip install pytest pytest-asyncio pytest-cov import-linter ruff basedpyright", "git config core.hooksPath .githooks"]
 
 [tasks.build]
 description = "Build frontend"
@@ -20,7 +20,7 @@ description = "Run Python tests"
 run = "python -m pytest tests/ -q"
 
 [tasks.lint]
-description = "Check mixin import independence"
+description = "Check service/adapter layer boundaries"
 run = "PYTHONPATH=py_modules lint-imports"
 
 [tasks.deploy]

@@ -12,11 +12,11 @@ from bootstrap import bootstrap, wire_services
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
-from services.library_sync import LibrarySyncService
+from services.library import LibraryService
 from services.metadata import MetadataService
 from services.playtime import PlaytimeService
-from services.save_sync import SaveSyncService
-from services.sgdb_artwork import SgdbArtworkService
+from services.saves import SaveService
+from services.steamgrid import SteamGridService
 
 
 class TestBootstrap:
@@ -32,7 +32,7 @@ class TestBootstrap:
         assert "persistence" in result
         assert isinstance(result["persistence"], PersistenceAdapter)
 
-    def test_returns_http_client(self, tmp_path):
+    def test_returns_http_adapter(self, tmp_path):
         result = bootstrap(
             settings_dir=str(tmp_path / "settings"),
             runtime_dir=str(tmp_path / "runtime"),
@@ -41,10 +41,10 @@ class TestBootstrap:
             logger=logging.getLogger("test"),
             settings={},
         )
-        assert "http_client" in result
-        assert isinstance(result["http_client"], RommHttpAdapter)
+        assert "http_adapter" in result
+        assert isinstance(result["http_adapter"], RommHttpAdapter)
 
-    def test_http_client_shares_settings_reference(self, tmp_path):
+    def test_http_adapter_shares_settings_reference(self, tmp_path):
         settings = {"romm_url": "http://example.com"}
         result = bootstrap(
             settings_dir=str(tmp_path / "settings"),
@@ -56,7 +56,7 @@ class TestBootstrap:
         )
         # Mutate original — client should see the change
         settings["romm_url"] = "http://changed.com"
-        assert result["http_client"]._settings["romm_url"] == "http://changed.com"
+        assert result["http_adapter"]._settings["romm_url"] == "http://changed.com"
 
     def test_persistence_has_correct_paths(self, tmp_path):
         settings_dir = str(tmp_path / "s")
@@ -104,7 +104,7 @@ class TestWireServices:
     def _make_deps(self, tmp_path):
         logger = logging.getLogger("test_wire")
         settings = {}
-        http_client = MagicMock(spec=RommHttpAdapter)
+        http_adapter = MagicMock(spec=RommHttpAdapter)
         steam_config = SteamConfigAdapter(user_home=str(tmp_path), logger=logger)
         save_api = MagicMock(spec=VersionRouter)
         state = {
@@ -116,7 +116,7 @@ class TestWireServices:
         }
         return {
             "save_api": save_api,
-            "http_client": http_client,
+            "http_adapter": http_adapter,
             "steam_config": steam_config,
             "state": state,
             "settings": settings,
@@ -137,12 +137,12 @@ class TestWireServices:
     def test_returns_all_services(self, tmp_path):
         deps = self._make_deps(tmp_path)
         result = wire_services(**deps)
-        assert isinstance(result["save_sync_service"], SaveSyncService)
+        assert isinstance(result["save_sync_service"], SaveService)
         assert isinstance(result["playtime_service"], PlaytimeService)
-        assert isinstance(result["sync_service"], LibrarySyncService)
+        assert isinstance(result["sync_service"], LibraryService)
         assert isinstance(result["download_service"], DownloadService)
         assert isinstance(result["firmware_service"], FirmwareService)
-        assert isinstance(result["sgdb_service"], SgdbArtworkService)
+        assert isinstance(result["sgdb_service"], SteamGridService)
         assert isinstance(result["metadata_service"], MetadataService)
         assert isinstance(result["achievements_service"], AchievementsService)
         deps["loop"].close()
@@ -155,8 +155,9 @@ class TestWireServices:
         assert result["sync_service"]._state is deps["state"]
         deps["loop"].close()
 
-    def test_returns_eight_services(self, tmp_path):
+    def test_returns_nine_services(self, tmp_path):
         deps = self._make_deps(tmp_path)
         result = wire_services(**deps)
-        assert len(result) == 8
+        assert len(result) == 9
+        assert "migration_service" in result
         deps["loop"].close()

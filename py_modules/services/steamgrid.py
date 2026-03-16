@@ -1,4 +1,4 @@
-"""SgdbArtworkService — SteamGridDB artwork management extracted from SgdbMixin.
+"""SteamGridService — SteamGridDB artwork management.
 
 Handles SGDB API key verification, artwork fetching/caching, icon saving
 to Steam grid directory, and orphaned artwork cache pruning.
@@ -39,13 +39,13 @@ if TYPE_CHECKING:
 _USER_AGENT = "decky-romm-sync/0.1"
 
 
-class SgdbArtworkService:
+class SteamGridService:
     """SteamGridDB artwork: API key management, artwork fetch/cache, icon save."""
 
     def __init__(
         self,
         *,
-        http_client: HttpAdapter,
+        http_adapter: HttpAdapter,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
@@ -56,7 +56,7 @@ class SgdbArtworkService:
         save_settings_to_disk: Callable[[], None],
         pending_sync: dict,
     ) -> None:
-        self._http_client = http_client
+        self._http_adapter = http_adapter
         self._steam_config = steam_config
         self._state = state
         self._settings = settings
@@ -196,7 +196,7 @@ class SgdbArtworkService:
         rom_id_str = str(rom_id)
         sgdb_id = None
         try:
-            rom_data = await self._loop.run_in_executor(None, self._http_client.request, f"/api/roms/{rom_id}")
+            rom_data = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/roms/{rom_id}")
             if rom_data:
                 sgdb_id = rom_data.get("sgdb_id")
                 igdb_id = igdb_id or rom_data.get("igdb_id")

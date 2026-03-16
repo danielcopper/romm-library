@@ -27,3 +27,10 @@ for file in $STAGED; do
         git add "$file"
     fi
 done
+
+# Final check — abort on unfixable errors (e.g. line too long)
+$RUFF check $STAGED
+if [ $? -ne 0 ]; then
+    echo "pre-commit: ruff found unfixable errors, aborting commit"
+    exit 1
+fi
