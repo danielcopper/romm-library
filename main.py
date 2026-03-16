@@ -202,6 +202,11 @@ class Plugin:
 
     _MIN_TESTED_VERSION = "4.6.1"
 
+    # ── Callables ──────────────────────────────────────────────────────
+    # All methods below are exposed to the frontend via Decky's callable()
+    # framework, which requires `async def` even when no `await` is used.
+    # S7503 warnings are suppressed in sonar-project.properties (fp1).
+
     async def test_connection(self):
         from lib.errors import error_response
 
