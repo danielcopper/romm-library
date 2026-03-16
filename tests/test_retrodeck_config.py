@@ -1,14 +1,21 @@
 import json
 import os
 
+import pytest
+
 # conftest.py patches decky before this import
 from lib import retrodeck_config
 
 
-class TestGetBiosPath:
-    def setup_method(self):
-        retrodeck_config._reset_cache()
+@pytest.fixture(autouse=True)
+def _reset_retrodeck_cache():
+    """Reset retrodeck_config module-level cache between tests."""
+    retrodeck_config._cached_config = None
+    retrodeck_config._cache_time = 0.0
+    retrodeck_config._cache_config_path = None
 
+
+class TestGetBiosPath:
     def test_from_config(self, tmp_path):
         import decky
 
@@ -32,9 +39,6 @@ class TestGetBiosPath:
 
 
 class TestGetRomsPath:
-    def setup_method(self):
-        retrodeck_config._reset_cache()
-
     def test_from_config(self, tmp_path):
         import decky
 
@@ -58,9 +62,6 @@ class TestGetRomsPath:
 
 
 class TestGetSavesPath:
-    def setup_method(self):
-        retrodeck_config._reset_cache()
-
     def test_from_config(self, tmp_path):
         import decky
 
@@ -76,9 +77,6 @@ class TestGetSavesPath:
 
 
 class TestGetRetroDeckHome:
-    def setup_method(self):
-        retrodeck_config._reset_cache()
-
     def test_from_config(self, tmp_path):
         import decky
 
@@ -103,9 +101,6 @@ class TestGetRetroDeckHome:
 
 
 class TestTTLCache:
-    def setup_method(self):
-        retrodeck_config._reset_cache()
-
     def test_cache_returns_same_result_without_rereading(self, tmp_path):
         """Second call within TTL should return cached result."""
         import decky
@@ -150,8 +145,8 @@ class TestTTLCache:
         result2 = retrodeck_config.get_bios_path()
         assert result2 == "/changed/bios"
 
-    def test_reset_cache_clears_state(self, tmp_path):
-        """_reset_cache() should clear all cached state."""
+    def test_cache_reset_allows_new_values(self, tmp_path):
+        """After cache reset (via fixture), new config values are picked up."""
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
@@ -161,18 +156,19 @@ class TestTTLCache:
         config_file = config_dir / "retrodeck.json"
         config_file.write_text(json.dumps({"paths": {"bios_path": "/original/bios"}}))
 
-        retrodeck_config.get_bios_path()
-        retrodeck_config._reset_cache()
+        result1 = retrodeck_config.get_bios_path()
+        assert result1 == "/original/bios"
 
+        # Fixture resets cache between tests, so writing new config
+        # and clearing cache manually simulates that
+        retrodeck_config._cached_config = None
+        retrodeck_config._cache_time = 0.0
         config_file.write_text(json.dumps({"paths": {"bios_path": "/new/bios"}}))
-        result = retrodeck_config.get_bios_path()
-        assert result == "/new/bios"
+        result2 = retrodeck_config.get_bios_path()
+        assert result2 == "/new/bios"
 
 
 class TestEdgeCases:
-    def setup_method(self):
-        retrodeck_config._reset_cache()
-
     def test_fallback_when_key_missing(self, tmp_path):
         """Config exists but missing the requested path key."""
         import decky

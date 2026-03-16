@@ -4,6 +4,7 @@ Reads paths from retrodeck.json config, with fallback to ~/retrodeck/{subdir}.
 Uses a 30-second TTL cache to avoid re-reading disk on every call during
 batch operations (e.g. 50-ROM save sync).
 """
+
 import json
 import os
 import time
@@ -17,20 +18,16 @@ _cache_time = 0.0
 _cache_config_path = None
 
 
-def _reset_cache():
-    """Reset the TTL cache (for testing)."""
-    global _cached_config, _cache_time, _cache_config_path
-    _cached_config = None
-    _cache_time = 0.0
-    _cache_config_path = None
-
-
 def _config_path():
     """Return the path to retrodeck.json, using current DECKY_USER_HOME."""
     return os.path.join(
         decky.DECKY_USER_HOME,
-        ".var", "app", "net.retrodeck.retrodeck",
-        "config", "retrodeck", "retrodeck.json",
+        ".var",
+        "app",
+        "net.retrodeck.retrodeck",
+        "config",
+        "retrodeck",
+        "retrodeck.json",
     )
 
 
@@ -39,9 +36,7 @@ def _load_config():
     global _cached_config, _cache_time, _cache_config_path
     config_path = _config_path()
     now = time.monotonic()
-    if (_cached_config is not None
-            and _cache_config_path == config_path
-            and (now - _cache_time) < _CACHE_TTL):
+    if _cached_config is not None and _cache_config_path == config_path and (now - _cache_time) < _CACHE_TTL:
         return _cached_config
     try:
         with open(config_path, "r") as f:
