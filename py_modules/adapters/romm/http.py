@@ -17,6 +17,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+from lib.certifi_bundle import ca_bundle as _ca_bundle
 from lib.errors import (
     RommApiError,
     RommAuthError,
@@ -28,16 +29,6 @@ from lib.errors import (
     RommSSLError,
     RommTimeoutError,
 )
-
-try:
-    import certifi  # type: ignore[import-not-found]  # optional: falls via system or pip
-
-    def _ca_bundle():
-        return certifi.where()
-except ImportError:
-
-    def _ca_bundle():
-        return None
 
 
 class RommHttpAdapter:

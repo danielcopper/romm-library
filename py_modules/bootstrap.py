@@ -213,7 +213,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         logger=cfg.logger,
         save_state=cfg.save_state,
         emit=cfg.emit,
-        firmware_service_bios_files_index=firmware_service._bios_files_index,
+        firmware_service_bios_files_index=firmware_service.bios_files_index,
     )
 
     return {

@@ -142,7 +142,8 @@ class SaveService:
         lock_fd = os.open(path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            with open(tmp, "w") as f:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 json.dump(self._save_sync_state, f, indent=2)
             os.replace(tmp, path)
         finally:

@@ -84,9 +84,19 @@ class LibraryService:
         self._pending_delta: dict | None = None
 
     @property
+    def sync_state(self) -> SyncState:
+        """Current sync state (read-only)."""
+        return self._sync_state
+
+    @property
     def pending_sync(self) -> dict:
         """Public accessor for pending sync data (used by SteamGridService)."""
         return self._pending_sync
+
+    def shutdown(self) -> None:
+        """Request graceful shutdown — cancels sync if running."""
+        if self._sync_state == SyncState.RUNNING:
+            self._sync_state = SyncState.CANCELLING
 
     # ── Platform & ROM fetching ──────────────────────────────
 

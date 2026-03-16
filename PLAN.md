@@ -158,6 +158,17 @@ Items from a full code review. ✅ = resolved, remaining items are open.
 - **Test quality validation**: Mutation testing via `mutmut` to verify tests actually catch bugs (not just coverage-gaming). Run as nightly CI job or manual trigger — too slow for every PR. Also consider property-based testing (`hypothesis`) for edge cases and integration tests for full flows (sync → shortcut → download).
 - ~~**main.py slimming**: Extract MigrationService~~: ✅ Done (PR #107). MigrationService extracted (304L). Remaining: GameDetailComposer (~80 lines) and core switching logic. Target: main.py ~500 lines (callables + `_main()` only).
 
+### External Review Findings (Post-Migration)
+- **`get_cached_game_detail` in main.py**: 100+ lines assembling data from 5 services. Extract into `GameDetailService` or `GameDetailComposer`. Most complex method in the entire plugin.
+- **Frontend conflict mapping duplication**: `.filter(f => f.status === "conflict").map(...)` copied 3x in `RomMGameInfoPanel.tsx` (lines 179, 285, 313). Extract to shared helper.
+- **`getPendingConflicts` deprecated stub**: Still exported from `backend.ts`, returns empty array. Remove when frontend fully cleaned up.
+- **SteamGridService does own HTTP**: Bypasses adapter layer with direct `urllib` calls to SteamGridDB API. Pragmatically OK (different API, different auth), but breaks "services do no HTTP" principle. Consider a thin `SteamGridDbAdapter` if the service grows.
+- ~~**Service-internal access in main.py**~~: ✅ Fixed — added public properties + shutdown() methods.
+- ~~**bootstrap.py _bios_files_index**~~: ✅ Fixed — exposed as public property.
+- ~~**_ca_bundle() duplicated**~~: ✅ Fixed — moved to `lib/certifi_bundle.py`.
+- ~~**SaveService.save_state() permissions**~~: ✅ Fixed — uses `0o600` like PersistenceAdapter.
+- ~~**run_api_sync fragile pattern**~~: ✅ Fixed — SaveApiProtocol is now fully sync, utility deleted.
+
 ---
 
 ## Phase R3: Service Decomposition

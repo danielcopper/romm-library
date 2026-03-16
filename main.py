@@ -9,7 +9,6 @@ sys.path.insert(0, plugin_dir)
 import decky
 from adapters.persistence import PersistenceAdapter
 from bootstrap import WiringConfig, bootstrap, wire_services
-from services.library import SyncState
 
 from lib import retrodeck_config
 
@@ -192,12 +191,8 @@ class Plugin:
         return await self._migration_service.get_migration_status()
 
     async def _unload(self):  # Decky lifecycle — must be async
-        if self._sync_service._sync_state == SyncState.RUNNING:
-            self._sync_service._sync_state = SyncState.CANCELLING
-        # Cancel all active downloads
-        for rom_id, task in self._download_service._download_tasks.items():
-            task.cancel()
-        self._download_service._download_tasks.clear()
+        self._sync_service.shutdown()
+        self._download_service.shutdown()
         decky.logger.info("RomM Sync plugin unloaded")
 
     _MIN_TESTED_VERSION = "4.6.1"
@@ -413,9 +408,9 @@ class Plugin:
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
         achievement_summary = None
-        if ra_id and self._achievements_service._get_ra_username():
+        if ra_id and self._achievements_service.get_ra_username():
             # Try cache first for quick badge rendering
-            cached_progress = self._achievements_service._get_progress_cache_entry(rom_id_str)
+            cached_progress = self._achievements_service.get_progress_cache_entry(rom_id_str)
             if cached_progress:
                 achievement_summary = {
                     "earned": cached_progress.get("earned", 0),

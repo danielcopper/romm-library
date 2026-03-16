@@ -140,31 +140,31 @@ def _seed_ra_username_cache(svc, username="RetroPlayer"):
 
 
 # ══════════════════════════════════════════════════════════════
-# _get_ra_username (reads from achievements cache, not settings)
+# get_ra_username (reads from achievements cache, not settings)
 # ══════════════════════════════════════════════════════════════
 
 
 class TestGetRaUsername:
     def test_returns_username_from_cache(self, svc):
         _seed_ra_username_cache(svc, "RetroPlayer")
-        assert svc._get_ra_username() == "RetroPlayer"
+        assert svc.get_ra_username() == "RetroPlayer"
 
     def test_returns_empty_when_no_cache(self, svc):
-        assert svc._get_ra_username() == ""
+        assert svc.get_ra_username() == ""
 
     def test_returns_empty_when_cache_expired(self, svc):
         svc._achievements_cache["_ra_user"] = {
             "username": "RetroPlayer",
             "cached_at": time.time() - (2 * 3600),  # 2h old > 1h TTL
         }
-        assert svc._get_ra_username() == ""
+        assert svc.get_ra_username() == ""
 
     def test_returns_cached_when_fresh(self, svc):
         svc._achievements_cache["_ra_user"] = {
             "username": "JohnDoe",
             "cached_at": time.time() - 1800,  # 30min old < 1h TTL
         }
-        assert svc._get_ra_username() == "JohnDoe"
+        assert svc.get_ra_username() == "JohnDoe"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -317,7 +317,7 @@ class TestExtractAchievementsFromRom:
 
 
 # ══════════════════════════════════════════════════════════════
-# _get_achievements_cache_entry / _get_progress_cache_entry
+# _get_achievements_cache_entry / get_progress_cache_entry
 # ══════════════════════════════════════════════════════════════
 
 
@@ -367,7 +367,7 @@ class TestProgressCacheEntry:
                 "cached_at": time.time(),
             },
         }
-        result = svc._get_progress_cache_entry("42")
+        result = svc.get_progress_cache_entry("42")
         assert result is not None
         assert result["earned"] == 5
 
@@ -379,21 +379,21 @@ class TestProgressCacheEntry:
                 "cached_at": time.time() - (2 * 3600),  # 2h old > 1h TTL
             },
         }
-        result = svc._get_progress_cache_entry("42")
+        result = svc.get_progress_cache_entry("42")
         assert result is None
 
     def test_returns_none_when_missing(self, svc):
-        result = svc._get_progress_cache_entry("42")
+        result = svc.get_progress_cache_entry("42")
         assert result is None
 
     def test_returns_none_when_no_user_progress_key(self, svc):
         svc._achievements_cache["42"] = {"achievements": []}
-        result = svc._get_progress_cache_entry("42")
+        result = svc.get_progress_cache_entry("42")
         assert result is None
 
     def test_returns_none_when_user_progress_is_none(self, svc):
         svc._achievements_cache["42"] = {"user_progress": None}
-        result = svc._get_progress_cache_entry("42")
+        result = svc.get_progress_cache_entry("42")
         assert result is None
 
 

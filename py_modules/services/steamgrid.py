@@ -17,16 +17,7 @@ import urllib.parse
 import urllib.request
 from typing import TYPE_CHECKING
 
-try:
-    import certifi  # type: ignore[import-not-found]  # optional: falls via system or pip
-
-    def _ca_bundle():
-        return certifi.where()
-except ImportError:
-
-    def _ca_bundle():
-        return None
-
+from lib.certifi_bundle import ca_bundle as _ca_bundle
 
 if TYPE_CHECKING:
     import asyncio
