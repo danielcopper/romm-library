@@ -50,3 +50,4 @@ modules =
     services.artwork
     services.metadata
     services.achievements
+    services.migration

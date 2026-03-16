@@ -6,6 +6,7 @@ import pytest
 from adapters.steam_config import SteamConfigAdapter
 from services.firmware import FirmwareService
 from services.library import LibraryService
+from services.migration import MigrationService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -54,13 +55,24 @@ def plugin():
         save_settings_to_disk=p._save_settings_to_disk,
         log_debug=p._log_debug,
     )
+
+    p._migration_service = MigrationService(
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        save_state=p._save_state,
+        emit=decky.emit,
+        firmware_service_bios_files_index=p._firmware_service._bios_files_index,
+    )
     return p
 
 
 @pytest.fixture(autouse=True)
 async def _set_event_loop(plugin):
-    """Ensure plugin.loop matches the running event loop for async tests."""
-    plugin.loop = asyncio.get_event_loop()
+    """Ensure plugin.loop and migration service loop match the running event loop."""
+    loop = asyncio.get_event_loop()
+    plugin.loop = loop
+    plugin._migration_service._loop = loop
 
 
 class TestPathChangeDetection:
@@ -73,17 +85,18 @@ class TestPathChangeDetection:
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        plugin.loop = MagicMock()
+        mock_loop = MagicMock()
+        plugin._migration_service._loop = mock_loop
 
         fake_home = str(tmp_path / "retrodeck")
         os.makedirs(fake_home, exist_ok=True)
 
         with patch("lib.retrodeck_config.get_retrodeck_home", return_value=fake_home):
-            plugin._detect_retrodeck_path_change()
+            plugin._migration_service.detect_retrodeck_path_change()
 
         assert plugin._state["retrodeck_home_path"] == fake_home
         # No event emitted on first run
-        plugin.loop.create_task.assert_not_called()
+        mock_loop.create_task.assert_not_called()
 
     def test_no_change_no_notification(self, plugin, tmp_path):
         """Same path as stored — no event, no state change."""
@@ -97,12 +110,13 @@ class TestPathChangeDetection:
         fake_home = str(tmp_path / "retrodeck")
         os.makedirs(fake_home, exist_ok=True)
         plugin._state["retrodeck_home_path"] = fake_home
-        plugin.loop = MagicMock()
+        mock_loop = MagicMock()
+        plugin._migration_service._loop = mock_loop
 
         with patch("lib.retrodeck_config.get_retrodeck_home", return_value=fake_home):
-            plugin._detect_retrodeck_path_change()
+            plugin._migration_service.detect_retrodeck_path_change()
 
-        plugin.loop.create_task.assert_not_called()
+        mock_loop.create_task.assert_not_called()
 
     def test_path_change_emits_event(self, plugin, tmp_path):
         """Path changed — stores both old and new, emits event."""
@@ -118,7 +132,7 @@ class TestPathChangeDetection:
         os.makedirs(new_home, exist_ok=True)
 
         plugin._state["retrodeck_home_path"] = old_home
-        plugin.loop = MagicMock()
+        mock_loop = MagicMock()
         _create_task_calls = []
 
         def _close_coro_task(coro):
@@ -126,10 +140,11 @@ class TestPathChangeDetection:
             _create_task_calls.append(coro)
             return MagicMock()
 
-        plugin.loop.create_task = _close_coro_task
+        mock_loop.create_task = _close_coro_task
+        plugin._migration_service._loop = mock_loop
 
         with patch("lib.retrodeck_config.get_retrodeck_home", return_value=new_home):
-            plugin._detect_retrodeck_path_change()
+            plugin._migration_service.detect_retrodeck_path_change()
 
         assert plugin._state["retrodeck_home_path"] == new_home
         assert plugin._state["retrodeck_home_path_previous"] == old_home
@@ -143,12 +158,13 @@ class TestPathChangeDetection:
 
         decky.DECKY_USER_HOME = str(tmp_path)
 
-        plugin.loop = MagicMock()
+        mock_loop = MagicMock()
+        plugin._migration_service._loop = mock_loop
 
         with patch("lib.retrodeck_config.get_retrodeck_home", return_value=""):
-            plugin._detect_retrodeck_path_change()
+            plugin._migration_service.detect_retrodeck_path_change()
 
-        plugin.loop.create_task.assert_not_called()
+        mock_loop.create_task.assert_not_called()
         assert plugin._state["retrodeck_home_path"] == ""
 
 

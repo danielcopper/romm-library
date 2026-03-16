@@ -23,6 +23,7 @@ from services.downloads import DownloadService
 from services.firmware import FirmwareService
 from services.library import LibraryService
 from services.metadata import MetadataService
+from services.migration import MigrationService
 from services.playtime import PlaytimeService
 from services.protocols import HttpAdapter
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
@@ -193,6 +194,15 @@ def wire_services(
         log_debug=log_debug,
     )
 
+    migration_service = MigrationService(
+        state=state,
+        loop=loop,
+        logger=logger,
+        save_state=save_state,
+        emit=emit,
+        firmware_service_bios_files_index=firmware_service._bios_files_index,
+    )
+
     return {
         "save_sync_service": save_sync_service,
         "playtime_service": playtime_service,
@@ -202,4 +212,5 @@ def wire_services(
         "sgdb_service": sgdb_service,
         "metadata_service": metadata_service,
         "achievements_service": achievements_service,
+        "migration_service": migration_service,
     }
