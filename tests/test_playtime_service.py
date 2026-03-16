@@ -49,7 +49,7 @@ class TestRecordSession:
     @pytest.mark.asyncio
     async def test_start_creates_entry(self):
         svc, _, state, saved = make_service()
-        result = await svc.record_session_start(42)
+        result = svc.record_session_start(42)
         assert result["success"] is True
         assert "42" in state["playtime"]
         assert state["playtime"]["42"]["last_session_start"] is not None
@@ -60,7 +60,7 @@ class TestRecordSession:
         svc, fake, state, saved = make_service()
 
         # Start session
-        await svc.record_session_start(42)
+        svc.record_session_start(42)
 
         # Backdate session start by 60 seconds
         start = datetime.now(timezone.utc) - timedelta(seconds=60)
@@ -83,13 +83,13 @@ class TestRecordSession:
         svc, fake, state, _ = make_service()
 
         # Session 1
-        await svc.record_session_start(42)
+        svc.record_session_start(42)
         start = datetime.now(timezone.utc) - timedelta(seconds=30)
         state["playtime"]["42"]["last_session_start"] = start.isoformat()
         await svc.record_session_end(42)
 
         # Session 2
-        await svc.record_session_start(42)
+        svc.record_session_start(42)
         start = datetime.now(timezone.utc) - timedelta(seconds=45)
         state["playtime"]["42"]["last_session_start"] = start.isoformat()
         result2 = await svc.record_session_end(42)
@@ -224,7 +224,7 @@ class TestGetPlaytime:
         state["playtime"]["42"] = {"total_seconds": 100}
         state["playtime"]["99"] = {"total_seconds": 200}
 
-        result = await svc.get_all_playtime()
+        result = svc.get_all_playtime()
         assert len(result["playtime"]) == 2
         assert result["playtime"]["42"]["total_seconds"] == 100
 
@@ -328,7 +328,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_session_clamps_to_24h(self):
         svc, fake, state, _ = make_service()
-        await svc.record_session_start(42)
+        svc.record_session_start(42)
 
         # Backdate by 25 hours
         start = datetime.now(timezone.utc) - timedelta(hours=25)

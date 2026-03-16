@@ -637,7 +637,7 @@ class Plugin:
         return await self._save_sync_service.delete_platform_saves(platform_slug)
 
     async def record_session_start(self, rom_id):
-        return await self._playtime_service.record_session_start(rom_id)
+        return self._playtime_service.record_session_start(rom_id)
 
     async def record_session_end(self, rom_id):
         return await self._playtime_service.record_session_end(rom_id)
@@ -646,7 +646,7 @@ class Plugin:
         return await self._playtime_service.get_server_playtime(rom_id)
 
     async def get_all_playtime(self):
-        return await self._playtime_service.get_all_playtime()
+        return self._playtime_service.get_all_playtime()
 
     # ── SGDB delegation to SteamGridService ───────────────────────
 

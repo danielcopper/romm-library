@@ -124,7 +124,7 @@ class PlaytimeService:
             data = json.loads(content)
             if isinstance(data, dict):
                 return data
-        except (json.JSONDecodeError, ValueError):
+        except ValueError:
             pass
         return None
 
@@ -179,7 +179,7 @@ class PlaytimeService:
     # Public async methods
     # ------------------------------------------------------------------
 
-    async def record_session_start(self, rom_id: int) -> dict:
+    def record_session_start(self, rom_id: int) -> dict:
         """Record the start of a play session for playtime tracking."""
         rom_id_str = str(int(rom_id))
         playtime = self._save_sync_state.setdefault("playtime", {})
@@ -268,6 +268,6 @@ class PlaytimeService:
             "session_count": local_entry.get("session_count", 0),
         }
 
-    async def get_all_playtime(self) -> dict:
+    def get_all_playtime(self) -> dict:
         """Return all local playtime entries keyed by rom_id string."""
         return {"playtime": self._save_sync_state.get("playtime", {})}
