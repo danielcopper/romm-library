@@ -8,7 +8,7 @@ from adapters.persistence import PersistenceAdapter
 from adapters.romm.http import RommHttpAdapter
 from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
-from bootstrap import bootstrap, wire_services
+from bootstrap import WiringConfig, bootstrap, wire_services
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
@@ -136,7 +136,7 @@ class TestWireServices:
 
     def test_returns_all_services(self, tmp_path):
         deps = self._make_deps(tmp_path)
-        result = wire_services(**deps)
+        result = wire_services(WiringConfig(**deps))
         assert isinstance(result["save_sync_service"], SaveService)
         assert isinstance(result["playtime_service"], PlaytimeService)
         assert isinstance(result["sync_service"], LibraryService)
@@ -149,7 +149,7 @@ class TestWireServices:
 
     def test_services_share_state_reference(self, tmp_path):
         deps = self._make_deps(tmp_path)
-        result = wire_services(**deps)
+        result = wire_services(WiringConfig(**deps))
         # download_service and sync_service should share the same state dict
         assert result["download_service"]._state is deps["state"]
         assert result["sync_service"]._state is deps["state"]
@@ -157,7 +157,7 @@ class TestWireServices:
 
     def test_returns_nine_services(self, tmp_path):
         deps = self._make_deps(tmp_path)
-        result = wire_services(**deps)
+        result = wire_services(WiringConfig(**deps))
         assert len(result) == 9
         assert "migration_service" in result
         deps["loop"].close()

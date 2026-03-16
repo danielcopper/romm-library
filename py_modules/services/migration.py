@@ -79,7 +79,7 @@ class MigrationService:
     def _collect_rom_items(self, old_home, new_home):
         """Collect ROM migration items from installed_roms state."""
         items = []
-        for _rom_id, entry in self._state["installed_roms"].items():
+        for entry in self._state["installed_roms"].values():
             for key in ("file_path", "rom_dir"):
                 path = entry.get(key, "")
                 if not path or not path.startswith(old_home + os.sep):

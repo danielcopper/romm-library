@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from lib.errors import RommApiError, RommConflictError, classify_error
-from services._util import run_api_sync
 from services.protocols import SaveApiProtocol
 
 _DEVICE_NOT_REGISTERED = "Device not registered"
@@ -143,7 +142,8 @@ class SaveService:
         lock_fd = os.open(path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            with open(tmp, "w") as f:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 json.dump(self._save_sync_state, f, indent=2)
             os.replace(tmp, path)
         finally:
@@ -241,7 +241,7 @@ class SaveService:
         try:
             fd, tmp_path = tempfile.mkstemp(suffix=".tmp")
             os.close(fd)
-            run_api_sync(self._save_api.download_save(save_id, tmp_path))
+            self._save_api.download_save(save_id, tmp_path)
             return self._file_md5(tmp_path)
         except Exception as e:
             self._log_debug(f"Failed to hash server save {save_id}: {e}")
@@ -445,7 +445,7 @@ class SaveService:
         os.makedirs(saves_dir, exist_ok=True)
         tmp_path = local_path + ".tmp"
 
-        self._with_retry(lambda: run_api_sync(self._save_api.download_save(server_save["id"], tmp_path)))
+        self._with_retry(lambda: self._save_api.download_save(server_save["id"], tmp_path))
 
         # Backup existing local save before overwriting
         if os.path.isfile(local_path):
@@ -471,9 +471,7 @@ class SaveService:
         """Upload a local save file to server."""
         save_id = server_save.get("id") if server_save else None
 
-        result = self._with_retry(
-            lambda: run_api_sync(self._save_api.upload_save(int(rom_id), file_path, "retroarch", save_id))
-        )
+        result = self._with_retry(lambda: self._save_api.upload_save(int(rom_id), file_path, "retroarch", save_id))
 
         self._update_file_sync_state(rom_id_str, filename, result, file_path, system)
         self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str}")
@@ -645,7 +643,7 @@ class SaveService:
         # Fetch server saves (with retry)
         t0 = time.time()
         try:
-            server_saves = self._with_retry(lambda: run_api_sync(self._save_api.list_saves(rom_id)))
+            server_saves = self._with_retry(lambda: self._save_api.list_saves(rom_id))
         except Exception as e:
             self._logger.error(f"_sync_rom_saves({rom_id}): failed to list saves: {e}")
             _code, _msg = classify_error(e)
@@ -809,7 +807,7 @@ class SaveService:
             server_save_id = conflict.get("server_save_id")
             if not server_save_id:
                 return {"success": False, "message": "No server save ID"}
-            server_save = self._with_retry(lambda: run_api_sync(self._save_api.get_save_metadata(server_save_id)))
+            server_save = self._with_retry(lambda: self._save_api.get_save_metadata(server_save_id))
             self._do_download_save(server_save, saves_dir, filename, rom_id_str, system)
         else:  # upload
             local_path = conflict.get("local_path")
@@ -819,7 +817,7 @@ class SaveService:
             if conflict.get("server_save_id"):
                 try:
                     ssid = conflict["server_save_id"]
-                    server_save = self._with_retry(lambda: run_api_sync(self._save_api.get_save_metadata(ssid)))
+                    server_save = self._with_retry(lambda: self._save_api.get_save_metadata(ssid))
                 except Exception:
                     pass
             self._do_upload_save(rom_id, local_path, filename, rom_id_str, system, server_save)
@@ -829,7 +827,7 @@ class SaveService:
     # Public async API (callable endpoints)
     # ------------------------------------------------------------------
 
-    async def ensure_device_registered(self) -> dict:
+    def ensure_device_registered(self) -> dict:
         """Ensure this device has a unique ID for save sync tracking.
 
         Generates a local UUID on first use — no server registration needed.
@@ -861,7 +859,7 @@ class SaveService:
         try:
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._with_retry(lambda: run_api_sync(self._save_api.list_saves(rom_id))),
+                lambda: self._with_retry(lambda: self._save_api.list_saves(rom_id)),
             )
         except Exception as e:
             self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
@@ -878,7 +876,7 @@ class SaveService:
         try:
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._with_retry(lambda: run_api_sync(self._save_api.list_saves(rom_id))),
+                lambda: self._with_retry(lambda: self._save_api.list_saves(rom_id)),
             )
         except Exception as e:
             self._log_debug(f"Lightweight save check failed for rom {rom_id}: {e}")
@@ -952,7 +950,7 @@ class SaveService:
             return {"success": True, "message": "Pre-launch sync disabled", "synced": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -984,7 +982,7 @@ class SaveService:
             return {"success": True, "message": "Post-exit sync disabled", "synced": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -1016,7 +1014,7 @@ class SaveService:
             return {"success": False, "message": "Save sync is disabled", "synced": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -1040,7 +1038,7 @@ class SaveService:
             return {"success": False, "message": "Save sync is disabled", "synced": 0, "conflicts": 0}
 
         if not self._save_sync_state.get("device_id"):
-            reg = await self.ensure_device_registered()
+            reg = self.ensure_device_registered()
             if not reg.get("success"):
                 return {"success": False, "message": _DEVICE_NOT_REGISTERED}
 
@@ -1129,11 +1127,11 @@ class SaveService:
             self._logger.error(f"Conflict resolution failed: {e}")
             return {"success": False, "message": "Conflict resolution failed"}
 
-    async def get_pending_conflicts(self) -> dict:
+    def get_pending_conflicts(self) -> dict:
         """Deprecated — conflicts are now returned inline from sync operations."""
         return {"conflicts": []}
 
-    async def get_save_sync_settings(self) -> dict:
+    def get_save_sync_settings(self) -> dict:
         """Return current save sync settings."""
         return self._save_sync_state.get(
             "settings",
@@ -1146,7 +1144,7 @@ class SaveService:
             },
         )
 
-    async def update_save_sync_settings(self, settings: dict) -> dict:
+    def update_save_sync_settings(self, settings: dict) -> dict:
         """Update save sync settings (conflict_mode, sync toggles, etc.)."""
         allowed_keys = {
             "save_sync_enabled",
@@ -1173,7 +1171,7 @@ class SaveService:
         self.save_state()
         return {"success": True, "settings": current}
 
-    async def delete_local_saves(self, rom_id: int) -> dict:
+    def delete_local_saves(self, rom_id: int) -> dict:
         """Delete local save files (.srm, .rtc) for a ROM."""
         rom_id = int(rom_id)
         rom_id_str = str(rom_id)
@@ -1207,7 +1205,7 @@ class SaveService:
             "message": f"Deleted {deleted} save file(s)",
         }
 
-    async def delete_platform_saves(self, platform_slug: str) -> dict:
+    def delete_platform_saves(self, platform_slug: str) -> dict:
         """Delete local save files for all installed ROMs on a platform."""
         total_deleted = 0
         total_errors: list[str] = []

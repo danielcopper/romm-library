@@ -49,6 +49,11 @@ class FirmwareService:
         self._bios_registry: dict = {}
         self._bios_files_index: dict = {}
 
+    @property
+    def bios_files_index(self) -> dict:
+        """Flat reverse index of BIOS files: {filename: entry_data}."""
+        return self._bios_files_index
+
     # ── Registry loading ─────────────────────────────────────
 
     def load_bios_registry(self) -> None:

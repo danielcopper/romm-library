@@ -5,22 +5,6 @@ Reference material (API tables, architecture, environment) lives in CLAUDE.md.
 
 ---
 
-## Phase R1: Architecture Foundation
-
-**Goal**: Establish the new backend architecture (composition + service layer + adapters) as a foundation for Phase 8 and all future work. See `docs/architecture.md` for full design.
-
-**Steps:**
-1. Create directory structure (`models/`, `services/`, `adapters/`)
-2. Define domain dataclasses (`models.py`, `settings.py`, `state.py`) — typed replacements for raw dicts
-3. Extract `persistence.py` from `StateMixin` (load/save settings, state, caches)
-4. Extract `RommHttpClient` from `RommClientMixin` (generic HTTP, SSL, auth, retry)
-5. Write `bootstrap.py` skeleton — composition root called from `_main()`
-6. `main.py` starts using bootstrap but still has mixins for unmigrated services
-
-**Constraints:**
-- All 805+ existing tests must keep passing throughout
-- Each step is a mergeable PR
-- Unmigrated mixins coexist with new services during transition
 ---
 
 ## Phase 8: Save Sync v2 — RomM 4.7.0 Migration (includes Phase R2)
@@ -123,40 +107,21 @@ Extends Phase 5 to standalone emulator save formats:
 
 ## External Review Findings
 
-Items from a full code review of `main` and `feat/phase-5-save-sync` branches. New items not tracked elsewhere:
+Items from a full code review. ✅ = resolved, remaining items are open.
 
-### EXT-1: Platform Map Caching ✅
-`_resolve_system()` now caches `_platform_map` on first call via `hasattr` check. No repeated disk reads.
-
-### EXT-2: Atomic Writes for Settings ✅
-All state/settings writes use atomic `.tmp` + `os.replace()` pattern.
-
-### EXT-3: Download Queue Memory Growth ✅
-`_prune_download_queue()` keeps max 50 terminal items (completed/failed/cancelled), called after each download. `clear_completed_downloads()` callable lets frontend clear on demand.
-
-### EXT-4: HTTP Client Code Duplication ✅
-Consolidated into `_romm_ssl_context()` + `_romm_auth_header()` helpers in `romm_client.py`. Moved RomM HTTP methods from `save_sync.py` to `romm_client.py`.
-
-### EXT-5: Blocking I/O in Async Callables ✅
-All HIGH/MEDIUM severity blocking I/O wrapped in `run_in_executor`: `save_sync.get_save_status` (conflict detection + hashing), `downloads._do_download` (ZIP extraction, M3U gen, file renames), `downloads._poll_download_requests` (fcntl lock), `downloads.remove_rom`/`uninstall_all_roms`, `sync.report_sync_results`/`report_removal_results` (artwork renames + VDF writes), `sgdb.verify_sgdb_api_key` (resp.read on event loop), `main.migrate_retrodeck_files`/`get_migration_status` (FS traversal), `main.set_system_core`/`set_game_core` (XML I/O), `firmware.download_firmware` (MD5 hash), `firmware.delete_platform_bios`. Remaining LOW items (single small state file writes) are <10ms and deferred.
-
-### EXT-6: Shell Interpolation in Launcher
-`bin/romm-launcher` interpolates `$ROM_ID` into Python strings. Regex-validated (digits only) so safe, but fragile. Consider environment variables instead.
-
-### EXT-7: No Rate Limiting on RomM API During Sync
-Rapid sequential requests during batch sync. Add configurable delay for remote/slow servers.
-
-### EXT-8: Structured HTTP Error Handling in RomM Client ✅
-Exception hierarchy in `lib/errors.py`: `RommApiError` base → `RommAuthError` (401), `RommForbiddenError` (403), `RommNotFoundError` (404), `RommConflictError` (409), `RommServerError` (5xx), `RommConnectionError`, `RommTimeoutError`, `RommSSLError`. All `_romm_*` methods in `romm_client.py` translate urllib exceptions via `_translate_http_error()`. Handles URLError-wrapped SSL/timeout, subclass ordering (HTTPError before URLError, ssl before OSError). Callers can catch specific types or continue catching generic `Exception`.
-
-### EXT-9: File Locking on State Files
-`fcntl.flock()` is used for `download_requests.json` but NOT for `state.json`, `settings.json`, `metadata_cache.json`, or `save_sync_state.json`. Decky plugin loader can trigger parallel calls — concurrent writes without locking risk corruption even with atomic writes.
-
-### EXT-10: State File Schema Versioning
-Only `save_sync_state.json` has a `"version"` field. `state.json`, `settings.json`, and `metadata_cache.json` lack schema versioning. Add version numbers + migration logic to handle format changes across plugin updates.
-
-### EXT-11: Generalize `_with_retry` to RomM Client ✅
-`_with_retry()` and `_is_retryable()` moved from `SaveSyncMixin` to `RommClientMixin`. Retry logic updated to use structured exceptions: `RommServerError`, `RommConnectionError`, `RommTimeoutError` are retryable; auth/forbidden/not-found/conflict/SSL are not. All existing save_sync callers work unchanged via MRO. `save_sync.py` 409 handler updated to catch `RommConflictError` instead of manual `HTTPError.code` check.
+| # | Status | Finding |
+|---|--------|---------|
+| EXT-1 | ✅ | Platform map caching |
+| EXT-2 | ✅ | Atomic writes for settings |
+| EXT-3 | ✅ | Download queue memory growth |
+| EXT-4 | ✅ | HTTP client code duplication |
+| EXT-5 | ✅ | Blocking I/O in async callables |
+| EXT-6 | Open | Shell interpolation in launcher — ROM_ID regex-validated but fragile |
+| EXT-7 | Open | No rate limiting on RomM API during sync |
+| EXT-8 | ✅ | Structured HTTP error handling |
+| EXT-9 | Open | File locking on state files (only download_requests.json has fcntl.flock) |
+| EXT-10 | Open | State file schema versioning (only save_sync_state.json has version field) |
+| EXT-11 | ✅ | Generalized retry logic in RommHttpAdapter |
 
 ---
 
@@ -191,27 +156,37 @@ Only `save_sync_state.json` has a `"version"` field. `state.json`, `settings.jso
 - **Connection state via custom events, not central store**: Different components can have different connection states due to event propagation timing. Not a bug today, but a consistency risk. Fix (future): EventEmitter or subscriber-pattern store.
 - **Test coverage gaps in es_de_config write paths**: Read operations well-covered, but write paths (`set_system_override`, `set_game_override`, `_rebuild_game_xml`) and the 4-stage core resolution chain need more edge-case coverage.
 - **Test quality validation**: Mutation testing via `mutmut` to verify tests actually catch bugs (not just coverage-gaming). Run as nightly CI job or manual trigger — too slow for every PR. Also consider property-based testing (`hypothesis`) for edge cases and integration tests for full flows (sync → shortcut → download).
-- **main.py slimming**: Extract MigrationService (~200 lines), GameDetailComposer (~80 lines), and core switching logic into services. Target: main.py ~500 lines (callables + `_main()` only).
+- ~~**main.py slimming**: Extract MigrationService~~: ✅ Done (PR #107). MigrationService extracted (304L). Remaining: GameDetailComposer (~80 lines) and core switching logic. Target: main.py ~500 lines (callables + `_main()` only).
+
+### External Review Findings (Post-Migration)
+- **`get_cached_game_detail` in main.py**: 100+ lines assembling data from 5 services. Extract into `GameDetailService` or `GameDetailComposer`. Most complex method in the entire plugin.
+- **Frontend conflict mapping duplication**: `.filter(f => f.status === "conflict").map(...)` copied 3x in `RomMGameInfoPanel.tsx` (lines 179, 285, 313). Extract to shared helper.
+- **`getPendingConflicts` deprecated stub**: Still exported from `backend.ts`, returns empty array. Remove when frontend fully cleaned up.
+- **SteamGridService does own HTTP**: Bypasses adapter layer with direct `urllib` calls to SteamGridDB API. Pragmatically OK (different API, different auth), but breaks "services do no HTTP" principle. Consider a thin `SteamGridDbAdapter` if the service grows.
+- ~~**Service-internal access in main.py**~~: ✅ Fixed — added public properties + shutdown() methods.
+- ~~**bootstrap.py _bios_files_index**~~: ✅ Fixed — exposed as public property.
+- ~~**_ca_bundle() duplicated**~~: ✅ Fixed — moved to `lib/certifi_bundle.py`.
+- ~~**SaveService.save_state() permissions**~~: ✅ Fixed — uses `0o600` like PersistenceAdapter.
+- ~~**run_api_sync fragile pattern**~~: ✅ Fixed — SaveApiProtocol is now fully sync, utility deleted.
 
 ---
 
-## Phase R3: Service Decomposition (next PR after post-migration)
+## Phase R3: Service Decomposition
 
 **Goal**: Break down the largest services into focused, single-responsibility classes. Ordered by impact.
 
-### Phase 1 — High impact, lower risk
-1. **es_de_config.py** (737L) → `CoreResolver` class + `GamelistXmlEditor` class. Eliminates 8 module-level globals, improves cache safety.
-2. **main.py** (943L) → Extract `RetroDeckMigrationService` (265 lines, self-contained). Reduces main.py to ~650 lines.
+### Done ✅ (PR #107)
+1. **es_de_config.py** → `CoreResolver` class + `GamelistXmlEditor` class. Eliminated 8 module-level globals.
+2. **main.py** → Extracted `MigrationService` (304 lines). main.py reduced from 943 to 685 lines.
+3. **SaveService** → Extracted conflict detection helpers, reduced CC from 81 to ~15.
+4. **Cosmic Python review** — Protocols consolidated, http_adapter naming, service independence enforced.
 
-### Phase 2 — Medium impact
-3. **SaveSyncService** (1160L) → Extract `SaveConflictDetector` (145L, isolated conflict logic). Reduces to ~1000L, conflict modes become independently testable.
-4. **DownloadService** (581L) → Extract `RomRemovalService` (100L, independent concern) + `DownloadPostProcessor` (80L, ZIP/M3U handling).
-
-### Phase 3 — Larger refactoring
-5. **LibrarySyncService** (1103L) → Extract `SyncArtworkManager` (150L) + `ShortcutDataBuilder` (150L) + `ShortcutRemovalService` (100L). Reduces to ~600L.
-6. **FirmwareService** (521L) → Extract `BiosStatusComputer` (100L). Lower priority, already reasonably focused.
-- **Dead code: `save_steamgriddb_key()`** in `lib/sgdb.py` — duplicate of `save_sgdb_api_key()`, never called from frontend. Delete it.
-- **XML parsing duplication in es_de_config.py**: Four separate SAX parser implementations with own state management. A shared base parser class could save 100-150 lines. Refactoring candidate when code is stable.
+### Remaining
+5. **SaveService** (1220L) → Extract `SaveConflictDetector` (145L) as separate class. Currently helpers exist but within the service.
+6. **DownloadService** (600L) → Extract `RomRemovalService` (100L) + `DownloadPostProcessor` (80L, ZIP/M3U handling).
+7. **LibraryService** (1100L) → Extract `SyncArtworkManager` (150L) + `ShortcutDataBuilder` (150L) + `ShortcutRemovalService` (100L). Reduces to ~600L.
+8. **FirmwareService** (520L) → Extract `BiosStatusComputer` (100L). Lower priority, already reasonably focused.
+9. **main.py** (685L) → Extract `GameDetailComposer` (~80L) + core switching logic. Target: ~500L.
 
 ---
 
@@ -256,6 +231,13 @@ Custom game detail page for RomM games. RomMPlaySection with info items (Last Pl
 
 ### QAM Menu Restructuring ✅
 7 pages consolidated to 4. **Settings**: absorbs SaveSyncSettings + Log Level + RetroArch fix, auto-save connection fields. **Platforms**: Sync/BIOS tab toggle, BIOS lazy-loaded. **Data Management**: 3 per-platform lists merged into 1 with action modal. **MainPage**: inline downloads, 3 nav buttons (down from 6), consolidated RetroArch warning. Delta sync with preview before apply. Consistent sync progress display: spinner during preview, `[step/total] Description X/Y` progress bar during apply with dynamic step counting.
+
+### Architecture Migration (R1 + R2 + Post-Migration) ✅
+**R1** — Architecture foundation: `PersistenceAdapter`, `RommHttpAdapter`, `bootstrap.py`.
+**R2** — Save sync service layer: `SaveService`, `PlaytimeService`, `SaveApiProtocol`, `VersionRouter`.
+**Mixin-to-Service Migration** (PR #104) — Dissolved all 10 mixins. `class Plugin:` has zero inheritance. 9 services + 3 adapters via pure composition. Protocols in `services/protocols.py`. import-linter enforces 4 layer boundary contracts.
+**Post-Migration** (PR #105) — Naming consistency (`LibraryService`, `SaveService`, `SteamGridService`, `RommHttpAdapter`). SonarCloud CI with coverage. 55 SonarCloud findings fixed. 949 tests, 83% Python coverage.
+**Architecture Review** (PR #107) — Cosmic Python audit. Protocols consolidated (SaveApiProtocol moved to services). `http_adapter` naming. es_de_config split into `CoreResolver` + `GamelistXmlEditor`. `MigrationService` extracted from main.py. WiiU launch file detection + launcher fix. Scroll-to-top fix. Pre-commit hook. 951 tests.
 
 ### Phase 7: RetroAchievements + Game Detail Tabs ✅
 **7A — Backend**: `achievements.py` module with `get_achievements`, `get_achievement_progress`, `sync_achievements_after_session` callables. `ra_id` extracted during sync and stored in shortcut registry. Achievement caching with 24h TTL (definitions) and 1h TTL (user progress). `get_cached_game_detail()` extended with `ra_id` + achievement summary.

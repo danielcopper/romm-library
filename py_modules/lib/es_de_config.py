@@ -7,6 +7,7 @@ import re
 import decky  # for DECKY_USER_HOME and logging
 
 _CORE_SO_RE = re.compile(r"%CORE_RETROARCH%/([\w-]+_libretro)\.so")
+_GAMELIST_FILENAME = "gamelist.xml"
 
 _FLATPAK_SYSTEMS_DIR = (
     "/var/lib/flatpak/app/net.retrodeck.retrodeck/current/active"
@@ -181,7 +182,7 @@ class CoreResolver:
 
         Returns the label string or None.
         """
-        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, "gamelist.xml")
+        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, _GAMELIST_FILENAME)
         if not os.path.exists(gamelist_path):
             return None
 
@@ -199,11 +200,11 @@ class CoreResolver:
         result = {"label": None}
         state = {"path": [], "text": ""}
 
-        def start_element(name, attrs):
+        def start_element(name, _attrs):
             state["path"].append(name)
             state["text"] = ""
 
-        def end_element(name):
+        def end_element(_name):
             text = state["text"].strip()
             if (
                 len(state["path"]) >= 2
@@ -238,7 +239,7 @@ class CoreResolver:
 
         Returns the altemulator label string or None.
         """
-        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, "gamelist.xml")
+        gamelist_path = os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, _GAMELIST_FILENAME)
         if not os.path.exists(gamelist_path):
             return None
 
@@ -280,6 +281,73 @@ class CoreResolver:
         return None
 
     @staticmethod
+    def _handle_es_system_start(state, name, attrs):
+        """Handle start_element for es_systems.xml parsing."""
+        state["path"].append(name)
+        state["text"] = ""
+        if state["root_tag"] is None:
+            state["root_tag"] = name
+        if name == "system":
+            state["current_system"] = {
+                "name": None,
+                "default_core": None,
+                "default_label": None,
+                "cores": {},
+                "label_to_core": {},
+            }
+        elif name == "command":
+            state["current_label"] = attrs.get("label", "")
+
+    @staticmethod
+    def _handle_es_system_name(sys, text):
+        """Handle </name> inside a <system> element."""
+        sys["name"] = text
+
+    @staticmethod
+    def _handle_es_command_end(state, sys, text):
+        """Handle </command> inside a <system> — extract core info."""
+        match = _CORE_SO_RE.search(text)
+        if not match:
+            return
+        core_so = match.group(1)
+        label = state["current_label"]
+        sys["cores"][core_so] = label
+        sys["label_to_core"][label] = core_so
+        if sys["default_core"] is None:
+            sys["default_core"] = core_so
+            sys["default_label"] = label
+
+    @staticmethod
+    def _finalize_es_system(state, systems):
+        """Handle </system> — store the completed system entry."""
+        sys = state["current_system"]
+        if sys is not None and sys["name"]:
+            systems[sys["name"]] = {
+                "default_core": sys["default_core"],
+                "default_label": sys["default_label"],
+                "cores": sys["cores"],
+                "label_to_core": sys["label_to_core"],
+            }
+        state["current_system"] = None
+
+    @staticmethod
+    def _handle_es_system_end(state, systems, name):
+        """Handle end_element for es_systems.xml parsing."""
+        text = state["text"].strip()
+        path = state["path"]
+        sys = state["current_system"]
+
+        if path == ["systemList", "system", "name"] and sys is not None:
+            CoreResolver._handle_es_system_name(sys, text)
+        elif path == ["systemList", "system", "command"] and sys is not None:
+            CoreResolver._handle_es_command_end(state, sys, text)
+        elif name == "system":
+            CoreResolver._finalize_es_system(state, systems)
+
+        state["path"].pop()
+        state["text"] = ""
+
+    @staticmethod
     def parse_es_systems(xml_path):
         """Parse es_systems.xml and return per-system core info.
 
@@ -317,58 +385,12 @@ class CoreResolver:
             "current_label": "",
         }
 
-        def start_element(name, attrs):
-            state["path"].append(name)
-            state["text"] = ""
-            if state["root_tag"] is None:
-                state["root_tag"] = name
-            if name == "system":
-                state["current_system"] = {
-                    "name": None,
-                    "default_core": None,
-                    "default_label": None,
-                    "cores": {},
-                    "label_to_core": {},
-                }
-            elif name == "command":
-                state["current_label"] = attrs.get("label", "")
-
-        def end_element(name):
-            text = state["text"].strip()
-            path = state["path"]
-            sys = state["current_system"]
-
-            if path == ["systemList", "system", "name"] and sys is not None:
-                sys["name"] = text
-            elif path == ["systemList", "system", "command"] and sys is not None:
-                match = _CORE_SO_RE.search(text)
-                if match:
-                    core_so = match.group(1)
-                    label = state["current_label"]
-                    sys["cores"][core_so] = label
-                    sys["label_to_core"][label] = core_so
-                    if sys["default_core"] is None:
-                        sys["default_core"] = core_so
-                        sys["default_label"] = label
-            elif name == "system" and sys is not None:
-                if sys["name"]:
-                    systems[sys["name"]] = {
-                        "default_core": sys["default_core"],
-                        "default_label": sys["default_label"],
-                        "cores": sys["cores"],
-                        "label_to_core": sys["label_to_core"],
-                    }
-                state["current_system"] = None
-
-            state["path"].pop()
-            state["text"] = ""
-
         def char_data(data):
             state["text"] += data
 
         parser = expat.ParserCreate()
-        parser.StartElementHandler = start_element
-        parser.EndElementHandler = end_element
+        parser.StartElementHandler = lambda name, attrs: CoreResolver._handle_es_system_start(state, name, attrs)
+        parser.EndElementHandler = lambda name: CoreResolver._handle_es_system_end(state, systems, name)
         parser.CharacterDataHandler = char_data
 
         try:
@@ -553,7 +575,7 @@ class GamelistXmlEditor:
     @staticmethod
     def gamelist_path(retrodeck_home, system_name):
         """Return the gamelist.xml path for a system."""
-        return os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, "gamelist.xml")
+        return os.path.join(retrodeck_home, "ES-DE", "gamelists", system_name, _GAMELIST_FILENAME)
 
     @staticmethod
     def read_gamelist_raw(path):
@@ -803,11 +825,6 @@ class GamelistXmlEditor:
 
 _resolver = CoreResolver()
 _editor = GamelistXmlEditor()
-
-
-def _reset_cache():
-    """Reset the singleton caches (for testing)."""
-    _resolver.reset_cache()
 
 
 # CoreResolver delegates

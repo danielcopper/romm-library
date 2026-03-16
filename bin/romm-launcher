@@ -18,18 +18,6 @@ fi
 
 ROM_ID="${BASH_REMATCH[1]}"
 
-# Find plugin runtime directory
-PLUGIN_DIR=""
-for candidate in \
-    "${DECKY_PLUGIN_RUNTIME_DIR:-}" \
-    "$HOME/.local/share/decky/plugins/decky-romm-sync" \
-    "$HOME/homebrew/plugins/decky-romm-sync"; do
-    if [[ -d "$candidate" ]]; then
-        PLUGIN_DIR="$candidate"
-        break
-    fi
-done
-
 # Data dir for state.json (Decky stores runtime data in data/, not settings/)
 DATA_DIR=""
 for candidate in \
@@ -67,7 +55,6 @@ else:
 fi
 
 if [[ -n "${ROM_INFO:-}" ]]; then
-    SYSTEM=$(echo "$ROM_INFO" | head -1)
     ROM_PATH=$(echo "$ROM_INFO" | tail -1)
 
     if [[ -e "$ROM_PATH" ]]; then

@@ -57,7 +57,7 @@ class SaveApiProtocol(Protocol):
     No save sync support below 4.6.1.
     """
 
-    async def list_saves(self, rom_id: int) -> list[dict]:
+    def list_saves(self, rom_id: int) -> list[dict]:
         """List all saves for a ROM.
 
         v46: GET /api/saves?rom_id={rom_id} — returns list directly.
@@ -65,7 +65,7 @@ class SaveApiProtocol(Protocol):
         """
         ...
 
-    async def upload_save(
+    def upload_save(
         self,
         rom_id: int,
         file_path: str,
@@ -81,7 +81,7 @@ class SaveApiProtocol(Protocol):
         """
         ...
 
-    async def download_save(self, save_id: int, dest_path: str) -> None:
+    def download_save(self, save_id: int, dest_path: str) -> None:
         """Download a save file to a local path.
 
         v46: GET /api/saves/{save_id} for metadata, then download via
@@ -90,7 +90,7 @@ class SaveApiProtocol(Protocol):
         """
         ...
 
-    async def get_save_metadata(self, save_id: int) -> dict:
+    def get_save_metadata(self, save_id: int) -> dict:
         """Fetch metadata for a single save.
 
         v46: GET /api/saves/{save_id}. No content_hash field —
@@ -99,7 +99,7 @@ class SaveApiProtocol(Protocol):
         """
         ...
 
-    async def get_rom_detail(self, rom_id: int) -> dict:
+    def get_rom_detail(self, rom_id: int) -> dict:
         """Fetch full ROM detail including user notes.
 
         Used to read playtime data from all_user_notes.
@@ -109,7 +109,7 @@ class SaveApiProtocol(Protocol):
         """
         ...
 
-    async def create_note(self, rom_id: int, data: dict) -> dict:
+    def create_note(self, rom_id: int, data: dict) -> dict:
         """Create a note on a ROM (used for playtime tracking).
 
         v46: POST /api/roms/{rom_id}/notes with JSON body.
@@ -117,7 +117,7 @@ class SaveApiProtocol(Protocol):
         """
         ...
 
-    async def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
+    def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
         """Update an existing note on a ROM.
 
         v46: PUT /api/roms/{rom_id}/notes/{note_id} with JSON body.

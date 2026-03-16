@@ -29,12 +29,12 @@ class FakeSaveApi:
             self._fail_on_next = None
             raise exc
 
-    async def list_saves(self, rom_id: int) -> list[dict]:
+    def list_saves(self, rom_id: int) -> list[dict]:
         self.call_log.append(("list_saves", (rom_id,), {}))
         self._check_fail()
         return [s for s in self.saves.values() if s.get("rom_id") == rom_id]
 
-    async def upload_save(
+    def upload_save(
         self,
         rom_id: int,
         file_path: str,
@@ -85,7 +85,7 @@ class FakeSaveApi:
         self.uploaded_files[save_id] = file_path
         return dict(entry)
 
-    async def download_save(self, save_id: int, dest_path: str) -> None:
+    def download_save(self, save_id: int, dest_path: str) -> None:
         self.call_log.append(("download_save", (save_id, dest_path), {}))
         self._check_fail()
 
@@ -106,14 +106,14 @@ class FakeSaveApi:
         with open(dest_path, "wb") as f:
             f.write(b"\x00" * 1024)
 
-    async def get_save_metadata(self, save_id: int) -> dict:
+    def get_save_metadata(self, save_id: int) -> dict:
         self.call_log.append(("get_save_metadata", (save_id,), {}))
         self._check_fail()
         if save_id in self.saves:
             return dict(self.saves[save_id])
         return {"id": save_id, "download_path": f"/saves/unknown_{save_id}"}
 
-    async def get_rom_detail(self, rom_id: int) -> dict:
+    def get_rom_detail(self, rom_id: int) -> dict:
         self.call_log.append(("get_rom_detail", (rom_id,), {}))
         self._check_fail()
         detail = self.roms.get(rom_id, {"id": rom_id})
@@ -122,7 +122,7 @@ class FakeSaveApi:
         detail["all_user_notes"] = self.notes.get(rom_id, [])
         return detail
 
-    async def create_note(self, rom_id: int, data: dict) -> dict:
+    def create_note(self, rom_id: int, data: dict) -> dict:
         self.call_log.append(("create_note", (rom_id, data), {}))
         self._check_fail()
         note_id = self._next_note_id
@@ -131,7 +131,7 @@ class FakeSaveApi:
         self.notes.setdefault(rom_id, []).append(note)
         return dict(note)
 
-    async def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
+    def update_note(self, rom_id: int, note_id: int, data: dict) -> dict:
         self.call_log.append(("update_note", (rom_id, note_id, data), {}))
         self._check_fail()
         for notes in self.notes.values():

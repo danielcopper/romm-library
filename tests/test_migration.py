@@ -62,7 +62,7 @@ def plugin():
         logger=decky.logger,
         save_state=p._save_state,
         emit=decky.emit,
-        firmware_service_bios_files_index=p._firmware_service._bios_files_index,
+        firmware_service_bios_files_index=p._firmware_service.bios_files_index,
     )
     return p
 

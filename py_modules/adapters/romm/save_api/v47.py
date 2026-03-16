@@ -31,6 +31,6 @@ class SaveApiV47(SaveApiV46):
     workaround.
     """
 
-    async def download_save(self, save_id: int, dest_path: str) -> None:
+    def download_save(self, save_id: int, dest_path: str) -> None:
         """Download via GET /api/saves/{id}/content (native 4.7.0 endpoint)."""
         self._client.download(f"/api/saves/{save_id}/content", dest_path)

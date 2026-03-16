@@ -8,8 +8,7 @@ sys.path.insert(0, plugin_dir)
 
 import decky
 from adapters.persistence import PersistenceAdapter
-from bootstrap import bootstrap, wire_services
-from services.library import SyncState
+from bootstrap import WiringConfig, bootstrap, wire_services
 
 from lib import retrodeck_config
 
@@ -62,7 +61,7 @@ class Plugin:
     def _prune_stale_installed_roms(self):
         """Remove installed_roms entries whose files no longer exist on disk."""
         pruned = []
-        for rom_id, entry in list(self._state["installed_roms"].items()):
+        for rom_id, entry in list(self._state["installed_roms"].items()):  # list(): dict mutated below
             file_path = entry.get("file_path", "")
             rom_dir = entry.get("rom_dir", "")
             if (file_path and os.path.exists(file_path)) or (rom_dir and os.path.exists(rom_dir)):
@@ -77,7 +76,7 @@ class Plugin:
     def _prune_stale_registry(self):
         """Remove shortcut_registry entries with missing or invalid app_id."""
         pruned = []
-        for rom_id, entry in list(self._state["shortcut_registry"].items()):
+        for rom_id, entry in list(self._state["shortcut_registry"].items()):  # list(): dict mutated below
             app_id = entry.get("app_id")
             if not app_id or not isinstance(app_id, int):
                 decky.logger.info(f"Pruned stale registry entry: rom_id={rom_id} (invalid app_id={app_id})")
@@ -103,7 +102,7 @@ class Plugin:
             self._save_settings_to_disk()
         self.settings.setdefault("log_level", "warn")
 
-    async def _main(self):
+    async def _main(self):  # Decky lifecycle — must be async
         self.loop = asyncio.get_event_loop()
         # ── Load settings (uses lazy _persistence property) ──
         self._load_settings()
@@ -138,23 +137,25 @@ class Plugin:
         self._save_sync_state = SaveService.make_default_state()
         # ── Wire services (composition, uses live state refs) ──
         services = wire_services(
-            save_api=adapters["save_api"],
-            http_adapter=self._http_adapter,
-            steam_config=self._steam_config,
-            state=self._state,
-            settings=self.settings,
-            metadata_cache=self._metadata_cache,
-            save_sync_state=self._save_sync_state,
-            loop=self.loop,
-            logger=decky.logger,
-            plugin_dir=decky.DECKY_PLUGIN_DIR,
-            runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
-            emit=decky.emit,
-            get_saves_path=retrodeck_config.get_saves_path,
-            save_state=self._save_state,
-            save_settings_to_disk=self._save_settings_to_disk,
-            save_metadata_cache=self._save_metadata_cache,
-            log_debug=self._log_debug,
+            WiringConfig(
+                save_api=adapters["save_api"],
+                http_adapter=self._http_adapter,
+                steam_config=self._steam_config,
+                state=self._state,
+                settings=self.settings,
+                metadata_cache=self._metadata_cache,
+                save_sync_state=self._save_sync_state,
+                loop=self.loop,
+                logger=decky.logger,
+                plugin_dir=decky.DECKY_PLUGIN_DIR,
+                runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
+                emit=decky.emit,
+                get_saves_path=retrodeck_config.get_saves_path,
+                save_state=self._save_state,
+                save_settings_to_disk=self._save_settings_to_disk,
+                save_metadata_cache=self._save_metadata_cache,
+                log_debug=self._log_debug,
+            )
         )
         self._save_sync_service = services["save_sync_service"]
         self._playtime_service = services["playtime_service"]
@@ -189,16 +190,17 @@ class Plugin:
         """Delegate to MigrationService."""
         return await self._migration_service.get_migration_status()
 
-    async def _unload(self):
-        if self._sync_service._sync_state == SyncState.RUNNING:
-            self._sync_service._sync_state = SyncState.CANCELLING
-        # Cancel all active downloads
-        for rom_id, task in self._download_service._download_tasks.items():
-            task.cancel()
-        self._download_service._download_tasks.clear()
+    async def _unload(self):  # Decky lifecycle — must be async
+        self._sync_service.shutdown()
+        self._download_service.shutdown()
         decky.logger.info("RomM Sync plugin unloaded")
 
     _MIN_TESTED_VERSION = "4.6.1"
+
+    # ── Callables ──────────────────────────────────────────────────────
+    # All methods below are exposed to the frontend via Decky's callable()
+    # framework, which requires `async def` even when no `await` is used.
+    # S7503 warnings are suppressed in sonar-project.properties (fp1).
 
     async def test_connection(self):
         from lib.errors import error_response
@@ -406,9 +408,9 @@ class Plugin:
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
         achievement_summary = None
-        if ra_id and self._achievements_service._get_ra_username():
+        if ra_id and self._achievements_service.get_ra_username():
             # Try cache first for quick badge rendering
-            cached_progress = self._achievements_service._get_progress_cache_entry(rom_id_str)
+            cached_progress = self._achievements_service.get_progress_cache_entry(rom_id_str)
             if cached_progress:
                 achievement_summary = {
                     "earned": cached_progress.get("earned", 0),
@@ -453,7 +455,7 @@ class Plugin:
         from lib import es_de_config
 
         es_de_config.set_system_override(retrodeck_home, platform_slug, core_label or None)
-        es_de_config._reset_cache()
+        es_de_config._resolver.reset_cache()
 
     async def set_system_core(self, platform_slug, core_label):
         """Set system-wide core override. Pass empty string to reset to default."""
@@ -474,7 +476,7 @@ class Plugin:
         from lib import es_de_config
 
         es_de_config.set_game_override(retrodeck_home, platform_slug, rom_path, core_label or None)
-        es_de_config._reset_cache()
+        es_de_config._resolver.reset_cache()
 
     async def set_game_core(self, platform_slug, rom_path, core_label):
         """Set per-game core override. Pass empty string to reset to platform default."""
@@ -578,7 +580,7 @@ class Plugin:
         return await self._download_service.start_download(rom_id)
 
     async def cancel_download(self, rom_id):
-        return await self._download_service.cancel_download(rom_id)
+        return self._download_service.cancel_download(rom_id)
 
     async def get_download_queue(self):
         return self._download_service.get_download_queue()
@@ -598,7 +600,7 @@ class Plugin:
     # ── Save Sync / Playtime delegation to services ──────────
 
     async def ensure_device_registered(self):
-        return await self._save_sync_service.ensure_device_registered()
+        return self._save_sync_service.ensure_device_registered()
 
     async def get_save_status(self, rom_id):
         return await self._save_sync_service.get_save_status(rom_id)
@@ -622,22 +624,22 @@ class Plugin:
         return await self._save_sync_service.resolve_conflict(rom_id, filename, resolution, server_save_id, local_path)
 
     async def get_pending_conflicts(self):
-        return await self._save_sync_service.get_pending_conflicts()
+        return self._save_sync_service.get_pending_conflicts()
 
     async def get_save_sync_settings(self):
-        return await self._save_sync_service.get_save_sync_settings()
+        return self._save_sync_service.get_save_sync_settings()
 
     async def update_save_sync_settings(self, settings):
-        return await self._save_sync_service.update_save_sync_settings(settings)
+        return self._save_sync_service.update_save_sync_settings(settings)
 
     async def delete_local_saves(self, rom_id):
-        return await self._save_sync_service.delete_local_saves(rom_id)
+        return self._save_sync_service.delete_local_saves(rom_id)
 
     async def delete_platform_saves(self, platform_slug):
-        return await self._save_sync_service.delete_platform_saves(platform_slug)
+        return self._save_sync_service.delete_platform_saves(platform_slug)
 
     async def record_session_start(self, rom_id):
-        return await self._playtime_service.record_session_start(rom_id)
+        return self._playtime_service.record_session_start(rom_id)
 
     async def record_session_end(self, rom_id):
         return await self._playtime_service.record_session_end(rom_id)
@@ -646,7 +648,7 @@ class Plugin:
         return await self._playtime_service.get_server_playtime(rom_id)
 
     async def get_all_playtime(self):
-        return await self._playtime_service.get_all_playtime()
+        return self._playtime_service.get_all_playtime()
 
     # ── SGDB delegation to SteamGridService ───────────────────────
 
@@ -657,7 +659,7 @@ class Plugin:
         return await self._sgdb_service.verify_sgdb_api_key(api_key)
 
     async def save_sgdb_api_key(self, api_key):
-        return await self._sgdb_service.save_sgdb_api_key(api_key)
+        return self._sgdb_service.save_sgdb_api_key(api_key)
 
     async def save_shortcut_icon(self, app_id, icon_base64):
         return await self._sgdb_service.save_shortcut_icon(app_id, icon_base64)

@@ -155,7 +155,7 @@ class TestDeviceRegistration:
         svc, _ = make_service(tmp_path)
         svc._save_sync_state["settings"]["save_sync_enabled"] = True
 
-        result = await svc.ensure_device_registered()
+        result = svc.ensure_device_registered()
         assert result["success"] is True
         assert result["device_id"]
         assert result["device_name"]
@@ -169,7 +169,7 @@ class TestDeviceRegistration:
         svc._save_sync_state["device_id"] = "existing"
         svc._save_sync_state["device_name"] = "deck"
 
-        result = await svc.ensure_device_registered()
+        result = svc.ensure_device_registered()
         assert result["device_id"] == "existing"
         assert result["device_name"] == "deck"
 
@@ -177,7 +177,7 @@ class TestDeviceRegistration:
     async def test_disabled_returns_failure(self, tmp_path):
         svc, _ = make_service(tmp_path)
         # save_sync_enabled defaults to False
-        result = await svc.ensure_device_registered()
+        result = svc.ensure_device_registered()
         assert result["success"] is False
         assert result.get("disabled") is True
 
@@ -681,12 +681,12 @@ class TestSyncAllSaves:
 
         call_count = 0
 
-        async def flaky_list(rom_id):
+        def flaky_list(rom_id):
             nonlocal call_count
             call_count += 1
             if call_count == 2:
                 raise RommApiError("Server error")
-            return await original_list(rom_id)
+            return original_list(rom_id)
 
         fake.list_saves = flaky_list
 
@@ -894,14 +894,14 @@ class TestSettings:
     @pytest.mark.asyncio
     async def test_get_defaults(self, tmp_path):
         svc, _ = make_service(tmp_path)
-        settings = await svc.get_save_sync_settings()
+        settings = svc.get_save_sync_settings()
         assert settings["conflict_mode"] == "ask_me"
         assert settings["save_sync_enabled"] is False
 
     @pytest.mark.asyncio
     async def test_update_settings(self, tmp_path):
         svc, _ = make_service(tmp_path)
-        result = await svc.update_save_sync_settings(
+        result = svc.update_save_sync_settings(
             {
                 "save_sync_enabled": True,
                 "conflict_mode": "newest_wins",
@@ -914,22 +914,22 @@ class TestSettings:
     @pytest.mark.asyncio
     async def test_invalid_mode_ignored(self, tmp_path):
         svc, _ = make_service(tmp_path)
-        await svc.update_save_sync_settings({"conflict_mode": "invalid_mode"})
-        settings = await svc.get_save_sync_settings()
+        svc.update_save_sync_settings({"conflict_mode": "invalid_mode"})
+        settings = svc.get_save_sync_settings()
         assert settings["conflict_mode"] == "ask_me"
 
     @pytest.mark.asyncio
     async def test_unknown_key_ignored(self, tmp_path):
         svc, _ = make_service(tmp_path)
-        result = await svc.update_save_sync_settings({"unknown_key": "value"})
+        result = svc.update_save_sync_settings({"unknown_key": "value"})
         assert result["success"] is True
         assert "unknown_key" not in result["settings"]
 
     @pytest.mark.asyncio
     async def test_clock_skew_clamped(self, tmp_path):
         svc, _ = make_service(tmp_path)
-        await svc.update_save_sync_settings({"clock_skew_tolerance_sec": -10})
-        settings = await svc.get_save_sync_settings()
+        svc.update_save_sync_settings({"clock_skew_tolerance_sec": -10})
+        settings = svc.get_save_sync_settings()
         assert settings["clock_skew_tolerance_sec"] == 0
 
 
@@ -948,7 +948,7 @@ class TestDeleteSaves:
 
         svc._save_sync_state["saves"]["42"] = {"files": {"pokemon.srm": {}}}
 
-        result = await svc.delete_local_saves(42)
+        result = svc.delete_local_saves(42)
         assert result["success"] is True
         assert result["deleted_count"] == 1
         assert not save_path.exists()
@@ -959,7 +959,7 @@ class TestDeleteSaves:
         svc, _ = make_service(tmp_path)
         _install_rom(svc, tmp_path)
 
-        result = await svc.delete_local_saves(42)
+        result = svc.delete_local_saves(42)
         assert result["success"] is True
         assert result["deleted_count"] == 0
 
@@ -971,7 +971,7 @@ class TestDeleteSaves:
         _create_save(tmp_path, system="gba", rom_name="game1")
         _create_save(tmp_path, system="gba", rom_name="game2")
 
-        result = await svc.delete_platform_saves("gba")
+        result = svc.delete_platform_saves("gba")
         assert result["success"] is True
         assert result["deleted_count"] == 2
 
@@ -983,7 +983,7 @@ class TestDeleteSaves:
         _create_save(tmp_path, system="gba", rom_name="game1")
         snes_save = _create_save(tmp_path, system="snes", rom_name="game2")
 
-        await svc.delete_platform_saves("gba")
+        svc.delete_platform_saves("gba")
         assert snes_save.exists()
 
 

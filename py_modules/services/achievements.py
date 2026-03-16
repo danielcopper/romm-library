@@ -41,7 +41,7 @@ class AchievementsService:
 
         self._achievements_cache: dict = {}
 
-    def _get_ra_username(self):
+    def get_ra_username(self):
         """Get RA username from RomM user profile (cached).
 
         Returns the cached ra_username if fresh, empty string otherwise.
@@ -82,7 +82,7 @@ class AchievementsService:
             return None
         return entry
 
-    def _get_progress_cache_entry(self, rom_id_str):
+    def get_progress_cache_entry(self, rom_id_str):
         """Get cached user progress for a ROM if not expired."""
         entry = self._achievements_cache.get(rom_id_str, {}).get("user_progress")
         if not entry:
@@ -193,11 +193,11 @@ class AchievementsService:
         rom_id = int(rom_id)
         rom_id_str = str(rom_id)
 
-        ra_username = self._get_ra_username() or await self._fetch_ra_username()
+        ra_username = self.get_ra_username() or await self._fetch_ra_username()
         if not ra_username:
             return {"success": False, "message": "No RA username configured in RomM", "earned": 0, "total": 0}
 
-        cached_progress = self._get_progress_cache_entry(rom_id_str)
+        cached_progress = self.get_progress_cache_entry(rom_id_str)
         if cached_progress:
             self._log_debug(f"Achievement progress cache hit for rom_id={rom_id}")
             return {"success": True, **cached_progress}
