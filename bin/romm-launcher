@@ -70,7 +70,7 @@ if [[ -n "${ROM_INFO:-}" ]]; then
     SYSTEM=$(echo "$ROM_INFO" | head -1)
     ROM_PATH=$(echo "$ROM_INFO" | tail -1)
 
-    if [[ -f "$ROM_PATH" ]]; then
+    if [[ -e "$ROM_PATH" ]]; then
         # Launch with RetroDECK (auto-detects system from roms/{system}/ path)
         exec flatpak run net.retrodeck.retrodeck "$ROM_PATH"
     else

@@ -201,10 +201,14 @@ class DownloadService:
             file_name = safe_name
         file_size = rom_detail.get("fs_size_bytes", 0)
 
-        # Check disk space (need file size + 100MB buffer)
+        # Check disk space: multi-file ROMs need space for ZIP + extracted contents
         os.makedirs(roms_dir, exist_ok=True)
         free_space = shutil.disk_usage(roms_dir).free
-        required = file_size + (100 * 1024 * 1024)
+        buffer = 100 * 1024 * 1024
+        if rom_detail.get("has_multiple_files"):
+            required = file_size * 2 + buffer  # ZIP + extracted + buffer
+        else:
+            required = file_size + buffer
         if file_size and free_space < required:
             self._download_in_progress.discard(rom_id)
             free_mb = free_space // (1024 * 1024)
@@ -431,8 +435,30 @@ class DownloadService:
             for f in files:
                 all_files.append(os.path.join(root, f))
 
-        # Prefer M3U > CUE > largest file
+        # Prefer M3U > CUE
         for ext in (".m3u", ".cue"):
+            matches = [f for f in all_files if f.lower().endswith(ext)]
+            if matches:
+                return matches[0]
+
+        # WiiU: loadiine format has .rpx in code/ subdirectory
+        rpx_files = [f for f in all_files if f.lower().endswith(".rpx")]
+        if rpx_files:
+            return rpx_files[0]
+
+        # WiiU disc images
+        for ext in (".wud", ".wux", ".wua"):
+            matches = [f for f in all_files if f.lower().endswith(ext)]
+            if matches:
+                return matches[0]
+
+        # PS3: EBOOT.BIN in PS3_GAME/USRDIR/
+        eboot_files = [f for f in all_files if f.endswith("EBOOT.BIN")]
+        if eboot_files:
+            return eboot_files[0]
+
+        # 3DS: prefer .3ds > .cia > .cxi
+        for ext in (".3ds", ".cia", ".cxi"):
             matches = [f for f in all_files if f.lower().endswith(ext)]
             if matches:
                 return matches[0]

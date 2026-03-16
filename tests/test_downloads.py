@@ -334,6 +334,128 @@ class TestDetectLaunchFile:
         result = plugin._download_service._detect_launch_file(str(tmp_path))
         assert result.endswith("large.bin")
 
+    def test_wiiu_rpx_in_code_subdir(self, plugin, tmp_path):
+        code_dir = tmp_path / "code"
+        code_dir.mkdir()
+        (code_dir / "game.rpx").write_bytes(b"\x00" * 500)
+        (tmp_path / "meta" / "meta.xml").parent.mkdir()
+        (tmp_path / "meta" / "meta.xml").write_text("<xml/>")
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".rpx")
+
+    def test_wiiu_disc_image(self, plugin, tmp_path):
+        (tmp_path / "game.wux").write_bytes(b"\x00" * 1000)
+        (tmp_path / "readme.txt").write_text("info")
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".wux")
+
+    def test_wiiu_wud_format(self, plugin, tmp_path):
+        (tmp_path / "game.wud").write_bytes(b"\x00" * 1000)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".wud")
+
+    def test_wiiu_wua_format(self, plugin, tmp_path):
+        (tmp_path / "game.wua").write_bytes(b"\x00" * 1000)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".wua")
+
+    def test_ps3_eboot_bin(self, plugin, tmp_path):
+        usrdir = tmp_path / "PS3_GAME" / "USRDIR"
+        usrdir.mkdir(parents=True)
+        (usrdir / "EBOOT.BIN").write_bytes(b"\x00" * 500)
+        (tmp_path / "PS3_GAME" / "PARAM.SFO").write_bytes(b"\x00" * 100)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith("EBOOT.BIN")
+
+    def test_3ds_prefers_3ds_over_cia(self, plugin, tmp_path):
+        (tmp_path / "game.3ds").write_bytes(b"\x00" * 500)
+        (tmp_path / "game.cia").write_bytes(b"\x00" * 500)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".3ds")
+
+    def test_3ds_falls_back_to_cia(self, plugin, tmp_path):
+        (tmp_path / "game.cia").write_bytes(b"\x00" * 500)
+        (tmp_path / "game.cxi").write_bytes(b"\x00" * 500)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".cia")
+
+    def test_m3u_still_preferred_over_platform_specific(self, plugin, tmp_path):
+        """M3U takes priority even when platform-specific files exist."""
+        (tmp_path / "game.m3u").write_text("disc1.cue")
+        code_dir = tmp_path / "code"
+        code_dir.mkdir()
+        (code_dir / "game.rpx").write_bytes(b"\x00" * 500)
+
+        result = plugin._download_service._detect_launch_file(str(tmp_path))
+        assert result.endswith(".m3u")
+
+
+class TestDiskSpaceMultiFile:
+    @pytest.mark.asyncio
+    async def test_multi_file_rom_requires_double_space(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock, patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        file_size = 500 * 1024 * 1024  # 500MB
+        rom_detail = {
+            "id": 42,
+            "name": "WiiU Game",
+            "fs_name": "game.zip",
+            "fs_size_bytes": file_size,
+            "platform_slug": "wiiu",
+            "platform_name": "Wii U",
+            "has_multiple_files": True,
+        }
+
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
+
+        # 700MB free: enough for single-file (600MB) but not multi-file (1100MB)
+        with patch("shutil.disk_usage", return_value=MagicMock(free=700 * 1024 * 1024)):
+            result = await plugin.start_download(42)
+
+        assert result["success"] is False
+        assert "disk space" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_single_file_rom_uses_normal_space_check(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock, patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        file_size = 500 * 1024 * 1024  # 500MB
+        rom_detail = {
+            "id": 43,
+            "name": "N64 Game",
+            "fs_name": "game.z64",
+            "fs_size_bytes": file_size,
+            "platform_slug": "n64",
+            "platform_name": "Nintendo 64",
+            "has_multiple_files": False,
+        }
+
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
+        plugin._download_service._loop.create_task = MagicMock()
+
+        # 700MB free: enough for single-file (600MB)
+        with patch("shutil.disk_usage", return_value=MagicMock(free=700 * 1024 * 1024)):
+            result = await plugin.start_download(43)
+
+        assert result["success"] is True
+
 
 class TestPollDownloadRequestsIO:
     """Tests for _poll_download_requests_io — file-based IPC."""
