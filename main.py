@@ -648,7 +648,7 @@ class Plugin:
     async def get_all_playtime(self):
         return await self._playtime_service.get_all_playtime()
 
-    # ── SGDB delegation to ArtworkService ───────────────────────
+    # ── SGDB delegation to SteamGridService ───────────────────────
 
     async def get_sgdb_artwork_base64(self, rom_id, asset_type_num):
         return await self._sgdb_service.get_sgdb_artwork_base64(rom_id, asset_type_num)

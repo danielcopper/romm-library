@@ -47,7 +47,7 @@ modules =
     services.playtime
     services.downloads
     services.firmware
-    services.artwork
+    services.steamgrid
     services.metadata
     services.achievements
     services.migration

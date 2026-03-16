@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
-from services.artwork import ArtworkService
 from services.library import LibraryService
+from services.steamgrid import SteamGridService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -40,7 +40,7 @@ def plugin():
         log_debug=p._log_debug,
     )
 
-    p._sgdb_service = ArtworkService(
+    p._sgdb_service = SteamGridService(
         http_adapter=p._http_adapter,
         steam_config=steam_config,
         state=p._state,

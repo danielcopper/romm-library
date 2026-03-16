@@ -18,7 +18,6 @@ from adapters.romm.http import RommHttpAdapter
 from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
-from services.artwork import ArtworkService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
 from services.library import LibraryService
@@ -28,6 +27,7 @@ from services.playtime import PlaytimeService
 from services.protocols import HttpAdapter
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.saves import SaveService
+from services.steamgrid import SteamGridService
 
 
 def bootstrap(
@@ -173,7 +173,7 @@ def wire_services(
         save_state=save_state,
     )
 
-    sgdb_service = ArtworkService(
+    sgdb_service = SteamGridService(
         http_adapter=http_adapter,
         steam_config=steam_config,
         state=state,

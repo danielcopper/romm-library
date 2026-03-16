@@ -85,7 +85,7 @@ class LibraryService:
 
     @property
     def pending_sync(self) -> dict:
-        """Public accessor for pending sync data (used by ArtworkService)."""
+        """Public accessor for pending sync data (used by SteamGridService)."""
         return self._pending_sync
 
     # ── Platform & ROM fetching ──────────────────────────────

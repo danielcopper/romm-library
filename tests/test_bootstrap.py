@@ -10,13 +10,13 @@ from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from bootstrap import bootstrap, wire_services
 from services.achievements import AchievementsService
-from services.artwork import ArtworkService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
 from services.library import LibraryService
 from services.metadata import MetadataService
 from services.playtime import PlaytimeService
 from services.saves import SaveService
+from services.steamgrid import SteamGridService
 
 
 class TestBootstrap:
@@ -142,7 +142,7 @@ class TestWireServices:
         assert isinstance(result["sync_service"], LibraryService)
         assert isinstance(result["download_service"], DownloadService)
         assert isinstance(result["firmware_service"], FirmwareService)
-        assert isinstance(result["sgdb_service"], ArtworkService)
+        assert isinstance(result["sgdb_service"], SteamGridService)
         assert isinstance(result["metadata_service"], MetadataService)
         assert isinstance(result["achievements_service"], AchievementsService)
         deps["loop"].close()
