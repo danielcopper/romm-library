@@ -26,7 +26,7 @@ from services.library import LibraryService
 from services.metadata import MetadataService
 from services.migration import MigrationService
 from services.playtime import PlaytimeService
-from services.protocols import HttpAdapter
+from services.protocols import HttpAdapter, RommApiProtocol
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.saves import SaveService
 from services.steamgrid import SteamGridService
@@ -40,7 +40,7 @@ class WiringConfig:
     # Adapters
     save_api: Any
     http_adapter: HttpAdapter
-    romm_api: Any
+    romm_api: RommApiProtocol
     steam_config: SteamConfigProtocol
 
     # State (live dict refs)
@@ -204,7 +204,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     achievements_service = AchievementsService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         state=cfg.state,
         loop=cfg.loop,
         logger=cfg.logger,

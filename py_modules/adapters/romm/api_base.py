@@ -97,7 +97,7 @@ class RommApiBase:
         save_id: int | None = None,
     ) -> dict:
         params = f"rom_id={rom_id}&emulator={urllib.parse.quote(emulator)}"
-        if save_id:
+        if save_id is not None:
             return self._client.upload_multipart(f"/api/saves/{save_id}?{params}", file_path, method="PUT")
         return self._client.upload_multipart(f"/api/saves?{params}", file_path, method="POST")
 
