@@ -170,7 +170,8 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     download_service = DownloadService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
+        resolve_system=cfg.http_adapter.resolve_system,
         state=cfg.state,
         save_sync_state=cfg.save_sync_state,
         loop=cfg.loop,
