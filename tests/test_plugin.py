@@ -534,6 +534,63 @@ class TestAtomicSettingsWrite:
         assert data["romm_url"] == "http://original.com"
 
 
+class TestWhitelistSettings:
+    @pytest.mark.asyncio
+    async def test_get_whitelist_defaults_empty(self, plugin):
+        """Returns empty lists when no whitelist keys exist in settings."""
+        plugin.settings.pop("whitelist_disabled_defaults", None)
+        plugin.settings.pop("whitelist_custom_names", None)
+        result = await plugin.get_whitelist_settings()
+        assert result == {"disabled_defaults": [], "custom_names": []}
+
+    @pytest.mark.asyncio
+    async def test_update_and_get_whitelist(self, plugin, tmp_path):
+        """Round-trip: update then get returns the stored values."""
+        import decky
+
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        await plugin.update_whitelist_settings(["chrome"], ["My App"])
+        result = await plugin.get_whitelist_settings()
+        assert result["disabled_defaults"] == ["chrome"]
+        assert result["custom_names"] == ["My App"]
+
+    @pytest.mark.asyncio
+    async def test_update_whitelist_validates_disabled_defaults(self, plugin):
+        """Rejects non-list disabled_defaults."""
+        result = await plugin.update_whitelist_settings("not-a-list", [])
+        assert result["success"] is False
+        assert "disabled_defaults" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_update_whitelist_validates_custom_names(self, plugin):
+        """Rejects non-list custom_names."""
+        result = await plugin.update_whitelist_settings([], "not-a-list")
+        assert result["success"] is False
+        assert "custom_names" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_update_whitelist_validates_inner_types(self, plugin):
+        """Rejects lists containing non-string items."""
+        result_dd = await plugin.update_whitelist_settings([1, 2], [])
+        assert result_dd["success"] is False
+        assert "disabled_defaults" in result_dd["message"]
+
+        result_cn = await plugin.update_whitelist_settings([], ["valid", 42])
+        assert result_cn["success"] is False
+        assert "custom_names" in result_cn["message"]
+
+    @pytest.mark.asyncio
+    async def test_update_whitelist_persists(self, plugin, tmp_path):
+        """Verifies values are stored in plugin.settings dict after update."""
+        import decky
+
+        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        result = await plugin.update_whitelist_settings(["moonlight"], ["Custom Game"])
+        assert result["success"] is True
+        assert plugin.settings["whitelist_disabled_defaults"] == ["moonlight"]
+        assert plugin.settings["whitelist_custom_names"] == ["Custom Game"]
+
+
 class TestPruneStaleRegistry:
     def test_prunes_missing_app_id(self, plugin, tmp_path):
         import decky

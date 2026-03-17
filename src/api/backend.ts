@@ -45,6 +45,14 @@ export function getCachedGameDetail(appId: number): Promise<CachedGameDetail> {
 }
 export const getSettings = callable<[], PluginSettings>("get_settings");
 export const saveSettings = callable<[string, string, string, boolean], BackendResult>("save_settings");
+
+export interface WhitelistSettings {
+  disabled_defaults: string[];
+  custom_names: string[];
+}
+export const getWhitelistSettings = callable<[], WhitelistSettings>("get_whitelist_settings");
+export const updateWhitelistSettings = callable<[string[], string[]], { success: boolean; message?: string }>("update_whitelist_settings");
+
 export const testConnection = callable<[], BackendResult>("test_connection");
 export const getRommVersion = callable<[], { version: string | null }>("get_romm_version");
 export const startSync = callable<[], BackendResult>("start_sync");
