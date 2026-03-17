@@ -32,8 +32,9 @@ def plugin():
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 
+    p._romm_api = MagicMock()
     p._firmware_service = FirmwareService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         state=p._state,
         loop=asyncio.get_event_loop(),
         logger=decky.logger,

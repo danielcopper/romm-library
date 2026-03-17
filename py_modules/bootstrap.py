@@ -182,7 +182,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     firmware_service = FirmwareService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         state=cfg.state,
         loop=cfg.loop,
         logger=cfg.logger,

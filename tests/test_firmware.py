@@ -16,6 +16,7 @@ def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_adapter = MagicMock()
+    p._romm_api = MagicMock()
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
@@ -32,7 +33,7 @@ def plugin():
     p._steam_config = steam_config
 
     p._firmware_service = FirmwareService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         state=p._state,
         loop=asyncio.get_event_loop(),
         logger=decky.logger,
@@ -232,15 +233,15 @@ class TestDownloadFirmware:
             "md5_hash": expected_md5,
         }
 
-        def fake_download(path, dest, progress_callback=None):
+        def fake_download(firmware_id, filename, dest):
             with open(dest, "wb") as f:
                 f.write(content)
 
         fw._loop = asyncio.get_event_loop()
 
         with (
-            patch.object(plugin._http_adapter, "request", return_value=fw_detail),
-            patch.object(plugin._http_adapter, "download", side_effect=fake_download),
+            patch.object(plugin._romm_api, "get_firmware", return_value=fw_detail),
+            patch.object(plugin._romm_api, "download_firmware", side_effect=fake_download),
         ):
             result = await fw.download_firmware(10)
 
@@ -266,8 +267,8 @@ class TestDownloadFirmware:
         fw._loop = asyncio.get_event_loop()
 
         with (
-            patch.object(plugin._http_adapter, "request", return_value=fw_detail),
-            patch.object(plugin._http_adapter, "download", side_effect=IOError("Connection reset")),
+            patch.object(plugin._romm_api, "get_firmware", return_value=fw_detail),
+            patch.object(plugin._romm_api, "download_firmware", side_effect=IOError("Connection reset")),
         ):
             result = await fw.download_firmware(10)
 
@@ -311,7 +312,7 @@ class TestDownloadAllFirmware:
             return {"success": True}
 
         with (
-            patch.object(plugin._http_adapter, "request", return_value=firmware_list),
+            patch.object(plugin._romm_api, "list_firmware", return_value=firmware_list),
             patch.object(fw, "download_firmware", side_effect=fake_download_firmware),
             patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
         ):
@@ -832,7 +833,7 @@ class TestDownloadRequiredFirmware:
             return {"success": True}
 
         with (
-            patch.object(plugin._http_adapter, "request", return_value=firmware_list),
+            patch.object(plugin._romm_api, "list_firmware", return_value=firmware_list),
             patch.object(fw, "download_firmware", side_effect=fake_download_firmware),
         ):
             result = await fw.download_required_firmware("dc")
@@ -891,7 +892,7 @@ class TestDownloadRequiredFirmware:
             return {"success": True}
 
         with (
-            patch.object(plugin._http_adapter, "request", return_value=firmware_list),
+            patch.object(plugin._romm_api, "list_firmware", return_value=firmware_list),
             patch.object(fw, "download_firmware", side_effect=fake_download_firmware),
             patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
         ):
@@ -943,7 +944,7 @@ class TestCheckPlatformBiosOffline:
                 fw._bios_files_index[fname] = {**entry, "platform": plat}
 
         with (
-            patch.object(plugin._http_adapter, "request", side_effect=Exception("offline")),
+            patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
             patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
         ):
             result = await fw.check_platform_bios("psx")
@@ -964,7 +965,7 @@ class TestCheckPlatformBiosOffline:
         fw._bios_files_index = {}
 
         with (
-            patch.object(plugin._http_adapter, "request", side_effect=Exception("offline")),
+            patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
             patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(tmp_path / "bios")),
         ):
             result = await fw.check_platform_bios("n64")
@@ -1003,7 +1004,7 @@ class TestCheckPlatformBiosOffline:
                 fw._bios_files_index[fname] = {**entry, "platform": plat}
 
         with (
-            patch.object(plugin._http_adapter, "request", side_effect=Exception("offline")),
+            patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
             patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
         ):
             result = await fw.check_platform_bios("dc")
@@ -1349,7 +1350,7 @@ class TestPerCoreFiltering:
         fw._loop = asyncio.get_event_loop()
 
         with (
-            patch.object(plugin._http_adapter, "request", side_effect=Exception("offline")),
+            patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
             patch("services.firmware.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")),
             patch("services.firmware.es_de_config.get_available_cores", return_value=[]),
             patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
@@ -1505,7 +1506,7 @@ class TestGetFirmwareStatusOfflineFallback:
         fw._loop = asyncio.get_event_loop()
 
         with (
-            patch.object(plugin._http_adapter, "request", side_effect=Exception("offline")),
+            patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
             patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
             patch("services.firmware.es_de_config.get_active_core", return_value=(None, None)),
             patch("services.firmware.es_de_config.get_available_cores", return_value=[]),
