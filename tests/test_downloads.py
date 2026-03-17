@@ -1549,3 +1549,224 @@ class TestClearCompletedDownloads:
         assert result["success"] is True
         assert result["removed"] == 0
         assert len(plugin._download_service._download_queue) == 2
+
+
+class TestMultiFilePerFileDownload:
+    """Tests for _do_multi_file_download_io and per-file routing in _do_download."""
+
+    @pytest.mark.asyncio
+    async def test_multi_file_per_file_download_happy_path(self, plugin, tmp_path):
+        from unittest.mock import patch
+
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.emit.reset_mock()
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        target_path = str(roms_dir / "FF7.zip")
+
+        rom_detail = {
+            "id": 55,
+            "name": "Final Fantasy VII",
+            "fs_name": "FF7.zip",
+            "fs_name_no_ext": "FF7",
+            "platform_slug": "psx",
+            "platform_name": "PlayStation",
+            "has_multiple_files": True,
+            "files": [
+                {"file_name": "disc1.cue", "file_size_bytes": 100},
+                {"file_name": "disc1.bin", "file_size_bytes": 1000},
+                {"file_name": "disc2.cue", "file_size_bytes": 100},
+                {"file_name": "disc2.bin", "file_size_bytes": 1000},
+            ],
+        }
+
+        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+            with open(dest, "wb") as f:
+                f.write(b"\x00" * 100)
+
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
+
+        with patch.object(plugin._http_adapter, "download_file", side_effect=fake_download_file):
+            await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
+
+        extract_dir = roms_dir / "FF7"
+        assert extract_dir.is_dir()
+        assert (extract_dir / "disc1.cue").exists()
+        assert (extract_dir / "disc1.bin").exists()
+        assert (extract_dir / "disc2.cue").exists()
+        assert (extract_dir / "disc2.bin").exists()
+        # No .tmp files remain
+        assert not (extract_dir / "disc1.cue.tmp").exists()
+        # installed_roms entry with rom_dir
+        installed = plugin._state["installed_roms"].get("55")
+        assert installed is not None
+        assert installed["rom_id"] == 55
+        assert installed["rom_dir"] == str(extract_dir)
+        assert installed["system"] == "psx"
+        # download() (ZIP path) should NOT have been called
+        plugin._http_adapter.download.assert_not_called()
+        # Status is completed
+        assert plugin._download_service._download_queue[55]["status"] == "completed"
+
+    def test_multi_file_aggregate_progress(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        rom_dir = roms_dir / "game"
+        rom_dir.mkdir()
+
+        rom_detail = {
+            "files": [
+                {"file_name": "file1.bin", "file_size_bytes": 1000},
+                {"file_name": "file2.bin", "file_size_bytes": 1000},
+            ],
+        }
+
+        progress_calls = []
+
+        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+            with open(dest, "wb") as f:
+                f.write(b"\x00" * 1000)
+            if progress_callback:
+                progress_callback(500, 1000)
+                progress_callback(1000, 1000)
+
+        def track_progress(downloaded, total):
+            progress_calls.append((downloaded, total))
+
+        plugin._download_service._http_adapter.download_file = fake_download_file
+        plugin._download_service._do_multi_file_download_io(99, rom_detail, str(rom_dir), "psx", track_progress)
+
+        # total_bytes = 2000
+        # file1: (0+500, 2000), (0+1000, 2000)
+        # file2: (1000+500, 2000), (1000+1000, 2000)
+        assert (500, 2000) in progress_calls
+        assert (1000, 2000) in progress_calls
+        assert (1500, 2000) in progress_calls
+        assert (2000, 2000) in progress_calls
+
+    def test_multi_file_resume_partial(self, plugin, tmp_path):
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        rom_dir = roms_dir / "game"
+        rom_dir.mkdir()
+
+        # Pre-existing partial .tmp file
+        tmp_file = rom_dir / "file1.bin.tmp"
+        tmp_file.write_bytes(b"\x00" * 500)
+
+        rom_detail = {
+            "files": [
+                {"file_name": "file1.bin", "file_size_bytes": 1000},
+            ],
+        }
+
+        resume_from_seen = []
+
+        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+            resume_from_seen.append(resume_from)
+            with open(dest, "wb") as f:
+                f.write(b"\x00" * 1000)
+
+        plugin._download_service._http_adapter.download_file = fake_download_file
+        plugin._download_service._do_multi_file_download_io(99, rom_detail, str(rom_dir), "psx", None)
+
+        assert resume_from_seen == [500]
+
+    @pytest.mark.asyncio
+    async def test_multi_file_disk_space_no_double_count(self, plugin, tmp_path):
+        from unittest.mock import AsyncMock, patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        file_size = 500 * 1024 * 1024  # 500MB
+        rom_detail = {
+            "id": 42,
+            "name": "PSX Game",
+            "fs_name": "game.zip",
+            "fs_size_bytes": file_size,
+            "platform_slug": "psx",
+            "platform_name": "PlayStation",
+            "has_multiple_files": True,
+            "files": [
+                {"file_name": "disc1.bin", "file_size_bytes": file_size},
+            ],
+        }
+
+        plugin._download_service._loop = MagicMock()
+        plugin._download_service._loop.run_in_executor = AsyncMock(return_value=rom_detail)
+
+        def _close_coro_task(coro):
+            coro.close()
+            return MagicMock()
+
+        plugin._download_service._loop.create_task = _close_coro_task
+
+        # 700MB free: enough for per-file (600MB) but not ZIP path (1100MB)
+        with patch("shutil.disk_usage", return_value=MagicMock(free=700 * 1024 * 1024)):
+            result = await plugin.start_download(42)
+
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_multi_file_fallback_to_zip_when_no_files_array(self, plugin, tmp_path):
+        import zipfile as zf
+        from unittest.mock import patch
+
+        import decky
+
+        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.emit.reset_mock()
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        target_path = str(roms_dir / "FF7.zip")
+
+        zip_content_path = tmp_path / "source.zip"
+        with zf.ZipFile(str(zip_content_path), "w") as z:
+            z.writestr("disc1.cue", "FILE disc1.bin BINARY")
+            z.writestr("disc1.bin", b"\x00" * 100)
+        zip_bytes = zip_content_path.read_bytes()
+
+        rom_detail = {
+            "id": 55,
+            "name": "Final Fantasy VII",
+            "fs_name": "FF7.zip",
+            "fs_name_no_ext": "FF7",
+            "platform_slug": "psx",
+            "platform_name": "PlayStation",
+            "has_multiple_files": True,
+            # No "files" key — should use ZIP fallback
+        }
+
+        def fake_download(path, dest, progress_callback=None):
+            with open(dest, "wb") as f:
+                f.write(zip_bytes)
+
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
+
+        with patch.object(plugin._http_adapter, "download", side_effect=fake_download):
+            await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
+
+        # ZIP was extracted to FF7/
+        extract_dir = roms_dir / "FF7"
+        assert extract_dir.is_dir()
+        # download_file (per-file path) should NOT have been called
+        plugin._http_adapter.download_file.assert_not_called()
+        assert plugin._download_service._download_queue[55]["status"] == "completed"

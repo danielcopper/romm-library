@@ -212,12 +212,12 @@ class DownloadService:
             file_name = safe_name
         file_size = rom_detail.get("fs_size_bytes", 0)
 
-        # Check disk space: multi-file ROMs need space for ZIP + extracted contents
+        # Check disk space
         os.makedirs(roms_dir, exist_ok=True)
         free_space = shutil.disk_usage(roms_dir).free
         buffer = 100 * 1024 * 1024
-        if rom_detail.get("has_multiple_files"):
-            required = file_size * 2 + buffer  # ZIP + extracted + buffer
+        if rom_detail.get("has_multiple_files") and not rom_detail.get("files"):
+            required = file_size * 2 + buffer  # ZIP fallback: ZIP + extracted + buffer
         else:
             required = file_size + buffer
         if file_size and free_space < required:
@@ -305,6 +305,66 @@ class DownloadService:
         self._save_state()
         return launch_file
 
+    def _do_multi_file_download_io(self, rom_id, rom_detail, rom_dir, system, progress_callback):
+        """Sync helper for per-file multi-file download — called from executor thread."""
+        files = rom_detail.get("files", [])
+        total_bytes = sum(f.get("file_size_bytes", 0) for f in files)
+        norm_rom_dir = os.path.normpath(rom_dir)
+        os.makedirs(rom_dir, exist_ok=True)
+        completed_bytes = [0]
+        for file_entry in files:
+            file_name = file_entry["file_name"]
+            dest = os.path.normpath(os.path.join(rom_dir, file_name))
+            if not dest.startswith(norm_rom_dir + os.sep):
+                raise ValueError(f"File name {file_name!r} would write outside rom_dir")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            tmp_path = dest + _TMP_EXT
+            resume_from = 0
+            if os.path.exists(tmp_path):
+                resume_from = os.path.getsize(tmp_path)
+            bytes_before = completed_bytes[0]
+
+            def per_file_cb(downloaded, total, _before=bytes_before):
+                if progress_callback:
+                    progress_callback(_before + downloaded, total_bytes)
+
+            self._http_adapter.download_file(rom_id, file_name, tmp_path, per_file_cb, resume_from)
+            os.replace(tmp_path, dest)
+            completed_bytes[0] += os.path.getsize(dest)
+        return rom_dir
+
+    def _post_download_per_file_io(self, rom_id, rom_detail, rom_dir, file_name, system):
+        """Sync helper for per-file multi-file post-download — URL-decode renames, M3U, state."""
+        for root, dirs, files in os.walk(rom_dir, topdown=False):
+            for fname in files:
+                decoded = urllib.parse.unquote(fname)
+                if decoded != fname:
+                    old_path = os.path.join(root, fname)
+                    new_path = os.path.join(root, decoded)
+                    os.replace(old_path, new_path)
+                    self._logger.info(f"Renamed URL-encoded file: {fname} -> {decoded}")
+            for dname in dirs:
+                decoded = urllib.parse.unquote(dname)
+                if decoded != dname:
+                    old_path = os.path.join(root, dname)
+                    new_path = os.path.join(root, decoded)
+                    os.replace(old_path, new_path)
+                    self._logger.info(f"Renamed URL-encoded dir: {dname} -> {decoded}")
+        self._maybe_generate_m3u(rom_dir, rom_detail)
+        launch_file = self._detect_launch_file(rom_dir)
+        installed_entry = {
+            "rom_id": rom_id,
+            "file_name": file_name,
+            "file_path": launch_file,
+            "system": system,
+            "platform_slug": rom_detail.get("platform_slug", ""),
+            "installed_at": datetime.now().isoformat(),
+            "rom_dir": rom_dir,
+        }
+        self._state["installed_roms"][str(rom_id)] = installed_entry
+        self._save_state()
+        return launch_file
+
     def _post_download_single_io(self, rom_id, rom_detail, target_path, file_name, system):
         """Sync helper for _do_download single-file — rename + state update in executor."""
         tmp_path = target_path + _TMP_EXT
@@ -371,14 +431,26 @@ class DownloadService:
             self._logger.info(f"Download starting: {rom_name} (rom_id={rom_id}, multi={has_multiple}) -> {target_path}")
 
             if has_multiple:
-                # Multi-file ROM: API returns ZIP, download to temp then extract
-                tmp_zip = target_path + _ZIP_TMP_EXT
-                await self._loop.run_in_executor(
-                    None, self._http_adapter.download, download_path, tmp_zip, progress_callback
-                )
-                final_path = await self._loop.run_in_executor(
-                    None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
-                )
+                files_array = rom_detail.get("files")
+                if files_array:
+                    # Per-file download: download each file individually
+                    rom_dir_name = os.path.splitext(file_name)[0]
+                    rom_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
+                    await self._loop.run_in_executor(
+                        None, self._do_multi_file_download_io, rom_id, rom_detail, rom_dir, system, progress_callback
+                    )
+                    final_path = await self._loop.run_in_executor(
+                        None, self._post_download_per_file_io, rom_id, rom_detail, rom_dir, file_name, system
+                    )
+                else:
+                    # ZIP fallback: API returns ZIP, download to temp then extract
+                    tmp_zip = target_path + _ZIP_TMP_EXT
+                    await self._loop.run_in_executor(
+                        None, self._http_adapter.download, download_path, tmp_zip, progress_callback
+                    )
+                    final_path = await self._loop.run_in_executor(
+                        None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
+                    )
             else:
                 tmp_path = target_path + _TMP_EXT
                 await self._loop.run_in_executor(
