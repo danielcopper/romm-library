@@ -12,6 +12,9 @@ source_modules =
     services
 forbidden_modules =
     adapters.romm.http
+    adapters.romm.api_base
+    adapters.romm.api_v47
+    adapters.romm.api_router
     adapters.romm.save_api.v46
     adapters.romm.save_api.v47
     adapters.romm.version_router

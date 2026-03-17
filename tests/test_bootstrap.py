@@ -5,6 +5,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 from adapters.persistence import PersistenceAdapter
+from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
 from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
@@ -99,6 +100,18 @@ class TestBootstrap:
         assert "steam_config" in result
         assert isinstance(result["steam_config"], SteamConfigAdapter)
 
+    def test_returns_romm_api(self, tmp_path):
+        result = bootstrap(
+            settings_dir=str(tmp_path / "settings"),
+            runtime_dir=str(tmp_path / "runtime"),
+            plugin_dir=str(tmp_path / "plugin"),
+            user_home=str(tmp_path / "home"),
+            logger=logging.getLogger("test"),
+            settings={},
+        )
+        assert "romm_api" in result
+        assert isinstance(result["romm_api"], ApiRouter)
+
 
 class TestWireServices:
     def _make_deps(self, tmp_path):
@@ -114,9 +127,11 @@ class TestWireServices:
             "sync_stats": {},
             "downloaded_bios": {},
         }
+        romm_api = MagicMock(spec=ApiRouter)
         return {
             "save_api": save_api,
             "http_adapter": http_adapter,
+            "romm_api": romm_api,
             "steam_config": steam_config,
             "state": state,
             "settings": settings,

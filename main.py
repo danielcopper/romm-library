@@ -118,6 +118,7 @@ class Plugin:
         self._persistence = adapters["persistence"]
         self._http_adapter = adapters["http_adapter"]
         self._version_router = adapters["version_router"]
+        self._romm_api = adapters["romm_api"]
         self._steam_config = adapters["steam_config"]
         self._state = {
             "shortcut_registry": {},
@@ -140,6 +141,7 @@ class Plugin:
             WiringConfig(
                 save_api=adapters["save_api"],
                 http_adapter=self._http_adapter,
+                romm_api=self._romm_api,
                 steam_config=self._steam_config,
                 state=self._state,
                 settings=self.settings,
@@ -225,6 +227,9 @@ class Plugin:
             router = getattr(self, "_version_router", None)
             if router:
                 router.set_version(self._romm_version)
+            romm_api = getattr(self, "_romm_api", None)
+            if romm_api:
+                romm_api.set_version(self._romm_version)
 
         # Test authenticated access
         try:

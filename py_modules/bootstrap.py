@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from adapters.persistence import PersistenceAdapter
+from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
 from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
@@ -39,6 +40,7 @@ class WiringConfig:
     # Adapters
     save_api: Any
     http_adapter: HttpAdapter
+    romm_api: Any
     steam_config: SteamConfigProtocol
 
     # State (live dict refs)
@@ -94,6 +96,7 @@ def bootstrap(
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
     version_router = VersionRouter(http_adapter)
+    romm_api = ApiRouter(http_adapter)
     steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
     return {
@@ -101,6 +104,7 @@ def bootstrap(
         "http_adapter": http_adapter,
         "save_api": version_router,
         "version_router": version_router,
+        "romm_api": romm_api,
         "steam_config": steam_config,
     }
 

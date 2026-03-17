@@ -17,6 +17,8 @@ def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_adapter = MagicMock()
+    p._version_router = MagicMock()
+    p._romm_api = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -86,6 +88,21 @@ class TestSettings:
         plugin.settings["romm_pass"] = "old"
         await plugin.save_settings("http://example.com", "user", "newpass")
         assert plugin.settings["romm_pass"] == "newpass"
+
+
+class TestConnection:
+    @pytest.mark.asyncio
+    async def test_test_connection_sets_version_on_both_routers(self, plugin):
+        plugin.loop = asyncio.get_event_loop()
+        plugin.settings["romm_url"] = "http://romm.local"
+        plugin._http_adapter.request.side_effect = [
+            {"SYSTEM": {"VERSION": "4.7.0"}},  # heartbeat
+            [{"id": 1, "slug": "n64"}],  # platforms
+        ]
+        result = await plugin.test_connection()
+        assert result["success"] is True
+        plugin._version_router.set_version.assert_called_once_with("4.7.0")
+        plugin._romm_api.set_version.assert_called_once_with("4.7.0")
 
 
 class TestLogLevel:
