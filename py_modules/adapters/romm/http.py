@@ -182,7 +182,7 @@ class RommHttpAdapter:
                 last_exc = exc
                 if attempt < max_attempts - 1 and self.is_retryable(exc):
                     delay = base_delay * (3**attempt)
-                    self._logger.debug(f"Retry {attempt + 1}/{max_attempts} after {delay}s: {exc}")
+                    self._logger.info(f"Retry {attempt + 1}/{max_attempts} after {delay}s: {exc}")
                     time.sleep(delay)
                 else:
                     raise

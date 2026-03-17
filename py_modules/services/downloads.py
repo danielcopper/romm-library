@@ -328,9 +328,16 @@ class DownloadService:
         platform_name = rom_detail.get("platform_name", rom_detail.get("platform_slug", ""))
         has_multiple = rom_detail.get("has_multiple_files", False)
         last_emit = [0.0]  # mutable container for closure
+        last_log = [0.0]
 
         def progress_callback(downloaded, total):
             now = time.monotonic()
+            if now - last_log[0] >= 30.0:
+                last_log[0] = now
+                mb_dl = downloaded / (1024 * 1024)
+                mb_total = total / (1024 * 1024) if total else 0
+                pct = (downloaded / total * 100) if total else 0
+                self._logger.info(f"Download progress: {rom_name} — {mb_dl:.1f}/{mb_total:.1f} MB ({pct:.0f}%)")
             if now - last_emit[0] < 0.5 and downloaded < total:
                 return
             last_emit[0] = now
@@ -361,6 +368,7 @@ class DownloadService:
 
         try:
             download_path = f"/api/roms/{rom_id}/content/{urllib.parse.quote(file_name, safe='')}"
+            self._logger.info(f"Download starting: {rom_name} (rom_id={rom_id}, multi={has_multiple}) -> {target_path}")
 
             if has_multiple:
                 # Multi-file ROM: API returns ZIP, download to temp then extract
