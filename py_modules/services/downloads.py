@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from lib import retrodeck_config
 from lib.errors import error_response
+from services.rom_placement import get_placement
 
 if TYPE_CHECKING:
     import logging
@@ -351,6 +352,8 @@ class DownloadService:
                     new_path = os.path.join(root, decoded)
                     os.replace(old_path, new_path)
                     self._logger.info(f"Renamed URL-encoded dir: {dname} -> {decoded}")
+        placement_fn = get_placement(rom_detail.get("platform_slug", ""))
+        placement_fn(rom_dir, rom_detail.get("files", []), self._logger)
         self._maybe_generate_m3u(rom_dir, rom_detail)
         launch_file = self._detect_launch_file(rom_dir)
         installed_entry = {

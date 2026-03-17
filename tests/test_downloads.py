@@ -1807,3 +1807,117 @@ class TestMultiFilePerFileDownload:
         # download_file (per-file path) should NOT have been called
         plugin._http_adapter.download_file.assert_not_called()
         assert plugin._download_service._download_queue[55]["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_wiiu_multi_file_e2e(self, plugin, tmp_path):
+        """WiiU e2e: Update/DLC folders are moved to mlc01, Game folder stays in rom_dir."""
+        import asyncio
+        from unittest.mock import patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.emit.reset_mock()
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "wiiu"
+        roms_dir.mkdir(parents=True)
+        target_path = str(roms_dir / "zelda_botw.zip")
+
+        title_id = "101c9400"
+        game_folder = f"zelda [Game] [00050000{title_id}]"
+        update_folder = f"zelda [Update] [{title_id}]"
+        dlc_folder = f"zelda [DLC] [{title_id}]"
+
+        rom_detail = {
+            "id": 99,
+            "name": "Zelda BOTW",
+            "fs_name": "zelda_botw.zip",
+            "fs_name_no_ext": "zelda_botw",
+            "platform_slug": "wiiu",
+            "platform_name": "Wii U",
+            "has_multiple_files": True,
+            "files": [
+                {"file_name": f"{game_folder}/code/game.rpx", "file_size_bytes": 100},
+                {"file_name": f"{update_folder}/code/update.rpx", "file_size_bytes": 50},
+                {"file_name": f"{dlc_folder}/code/dlc.rpx", "file_size_bytes": 50},
+            ],
+        }
+
+        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+            with open(dest, "wb") as f:
+                f.write(b"\x00" * 100)
+
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[99] = {"rom_id": 99, "status": "downloading", "progress": 0}
+
+        with patch.object(plugin._http_adapter, "download_file", side_effect=fake_download_file):
+            await plugin._download_service._do_download(99, rom_detail, target_path, "wiiu")
+
+        rom_dir = roms_dir / "zelda_botw"
+        bios_dir = tmp_path / "retrodeck" / "bios"
+
+        # Game folder stays in rom_dir
+        assert (rom_dir / game_folder).is_dir()
+        assert (rom_dir / game_folder / "code" / "game.rpx").exists()
+
+        # Update folder moved to mlc01/0005000e/{title_id}/
+        update_dest = bios_dir / "cemu" / "mlc01" / "usr" / "title" / "0005000e" / title_id
+        assert update_dest.is_dir()
+        assert (update_dest / "code" / "update.rpx").exists()
+
+        # DLC folder moved to mlc01/0005000c/{title_id}/
+        dlc_dest = bios_dir / "cemu" / "mlc01" / "usr" / "title" / "0005000c" / title_id
+        assert dlc_dest.is_dir()
+        assert (dlc_dest / "code" / "dlc.rpx").exists()
+
+        # Update/DLC folders no longer in rom_dir
+        assert not (rom_dir / update_folder).exists()
+        assert not (rom_dir / dlc_folder).exists()
+
+        assert plugin._download_service._download_queue[99]["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_non_wiiu_default_placement(self, plugin, tmp_path):
+        """Non-WiiU platforms use no-op placement — all files remain in rom_dir."""
+        import asyncio
+        from unittest.mock import patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.emit.reset_mock()
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        target_path = str(roms_dir / "FF7.zip")
+
+        rom_detail = {
+            "id": 55,
+            "name": "Final Fantasy VII",
+            "fs_name": "FF7.zip",
+            "fs_name_no_ext": "FF7",
+            "platform_slug": "psx",
+            "platform_name": "PlayStation",
+            "has_multiple_files": True,
+            "files": [
+                {"file_name": "disc1.cue", "file_size_bytes": 100},
+                {"file_name": "disc1.bin", "file_size_bytes": 1000},
+            ],
+        }
+
+        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+            with open(dest, "wb") as f:
+                f.write(b"\x00" * 100)
+
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[55] = {"rom_id": 55, "status": "downloading", "progress": 0}
+
+        with patch.object(plugin._http_adapter, "download_file", side_effect=fake_download_file):
+            await plugin._download_service._do_download(55, rom_detail, target_path, "psx")
+
+        rom_dir = roms_dir / "FF7"
+
+        # All files remain in rom_dir — no-op placement for non-WiiU
+        assert (rom_dir / "disc1.cue").exists()
+        assert (rom_dir / "disc1.bin").exists()
+        assert plugin._download_service._download_queue[55]["status"] == "completed"
