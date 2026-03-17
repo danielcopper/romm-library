@@ -211,13 +211,32 @@ class RommHttpAdapter:
 
     @staticmethod
     def _stream_to_file(
-        resp, dest_path: Path, progress_callback=None, block_size: int = 65536, url: str = ""
+        resp,
+        dest_path: Path,
+        progress_callback=None,
+        block_size: int = 65536,
+        url: str = "",
+        *,
+        append: bool = False,
+        offset: int = 0,
     ) -> tuple[int, int]:
-        """Read *resp* into *dest_path* and return ``(total, downloaded)``."""
+        """Read *resp* into *dest_path* and return ``(total, downloaded)``.
+
+        When ``append=True`` the file is opened in append mode and ``downloaded``
+        starts at ``offset`` so that progress and totals include already-written bytes.
+        ``total`` is ``offset + Content-Length`` to reflect the full file size.
+        """
         raw_total = resp.headers.get("Content-Length")
-        total = int(raw_total) if raw_total else 0
-        downloaded = 0
-        with open(dest_path, "wb") as f:
+        content_length = int(raw_total) if raw_total else 0
+        if append:
+            total = offset + content_length
+            downloaded = offset
+            mode = "ab"
+        else:
+            total = content_length
+            downloaded = 0
+            mode = "wb"
+        with open(dest_path, mode) as f:
             while True:
                 try:
                     chunk = resp.read(block_size)

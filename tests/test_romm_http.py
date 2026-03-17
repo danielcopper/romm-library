@@ -978,6 +978,65 @@ class TestStreamToFile:
         assert len(progress_calls) >= 1
         assert progress_calls[-1][0] == len(data)
 
+    def test_append_mode_continues_from_offset(self, tmp_path):
+        """append=True opens in 'ab' mode, writing new bytes after existing content."""
+        from io import BytesIO
+
+        existing = b"existing"
+        new_data = b"new_data"
+        dest = tmp_path / "output.bin"
+        dest.write_bytes(existing)
+
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(new_data))}
+        resp.read = BytesIO(new_data).read
+
+        RommHttpAdapter._stream_to_file(resp, dest, append=True, offset=len(existing))
+
+        assert dest.read_bytes() == existing + new_data
+
+    def test_append_mode_progress_includes_offset(self, tmp_path):
+        """Progress callback values account for bytes already written (offset)."""
+        from io import BytesIO
+
+        offset = 500
+        new_data = b"y" * 300
+        dest = tmp_path / "output.bin"
+        dest.write_bytes(b"\x00" * offset)
+
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(new_data))}
+        resp.read = BytesIO(new_data).read
+
+        progress_calls = []
+        RommHttpAdapter._stream_to_file(
+            resp, dest, progress_callback=lambda d, t: progress_calls.append((d, t)), append=True, offset=offset
+        )
+
+        assert len(progress_calls) >= 1
+        # downloaded in first call must be > offset (offset + some bytes)
+        assert progress_calls[0][0] > offset
+        # last downloaded value equals offset + all new bytes
+        assert progress_calls[-1][0] == offset + len(new_data)
+
+    def test_append_mode_returns_total_including_offset(self, tmp_path):
+        """Return value total = offset + Content-Length; downloaded = offset + bytes written."""
+        from io import BytesIO
+
+        offset = 1024
+        new_data = b"z" * 512
+        dest = tmp_path / "output.bin"
+        dest.write_bytes(b"\x00" * offset)
+
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(new_data))}
+        resp.read = BytesIO(new_data).read
+
+        total, downloaded = RommHttpAdapter._stream_to_file(resp, dest, append=True, offset=offset)
+
+        assert total == offset + len(new_data)
+        assert downloaded == offset + len(new_data)
+
 
 class TestValidateDownload:
     """Tests for _validate_download() — covers lines 232-237."""
