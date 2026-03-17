@@ -116,6 +116,16 @@ class DownloadService:
             self._logger.warning(f"Failed to remove tmp file {filepath}: {e}")
         return False
 
+    def _clean_tmp_in_dir(self, system_path):
+        """Remove .tmp/.zip.tmp files under system_path; return count removed."""
+        cleaned = 0
+        for root, _dirs, files in os.walk(system_path):
+            for filename in files:
+                if filename.endswith((_TMP_EXT, _ZIP_TMP_EXT)):
+                    if self._remove_tmp_file(os.path.join(root, filename)):
+                        cleaned += 1
+        return cleaned
+
     def _clean_rom_tmp_files(self):
         """Remove leftover .tmp and .zip.tmp files from ROM directories."""
         cleaned = 0
@@ -126,11 +136,7 @@ class DownloadService:
             system_path = os.path.join(roms_base, system_dir)
             if not os.path.isdir(system_path):
                 continue
-            for root, _dirs, files in os.walk(system_path):
-                for filename in files:
-                    if filename.endswith((_TMP_EXT, _ZIP_TMP_EXT)):
-                        if self._remove_tmp_file(os.path.join(root, filename)):
-                            cleaned += 1
+            cleaned += self._clean_tmp_in_dir(system_path)
         return cleaned
 
     def _clean_bios_tmp_files(self):
@@ -307,7 +313,7 @@ class DownloadService:
         self._save_state()
         return launch_file
 
-    def _do_multi_file_download_io(self, rom_id, rom_detail, rom_dir, system, progress_callback):
+    def _do_multi_file_download_io(self, rom_id, rom_detail, rom_dir, _system, progress_callback):
         """Sync helper for per-file multi-file download — called from executor thread."""
         files = rom_detail.get("files", [])
         total_bytes = sum(f.get("file_size_bytes", 0) for f in files)
@@ -326,7 +332,7 @@ class DownloadService:
                 resume_from = os.path.getsize(tmp_path)
             bytes_before = completed_bytes[0]
 
-            def per_file_cb(downloaded, total, _before=bytes_before):
+            def per_file_cb(downloaded, _total, _before=bytes_before):
                 if progress_callback:
                     progress_callback(_before + downloaded, total_bytes)
 
@@ -386,6 +392,36 @@ class DownloadService:
         self._save_state()
         return target_path
 
+    async def _route_download(
+        self, rom_id, rom_detail, target_path, file_name, system, download_path, has_multiple, progress_callback
+    ):
+        """Choose and execute the appropriate download strategy; return final_path."""
+        if has_multiple:
+            files_array = rom_detail.get("files")
+            if files_array:
+                # Per-file download: download each file individually
+                rom_dir_name = os.path.splitext(file_name)[0]
+                rom_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
+                await self._loop.run_in_executor(
+                    None, self._do_multi_file_download_io, rom_id, rom_detail, rom_dir, system, progress_callback
+                )
+                return await self._loop.run_in_executor(
+                    None, self._post_download_per_file_io, rom_id, rom_detail, rom_dir, file_name, system
+                )
+            # ZIP fallback: API returns ZIP, download to temp then extract
+            tmp_zip = target_path + _ZIP_TMP_EXT
+            await self._loop.run_in_executor(
+                None, self._http_adapter.download, download_path, tmp_zip, progress_callback
+            )
+            return await self._loop.run_in_executor(
+                None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
+            )
+        tmp_path = target_path + _TMP_EXT
+        await self._loop.run_in_executor(None, self._http_adapter.download, download_path, tmp_path, progress_callback)
+        return await self._loop.run_in_executor(
+            None, self._post_download_single_io, rom_id, rom_detail, target_path, file_name, system
+        )
+
     async def _do_download(self, rom_id, rom_detail, target_path, system):
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
         rom_name = rom_detail.get("name", file_name)
@@ -433,36 +469,9 @@ class DownloadService:
         try:
             download_path = f"/api/roms/{rom_id}/content/{urllib.parse.quote(file_name, safe='')}"
             self._logger.info(f"Download starting: {rom_name} (rom_id={rom_id}, multi={has_multiple}) -> {target_path}")
-
-            if has_multiple:
-                files_array = rom_detail.get("files")
-                if files_array:
-                    # Per-file download: download each file individually
-                    rom_dir_name = os.path.splitext(file_name)[0]
-                    rom_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
-                    await self._loop.run_in_executor(
-                        None, self._do_multi_file_download_io, rom_id, rom_detail, rom_dir, system, progress_callback
-                    )
-                    final_path = await self._loop.run_in_executor(
-                        None, self._post_download_per_file_io, rom_id, rom_detail, rom_dir, file_name, system
-                    )
-                else:
-                    # ZIP fallback: API returns ZIP, download to temp then extract
-                    tmp_zip = target_path + _ZIP_TMP_EXT
-                    await self._loop.run_in_executor(
-                        None, self._http_adapter.download, download_path, tmp_zip, progress_callback
-                    )
-                    final_path = await self._loop.run_in_executor(
-                        None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
-                    )
-            else:
-                tmp_path = target_path + _TMP_EXT
-                await self._loop.run_in_executor(
-                    None, self._http_adapter.download, download_path, tmp_path, progress_callback
-                )
-                final_path = await self._loop.run_in_executor(
-                    None, self._post_download_single_io, rom_id, rom_detail, target_path, file_name, system
-                )
+            final_path = await self._route_download(
+                rom_id, rom_detail, target_path, file_name, system, download_path, has_multiple, progress_callback
+            )
 
             self._download_queue[rom_id]["status"] = "completed"
             self._download_queue[rom_id]["progress"] = 1.0
@@ -575,35 +584,35 @@ class DownloadService:
             return max(all_files, key=os.path.getsize)
         return extract_dir
 
+    def _remove_path_safe(self, path):
+        """Remove a single file if it exists, logging on failure."""
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            self._logger.warning(f"Cleanup failed for {path}: {e}")
+
+    def _cleanup_extract_dir(self, extract_dir):
+        """Remove .tmp files inside extract_dir then delete the directory tree."""
+        if os.path.isdir(extract_dir):
+            for root, _dirs, files in os.walk(extract_dir):
+                for fname in files:
+                    if fname.endswith(_TMP_EXT):
+                        self._remove_path_safe(os.path.join(root, fname))
+        try:
+            if os.path.isdir(extract_dir):
+                shutil.rmtree(extract_dir)
+        except Exception as e:
+            self._logger.warning(f"Cleanup failed for directory {extract_dir}: {e}")
+
     def _cleanup_partial_download(self, target_path, has_multiple, file_name):
         """Clean up partial download files. Each step is independent so one failure doesn't block others."""
-        paths_to_remove = [
-            target_path + _ZIP_TMP_EXT,
-            target_path + _TMP_EXT,
-            target_path,
-        ]
-        for path in paths_to_remove:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except Exception as e:
-                self._logger.warning(f"Cleanup failed for {path}: {e}")
+        for path in [target_path + _ZIP_TMP_EXT, target_path + _TMP_EXT, target_path]:
+            self._remove_path_safe(path)
         if has_multiple:
             rom_dir_name = os.path.splitext(file_name)[0]
             extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
-            if os.path.isdir(extract_dir):
-                for root, _dirs, files in os.walk(extract_dir):
-                    for fname in files:
-                        if fname.endswith(_TMP_EXT):
-                            try:
-                                os.remove(os.path.join(root, fname))
-                            except Exception as e:
-                                self._logger.warning(f"Cleanup failed for tmp file {os.path.join(root, fname)}: {e}")
-            try:
-                if os.path.isdir(extract_dir):
-                    shutil.rmtree(extract_dir)
-            except Exception as e:
-                self._logger.warning(f"Cleanup failed for directory {extract_dir}: {e}")
+            self._cleanup_extract_dir(extract_dir)
 
     def cancel_download(self, rom_id):
         rom_id = int(rom_id)
