@@ -903,6 +903,24 @@ class TestCleanupPartialDownload:
         plugin._download_service._cleanup_partial_download(target, False, "nonexistent.z64")
         plugin._download_service._cleanup_partial_download(target, True, "nonexistent.zip")
 
+    def test_cleanup_removes_per_file_tmp_in_rom_dir(self, plugin, tmp_path):
+        """Nested .tmp files inside rom_dir are removed during multi-file cleanup."""
+        target = str(tmp_path / "game.zip")
+        rom_dir = tmp_path / "game"
+        subdir = rom_dir / "content"
+        subdir.mkdir(parents=True)
+        tmp1 = rom_dir / "file1.iso.tmp"
+        tmp2 = subdir / "file2.bin.tmp"
+        completed = rom_dir / "file0.iso"
+        tmp1.write_bytes(b"partial1")
+        tmp2.write_bytes(b"partial2")
+        completed.write_bytes(b"done")
+
+        plugin._download_service._cleanup_partial_download(target, True, "game.zip")
+
+        assert not tmp1.exists()
+        assert not tmp2.exists()
+
 
 class TestDoDownloadCancelled:
     """Tests for _do_download — cancelled mid-download."""
@@ -1314,6 +1332,25 @@ class TestCleanupLeftoverTmpFiles:
             plugin._download_service.cleanup_leftover_tmp_files()
         # File still exists since os.remove was mocked to fail
         assert tmp_file.exists()
+
+    def test_clean_rom_tmp_files_walks_subdirs(self, plugin, tmp_path):
+        """Startup cleanup finds .tmp files nested inside ROM subdirectories."""
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        system_dir = tmp_path / "retrodeck" / "roms" / "wiiu"
+        rom_subdir = system_dir / "Zelda [Game] [00050000101c9400]" / "content"
+        rom_subdir.mkdir(parents=True)
+        nested_tmp = rom_subdir / "game.wud.tmp"
+        nested_tmp.write_bytes(b"partial")
+        real_file = rom_subdir / "completed.wud"
+        real_file.write_bytes(b"done")
+
+        plugin._download_service.cleanup_leftover_tmp_files()
+
+        assert not nested_tmp.exists()
+        assert real_file.exists()
 
 
 class TestRemoveRomCleansSaveSyncState:

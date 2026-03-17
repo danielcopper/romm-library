@@ -125,10 +125,11 @@ class DownloadService:
             system_path = os.path.join(roms_base, system_dir)
             if not os.path.isdir(system_path):
                 continue
-            for filename in os.listdir(system_path):
-                if filename.endswith((_TMP_EXT, _ZIP_TMP_EXT)):
-                    if self._remove_tmp_file(os.path.join(system_path, filename)):
-                        cleaned += 1
+            for root, _dirs, files in os.walk(system_path):
+                for filename in files:
+                    if filename.endswith((_TMP_EXT, _ZIP_TMP_EXT)):
+                        if self._remove_tmp_file(os.path.join(root, filename)):
+                            cleaned += 1
         return cleaned
 
     def _clean_bios_tmp_files(self):
@@ -574,6 +575,14 @@ class DownloadService:
         if has_multiple:
             rom_dir_name = os.path.splitext(file_name)[0]
             extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
+            if os.path.isdir(extract_dir):
+                for root, _dirs, files in os.walk(extract_dir):
+                    for fname in files:
+                        if fname.endswith(_TMP_EXT):
+                            try:
+                                os.remove(os.path.join(root, fname))
+                            except Exception as e:
+                                self._logger.warning(f"Cleanup failed for tmp file {os.path.join(root, fname)}: {e}")
             try:
                 if os.path.isdir(extract_dir):
                     shutil.rmtree(extract_dir)
