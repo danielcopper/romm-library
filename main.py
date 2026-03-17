@@ -327,6 +327,24 @@ class Plugin:
             "romm_allow_insecure_ssl": self.settings.get("romm_allow_insecure_ssl", False),
         }
 
+    async def get_whitelist_settings(self):
+        """Return whitelist settings for the non-Steam game removal feature."""
+        return {
+            "disabled_defaults": self.settings.get("whitelist_disabled_defaults", []),
+            "custom_names": self.settings.get("whitelist_custom_names", []),
+        }
+
+    async def update_whitelist_settings(self, disabled_defaults, custom_names):
+        """Update whitelist settings. Both params must be lists of strings."""
+        if not isinstance(disabled_defaults, list) or not all(isinstance(s, str) for s in disabled_defaults):
+            return {"success": False, "message": "disabled_defaults must be a list of strings"}
+        if not isinstance(custom_names, list) or not all(isinstance(s, str) for s in custom_names):
+            return {"success": False, "message": "custom_names must be a list of strings"}
+        self.settings["whitelist_disabled_defaults"] = disabled_defaults
+        self.settings["whitelist_custom_names"] = custom_names
+        self._save_settings_to_disk()
+        return {"success": True}
+
     async def get_cached_game_detail(self, app_id):
         """Return cached + lightweight data for a game."""
         app_id = int(app_id)

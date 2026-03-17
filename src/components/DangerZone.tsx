@@ -22,10 +22,19 @@ import {
   logInfo,
   logWarn,
   logError,
+  getWhitelistSettings,
+  updateWhitelistSettings,
 } from "../api/backend";
 import { removeShortcut } from "../utils/steamShortcuts";
 import { clearPlatformCollection, clearAllRomMCollections } from "../utils/collections";
 import type { RegistryPlatform } from "../types";
+
+const DEFAULT_WHITELIST_PATTERNS: string[] = [
+  "retrodeck", "moonlight", "chiaki", "chrome", "chromium",
+  "firefox", "vivaldi", "heroic", "lutris", "bottles",
+  "protonup", "emudeck", "desktop mode", "return to gaming mode",
+  "nonsteamlaunchers",
+];
 
 const PlatformActionModal: FC<{
   platform: RegistryPlatform;
@@ -66,7 +75,9 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
   const [platforms, setPlatforms] = useState<RegistryPlatform[]>([]);
   const [loading, setLoading] = useState(true);
   const [showWhitelist, setShowWhitelist] = useState(false);
-  const [whitelist, setWhitelist] = useState<Set<number>>(new Set());
+  const [disabledDefaults, setDisabledDefaults] = useState<string[]>([]);
+  const [customNames, setCustomNames] = useState<string[]>([]);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [nonSteamApps, setNonSteamApps] = useState<{ appId: number; name: string }[]>([]);
   const [confirmRemoveAllRomm, setConfirmRemoveAllRomm] = useState(false);
   const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
@@ -75,6 +86,29 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
   const [uninstallStatus, setUninstallStatus] = useState("");
   const [actionStatus, setActionStatus] = useState("");
   const [whitelistSearch, setWhitelistSearch] = useState("");
+
+  const activeDefaults = useMemo(
+    () => DEFAULT_WHITELIST_PATTERNS.filter((p) => !disabledDefaults.includes(p)),
+    [disabledDefaults]
+  );
+
+  const getMatchingPattern = (name: string): string | undefined => {
+    const lower = name.toLowerCase();
+    return activeDefaults.find((p) => lower.includes(p));
+  };
+
+  const isWhitelisted = (app: { appId: number; name: string }): boolean => {
+    return !!getMatchingPattern(app.name) || customNames.includes(app.name);
+  };
+
+  const whitelistedIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const app of nonSteamApps) {
+      if (isWhitelisted(app)) set.add(app.appId);
+    }
+    return set;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nonSteamApps, activeDefaults, customNames]);
 
   const refreshPlatforms = async () => {
     setLoading(true);
@@ -102,8 +136,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
         return;
       }
       logInfo(`deckDesktopApps.apps size: ${deckApps.size}`);
-      let appIds = Array.from(deckApps.keys());
-      const autoWhitelist = new Set<number>();
+      const appIds = Array.from(deckApps.keys());
       for (const appId of appIds) {
         let name = `Unknown (${appId})`;
         if (typeof appStore !== "undefined") {
@@ -113,17 +146,6 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
           }
         }
         apps.push({ appId, name });
-        // Auto-whitelist RetroDECK
-        if (name.toLowerCase().includes("retrodeck")) {
-          autoWhitelist.add(appId);
-        }
-      }
-      if (autoWhitelist.size > 0) {
-        setWhitelist((prev) => {
-          const next = new Set(prev);
-          for (const id of autoWhitelist) next.add(id);
-          return next;
-        });
       }
     } catch (e) {
       logError(`Failed to enumerate non-steam games: ${e}`);
@@ -153,7 +175,18 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
   useEffect(() => {
     refreshPlatforms();
     loadNonSteamApps();
+    getWhitelistSettings().then((s) => {
+      setDisabledDefaults(s.disabled_defaults);
+      setCustomNames(s.custom_names);
+      setSettingsLoaded(true);
+    });
   }, []);
+
+  const persistWhitelist = (newDisabled: string[], newCustom: string[]) => {
+    setDisabledDefaults(newDisabled);
+    setCustomNames(newCustom);
+    updateWhitelistSettings(newDisabled, newCustom);
+  };
 
   const handleRemoveShortcuts = async (p: RegistryPlatform) => {
     setActionStatus(`Removing ${p.name} shortcuts...`);
@@ -332,7 +365,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                 layout="below"
                 onClick={async () => {
                   const retrodeckAtRisk = nonSteamApps.some(
-                    (a) => !whitelist.has(a.appId) && a.name.toLowerCase().includes("retrodeck")
+                    (a) => !whitelistedIds.has(a.appId) && a.name.toLowerCase().includes("retrodeck")
                   );
                   if (!confirmRemoveAll) {
                     setConfirmRemoveAll(true);
@@ -342,7 +375,7 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                     setConfirmRetrodeck(true);
                     return;
                   }
-                  const toRemove = nonSteamApps.filter((a) => !whitelist.has(a.appId));
+                  const toRemove = nonSteamApps.filter((a) => !whitelistedIds.has(a.appId));
                   setStatus(`Removing ${toRemove.length} non-steam games...`);
                   for (const app of toRemove) {
                     SteamClient.Apps.RemoveShortcut(app.appId);
@@ -357,10 +390,10 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                 {confirmRetrodeck
                   ? <span style={{ color: "#ff4444", fontWeight: "bold" }}>!! RETRODECK WILL BE REMOVED !! Click to confirm</span>
                   : confirmRemoveAll
-                    ? nonSteamApps.some((a) => !whitelist.has(a.appId) && a.name.toLowerCase().includes("retrodeck"))
-                      ? <span style={{ color: "#ff8800" }}>WARNING: RetroDECK not protected! Remove {nonSteamApps.length - whitelist.size} games?</span>
-                      : `Are you sure? Remove ${nonSteamApps.length - whitelist.size} games (${whitelist.size} whitelisted)?`
-                    : `Remove ${nonSteamApps.length - whitelist.size} Non-Steam Games${whitelist.size > 0 ? ` (${whitelist.size} excluded)` : ""}`}
+                    ? nonSteamApps.some((a) => !whitelistedIds.has(a.appId) && a.name.toLowerCase().includes("retrodeck"))
+                      ? <span style={{ color: "#ff8800" }}>WARNING: RetroDECK not protected! Remove {nonSteamApps.length - whitelistedIds.size} games?</span>
+                      : `Are you sure? Remove ${nonSteamApps.length - whitelistedIds.size} games (${whitelistedIds.size} whitelisted)?`
+                    : `Remove ${nonSteamApps.length - whitelistedIds.size} Non-Steam Games${whitelistedIds.size > 0 ? ` (${whitelistedIds.size} excluded)` : ""}`}
               </ButtonItem>
             </PanelSectionRow>
             {confirmRetrodeck && (
@@ -376,11 +409,16 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                   setConfirmRemoveAll(false);
                 }}
               >
-                {showWhitelist ? "Hide Whitelist" : `Configure Whitelist (${whitelist.size} protected)`}
+                {showWhitelist ? "Hide Whitelist" : `Configure Whitelist (${whitelistedIds.size} protected)`}
               </ButtonItem>
             </PanelSectionRow>
 
-            {showWhitelist && (
+            {showWhitelist && !settingsLoaded && (
+              <PanelSectionRow>
+                <Spinner />
+              </PanelSectionRow>
+            )}
+            {showWhitelist && settingsLoaded && (
               <>
                 <PanelSectionRow>
                   <TextField
@@ -395,18 +433,37 @@ export const DangerZone: FC<DangerZoneProps> = ({ onBack }) => {
                 {filteredApps.map((app) => (
                   <PanelSectionRow key={app.appId}>
                     <ToggleField
-                      label={app.name}
-                      checked={whitelist.has(app.appId)}
+                      label={
+                        DEFAULT_WHITELIST_PATTERNS.some((p) => app.name.toLowerCase().includes(p))
+                          ? `${app.name} (auto)`
+                          : app.name
+                      }
+                      checked={whitelistedIds.has(app.appId)}
                       onChange={(checked: boolean) => {
-                        setWhitelist((prev) => {
-                          const next = new Set(prev);
-                          if (checked) {
-                            next.add(app.appId);
-                          } else {
-                            next.delete(app.appId);
+                        const matchingPattern = DEFAULT_WHITELIST_PATTERNS.find(
+                          (p) => app.name.toLowerCase().includes(p)
+                        );
+                        let newDisabled = [...disabledDefaults];
+                        let newCustom = [...customNames];
+
+                        if (checked) {
+                          if (matchingPattern && disabledDefaults.includes(matchingPattern)) {
+                            newDisabled = newDisabled.filter((p) => p !== matchingPattern);
+                          } else if (!matchingPattern) {
+                            if (!newCustom.includes(app.name)) {
+                              newCustom.push(app.name);
+                            }
                           }
-                          return next;
-                        });
+                        } else {
+                          if (matchingPattern) {
+                            if (!newDisabled.includes(matchingPattern)) {
+                              newDisabled.push(matchingPattern);
+                            }
+                          }
+                          newCustom = newCustom.filter((n) => n !== app.name);
+                        }
+
+                        persistWhitelist(newDisabled, newCustom);
                         setConfirmRemoveAll(false);
                         setConfirmRetrodeck(false);
                       }}
