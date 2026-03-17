@@ -34,6 +34,7 @@ def plugin():
     import decky
 
     p._http_adapter = RommHttpAdapter(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._romm_api = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -41,7 +42,7 @@ def plugin():
     p._steam_config = steam_config
 
     p._sync_service = LibraryService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,

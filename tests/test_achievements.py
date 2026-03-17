@@ -22,6 +22,7 @@ def plugin():
         "log_level": "warn",
     }
     p._http_adapter = MagicMock()
+    p._romm_api = MagicMock()
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
@@ -36,7 +37,7 @@ def plugin():
     p._steam_config = steam_config
 
     p._sync_service = LibraryService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -49,7 +50,6 @@ def plugin():
         save_settings_to_disk=p._save_settings_to_disk,
         log_debug=p._log_debug,
     )
-    p._romm_api = MagicMock()
     p._achievements_service = AchievementsService(
         romm_api=p._romm_api,
         state=p._state,

@@ -154,7 +154,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     sync_service = LibraryService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         steam_config=cfg.steam_config,
         state=cfg.state,
         settings=cfg.settings,

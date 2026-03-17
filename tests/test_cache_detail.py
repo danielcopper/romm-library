@@ -39,7 +39,7 @@ def plugin(tmp_path):
     p._steam_config = steam_config
 
     p._sync_service = LibraryService(
-        http_adapter=MagicMock(),
+        romm_api=MagicMock(),
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,

@@ -38,7 +38,7 @@ def plugin():
     p._metadata_service = metadata_service
 
     p._sync_service = LibraryService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
