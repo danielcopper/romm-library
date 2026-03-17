@@ -10,9 +10,19 @@ from lib.errors import (
     RommServerError,
     RommSSLError,
     RommTimeoutError,
+    RommUnsupportedError,
     classify_error,
     error_response,
 )
+
+
+def _make_exc(cls):
+    """Create an instance of the given error class with appropriate constructor args."""
+    if cls is RommServerError:
+        return cls("test", status_code=500)
+    if cls is RommUnsupportedError:
+        return cls("test feature", "4.7.0")
+    return cls("test")
 
 
 class TestExceptionHierarchy:
@@ -32,10 +42,11 @@ class TestExceptionHierarchy:
             RommConnectionError,
             RommTimeoutError,
             RommSSLError,
+            RommUnsupportedError,
         ],
     )
     def test_subclass_is_romm_api_error(self, cls):
-        exc = cls("test") if cls is not RommServerError else cls("test", status_code=500)
+        exc = _make_exc(cls)
         assert isinstance(exc, RommApiError)
         assert isinstance(exc, Exception)
 
@@ -50,10 +61,11 @@ class TestExceptionHierarchy:
             RommConnectionError,
             RommTimeoutError,
             RommSSLError,
+            RommUnsupportedError,
         ],
     )
     def test_subclass_caught_by_romm_api_error(self, cls):
-        exc = cls("test") if cls is not RommServerError else cls("test", status_code=502)
+        exc = _make_exc(cls)
         with pytest.raises(RommApiError):
             raise exc
 
@@ -118,6 +130,20 @@ class TestExceptionAttributes:
         exc = RommSSLError("cert invalid")
         assert exc.status_code is None
 
+    def test_unsupported_error_attributes(self):
+        exc = RommUnsupportedError("save content download", "4.7.0")
+        assert exc.feature == "save content download"
+        assert exc.min_version == "4.7.0"
+        assert exc.status_code is None
+        assert "save content download" in str(exc)
+        assert "4.7.0" in str(exc)
+
+    def test_unsupported_error_with_url_and_method(self):
+        exc = RommUnsupportedError("notes", "4.7.0", url="/api/notes", method="GET")
+        assert exc.url == "/api/notes"
+        assert exc.method == "GET"
+        assert exc.feature == "notes"
+
 
 class TestExceptionMessage:
     """Exception messages are accessible via str()."""
@@ -175,6 +201,12 @@ class TestClassifyError:
         code, msg = classify_error(RommNotFoundError("missing"))
         assert code == "not_found_error"
         assert "not found" in msg.lower()
+
+    def test_unsupported_error(self):
+        code, msg = classify_error(RommUnsupportedError("save content download", "4.7.0"))
+        assert code == "unsupported_error"
+        assert "4.7.0" in msg
+        assert "requires RomM" in msg
 
     def test_generic_api_error(self):
         code, msg = classify_error(RommApiError("some API issue"))
@@ -273,3 +305,9 @@ class TestErrorResponse:
         resp = error_response(RommForbiddenError("forbidden"))
         assert resp["error_code"] == "forbidden_error"
         assert "Access denied" in resp["message"]
+
+    def test_unsupported_error_response(self):
+        resp = error_response(RommUnsupportedError("save content download", "4.7.0"))
+        assert resp["error_code"] == "unsupported_error"
+        assert resp["success"] is False
+        assert "4.7.0" in resp["message"]
