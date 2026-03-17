@@ -43,7 +43,7 @@ def plugin():
     )
 
     p._sgdb_service = SteamGridService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,

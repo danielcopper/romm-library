@@ -15,6 +15,7 @@ def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_adapter = MagicMock()
+    p._romm_api = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -39,7 +40,7 @@ def plugin():
     )
 
     p._sgdb_service = SteamGridService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -331,7 +332,7 @@ class TestGetSgdbArtworkBase64:
 
         svc = plugin._sgdb_service
         with (
-            patch.object(plugin._http_adapter, "request", return_value=romm_response),
+            patch.object(plugin._romm_api, "get_rom", return_value=romm_response),
             patch.object(svc, "_get_sgdb_game_id", return_value=9999),
             patch.object(svc, "_download_sgdb_artwork", side_effect=fake_download_sgdb),
         ):
@@ -360,7 +361,7 @@ class TestGetSgdbArtworkBase64:
         }
 
         # RomM API also returns no igdb_id
-        with patch.object(plugin._http_adapter, "request", return_value={"igdb_id": None}):
+        with patch.object(plugin._romm_api, "get_rom", return_value={"igdb_id": None}):
             result = await plugin.get_sgdb_artwork_base64(42, 1)
 
         assert result["base64"] is None
@@ -459,7 +460,7 @@ class TestGetSgdbArtworkBase64:
         plugin._sgdb_service._loop = asyncio.get_event_loop()
 
         # Not in registry or pending, RomM API fails
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Connection refused")):
+        with patch.object(plugin._romm_api, "get_rom", side_effect=Exception("Connection refused")):
             result = await plugin.get_sgdb_artwork_base64(42, 1)
 
         assert result["base64"] is None
