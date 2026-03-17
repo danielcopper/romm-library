@@ -25,7 +25,7 @@ def plugin():
     p._steam_config = steam_config
 
     metadata_service = MetadataService(
-        http_adapter=p._http_adapter,
+        romm_api=p._http_adapter,
         state=p._state,
         metadata_cache=p._metadata_cache,
         loop=asyncio.get_event_loop(),

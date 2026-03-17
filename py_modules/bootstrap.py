@@ -144,7 +144,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     metadata_service = MetadataService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         state=cfg.state,
         metadata_cache=cfg.metadata_cache,
         loop=cfg.loop,

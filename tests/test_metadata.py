@@ -17,6 +17,7 @@ def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_adapter = MagicMock()
+    p._romm_api = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -26,7 +27,7 @@ def plugin():
     p._steam_config = steam_config
 
     metadata_service = MetadataService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         state=p._state,
         metadata_cache=p._metadata_cache,
         loop=asyncio.get_event_loop(),
@@ -184,7 +185,7 @@ class TestGetRomMetadata:
             },
         }
 
-        with patch.object(plugin._http_adapter, "request", return_value=romm_response):
+        with patch.object(plugin._romm_api, "get_rom", return_value=romm_response):
             result = await plugin.get_rom_metadata(42)
 
         assert result["summary"] == "API summary"
@@ -231,7 +232,7 @@ class TestGetRomMetadata:
             "metadatum": {"genres": ["RPG"]},
         }
 
-        with patch.object(plugin._http_adapter, "request", return_value=romm_response):
+        with patch.object(plugin._romm_api, "get_rom", return_value=romm_response):
             result = await plugin.get_rom_metadata(42)
 
         assert result["summary"] == "Fresh summary"
@@ -256,7 +257,7 @@ class TestGetRomMetadata:
             "cached_at": 0,
         }
 
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Connection refused")):
+        with patch.object(plugin._romm_api, "get_rom", side_effect=Exception("Connection refused")):
             result = await plugin.get_rom_metadata(42)
 
         assert result["summary"] == "Stale summary"
@@ -269,7 +270,7 @@ class TestGetRomMetadata:
 
         plugin.settings["log_level"] = "warn"
 
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Connection refused")):
+        with patch.object(plugin._romm_api, "get_rom", side_effect=Exception("Connection refused")):
             result = await plugin.get_rom_metadata(42)
 
         assert result["summary"] == ""
@@ -293,7 +294,7 @@ class TestGetRomMetadata:
 
         romm_response = {"id": 42, "summary": "Just a summary"}
 
-        with patch.object(plugin._http_adapter, "request", return_value=romm_response):
+        with patch.object(plugin._romm_api, "get_rom", return_value=romm_response):
             result = await plugin.get_rom_metadata(42)
 
         assert result["summary"] == "Just a summary"
@@ -339,7 +340,7 @@ class TestGetRomMetadata:
         romm_response = {"id": 42, "summary": "test", "metadatum": {}}
 
         with (
-            patch.object(plugin._http_adapter, "request", return_value=romm_response),
+            patch.object(plugin._romm_api, "get_rom", return_value=romm_response),
             patch.object(decky.logger, "info") as mock_info,
         ):
             await plugin.get_rom_metadata(42)
@@ -551,7 +552,7 @@ class TestGetRomMetadata404:
             fp=None,
         )
 
-        with patch.object(plugin._http_adapter, "request", side_effect=http_404):
+        with patch.object(plugin._romm_api, "get_rom", side_effect=http_404):
             result = await plugin.get_rom_metadata(999)
 
         assert result["summary"] == ""
@@ -587,7 +588,7 @@ class TestGetRomMetadata404:
             fp=None,
         )
 
-        with patch.object(plugin._http_adapter, "request", side_effect=http_404):
+        with patch.object(plugin._romm_api, "get_rom", side_effect=http_404):
             result = await plugin.get_rom_metadata(999)
 
         assert result["summary"] == "Old cached data"
