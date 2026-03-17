@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 
 from lib import retrodeck_config
 from lib.errors import error_response
-from services.rom_placement import get_placement
 
 if TYPE_CHECKING:
     import logging
@@ -47,6 +46,7 @@ class DownloadService:
         emit: Callable,
         save_state: Callable,
         save_save_sync_state: Callable,
+        placement_fn: Callable,
     ):
         self._http_adapter = http_adapter
         self._state = state
@@ -57,6 +57,7 @@ class DownloadService:
         self._emit = emit
         self._save_state = save_state
         self._save_save_sync_state = save_save_sync_state
+        self._get_placement = placement_fn
 
         # Owned state
         self._download_in_progress: set = set()
@@ -358,7 +359,7 @@ class DownloadService:
                     new_path = os.path.join(root, decoded)
                     os.replace(old_path, new_path)
                     self._logger.info(f"Renamed URL-encoded dir: {dname} -> {decoded}")
-        placement_fn = get_placement(rom_detail.get("platform_slug", ""))
+        placement_fn = self._get_placement(rom_detail.get("platform_slug", ""))
         placement_fn(rom_dir, rom_detail.get("files", []), self._logger)
         self._maybe_generate_m3u(rom_dir, rom_detail)
         launch_file = self._detect_launch_file(rom_dir)
