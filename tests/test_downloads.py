@@ -503,10 +503,8 @@ class TestDownloadRequestPolling:
 
         with patch.object(plugin, "start_download", new_callable=AsyncMock) as mock_start:
             # Call internal logic directly: read file, process, clear
-            with open(requests_path, "r") as f:
-                requests = json.load(f)
-            with open(requests_path, "w") as f:
-                json.dump([], f)
+            requests = json.loads(requests_path.read_text())
+            requests_path.write_text(json.dumps([]))
             for req in requests:
                 rom_id = req.get("rom_id")
                 if rom_id:
@@ -524,14 +522,11 @@ class TestDownloadRequestPolling:
         requests_path.write_text(json.dumps([{"rom_id": 1}, {"rom_id": 2}]))
 
         # Simulate the cleanup logic from _poll_download_requests
-        with open(requests_path, "r") as f:
-            requests = json.load(f)
-        with open(requests_path, "w") as f:
-            json.dump([], f)
+        requests = json.loads(requests_path.read_text())
+        requests_path.write_text(json.dumps([]))
 
         # Verify file was cleared
-        with open(requests_path, "r") as f:
-            remaining = json.load(f)
+        remaining = json.loads(requests_path.read_text())
         assert remaining == []
         assert len(requests) == 2
 
@@ -1621,7 +1616,7 @@ class TestMultiFilePerFileDownload:
             ],
         }
 
-        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
+        def fake_download_file(_rom_id, _file_name, dest, _progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 100)
 
@@ -1669,7 +1664,7 @@ class TestMultiFilePerFileDownload:
 
         progress_calls = []
 
-        def fake_download_file(_rom_id, file_name, dest, progress_callback=None, _resume_from=0):
+        def fake_download_file(_rom_id, _file_name, dest, progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 1000)
             if progress_callback:
@@ -1712,7 +1707,7 @@ class TestMultiFilePerFileDownload:
 
         resume_from_seen = []
 
-        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, _file_name, dest, _progress_callback=None, resume_from=0):
             resume_from_seen.append(resume_from)
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 1000)
@@ -1845,7 +1840,7 @@ class TestMultiFilePerFileDownload:
             ],
         }
 
-        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
+        def fake_download_file(_rom_id, _file_name, dest, _progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 100)
 
@@ -1907,7 +1902,7 @@ class TestMultiFilePerFileDownload:
             ],
         }
 
-        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
+        def fake_download_file(_rom_id, _file_name, dest, _progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 100)
 
@@ -1955,7 +1950,7 @@ class TestMultiFilePerFileDownload:
 
         call_count = [0]
 
-        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
+        def fake_download_file(_rom_id, _file_name, dest, _progress_callback=None, _resume_from=0):
             call_count[0] += 1
             if call_count[0] == 1:
                 with open(dest, "wb") as f:
@@ -2045,7 +2040,7 @@ class TestMultiFilePerFileDownload:
 
         call_count = [0]
 
-        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
+        def fake_download_file(_rom_id, _file_name, dest, _progress_callback=None, _resume_from=0):
             call_count[0] += 1
             if call_count[0] == 1:
                 with open(dest, "wb") as f:
