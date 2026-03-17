@@ -30,6 +30,8 @@ from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.saves import SaveService
 from services.steamgrid import SteamGridService
 
+from lib.rom_placement import get_placement
+
 
 @dataclass
 class WiringConfig:
@@ -175,6 +177,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         emit=cfg.emit,
         save_state=cfg.save_state,
         save_save_sync_state=save_sync_service.save_state,
+        placement_fn=get_placement,
     )
 
     firmware_service = FirmwareService(

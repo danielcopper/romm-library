@@ -5,7 +5,7 @@ import os
 import tempfile
 from unittest.mock import patch
 
-from services.rom_placement import (
+from lib.rom_placement import (
     PLATFORM_PLACEMENT,
     _default_placement,
     get_placement,
@@ -62,7 +62,7 @@ def test_place_wiiu_moves_update_folder():
         content_file = os.path.join(folder_path, "update.bin")
         open(content_file, "w").close()
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         expected_dest = os.path.join(bios_dir, "cemu", "mlc01", "usr", "title", "0005000e", "00050000101c9400")
@@ -78,7 +78,7 @@ def test_place_wiiu_moves_dlc_folder():
         dlc_file = os.path.join(folder_path, "dlc.bin")
         open(dlc_file, "w").close()
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         expected_dest = os.path.join(bios_dir, "cemu", "mlc01", "usr", "title", "0005000c", "00050000101c9400")
@@ -94,7 +94,7 @@ def test_place_wiiu_keeps_game_folder():
         game_file = os.path.join(folder_path, "game.bin")
         open(game_file, "w").close()
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         # Game folder must remain in rom_dir
@@ -108,7 +108,7 @@ def test_place_wiiu_no_matching_folders():
         other = os.path.join(rom_dir, "some_random_folder")
         os.makedirs(other)
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         assert os.path.exists(other)
@@ -122,7 +122,7 @@ def test_place_wiiu_creates_target_dirs():
         expected_dest = os.path.join(bios_dir, "cemu", "mlc01", "usr", "title", "0005000e", "aabbccdd11223344")
         assert not os.path.exists(expected_dest)
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         assert os.path.isdir(expected_dest)
@@ -133,7 +133,7 @@ def test_place_wiiu_title_id_lowercased():
         folder_name = "Game [Update] [AABBCCDD11223344]"
         os.makedirs(os.path.join(rom_dir, folder_name))
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         expected_dest = os.path.join(bios_dir, "cemu", "mlc01", "usr", "title", "0005000e", "aabbccdd11223344")
@@ -147,7 +147,7 @@ def test_place_wiiu_title_id_lowercased():
 
 def test_place_wiiu_no_bios_path(caplog):
     with tempfile.TemporaryDirectory() as rom_dir:
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=None):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=None):
             with caplog.at_level(logging.WARNING):
                 place_wiiu(rom_dir, [], _logger)
         assert "bios path not available" in caplog.text
@@ -155,7 +155,7 @@ def test_place_wiiu_no_bios_path(caplog):
 
 def test_place_wiiu_empty_bios_path_string(caplog):
     with tempfile.TemporaryDirectory() as rom_dir:
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=""):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=""):
             with caplog.at_level(logging.WARNING):
                 place_wiiu(rom_dir, [], _logger)
         assert "bios path not available" in caplog.text
@@ -164,7 +164,7 @@ def test_place_wiiu_empty_bios_path_string(caplog):
 def test_place_wiiu_rom_dir_does_not_exist(caplog):
     with tempfile.TemporaryDirectory() as bios_dir:
         nonexistent = "/tmp/does_not_exist_rom_placement_test"
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             with caplog.at_level(logging.WARNING):
                 place_wiiu(nonexistent, [], _logger)
         assert "cannot list rom_dir" in caplog.text
@@ -176,7 +176,7 @@ def test_place_wiiu_skips_files_not_dirs():
         fake_file = os.path.join(rom_dir, "Game [Update] [00050000101c9400]")
         open(fake_file, "w").close()
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         # file should remain untouched
@@ -192,7 +192,7 @@ def test_place_wiiu_multiple_titles():
         os.makedirs(update_folder)
         os.makedirs(dlc_folder)
 
-        with patch("services.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
+        with patch("lib.rom_placement.retrodeck_config.get_bios_path", return_value=bios_dir):
             place_wiiu(rom_dir, [], _logger)
 
         # Game stays

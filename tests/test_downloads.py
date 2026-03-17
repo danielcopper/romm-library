@@ -8,6 +8,8 @@ from adapters.steam_config import SteamConfigAdapter
 from services.downloads import DownloadService
 from services.library import LibraryService
 
+from lib.rom_placement import get_placement
+
 # conftest.py patches decky before this import
 from main import Plugin
 
@@ -50,6 +52,7 @@ def plugin():
         emit=decky.emit,
         save_state=MagicMock(),
         save_save_sync_state=MagicMock(),
+        placement_fn=get_placement,
     )
     return p
 
