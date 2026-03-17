@@ -27,11 +27,11 @@ _WIIU_TYPE_SUBPATH = {
 }
 
 
-def _default_placement(rom_dir: str, files: list, logger: logging.Logger) -> None:
+def _default_placement(_rom_dir: str, _files: list, _logger: logging.Logger) -> None:
     """No-op placement — used for platforms that need no special file handling."""
 
 
-def place_wiiu(rom_dir: str, files: list, logger: logging.Logger) -> None:
+def place_wiiu(rom_dir: str, _files: list, logger: logging.Logger) -> None:
     """Move WiiU Update/DLC folders into their Cemu mlc01 locations.
 
     RomM names WiiU folders like:

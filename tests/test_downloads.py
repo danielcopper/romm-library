@@ -181,7 +181,7 @@ class TestGetDownloadQueue:
         result = await plugin.get_download_queue()
         assert len(result["downloads"]) == 1
         assert result["downloads"][0]["status"] == "downloading"
-        assert result["downloads"][0]["progress"] == 0.5
+        assert result["downloads"][0]["progress"] == pytest.approx(0.5)
 
     @pytest.mark.asyncio
     async def test_returns_completed_downloads(self, plugin):
@@ -683,7 +683,7 @@ class TestDoDownloadSingleFile:
             "has_multiple_files": False,
         }
 
-        def fake_download(path, dest, progress_callback=None):
+        def fake_download(_path, dest, _progress_callback=None):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 512)
 
@@ -748,7 +748,7 @@ class TestDoDownloadMultiFile:
             "has_multiple_files": True,
         }
 
-        def fake_download(path, dest, progress_callback=None):
+        def fake_download(_path, dest, _progress_callback=None):
             with open(dest, "wb") as f:
                 f.write(zip_bytes)
 
@@ -947,7 +947,7 @@ class TestDoDownloadCancelled:
             "has_multiple_files": False,
         }
 
-        def fake_download_cancel(path, dest, progress_callback=None):
+        def fake_download_cancel(_path, _dest, _progress_callback=None):
             raise asyncio.CancelledError()
 
         plugin._download_service._loop = asyncio.get_event_loop()
@@ -987,7 +987,7 @@ class TestDoDownloadZipFailure:
             "has_multiple_files": True,
         }
 
-        def fake_download(path, dest, progress_callback=None):
+        def fake_download(_path, dest, _progress_callback=None):
             # Write invalid data (not a real zip)
             with open(dest, "wb") as f:
                 f.write(b"not a zip file")
@@ -1182,7 +1182,7 @@ class TestUrlEncodedFilenameRename:
             "has_multiple_files": True,
         }
 
-        def fake_download(path, dest, progress_callback=None):
+        def fake_download(_path, dest, _progress_callback=None):
             with open(dest, "wb") as f:
                 f.write(zip_bytes)
 
@@ -1233,7 +1233,7 @@ class TestUrlEncodedFilenameRename:
             "has_multiple_files": True,
         }
 
-        def fake_download(path, dest, progress_callback=None):
+        def fake_download(_path, dest, _progress_callback=None):
             with open(dest, "wb") as f:
                 f.write(zip_bytes)
 
@@ -1621,7 +1621,7 @@ class TestMultiFilePerFileDownload:
             ],
         }
 
-        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 100)
 
@@ -1669,7 +1669,7 @@ class TestMultiFilePerFileDownload:
 
         progress_calls = []
 
-        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, file_name, dest, progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 1000)
             if progress_callback:
@@ -1712,7 +1712,7 @@ class TestMultiFilePerFileDownload:
 
         resume_from_seen = []
 
-        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, resume_from=0):
             resume_from_seen.append(resume_from)
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 1000)
@@ -1791,7 +1791,7 @@ class TestMultiFilePerFileDownload:
             # No "files" key — should use ZIP fallback
         }
 
-        def fake_download(path, dest, progress_callback=None):
+        def fake_download(_path, dest, _progress_callback=None):
             with open(dest, "wb") as f:
                 f.write(zip_bytes)
 
@@ -1845,7 +1845,7 @@ class TestMultiFilePerFileDownload:
             ],
         }
 
-        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 100)
 
@@ -1907,7 +1907,7 @@ class TestMultiFilePerFileDownload:
             ],
         }
 
-        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
             with open(dest, "wb") as f:
                 f.write(b"\x00" * 100)
 
@@ -1955,7 +1955,7 @@ class TestMultiFilePerFileDownload:
 
         call_count = [0]
 
-        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
             call_count[0] += 1
             if call_count[0] == 1:
                 with open(dest, "wb") as f:
@@ -2045,7 +2045,7 @@ class TestMultiFilePerFileDownload:
 
         call_count = [0]
 
-        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+        def fake_download_file(_rom_id, file_name, dest, _progress_callback=None, _resume_from=0):
             call_count[0] += 1
             if call_count[0] == 1:
                 with open(dest, "wb") as f:
