@@ -26,6 +26,7 @@ import { hideNativePlaySection, showNativePlaySection } from "../utils/styleInje
 import {
   getCachedGameDetail,
   startDownload,
+  cancelDownload,
   removeRom,
   debugLog,
   preLaunchSync,
@@ -489,8 +490,8 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
             background: baseBg,
             "--romm-pulse-color": pulseColor,
           } as React.CSSProperties}
-          onClick={handleDownload}
-          disabled={actionPending || isOffline}
+          onClick={downloading ? () => { if (romId) cancelDownload(romId); } : handleDownload}
+          disabled={(actionPending && !dlProgress) || isOffline}
         >
           {/* Progress fill bar */}
           {downloading && (
