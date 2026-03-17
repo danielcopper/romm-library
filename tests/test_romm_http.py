@@ -1245,3 +1245,133 @@ class TestDownloadTimeout:
             adapter.download("/roms/game.zip", dest)  # should not raise
 
         assert open(dest, "rb").read() == data
+
+
+class TestDownloadFile:
+    """Tests for download_file() — per-file endpoint with Range/resume support."""
+
+    def _make_adapter(self):
+        import logging
+
+        settings = {"romm_url": "http://romm.local", "romm_user": "user", "romm_pass": "pass"}
+        return RommHttpAdapter(settings, "/fake/plugin_dir", logging.getLogger("test"))
+
+    def _make_resp(self, data: bytes, status: int = 200):
+        from io import BytesIO
+
+        mock_resp = MagicMock()
+        mock_resp.status = status
+        mock_resp.headers = {"Content-Length": str(len(data))}
+        mock_resp.read = BytesIO(data).read
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        return mock_resp
+
+    def test_download_file_fresh(self, tmp_path):
+        """Basic download — correct URL constructed, file written."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "game.bin")
+        data = b"rom data"
+
+        mock_resp = self._make_resp(data, status=200)
+        captured = {}
+
+        def fake_urlopen(req, context, timeout):
+            captured["url"] = req.full_url
+            captured["headers"] = dict(req.headers)
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            adapter.download_file(42, "game.bin", dest)
+
+        assert captured["url"] == "http://romm.local/api/roms/42/files/content/game.bin"
+        assert "Range" not in captured["headers"]
+        assert open(dest, "rb").read() == data
+
+    def test_download_file_resume_sends_range_header(self, tmp_path):
+        """When resume_from > 0, a Range header is added to the request."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "game.bin")
+        data = b"remaining bytes"
+
+        mock_resp = self._make_resp(data, status=206)
+        captured = {}
+
+        def fake_urlopen(req, context, timeout):
+            captured["headers"] = dict(req.headers)
+            return mock_resp
+
+        existing = b"already written"
+        open(dest, "wb").write(existing)
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            adapter.download_file(42, "game.bin", dest, resume_from=len(existing))
+
+        assert captured["headers"].get("Range") == f"bytes={len(existing)}-"
+
+    def test_download_file_206_appends(self, tmp_path):
+        """206 response → file opened in append mode, existing bytes preserved."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "game.bin")
+        existing = b"existing"
+        new_data = b"new part"
+
+        open(dest, "wb").write(existing)
+
+        mock_resp = self._make_resp(new_data, status=206)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            adapter.download_file(42, "game.bin", dest, resume_from=len(existing))
+
+        assert open(dest, "rb").read() == existing + new_data
+
+    def test_download_file_200_on_resume_restarts(self, tmp_path):
+        """200 despite resume_from → fresh write (server doesn't support Range)."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "game.bin")
+        existing = b"stale data"
+        full_data = b"complete file"
+
+        open(dest, "wb").write(existing)
+
+        mock_resp = self._make_resp(full_data, status=200)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            adapter.download_file(42, "game.bin", dest, resume_from=len(existing))
+
+        assert open(dest, "rb").read() == full_data
+
+    def test_download_file_translates_errors(self, tmp_path):
+        """HTTP errors are translated via translate_http_error."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "game.bin")
+
+        http_err = urllib.error.HTTPError(
+            "http://romm.local/api/roms/42/files/content/game.bin",
+            404,
+            "Not Found",
+            {},
+            None,
+        )
+
+        with patch("urllib.request.urlopen", side_effect=http_err):
+            with pytest.raises(RommNotFoundError):
+                adapter.download_file(42, "game.bin", dest)
+
+    def test_download_file_url_encodes_file_name(self, tmp_path):
+        """File names with spaces/special chars are URL-encoded in the path."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "out.bin")
+        data = b"data"
+
+        mock_resp = self._make_resp(data, status=200)
+        captured = {}
+
+        def fake_urlopen(req, context, timeout):
+            captured["url"] = req.full_url
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            adapter.download_file(7, "my game (USA).bin", dest)
+
+        assert "my%20game%20%28USA%29.bin" in captured["url"]

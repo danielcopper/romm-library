@@ -289,6 +289,42 @@ class RommHttpAdapter:
 
         return self.with_retry(_do_download)
 
+    def download_file(self, rom_id: int, file_name: str, dest: str, progress_callback=None, resume_from: int = 0):
+        """Download a single ROM file via the per-file endpoint, with optional resume."""
+        encoded_name = urllib.parse.quote(file_name, safe="")
+        url = f"{self._settings['romm_url'].rstrip('/')}/api/roms/{rom_id}/files/content/{encoded_name}"
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _do_download():
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("Authorization", self.auth_header())
+            if resume_from > 0:
+                req.add_header("Range", f"bytes={resume_from}-")
+            ctx = self.ssl_context()
+            try:
+                with urllib.request.urlopen(req, context=ctx, timeout=self._CONNECT_TIMEOUT) as resp:
+                    raw_sock = getattr(getattr(getattr(resp, "fp", None), "raw", None), "_sock", None)
+                    if raw_sock is not None:
+                        raw_sock.settimeout(self._READ_TIMEOUT)
+                    is_206 = resp.status == 206
+                    total, downloaded = self._stream_to_file(
+                        resp,
+                        dest_path,
+                        progress_callback,
+                        block_size=self._DOWNLOAD_BLOCK_SIZE,
+                        url=url,
+                        append=is_206,
+                        offset=resume_from if is_206 else 0,
+                    )
+                self._validate_download(total, downloaded)
+            except RommApiError:
+                raise
+            except Exception as exc:
+                raise self.translate_http_error(exc, url, "GET") from exc
+
+        return self.with_retry(_do_download)
+
     def json_request(self, path: str, data, method: str = "POST"):
         """Send a JSON request (POST/PUT) to RomM API, return parsed response."""
         url = self._settings["romm_url"].rstrip("/") + path
