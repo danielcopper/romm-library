@@ -311,12 +311,12 @@ class DownloadService:
         """Sync helper for per-file multi-file download — called from executor thread."""
         files = rom_detail.get("files", [])
         total_bytes = sum(f.get("file_size_bytes", 0) for f in files)
-        norm_rom_dir = os.path.normpath(rom_dir)
         os.makedirs(rom_dir, exist_ok=True)
+        norm_rom_dir = os.path.realpath(rom_dir)
         completed_bytes = [0]
         for file_entry in files:
             file_name = file_entry["file_name"]
-            dest = os.path.normpath(os.path.join(rom_dir, file_name))
+            dest = os.path.realpath(os.path.join(rom_dir, file_name))
             if not dest.startswith(norm_rom_dir + os.sep):
                 raise ValueError(f"File name {file_name!r} would write outside rom_dir")
             os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -481,6 +481,19 @@ class DownloadService:
             self._download_queue[rom_id]["status"] = "cancelled"
             self._cleanup_partial_download(target_path, rom_detail.get("has_multiple_files", False), file_name)
             self._logger.info(f"Download cancelled: {rom_name}")
+            await self._emit(
+                "download_progress",
+                {
+                    "rom_id": rom_id,
+                    "rom_name": rom_name,
+                    "platform_name": platform_name,
+                    "file_name": file_name,
+                    "status": "cancelled",
+                    "progress": 0,
+                    "bytes_downloaded": 0,
+                    "total_bytes": 0,
+                },
+            )
             raise
 
         except Exception as e:

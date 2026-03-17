@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-_WIIU_FOLDER_RE = re.compile(r"\[(Game|Update|DLC)\]\s*\[([0-9a-fA-F]+)\]")
+_WIIU_FOLDER_RE = re.compile(r"\[(Game|Update|DLC)\]\s*\[([0-9a-fA-F]{1,32})\]")
 
 # Cemu mlc01 title base paths by WiiU content type
 _WIIU_TYPE_SUBPATH = {

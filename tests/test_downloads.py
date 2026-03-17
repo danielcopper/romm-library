@@ -1823,10 +1823,12 @@ class TestMultiFilePerFileDownload:
         roms_dir.mkdir(parents=True)
         target_path = str(roms_dir / "zelda_botw.zip")
 
-        title_id = "101c9400"
-        game_folder = f"zelda [Game] [00050000{title_id}]"
-        update_folder = f"zelda [Update] [{title_id}]"
-        dlc_folder = f"zelda [DLC] [{title_id}]"
+        title_id_game = "00050000101c9400"
+        title_id_update = "0005000e101c9400"
+        title_id_dlc = "0005000c101c9400"
+        game_folder = f"zelda [Game] [{title_id_game}]"
+        update_folder = f"zelda [Update] [{title_id_update}]"
+        dlc_folder = f"zelda [DLC] [{title_id_dlc}]"
 
         rom_detail = {
             "id": 99,
@@ -1860,19 +1862,19 @@ class TestMultiFilePerFileDownload:
         assert (rom_dir / game_folder).is_dir()
         assert (rom_dir / game_folder / "code" / "game.rpx").exists()
 
-        # Update folder moved to mlc01/0005000e/{title_id}/
-        update_dest = bios_dir / "cemu" / "mlc01" / "usr" / "title" / "0005000e" / title_id
+        # Update folder moved to mlc01/0005000e/{title_id_update}/
+        update_dest = bios_dir / "cemu" / "mlc01" / "usr" / "title" / "0005000e" / title_id_update
         assert update_dest.is_dir()
         assert (update_dest / "code" / "update.rpx").exists()
 
-        # DLC folder moved to mlc01/0005000c/{title_id}/
-        dlc_dest = bios_dir / "cemu" / "mlc01" / "usr" / "title" / "0005000c" / title_id
+        # DLC folder moved to mlc01/0005000c/{title_id_dlc}/
+        dlc_dest = bios_dir / "cemu" / "mlc01" / "usr" / "title" / "0005000c" / title_id_dlc
         assert dlc_dest.is_dir()
         assert (dlc_dest / "code" / "dlc.rpx").exists()
 
         # Update/DLC folders no longer in rom_dir
-        assert not (rom_dir / update_folder).exists()
-        assert not (rom_dir / dlc_folder).exists()
+        assert not (rom_dir / update_folder).is_dir()
+        assert not (rom_dir / dlc_folder).is_dir()
 
         assert plugin._download_service._download_queue[99]["status"] == "completed"
 
@@ -1921,3 +1923,145 @@ class TestMultiFilePerFileDownload:
         assert (rom_dir / "disc1.cue").exists()
         assert (rom_dir / "disc1.bin").exists()
         assert plugin._download_service._download_queue[55]["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_cancel_during_download(self, plugin, tmp_path):
+        """CancelledError on second file: status is cancelled, cleanup runs, cancelled event emitted."""
+        import asyncio
+        from unittest.mock import patch
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.emit.reset_mock()
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        target_path = str(roms_dir / "FF7.zip")
+
+        rom_detail = {
+            "id": 77,
+            "name": "Final Fantasy VII",
+            "fs_name": "FF7.zip",
+            "fs_name_no_ext": "FF7",
+            "platform_slug": "psx",
+            "platform_name": "PlayStation",
+            "has_multiple_files": True,
+            "files": [
+                {"file_name": "disc1.bin", "file_size_bytes": 100},
+                {"file_name": "disc2.bin", "file_size_bytes": 100},
+            ],
+        }
+
+        call_count = [0]
+
+        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                with open(dest, "wb") as f:
+                    f.write(b"\x00" * 100)
+            else:
+                raise asyncio.CancelledError()
+
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[77] = {"rom_id": 77, "status": "downloading", "progress": 0}
+
+        with patch.object(plugin._http_adapter, "download_file", side_effect=fake_download_file):
+            with pytest.raises(asyncio.CancelledError):
+                await plugin._download_service._do_download(77, rom_detail, target_path, "psx")
+
+        assert plugin._download_service._download_queue[77]["status"] == "cancelled"
+
+        # Verify cancelled event was emitted
+        emitted_events = [c for c in decky.emit.call_args_list if c[0][0] == "download_progress"]
+        cancelled_events = [c for c in emitted_events if c[0][1].get("status") == "cancelled"]
+        assert len(cancelled_events) == 1
+        assert cancelled_events[0][0][1]["rom_id"] == 77
+
+    @pytest.mark.asyncio
+    async def test_multi_file_path_traversal_rejected(self, plugin, tmp_path):
+        """File names that traverse outside rom_dir raise ValueError."""
+        import asyncio
+
+        import decky
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        target_path = str(roms_dir / "evil.zip")
+
+        rom_detail = {
+            "id": 88,
+            "name": "Evil ROM",
+            "fs_name": "evil.zip",
+            "fs_name_no_ext": "evil",
+            "platform_slug": "psx",
+            "platform_name": "PlayStation",
+            "has_multiple_files": True,
+            "files": [
+                {"file_name": "../../etc/passwd", "file_size_bytes": 100},
+            ],
+        }
+
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[88] = {"rom_id": 88, "status": "downloading", "progress": 0}
+
+        await plugin._download_service._do_download(88, rom_detail, target_path, "psx")
+
+        assert plugin._download_service._download_queue[88]["status"] == "failed"
+        assert "would write outside rom_dir" in plugin._download_service._download_queue[88]["error"]
+
+    @pytest.mark.asyncio
+    async def test_multi_file_mid_sequence_failure(self, plugin, tmp_path):
+        """API error on second file: status is failed, first file's .tmp is cleaned up."""
+        import asyncio
+        from unittest.mock import patch
+
+        import decky
+
+        from lib.errors import RommApiError
+
+        decky.DECKY_USER_HOME = str(tmp_path)
+        decky.emit.reset_mock()
+
+        roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
+        roms_dir.mkdir(parents=True)
+        target_path = str(roms_dir / "FF7.zip")
+
+        rom_detail = {
+            "id": 99,
+            "name": "Final Fantasy VII",
+            "fs_name": "FF7.zip",
+            "fs_name_no_ext": "FF7",
+            "platform_slug": "psx",
+            "platform_name": "PlayStation",
+            "has_multiple_files": True,
+            "files": [
+                {"file_name": "disc1.bin", "file_size_bytes": 100},
+                {"file_name": "disc2.bin", "file_size_bytes": 100},
+            ],
+        }
+
+        call_count = [0]
+
+        def fake_download_file(rom_id, file_name, dest, progress_callback=None, resume_from=0):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                with open(dest, "wb") as f:
+                    f.write(b"\x00" * 100)
+            else:
+                raise RommApiError("Server error")
+
+        plugin._download_service._loop = asyncio.get_event_loop()
+        plugin._download_service._download_queue[99] = {"rom_id": 99, "status": "downloading", "progress": 0}
+
+        with patch.object(plugin._http_adapter, "download_file", side_effect=fake_download_file):
+            await plugin._download_service._do_download(99, rom_detail, target_path, "psx")
+
+        assert plugin._download_service._download_queue[99]["status"] == "failed"
+
+        # First file's .tmp must not remain
+        rom_dir = roms_dir / "FF7"
+        tmp_files = list(rom_dir.glob("*.tmp")) if rom_dir.exists() else []
+        assert tmp_files == [], f"Leftover .tmp files: {tmp_files}"

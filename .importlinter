@@ -51,3 +51,4 @@ modules =
     services.metadata
     services.achievements
     services.migration
+    services.rom_placement
