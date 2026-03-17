@@ -995,3 +995,194 @@ class TestValidateDownload:
 
     def test_no_content_length_but_data_received(self):
         RommHttpAdapter._validate_download(0, 500)  # should not raise
+
+
+class TestDownloadTimeout:
+    """Tests for progressive read timeout in download() and _stream_to_file()."""
+
+    def _make_adapter(self):
+        import logging
+
+        settings = {"romm_url": "http://romm.local", "romm_user": "user", "romm_pass": "pass"}
+        return RommHttpAdapter(settings, "/fake/plugin_dir", logging.getLogger("test"))
+
+    # ------------------------------------------------------------------
+    # _stream_to_file direct tests
+    # ------------------------------------------------------------------
+
+    def test_stream_to_file_socket_timeout_mid_transfer_raises_timeout_error(self, tmp_path):
+        """socket.timeout during resp.read() raises RommTimeoutError with 'stalled' in message."""
+        resp = MagicMock()
+        resp.headers = {"Content-Length": "65536"}
+        # First read returns data, second raises socket.timeout
+        resp.read.side_effect = [b"x" * 256, socket.timeout("timed out")]
+
+        dest = tmp_path / "rom.zip"
+        with pytest.raises(RommTimeoutError, match="stalled"):
+            RommHttpAdapter._stream_to_file(resp, dest)
+
+    def test_stream_to_file_timeout_error_mid_transfer_raises_timeout_error(self, tmp_path):
+        """TimeoutError during resp.read() is also caught and re-raised as RommTimeoutError."""
+        resp = MagicMock()
+        resp.headers = {"Content-Length": "65536"}
+        resp.read.side_effect = [b"y" * 512, TimeoutError("read timed out")]
+
+        dest = tmp_path / "rom.zip"
+        with pytest.raises(RommTimeoutError, match="stalled"):
+            RommHttpAdapter._stream_to_file(resp, dest)
+
+    def test_stream_to_file_uses_larger_block_size(self, tmp_path):
+        """resp.read is called with block_size=65536 (the class default)."""
+        from io import BytesIO
+
+        data = b"a" * 65536
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(data))}
+        # Use a real BytesIO so read() terminates naturally, but spy via side_effect wrapper
+        stream = BytesIO(data)
+        calls = []
+
+        def read_spy(n):
+            calls.append(n)
+            return stream.read(n)
+
+        resp.read = read_spy
+
+        dest = tmp_path / "output.bin"
+        RommHttpAdapter._stream_to_file(resp, dest, block_size=65536)
+        # Every call to read should have used block_size=65536
+        assert all(n == 65536 for n in calls)
+
+    def test_stream_to_file_custom_block_size(self, tmp_path):
+        """block_size parameter is forwarded to resp.read correctly."""
+        from io import BytesIO
+
+        data = b"b" * 1024
+        resp = MagicMock()
+        resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        calls = []
+
+        def read_spy(n):
+            calls.append(n)
+            return stream.read(n)
+
+        resp.read = read_spy
+
+        dest = tmp_path / "output.bin"
+        RommHttpAdapter._stream_to_file(resp, dest, block_size=512)
+        assert all(n == 512 for n in calls)
+
+    # ------------------------------------------------------------------
+    # download() integration tests
+    # ------------------------------------------------------------------
+
+    def test_download_stall_raises_timeout_error(self, tmp_path):
+        """Mock urlopen returns a response whose read() stalls — RommTimeoutError raised."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "rom.zip")
+
+        mock_resp = MagicMock()
+        mock_resp.headers = {"Content-Length": "131072"}
+        call_count = 0
+
+        def _read(n):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return b"x" * 65536
+            raise socket.timeout("no data")
+
+        mock_resp.read = _read
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            with pytest.raises(RommTimeoutError, match="stalled") as exc_info:
+                adapter.download("/roms/big.zip", dest)
+        assert "romm.local" in exc_info.value.url
+
+    def test_large_download_succeeds_with_slow_chunks(self, tmp_path):
+        """download() completes successfully when chunks arrive steadily."""
+        from io import BytesIO
+
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "rom.zip")
+        data = b"chunk" * 13107  # ~64KB
+
+        mock_resp = MagicMock()
+        mock_resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        mock_resp.read = stream.read
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            adapter.download("/roms/game.zip", dest)
+
+        assert open(dest, "rb").read() == data
+
+    def test_connection_timeout_still_works(self, tmp_path):
+        """socket.timeout raised by urlopen (connection phase) -> RommTimeoutError."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "rom.zip")
+
+        with patch("urllib.request.urlopen", side_effect=socket.timeout("connection timed out")):
+            with pytest.raises(RommTimeoutError):
+                adapter.download("/roms/game.zip", dest)
+
+    def test_connection_timeout_via_urlerror(self, tmp_path):
+        """URLError-wrapped socket.timeout (real urllib path) -> RommTimeoutError."""
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "rom.zip")
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError(socket.timeout("connection timed out"))):
+            with pytest.raises(RommTimeoutError):
+                adapter.download("/roms/game.zip", dest)
+
+    def test_download_sets_read_timeout_on_socket(self, tmp_path):
+        """After urlopen succeeds, settimeout(_READ_TIMEOUT) is called on the raw socket."""
+        from io import BytesIO
+
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "rom.zip")
+        data = b"hello"
+
+        mock_sock = MagicMock()
+        mock_raw = MagicMock()
+        mock_raw._sock = mock_sock
+        mock_fp = MagicMock()
+        mock_fp.raw = mock_raw
+
+        mock_resp = MagicMock()
+        mock_resp.fp = mock_fp
+        mock_resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        mock_resp.read = stream.read
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            adapter.download("/roms/game.zip", dest)
+
+        mock_sock.settimeout.assert_called_once_with(RommHttpAdapter._READ_TIMEOUT)
+
+    def test_download_no_socket_attribute_does_not_crash(self, tmp_path):
+        """When fp/raw/_sock chain is absent, download proceeds without crashing."""
+        from io import BytesIO
+
+        adapter = self._make_adapter()
+        dest = str(tmp_path / "rom.zip")
+        data = b"hello"
+
+        mock_resp = MagicMock()
+        mock_resp.fp = None  # breaks the getattr chain: getattr(None, 'raw', None) -> None
+        mock_resp.headers = {"Content-Length": str(len(data))}
+        stream = BytesIO(data)
+        mock_resp.read = stream.read
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            adapter.download("/roms/game.zip", dest)  # should not raise
+
+        assert open(dest, "rb").read() == data

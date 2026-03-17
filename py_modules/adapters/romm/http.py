@@ -44,6 +44,10 @@ class RommHttpAdapter:
         Logger instance (replaces ``decky.logger``).
     """
 
+    _CONNECT_TIMEOUT = 30
+    _READ_TIMEOUT = 60
+    _DOWNLOAD_BLOCK_SIZE = 65536
+
     def __init__(self, settings: dict, plugin_dir: str, logger: logging.Logger) -> None:
         self._settings = settings
         self._plugin_dir = plugin_dir
@@ -206,15 +210,23 @@ class RommHttpAdapter:
         return self.with_retry(_do_request)
 
     @staticmethod
-    def _stream_to_file(resp, dest_path: Path, progress_callback=None) -> tuple[int, int]:
+    def _stream_to_file(
+        resp, dest_path: Path, progress_callback=None, block_size: int = 65536, url: str = ""
+    ) -> tuple[int, int]:
         """Read *resp* into *dest_path* and return ``(total, downloaded)``."""
         raw_total = resp.headers.get("Content-Length")
         total = int(raw_total) if raw_total else 0
         downloaded = 0
-        block_size = 8192
         with open(dest_path, "wb") as f:
             while True:
-                chunk = resp.read(block_size)
+                try:
+                    chunk = resp.read(block_size)
+                except (socket.timeout, TimeoutError) as exc:
+                    raise RommTimeoutError(
+                        "Download stalled: no data received within read timeout",
+                        url=url,
+                        method="GET",
+                    ) from exc
                 if not chunk:
                     break
                 f.write(chunk)
@@ -243,8 +255,13 @@ class RommHttpAdapter:
             req.add_header("Authorization", self.auth_header())
             ctx = self.ssl_context()
             try:
-                with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                    total, downloaded = self._stream_to_file(resp, dest_path, progress_callback)
+                with urllib.request.urlopen(req, context=ctx, timeout=self._CONNECT_TIMEOUT) as resp:
+                    raw_sock = getattr(getattr(getattr(resp, "fp", None), "raw", None), "_sock", None)
+                    if raw_sock is not None:
+                        raw_sock.settimeout(self._READ_TIMEOUT)
+                    total, downloaded = self._stream_to_file(
+                        resp, dest_path, progress_callback, block_size=self._DOWNLOAD_BLOCK_SIZE, url=url
+                    )
                 self._validate_download(total, downloaded)
             except RommApiError:
                 raise
