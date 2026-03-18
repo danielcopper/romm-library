@@ -162,116 +162,11 @@ class TestGetRomMetadata:
         assert result["genres"] == ["RPG"]
 
     @pytest.mark.asyncio
-    async def test_cache_miss_fetches_from_api(self, plugin, tmp_path):
-        """Cache miss fetches from RomM API, caches to disk."""
-        from unittest.mock import patch
-
-        import decky
-
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
+    async def test_cache_miss_returns_empty_defaults(self, plugin):
+        """Cache miss returns empty defaults without calling the API."""
         plugin.settings["log_level"] = "warn"
 
-        romm_response = {
-            "id": 42,
-            "summary": "API summary",
-            "metadatum": {
-                "genres": ["Adventure"],
-                "companies": ["Capcom"],
-                "first_release_date": 1000000000000,
-                "average_rating": 90.0,
-                "game_modes": ["Single player"],
-                "player_count": "1",
-            },
-        }
-
-        with patch.object(plugin._romm_api, "get_rom", return_value=romm_response):
-            result = await plugin.get_rom_metadata(42)
-
-        assert result["summary"] == "API summary"
-        assert result["genres"] == ["Adventure"]
-        assert result["companies"] == ["Capcom"]
-        assert result["first_release_date"] == 1000000000
-        assert result["average_rating"] == 90.0
-        # Verify cached in memory
-        assert "42" in plugin._metadata_cache
-        # Verify written to disk
-        cache_path = os.path.join(str(tmp_path), "metadata_cache.json")
-        assert os.path.exists(cache_path)
-        with open(cache_path, "r") as f:
-            disk_cache = json.load(f)
-        assert "42" in disk_cache
-
-    @pytest.mark.asyncio
-    async def test_cache_expired_refetches(self, plugin, tmp_path):
-        """Re-fetches when cached_at is older than 7 days."""
-        import time
-        from unittest.mock import patch
-
-        import decky
-
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
-        plugin.settings["log_level"] = "warn"
-
-        # Set cache as 8 days old
-        plugin._metadata_cache["42"] = {
-            "summary": "Old summary",
-            "genres": [],
-            "companies": [],
-            "first_release_date": None,
-            "average_rating": None,
-            "game_modes": [],
-            "player_count": "",
-            "cached_at": time.time() - (8 * 24 * 3600),
-        }
-
-        romm_response = {
-            "id": 42,
-            "summary": "Fresh summary",
-            "metadatum": {"genres": ["RPG"]},
-        }
-
-        with patch.object(plugin._romm_api, "get_rom", return_value=romm_response):
-            result = await plugin.get_rom_metadata(42)
-
-        assert result["summary"] == "Fresh summary"
-        assert result["genres"] == ["RPG"]
-
-    @pytest.mark.asyncio
-    async def test_network_error_returns_stale_cache(self, plugin):
-        """On network error, returns stale cached data if available."""
-        from unittest.mock import patch
-
-        plugin.settings["log_level"] = "warn"
-
-        # Stale cache (8 days old)
-        plugin._metadata_cache["42"] = {
-            "summary": "Stale summary",
-            "genres": ["RPG"],
-            "companies": [],
-            "first_release_date": None,
-            "average_rating": None,
-            "game_modes": [],
-            "player_count": "",
-            "cached_at": 0,
-        }
-
-        with patch.object(plugin._romm_api, "get_rom", side_effect=Exception("Connection refused")):
-            result = await plugin.get_rom_metadata(42)
-
-        assert result["summary"] == "Stale summary"
-        assert result["genres"] == ["RPG"]
-
-    @pytest.mark.asyncio
-    async def test_network_error_no_cache_returns_defaults(self, plugin):
-        """On network error with no cache, returns empty defaults."""
-        from unittest.mock import patch
-
-        plugin.settings["log_level"] = "warn"
-
-        with patch.object(plugin._romm_api, "get_rom", side_effect=Exception("Connection refused")):
-            result = await plugin.get_rom_metadata(42)
+        result = await plugin.get_rom_metadata(42)
 
         assert result["summary"] == ""
         assert result["genres"] == []
@@ -280,26 +175,42 @@ class TestGetRomMetadata:
         assert result["average_rating"] is None
         assert result["game_modes"] == []
         assert result["player_count"] == ""
+        assert result["cached_at"] == 0
 
     @pytest.mark.asyncio
-    async def test_rom_missing_metadatum_from_api(self, plugin, tmp_path):
-        """ROM exists in API but has no metadatum — returns empty fields."""
-        from unittest.mock import patch
-
-        import decky
-
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+    async def test_stale_cache_returns_stale_data(self, plugin):
+        """Stale cache (>7 days) is still returned — refreshed on next sync."""
+        import time
 
         plugin.settings["log_level"] = "warn"
 
-        romm_response = {"id": 42, "summary": "Just a summary"}
+        plugin._metadata_cache["42"] = {
+            "summary": "Old summary",
+            "genres": ["Action"],
+            "companies": [],
+            "first_release_date": None,
+            "average_rating": None,
+            "game_modes": [],
+            "player_count": "",
+            "cached_at": time.time() - (8 * 24 * 3600),
+        }
 
-        with patch.object(plugin._romm_api, "get_rom", return_value=romm_response):
-            result = await plugin.get_rom_metadata(42)
+        result = await plugin.get_rom_metadata(42)
 
-        assert result["summary"] == "Just a summary"
-        assert result["genres"] == []
-        assert result["first_release_date"] is None
+        assert result["summary"] == "Old summary"
+        assert result["genres"] == ["Action"]
+
+    @pytest.mark.asyncio
+    async def test_no_api_call_on_cache_miss(self, plugin):
+        """Verify get_rom is never called — metadata comes only from cache."""
+        from unittest.mock import patch
+
+        plugin.settings["log_level"] = "warn"
+
+        with patch.object(plugin._romm_api, "get_rom") as mock_get_rom:
+            await plugin.get_rom_metadata(42)
+
+        mock_get_rom.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_debug_logging_on_cache_hit(self, plugin):

@@ -1,7 +1,8 @@
 """MetadataService — ROM metadata caching.
 
 Handles ROM metadata extraction, caching (with periodic flush),
-on-demand API fetches, and app_id→rom_id mapping.
+and app_id→rom_id mapping. Metadata is populated during sync via
+the list API and served from cache on demand (no detail API calls).
 """
 
 from __future__ import annotations
@@ -76,41 +77,31 @@ class MetadataService:
             self._metadata_dirty_count = 0
 
     async def get_rom_metadata(self, rom_id):
-        """Return cached metadata for a ROM, fetching from API if stale/missing."""
-        rom_id = int(rom_id)
-        rom_id_str = str(rom_id)
-        CACHE_TTL = 7 * 24 * 3600  # 7 days
+        """Return cached metadata for a ROM.
+
+        Metadata is populated during sync via the list API. This method
+        returns whatever is cached — stale or fresh — and never calls
+        the detail API (GET /api/roms/{id}), which can timeout for ROMs
+        with very large file lists (e.g. WiiU with 53K+ files).
+        """
+        rom_id_str = str(int(rom_id))
 
         cached = self._metadata_cache.get(rom_id_str)
         if isinstance(cached, dict) and cached:
-            age = time.time() - cached.get("cached_at", 0)
-            if age < CACHE_TTL:
-                self._log_debug(f"Metadata cache hit for rom_id={rom_id}")
-                return cached
+            self._log_debug(f"Metadata cache hit for rom_id={rom_id_str}")
+            return cached
 
-        # Cache miss or stale — fetch from RomM API
-        self._log_debug(f"Metadata cache miss for rom_id={rom_id}, fetching from API")
-        try:
-            rom_data = await self._loop.run_in_executor(None, self._romm_api.get_rom, rom_id)
-            metadata = self.extract_metadata(rom_data)
-            self._metadata_cache[rom_id_str] = metadata
-            self._save_metadata_cache()
-            return metadata
-        except Exception as e:
-            self._logger.warning(f"Failed to fetch metadata for rom_id={rom_id}: {e}")
-            # Return stale cache if available
-            if cached:
-                return cached
-            return {
-                "summary": "",
-                "genres": [],
-                "companies": [],
-                "first_release_date": None,
-                "average_rating": None,
-                "game_modes": [],
-                "player_count": "",
-                "cached_at": 0,
-            }
+        self._log_debug(f"Metadata cache miss for rom_id={rom_id_str}, will refresh on next sync")
+        return {
+            "summary": "",
+            "genres": [],
+            "companies": [],
+            "first_release_date": None,
+            "average_rating": None,
+            "game_modes": [],
+            "player_count": "",
+            "cached_at": 0,
+        }
 
     def get_all_metadata_cache(self):
         """Return the full metadata cache dict for frontend to load on plugin start."""
