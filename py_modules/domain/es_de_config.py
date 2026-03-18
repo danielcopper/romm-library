@@ -71,7 +71,7 @@ class CoreResolver:
         Returns (core_so, label) or None.
         """
         try:
-            from lib import retrodeck_config
+            from domain import retrodeck_config
 
             retrodeck_home = retrodeck_config.get_retrodeck_home()
         except Exception:

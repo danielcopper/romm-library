@@ -17,7 +17,8 @@ import zipfile
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from lib import retrodeck_config
+from domain import retrodeck_config
+
 from lib.errors import error_response
 
 if TYPE_CHECKING:

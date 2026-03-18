@@ -92,7 +92,7 @@ class TestPathChangeDetection:
         fake_home = str(tmp_path / "retrodeck")
         os.makedirs(fake_home, exist_ok=True)
 
-        with patch("lib.retrodeck_config.get_retrodeck_home", return_value=fake_home):
+        with patch("domain.retrodeck_config.get_retrodeck_home", return_value=fake_home):
             plugin._migration_service.detect_retrodeck_path_change()
 
         assert plugin._state["retrodeck_home_path"] == fake_home
@@ -114,7 +114,7 @@ class TestPathChangeDetection:
         mock_loop = MagicMock()
         plugin._migration_service._loop = mock_loop
 
-        with patch("lib.retrodeck_config.get_retrodeck_home", return_value=fake_home):
+        with patch("domain.retrodeck_config.get_retrodeck_home", return_value=fake_home):
             plugin._migration_service.detect_retrodeck_path_change()
 
         mock_loop.create_task.assert_not_called()
@@ -144,7 +144,7 @@ class TestPathChangeDetection:
         mock_loop.create_task = _close_coro_task
         plugin._migration_service._loop = mock_loop
 
-        with patch("lib.retrodeck_config.get_retrodeck_home", return_value=new_home):
+        with patch("domain.retrodeck_config.get_retrodeck_home", return_value=new_home):
             plugin._migration_service.detect_retrodeck_path_change()
 
         assert plugin._state["retrodeck_home_path"] == new_home
@@ -162,7 +162,7 @@ class TestPathChangeDetection:
         mock_loop = MagicMock()
         plugin._migration_service._loop = mock_loop
 
-        with patch("lib.retrodeck_config.get_retrodeck_home", return_value=""):
+        with patch("domain.retrodeck_config.get_retrodeck_home", return_value=""):
             plugin._migration_service.detect_retrodeck_path_change()
 
         mock_loop.create_task.assert_not_called()
@@ -444,7 +444,7 @@ class TestMigrateSaveFiles:
 
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
+        with patch("domain.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files()
 
         assert result["success"] is True
@@ -479,7 +479,7 @@ class TestMigrateSaveFiles:
 
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
+        with patch("domain.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files()
 
         assert result["needs_confirmation"] is True
@@ -511,7 +511,7 @@ class TestMigrateSaveFiles:
 
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
+        with patch("domain.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files("overwrite")
 
         assert result["success"] is True
@@ -544,7 +544,7 @@ class TestMigrateSaveFiles:
 
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
+        with patch("domain.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files("skip")
 
         assert result["success"] is True
@@ -577,7 +577,7 @@ class TestMigrateSaveFiles:
 
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
+        with patch("domain.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             result = await plugin.migrate_retrodeck_files()
 
         assert result["saves_moved"] == 1  # only the real save, not the backup
@@ -603,7 +603,7 @@ class TestMigrateSaveFiles:
 
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
+        with patch("domain.retrodeck_config.get_saves_path", return_value=os.path.join(new_home, "saves")):
             status = await plugin.get_migration_status()
 
         assert status["pending"] is True

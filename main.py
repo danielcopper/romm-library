@@ -9,8 +9,7 @@ sys.path.insert(0, plugin_dir)
 import decky
 from adapters.persistence import PersistenceAdapter
 from bootstrap import WiringConfig, bootstrap, wire_services
-
-from lib import retrodeck_config
+from domain import retrodeck_config
 
 
 class Plugin:
@@ -459,7 +458,7 @@ class Plugin:
 
     async def get_available_cores(self, platform_slug):
         """Return available RetroArch cores for a platform."""
-        from lib import es_de_config
+        from domain import es_de_config
 
         cores = es_de_config.get_available_cores(platform_slug)
         active_core_so, active_core_label = es_de_config.get_active_core(platform_slug)
@@ -472,7 +471,7 @@ class Plugin:
     @staticmethod
     def _set_system_core_io(retrodeck_home, platform_slug, core_label):
         """Sync helper for set_system_core — XML read/parse/write in executor."""
-        from lib import es_de_config
+        from domain import es_de_config
 
         es_de_config.set_system_override(retrodeck_home, platform_slug, core_label or None)
         es_de_config._resolver.reset_cache()
@@ -493,7 +492,7 @@ class Plugin:
     @staticmethod
     def _set_game_core_io(retrodeck_home, platform_slug, rom_path, core_label):
         """Sync helper for set_game_core — XML read/parse/write in executor."""
-        from lib import es_de_config
+        from domain import es_de_config
 
         es_de_config.set_game_override(retrodeck_home, platform_slug, rom_path, core_label or None)
         es_de_config._resolver.reset_cache()

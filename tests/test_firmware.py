@@ -82,7 +82,8 @@ class TestFirmwareDestPath:
         """File not in registry goes flat in bios root."""
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        bios = os.path.join(str(tmp_path), "retrodeck", "bios")
+        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
             firmware = {"file_name": "bios.bin", "file_path": "bios/n64/bios.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "bios.bin")
@@ -98,7 +99,8 @@ class TestFirmwareDestPath:
             "platform": "dc",
         }
 
-        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        bios = os.path.join(str(tmp_path), "retrodeck", "bios")
+        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
             firmware = {"file_name": "dc_boot.bin", "file_path": "bios/dc/dc_boot.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "dc", "dc_boot.bin")
@@ -114,7 +116,8 @@ class TestFirmwareDestPath:
             "platform": "psx",
         }
 
-        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        bios = os.path.join(str(tmp_path), "retrodeck", "bios")
+        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
             firmware = {"file_name": "scph5501.bin", "file_path": "bios/ps/scph5501.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "scph5501.bin")
@@ -124,7 +127,7 @@ class TestFirmwareDestPath:
         from unittest.mock import patch
 
         sd_bios = "/run/media/deck/Emulation/retrodeck/bios"
-        with patch("lib.retrodeck_config.get_bios_path", return_value=sd_bios):
+        with patch("domain.retrodeck_config.get_bios_path", return_value=sd_bios):
             firmware = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(sd_bios, "fw.bin")
@@ -133,7 +136,8 @@ class TestFirmwareDestPath:
         """File not in registry falls back to flat in bios root."""
         from unittest.mock import patch
 
-        with patch("lib.retrodeck_config.get_bios_path", return_value=os.path.join(str(tmp_path), "retrodeck", "bios")):
+        bios = os.path.join(str(tmp_path), "retrodeck", "bios")
+        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
             firmware = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "fw.bin")
@@ -1659,7 +1663,7 @@ class TestCheckPlatformBiosCached:
         )
         from unittest.mock import patch
 
-        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+        with patch("domain.es_de_config.get_active_core", return_value=(None, None)):
             result = fw.check_platform_bios_cached("gba")
 
         assert result is not None
@@ -1683,9 +1687,12 @@ class TestCheckPlatformBiosCached:
         from unittest.mock import patch
 
         with (
-            patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
-            patch("lib.es_de_config.get_available_cores", return_value=[{"label": "mGBA", "so": "mgba_libretro.so"}]),
-            patch("lib.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
+            patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
+            patch(
+                "domain.es_de_config.get_available_cores",
+                return_value=[{"label": "mGBA", "so": "mgba_libretro.so"}],
+            ),
+            patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
         ):
             result = fw.check_platform_bios_cached("gba")
 
@@ -1717,7 +1724,7 @@ class TestCheckPlatformBiosCached:
 
         from unittest.mock import patch
 
-        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+        with patch("domain.es_de_config.get_active_core", return_value=(None, None)):
             fw.check_platform_bios_cached("gba")
 
         api.list_firmware.assert_not_called()
