@@ -34,6 +34,7 @@ def plugin():
     import decky
 
     p._http_adapter = RommHttpAdapter(p.settings, decky.DECKY_PLUGIN_DIR, logging.getLogger("test"))
+    p._romm_api = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}
 
@@ -41,7 +42,7 @@ def plugin():
     p._steam_config = steam_config
 
     p._sync_service = LibraryService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -660,9 +661,9 @@ class TestTestConnectionErrors:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         # Heartbeat succeeds, platforms raises auth error
-        heartbeat_response = {"status": "ok"}
-        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat_response, RommAuthError("401")]):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"status": "ok"}
+        plugin._romm_api.list_platforms.side_effect = RommAuthError("401")
+        result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "auth_error"
         assert "Authentication failed" in result["message"]
@@ -674,8 +675,8 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        with patch.object(plugin._http_adapter, "request", side_effect=RommConnectionError("refused")):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.side_effect = RommConnectionError("refused")
+        result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "connection_error"
         assert "unreachable" in result["message"].lower()
@@ -687,8 +688,8 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        with patch.object(plugin._http_adapter, "request", side_effect=RommSSLError("cert fail")):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.side_effect = RommSSLError("cert fail")
+        result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "ssl_error"
         assert "SSL" in result["message"]
@@ -700,9 +701,9 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat = {"SYSTEM": {"VERSION": "4.7.0"}, "status": "ok"}
-        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"SYSTEM": {"VERSION": "4.7.0"}, "status": "ok"}
+        plugin._romm_api.list_platforms.return_value = [{"id": 1, "slug": "n64"}]
+        result = await plugin.test_connection()
         assert result["success"] is True
         assert "Connected to RomM 4.7.0" in result["message"]
         assert result["romm_version"] == "4.7.0"
@@ -715,11 +716,9 @@ class TestTestConnectionErrors:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat_response = {"SYSTEM": {"VERSION": "4.7.0"}}
-        with patch.object(
-            plugin._http_adapter, "request", side_effect=[heartbeat_response, RommServerError("500", status_code=500)]
-        ):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"SYSTEM": {"VERSION": "4.7.0"}}
+        plugin._romm_api.list_platforms.side_effect = RommServerError("500", status_code=500)
+        result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "server_error"
         assert "Server reachable but API request failed" in result["message"]
@@ -735,9 +734,9 @@ class TestVersionDetection:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat = {"SYSTEM": {"VERSION": "4.7.0"}}
-        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"SYSTEM": {"VERSION": "4.7.0"}}
+        plugin._romm_api.list_platforms.return_value = []
+        result = await plugin.test_connection()
         assert result["romm_version"] == "4.7.0"
         assert plugin._romm_version == "4.7.0"
 
@@ -748,9 +747,9 @@ class TestVersionDetection:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat = {"SYSTEM": {"VERSION": "4.5.0"}}
-        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"SYSTEM": {"VERSION": "4.5.0"}}
+        plugin._romm_api.list_platforms.return_value = []
+        result = await plugin.test_connection()
         assert result["success"] is True
         assert result["romm_version"] == "4.5.0"
         assert "version_warning" in result
@@ -764,9 +763,9 @@ class TestVersionDetection:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat = {"SYSTEM": {"VERSION": "4.6.1"}}
-        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"SYSTEM": {"VERSION": "4.6.1"}}
+        plugin._romm_api.list_platforms.return_value = []
+        result = await plugin.test_connection()
         assert result["success"] is True
         assert "version_warning" not in result
 
@@ -777,9 +776,9 @@ class TestVersionDetection:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat = {"SYSTEM": {"VERSION": "development"}}
-        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"SYSTEM": {"VERSION": "development"}}
+        plugin._romm_api.list_platforms.return_value = []
+        result = await plugin.test_connection()
         assert result["success"] is True
         assert result.get("romm_version") == "development"
         assert "version_warning" not in result
@@ -791,9 +790,9 @@ class TestVersionDetection:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        heartbeat = {"status": "ok"}
-        with patch.object(plugin._http_adapter, "request", side_effect=[heartbeat, {"platforms": []}]):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.return_value = {"status": "ok"}
+        plugin._romm_api.list_platforms.return_value = []
+        result = await plugin.test_connection()
         assert result["success"] is True
         assert plugin._romm_version is None
         assert "version_warning" not in result
@@ -806,8 +805,8 @@ class TestVersionDetection:
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
         plugin._romm_version = "4.7.0"  # previously detected
-        with patch.object(plugin._http_adapter, "request", side_effect=RommConnectionError("refused")):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.side_effect = RommConnectionError("refused")
+        result = await plugin.test_connection()
         assert result["success"] is False
         assert plugin._romm_version is None
 
@@ -832,8 +831,8 @@ class TestVersionDetection:
 
         _setup_plugin(plugin)
         plugin.loop = asyncio.get_event_loop()
-        with patch.object(plugin._http_adapter, "request", side_effect=RommTimeoutError("timed out")):
-            result = await plugin.test_connection()
+        plugin._romm_api.heartbeat.side_effect = RommTimeoutError("timed out")
+        result = await plugin.test_connection()
         assert result["success"] is False
         assert result["error_code"] == "timeout_error"
 

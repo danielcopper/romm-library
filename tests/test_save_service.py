@@ -26,7 +26,7 @@ def make_service(tmp_path, fake_api=None, **overrides):
     """Create a SaveService with sensible defaults for testing."""
     fake = fake_api or FakeSaveApi()
     defaults = dict(
-        save_api=fake,
+        romm_api=fake,
         with_retry=_no_retry,
         is_retryable=lambda e: False,
         state={"shortcut_registry": {}, "installed_roms": {}},
@@ -39,7 +39,7 @@ def make_service(tmp_path, fake_api=None, **overrides):
     defaults.update(overrides)
     svc = SaveService(**defaults)
     svc.init_state()
-    return svc, defaults.get("save_api", fake) if fake_api is None else fake
+    return svc, defaults.get("romm_api", fake) if fake_api is None else fake
 
 
 def _install_rom(svc, tmp_path, rom_id=42, system="gba", file_name="pokemon.gba"):

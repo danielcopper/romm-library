@@ -117,7 +117,7 @@ class Plugin:
         )
         self._persistence = adapters["persistence"]
         self._http_adapter = adapters["http_adapter"]
-        self._version_router = adapters["version_router"]
+        self._romm_api = adapters["romm_api"]
         self._steam_config = adapters["steam_config"]
         self._state = {
             "shortcut_registry": {},
@@ -138,8 +138,8 @@ class Plugin:
         # ── Wire services (composition, uses live state refs) ──
         services = wire_services(
             WiringConfig(
-                save_api=adapters["save_api"],
                 http_adapter=self._http_adapter,
+                romm_api=self._romm_api,
                 steam_config=self._steam_config,
                 state=self._state,
                 settings=self.settings,
@@ -209,7 +209,7 @@ class Plugin:
             return {"success": False, "message": "No server URL configured", "error_code": "config_error"}
         # Test basic connectivity (heartbeat may not require auth)
         try:
-            heartbeat = await self.loop.run_in_executor(None, self._http_adapter.request, "/api/heartbeat")
+            heartbeat = await self.loop.run_in_executor(None, self._romm_api.heartbeat)
         except Exception as e:
             self._romm_version = None
             return error_response(e)
@@ -222,13 +222,11 @@ class Plugin:
             pass
         if self._romm_version:
             decky.logger.info(f"RomM server version: {self._romm_version}")
-            router = getattr(self, "_version_router", None)
-            if router:
-                router.set_version(self._romm_version)
+            self._romm_api.set_version(self._romm_version)
 
         # Test authenticated access
         try:
-            await self.loop.run_in_executor(None, self._http_adapter.request, "/api/platforms")
+            await self.loop.run_in_executor(None, self._romm_api.list_platforms)
         except Exception as e:
             resp = error_response(e)
             if resp["error_code"] not in ("auth_error", "forbidden_error"):

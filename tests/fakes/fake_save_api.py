@@ -1,4 +1,4 @@
-"""In-memory SaveApiProtocol implementation for service tests."""
+"""In-memory RommApiProtocol (save/note methods) implementation for service tests."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 
 class FakeSaveApi:
-    """In-memory fake that satisfies SaveApiProtocol without HTTP."""
+    """In-memory fake that satisfies RommApiProtocol save/note methods without HTTP."""
 
     def __init__(self) -> None:
         self.saves: dict[int, dict] = {}  # save_id -> save dict
@@ -113,8 +113,8 @@ class FakeSaveApi:
             return dict(self.saves[save_id])
         return {"id": save_id, "download_path": f"/saves/unknown_{save_id}"}
 
-    def get_rom_detail(self, rom_id: int) -> dict:
-        self.call_log.append(("get_rom_detail", (rom_id,), {}))
+    def get_rom_with_notes(self, rom_id: int) -> dict:
+        self.call_log.append(("get_rom_with_notes", (rom_id,), {}))
         self._check_fail()
         detail = self.roms.get(rom_id, {"id": rom_id})
         # Attach notes

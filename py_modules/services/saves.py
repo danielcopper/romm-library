@@ -1,6 +1,6 @@
 """SaveService — save sync business logic.
 
-All RomM communication goes through ``SaveApiProtocol``.
+All RomM communication goes through ``RommApiProtocol``.
 No ``import decky`` — error utilities come from ``lib.errors``.
 """
 
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from lib.errors import RommApiError, RommConflictError, classify_error
-from services.protocols import SaveApiProtocol
+from services.protocols import RommApiProtocol
 
 _DEVICE_NOT_REGISTERED = "Device not registered"
 
@@ -33,7 +33,7 @@ class SaveService:
 
     Parameters
     ----------
-    save_api:
+    romm_api:
         Protocol adapter for all RomM save/notes HTTP operations.
     with_retry:
         Retry wrapper — ``fn(*args, **kwargs)`` with exponential backoff.
@@ -59,7 +59,7 @@ class SaveService:
     def __init__(
         self,
         *,
-        save_api: SaveApiProtocol,
+        romm_api: RommApiProtocol,
         with_retry: Callable[..., Any],
         is_retryable: Callable[[Exception], bool],
         state: dict,
@@ -69,7 +69,7 @@ class SaveService:
         runtime_dir: str,
         get_saves_path: Callable[[], str],
     ) -> None:
-        self._save_api = save_api
+        self._romm_api = romm_api
         self._with_retry = with_retry
         self._is_retryable = is_retryable
         self._state = state
@@ -241,7 +241,7 @@ class SaveService:
         try:
             fd, tmp_path = tempfile.mkstemp(suffix=".tmp")
             os.close(fd)
-            self._save_api.download_save(save_id, tmp_path)
+            self._romm_api.download_save(save_id, tmp_path)
             return self._file_md5(tmp_path)
         except Exception as e:
             self._log_debug(f"Failed to hash server save {save_id}: {e}")
@@ -445,7 +445,7 @@ class SaveService:
         os.makedirs(saves_dir, exist_ok=True)
         tmp_path = local_path + ".tmp"
 
-        self._with_retry(lambda: self._save_api.download_save(server_save["id"], tmp_path))
+        self._with_retry(lambda: self._romm_api.download_save(server_save["id"], tmp_path))
 
         # Backup existing local save before overwriting
         if os.path.isfile(local_path):
@@ -471,7 +471,7 @@ class SaveService:
         """Upload a local save file to server."""
         save_id = server_save.get("id") if server_save else None
 
-        result = self._with_retry(lambda: self._save_api.upload_save(int(rom_id), file_path, "retroarch", save_id))
+        result = self._with_retry(lambda: self._romm_api.upload_save(int(rom_id), file_path, "retroarch", save_id))
 
         self._update_file_sync_state(rom_id_str, filename, result, file_path, system)
         self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str}")
@@ -643,7 +643,7 @@ class SaveService:
         # Fetch server saves (with retry)
         t0 = time.time()
         try:
-            server_saves = self._with_retry(lambda: self._save_api.list_saves(rom_id))
+            server_saves = self._with_retry(lambda: self._romm_api.list_saves(rom_id))
         except Exception as e:
             self._logger.error(f"_sync_rom_saves({rom_id}): failed to list saves: {e}")
             _code, _msg = classify_error(e)
@@ -807,7 +807,7 @@ class SaveService:
             server_save_id = conflict.get("server_save_id")
             if not server_save_id:
                 return {"success": False, "message": "No server save ID"}
-            server_save = self._with_retry(lambda: self._save_api.get_save_metadata(server_save_id))
+            server_save = self._with_retry(lambda: self._romm_api.get_save_metadata(server_save_id))
             self._do_download_save(server_save, saves_dir, filename, rom_id_str, system)
         else:  # upload
             local_path = conflict.get("local_path")
@@ -817,7 +817,7 @@ class SaveService:
             if conflict.get("server_save_id"):
                 try:
                     ssid = conflict["server_save_id"]
-                    server_save = self._with_retry(lambda: self._save_api.get_save_metadata(ssid))
+                    server_save = self._with_retry(lambda: self._romm_api.get_save_metadata(ssid))
                 except Exception:
                     pass
             self._do_upload_save(rom_id, local_path, filename, rom_id_str, system, server_save)
@@ -859,7 +859,7 @@ class SaveService:
         try:
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._with_retry(lambda: self._save_api.list_saves(rom_id)),
+                lambda: self._with_retry(lambda: self._romm_api.list_saves(rom_id)),
             )
         except Exception as e:
             self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
@@ -876,7 +876,7 @@ class SaveService:
         try:
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._with_retry(lambda: self._save_api.list_saves(rom_id)),
+                lambda: self._with_retry(lambda: self._romm_api.list_saves(rom_id)),
             )
         except Exception as e:
             self._log_debug(f"Lightweight save check failed for rom {rom_id}: {e}")

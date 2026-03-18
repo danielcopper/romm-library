@@ -39,7 +39,7 @@ def plugin(tmp_path):
     p._steam_config = steam_config
 
     p._sync_service = LibraryService(
-        http_adapter=MagicMock(),
+        romm_api=MagicMock(),
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -60,7 +60,7 @@ def plugin(tmp_path):
     saves_path = str(tmp_path / "retrodeck" / "saves")
 
     p._save_sync_service = SaveService(
-        save_api=fake_api,
+        romm_api=fake_api,
         with_retry=_no_retry,
         is_retryable=lambda e: isinstance(e, ConnectionError),
         state=p._state,
@@ -73,7 +73,7 @@ def plugin(tmp_path):
     p._save_sync_service.init_state()
 
     p._playtime_service = PlaytimeService(
-        save_api=fake_api,
+        romm_api=fake_api,
         with_retry=_no_retry,
         is_retryable=lambda e: isinstance(e, ConnectionError),
         save_sync_state=p._save_sync_state,

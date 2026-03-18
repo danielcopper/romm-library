@@ -22,6 +22,7 @@ def plugin():
         "log_level": "warn",
     }
     p._http_adapter = MagicMock()
+    p._romm_api = MagicMock()
     p._state = {
         "shortcut_registry": {},
         "installed_roms": {},
@@ -36,7 +37,7 @@ def plugin():
     p._steam_config = steam_config
 
     p._sync_service = LibraryService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
         settings=p.settings,
@@ -50,7 +51,7 @@ def plugin():
         log_debug=p._log_debug,
     )
     p._achievements_service = AchievementsService(
-        http_adapter=p._http_adapter,
+        romm_api=p._romm_api,
         state=p._state,
         loop=asyncio.get_event_loop(),
         logger=decky.logger,
@@ -177,8 +178,8 @@ class TestFetchRaUsername:
     async def test_fetches_and_caches(self, svc, plugin):
         user_data = {"ra_username": "  RetroPlayer  "}
 
-        with patch.object(plugin._http_adapter, "request", return_value=user_data):
-            result = await svc._fetch_ra_username()
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc._fetch_ra_username()
 
         assert result == "RetroPlayer"
         assert svc._achievements_cache["_ra_user"]["username"] == "RetroPlayer"
@@ -187,15 +188,15 @@ class TestFetchRaUsername:
     async def test_returns_empty_when_no_ra_username_on_user(self, svc, plugin):
         user_data = {"ra_username": None}
 
-        with patch.object(plugin._http_adapter, "request", return_value=user_data):
-            result = await svc._fetch_ra_username()
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc._fetch_ra_username()
 
         assert result == ""
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_api_error(self, svc, plugin):
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Network error")):
-            result = await svc._fetch_ra_username()
+        plugin._romm_api.get_current_user.side_effect = Exception("Network error")
+        result = await svc._fetch_ra_username()
 
         assert result == ""
 
@@ -206,8 +207,8 @@ class TestFetchRaUsername:
             "cached_at": time.time() - (2 * 3600),  # expired
         }
 
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Network error")):
-            result = await svc._fetch_ra_username()
+        plugin._romm_api.get_current_user.side_effect = Exception("Network error")
+        result = await svc._fetch_ra_username()
 
         assert result == "OldUser"
 
@@ -215,8 +216,8 @@ class TestFetchRaUsername:
     async def test_empty_string_ra_username(self, svc, plugin):
         user_data = {"ra_username": ""}
 
-        with patch.object(plugin._http_adapter, "request", return_value=user_data):
-            result = await svc._fetch_ra_username()
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc._fetch_ra_username()
 
         assert result == ""
 
@@ -409,8 +410,8 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999, "app_id": 100}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin._http_adapter, "request", return_value=rom_data):
-            result = await svc.get_achievements(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["total"] == 2
@@ -423,17 +424,16 @@ class TestGetAchievements:
 
     @pytest.mark.asyncio
     async def test_cache_hit_returns_without_api_call(self, svc, plugin):
-        """Returns cached data without calling _romm_request."""
+        """Returns cached data without calling get_rom."""
         svc._achievements_cache["42"] = {
             "achievements": [{"ra_id": 1001, "title": "Cached"}],
             "cached_at": time.time(),
         }
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            result = await svc.get_achievements(42)
+        result = await svc.get_achievements(42)
 
-        mock_req.assert_not_called()
+        plugin._romm_api.get_rom.assert_not_called()
         assert result["success"] is True
         assert result["total"] == 1
         assert result["achievements"][0]["title"] == "Cached"
@@ -448,8 +448,8 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin._http_adapter, "request", return_value=rom_data):
-            result = await svc.get_achievements(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["total"] == 2
@@ -485,8 +485,8 @@ class TestGetAchievements:
         }
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Connection refused")):
-            result = await svc.get_achievements(42)
+        plugin._romm_api.get_rom.side_effect = Exception("Connection refused")
+        result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["stale"] is True
@@ -497,8 +497,8 @@ class TestGetAchievements:
         """On API error with no cache, returns error with empty list."""
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Connection refused")):
-            result = await svc.get_achievements(42)
+        plugin._romm_api.get_rom.side_effect = Exception("Connection refused")
+        result = await svc.get_achievements(42)
 
         assert result["success"] is False
         assert result["achievements"] == []
@@ -511,8 +511,8 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
 
-        with patch.object(plugin._http_adapter, "request", return_value=rom_data):
-            result = await svc.get_achievements("42")
+        plugin._romm_api.get_rom.return_value = rom_data
+        result = await svc.get_achievements("42")
 
         assert result["success"] is True
         assert result["total"] == 2
@@ -523,8 +523,8 @@ class TestGetAchievements:
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = {"id": 42, "ra_metadata": {"achievements": []}}
 
-        with patch.object(plugin._http_adapter, "request", return_value=rom_data):
-            result = await svc.get_achievements(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        result = await svc.get_achievements(42)
 
         assert result["success"] is True
         assert result["total"] == 0
@@ -545,9 +545,9 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10, earned_hardcore=3)
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 5
@@ -557,21 +557,18 @@ class TestGetAchievementProgress:
 
     @pytest.mark.asyncio
     async def test_no_ra_username_fetches_from_romm(self, svc, plugin):
-        """When no cached RA username, fetches from /api/users/me."""
+        """When no cached RA username, fetches from get_current_user."""
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
-        # First call: _fetch_ra_username -> /api/users/me
-        # Second call: get_achievements -> /api/roms/42
-        # Third call: get_achievement_progress -> /api/users/me
         user_data_with_username = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [
-                {"ra_username": "RetroPlayer"},  # _fetch_ra_username
-                rom_data,  # get_achievements
-                user_data_with_username,  # progression fetch
-            ]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        # First call: _fetch_ra_username, second call: progression fetch
+        plugin._romm_api.get_current_user.side_effect = [
+            {"ra_username": "RetroPlayer"},
+            user_data_with_username,
+        ]
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 5
@@ -583,8 +580,8 @@ class TestGetAchievementProgress:
         """When no RA username in cache and RomM user has none, returns error."""
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
 
-        with patch.object(plugin._http_adapter, "request", return_value={"ra_username": None}):
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_current_user.return_value = {"ra_username": None}
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is False
         assert "No RA username" in result["message"]
@@ -618,10 +615,10 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            result = await svc.get_achievement_progress(42)
+        result = await svc.get_achievement_progress(42)
 
-        mock_req.assert_not_called()
+        plugin._romm_api.get_rom.assert_not_called()
+        plugin._romm_api.get_current_user.assert_not_called()
         assert result["success"] is True
         assert result["earned"] == 3
         assert result["total"] == 10
@@ -638,9 +635,9 @@ class TestGetAchievementProgress:
             "ra_progression": {"results": [{"rom_ra_id": 1111, "num_awarded": 5}]},
         }
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 0
@@ -664,10 +661,9 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            # get_achievements cache hit, then /api/users/me fails
-            mock_req.side_effect = Exception("Network error")
-            result = await svc.get_achievement_progress(42)
+        # get_achievements cache hit, then get_current_user fails
+        plugin._romm_api.get_current_user.side_effect = Exception("Network error")
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["stale"] is True
@@ -684,8 +680,8 @@ class TestGetAchievementProgress:
             "cached_at": time.time(),
         }
 
-        with patch.object(plugin._http_adapter, "request", side_effect=Exception("Network error")):
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_current_user.side_effect = Exception("Network error")
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is False
         assert result["earned"] == 0
@@ -700,9 +696,9 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = {"ra_username": "RetroPlayer", "ra_progression": {"results": []}}
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 0
@@ -716,9 +712,9 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = {"ra_username": "RetroPlayer", "ra_progression": None}
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.get_achievement_progress(42)
 
         assert result["success"] is True
         assert result["earned"] == 0
@@ -731,9 +727,9 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=7, total=10)
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        await svc.get_achievement_progress(42)
 
         cached = svc._achievements_cache["42"]["user_progress"]
         assert cached["earned"] == 7
@@ -748,9 +744,9 @@ class TestGetAchievementProgress:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=7, total=10)
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.get_achievement_progress(42)
 
         assert "cached_at" not in result
 
@@ -769,9 +765,9 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.get_achievement_progress(42)
 
         # Fallback: total should be len(achievements) = 2
         assert result["total"] == 2
@@ -796,24 +792,24 @@ class TestGetAchievementProgress:
             },
         }
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.get_achievement_progress(42)
 
         assert result["earned"] == 0
         assert result["earned_hardcore"] == 0
 
     @pytest.mark.asyncio
     async def test_caches_ra_username_from_users_me_response(self, svc, plugin):
-        """The /api/users/me call in progress fetch also caches ra_username."""
+        """The get_current_user call in progress fetch also caches ra_username."""
         _seed_ra_username_cache(svc)
         plugin._state["shortcut_registry"]["42"] = {"ra_id": 9999}
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10, ra_username="NewUser")
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            await svc.get_achievement_progress(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        await svc.get_achievement_progress(42)
 
         # RA username should have been updated from the users/me response
         assert svc._achievements_cache["_ra_user"]["username"] == "NewUser"
@@ -844,8 +840,8 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin._http_adapter, "request", return_value=user_data):
-            result = await svc.sync_achievements_after_session(42)
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.sync_achievements_after_session(42)
 
         assert result["success"] is True
         assert result["earned"] == 5
@@ -879,10 +875,8 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with (
-            patch.object(svc, "get_achievement_progress", side_effect=spy_get_progress),
-            patch.object(plugin._http_adapter, "request", return_value=user_data),
-        ):
+        plugin._romm_api.get_current_user.return_value = user_data
+        with patch.object(svc, "get_achievement_progress", side_effect=spy_get_progress):
             await svc.sync_achievements_after_session(42)
 
         assert call_order == [True], "user_progress should have been deleted before refetch"
@@ -895,9 +889,9 @@ class TestSyncAchievementsAfterSession:
         rom_data = _sample_rom_data()
         user_data = _sample_user_data(ra_id=9999, earned=3, total=10)
 
-        with patch.object(plugin._http_adapter, "request") as mock_req:
-            mock_req.side_effect = [rom_data, user_data]
-            result = await svc.sync_achievements_after_session(42)
+        plugin._romm_api.get_rom.return_value = rom_data
+        plugin._romm_api.get_current_user.return_value = user_data
+        result = await svc.sync_achievements_after_session(42)
 
         assert result["success"] is True
         assert result["earned"] == 3
@@ -920,8 +914,8 @@ class TestSyncAchievementsAfterSession:
 
         user_data = _sample_user_data(ra_id=9999, earned=5, total=10)
 
-        with patch.object(plugin._http_adapter, "request", return_value=user_data):
-            await svc.sync_achievements_after_session(42)
+        plugin._romm_api.get_current_user.return_value = user_data
+        await svc.sync_achievements_after_session(42)
 
         # Achievements list should still be cached
         assert len(svc._achievements_cache["42"]["achievements"]) == 2

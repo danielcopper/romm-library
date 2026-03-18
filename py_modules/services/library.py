@@ -11,7 +11,6 @@ import base64
 import os
 import pathlib
 import time
-import urllib.parse
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -23,7 +22,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import HttpAdapter, SteamConfigAdapter
+    from services.protocols import RommApiProtocol, SteamConfigAdapter
 
 
 class SyncState(Enum):
@@ -33,7 +32,6 @@ class SyncState(Enum):
 
 
 _SYNC_CANCELLED = "Sync cancelled"
-_PLATFORMS_API = "/api/platforms"
 
 
 class LibraryService:
@@ -42,7 +40,7 @@ class LibraryService:
     def __init__(
         self,
         *,
-        http_adapter: HttpAdapter,
+        romm_api: RommApiProtocol,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
@@ -56,7 +54,7 @@ class LibraryService:
         log_debug: Callable,
         metadata_service: Any = None,
     ) -> None:
-        self._http_adapter = http_adapter
+        self._romm_api = romm_api
         self._steam_config = steam_config
         self._state = state
         self._settings = settings
@@ -102,7 +100,7 @@ class LibraryService:
 
     async def get_platforms(self):
         try:
-            platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
+            platforms = await self._loop.run_in_executor(None, self._romm_api.list_platforms)
         except Exception as e:
             self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -139,7 +137,7 @@ class LibraryService:
     async def set_all_platforms_sync(self, enabled):
         enabled = bool(enabled)
         try:
-            platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
+            platforms = await self._loop.run_in_executor(None, self._romm_api.list_platforms)
         except Exception as e:
             self._logger.error(f"Failed to fetch platforms: {e}")
             _code, _msg = classify_error(e)
@@ -411,7 +409,7 @@ class LibraryService:
 
     async def _fetch_enabled_platforms(self):
         """Fetch and filter platforms by enabled_platforms setting."""
-        platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
+        platforms = await self._loop.run_in_executor(None, self._romm_api.list_platforms)
         if not isinstance(platforms, list):
             self._logger.error(f"Unexpected platforms response type: {type(platforms).__name__}")
             return []
@@ -450,12 +448,14 @@ class LibraryService:
         if not last_sync or registry_count == 0:
             return False
 
-        updated_after = urllib.parse.quote(last_sync)
         try:
             delta_resp = await self._loop.run_in_executor(
                 None,
-                self._http_adapter.request,
-                f"/api/roms?platform_ids={platform['id']}&limit=1&offset=0&updated_after={updated_after}",
+                self._romm_api.list_roms_updated_after,
+                platform["id"],
+                last_sync,
+                1,
+                0,
             )
             server_total = delta_resp.get("total", 0) if isinstance(delta_resp, dict) else 0
             platform_total = platform.get("rom_count", 0)
@@ -493,8 +493,10 @@ class LibraryService:
             try:
                 roms = await self._loop.run_in_executor(
                     None,
-                    self._http_adapter.request,
-                    f"/api/roms?platform_ids={platform_id}&limit={limit}&offset={offset}",
+                    self._romm_api.list_roms,
+                    platform_id,
+                    limit,
+                    offset,
                 )
             except Exception as e:
                 self._logger.error(f"Failed to fetch ROMs for platform {platform_name}: {e}")
@@ -878,7 +880,7 @@ class LibraryService:
 
             staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
             try:
-                await self._loop.run_in_executor(None, self._http_adapter.download, cover_url, staging)
+                await self._loop.run_in_executor(None, self._romm_api.download_cover, cover_url, staging)
                 cover_paths[rom_id] = staging
             except Exception as e:
                 self._logger.warning(f"Failed to download artwork for {rom['name']}: {e}")
@@ -908,7 +910,7 @@ class LibraryService:
 
     async def _find_platform_name_from_api(self, platform_slug):
         """Look up platform name from the RomM API by slug."""
-        platforms = await self._loop.run_in_executor(None, self._http_adapter.request, _PLATFORMS_API)
+        platforms = await self._loop.run_in_executor(None, self._romm_api.list_platforms)
         for p in platforms:
             if p.get("slug") == platform_slug:
                 return p.get("name", "")

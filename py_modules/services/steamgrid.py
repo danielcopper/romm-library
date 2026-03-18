@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import HttpAdapter, SteamConfigAdapter
+    from services.protocols import RommApiProtocol, SteamConfigAdapter
 
 
 _USER_AGENT = "decky-romm-sync/0.1"
@@ -36,7 +36,7 @@ class SteamGridService:
     def __init__(
         self,
         *,
-        http_adapter: HttpAdapter,
+        romm_api: RommApiProtocol,
         steam_config: SteamConfigAdapter,
         state: dict,
         settings: dict,
@@ -47,7 +47,7 @@ class SteamGridService:
         save_settings_to_disk: Callable[[], None],
         pending_sync: dict,
     ) -> None:
-        self._http_adapter = http_adapter
+        self._romm_api = romm_api
         self._steam_config = steam_config
         self._state = state
         self._settings = settings
@@ -189,7 +189,7 @@ class SteamGridService:
         rom_id_str = str(rom_id)
         sgdb_id = None
         try:
-            rom_data = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/roms/{rom_id}")
+            rom_data = await self._loop.run_in_executor(None, self._romm_api.get_rom, rom_id)
             if rom_data:
                 sgdb_id = rom_data.get("sgdb_id")
                 igdb_id = igdb_id or rom_data.get("igdb_id")

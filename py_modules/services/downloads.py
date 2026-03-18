@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import HttpAdapter
+    from services.protocols import RommApiProtocol
 
 _DOWNLOAD_QUEUE_MAX_TERMINAL = 50
 _ZIP_TMP_EXT = ".zip.tmp"
@@ -37,7 +37,8 @@ class DownloadService:
     def __init__(
         self,
         *,
-        http_adapter: HttpAdapter,
+        romm_api: RommApiProtocol,
+        resolve_system: Callable,
         state: dict,
         save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
@@ -47,7 +48,8 @@ class DownloadService:
         save_state: Callable,
         save_save_sync_state: Callable,
     ):
-        self._http_adapter = http_adapter
+        self._romm_api = romm_api
+        self._resolve_system = resolve_system
         self._state = state
         self._save_sync_state = save_sync_state
         self._loop = loop
@@ -193,7 +195,7 @@ class DownloadService:
 
         self._download_in_progress.add(rom_id)
         try:
-            rom_detail = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/roms/{rom_id}")
+            rom_detail = await self._loop.run_in_executor(None, self._romm_api.get_rom, rom_id)
         except Exception as e:
             self._download_in_progress.discard(rom_id)
             self._logger.error(f"Failed to fetch ROM {rom_id}: {e}")
@@ -201,7 +203,7 @@ class DownloadService:
 
         platform_slug = rom_detail.get("platform_slug", "")
         platform_fs_slug = rom_detail.get("platform_fs_slug")
-        system = self._http_adapter.resolve_system(platform_slug, platform_fs_slug)
+        system = self._resolve_system(platform_slug, platform_fs_slug)
 
         roms_dir = os.path.join(retrodeck_config.get_roms_path(), system)
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
@@ -367,14 +369,13 @@ class DownloadService:
             )
 
         try:
-            download_path = f"/api/roms/{rom_id}/content/{urllib.parse.quote(file_name, safe='')}"
             self._logger.info(f"Download starting: {rom_name} (rom_id={rom_id}, multi={has_multiple}) -> {target_path}")
 
             if has_multiple:
                 # Multi-file ROM: API returns ZIP, download to temp then extract
                 tmp_zip = target_path + _ZIP_TMP_EXT
                 await self._loop.run_in_executor(
-                    None, self._http_adapter.download, download_path, tmp_zip, progress_callback
+                    None, self._romm_api.download_rom_content, rom_id, file_name, tmp_zip, progress_callback
                 )
                 final_path = await self._loop.run_in_executor(
                     None, self._post_download_multi_io, rom_id, rom_detail, target_path, file_name, system
@@ -382,7 +383,7 @@ class DownloadService:
             else:
                 tmp_path = target_path + _TMP_EXT
                 await self._loop.run_in_executor(
-                    None, self._http_adapter.download, download_path, tmp_path, progress_callback
+                    None, self._romm_api.download_rom_content, rom_id, file_name, tmp_path, progress_callback
                 )
                 final_path = await self._loop.run_in_executor(
                     None, self._post_download_single_io, rom_id, rom_detail, target_path, file_name, system

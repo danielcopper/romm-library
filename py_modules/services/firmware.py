@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import urllib.parse
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -21,10 +20,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import HttpAdapter
-
-
-_FIRMWARE_API = "/api/firmware"
+    from services.protocols import RommApiProtocol
 
 
 class FirmwareService:
@@ -33,14 +29,14 @@ class FirmwareService:
     def __init__(
         self,
         *,
-        http_adapter: HttpAdapter,
+        romm_api: RommApiProtocol,
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         plugin_dir: str,
         save_state: Callable[[], None],
     ) -> None:
-        self._http_adapter = http_adapter
+        self._romm_api = romm_api
         self._state = state
         self._loop = loop
         self._logger = logger
@@ -205,7 +201,7 @@ class FirmwareService:
         """
         server_offline = False
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._http_adapter.request, _FIRMWARE_API)
+            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
             platforms_map = self._group_server_firmware(firmware_list)
         except Exception as e:
             self._logger.warning(f"Failed to fetch firmware from server: {e}")
@@ -262,7 +258,7 @@ class FirmwareService:
         """Download a single firmware file from RomM."""
         firmware_id = int(firmware_id)
         try:
-            fw = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/firmware/{firmware_id}")
+            fw = await self._loop.run_in_executor(None, self._romm_api.get_firmware, firmware_id)
         except Exception as e:
             self._logger.error(f"Failed to fetch firmware {firmware_id}: {e}")
             return error_response(e)
@@ -273,8 +269,7 @@ class FirmwareService:
 
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
-            download_path = f"/api/firmware/{firmware_id}/content/{urllib.parse.quote(file_name, safe='')}"
-            await self._loop.run_in_executor(None, self._http_adapter.download, download_path, tmp_path)
+            await self._loop.run_in_executor(None, self._romm_api.download_firmware, firmware_id, file_name, tmp_path)
         except Exception as e:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -291,7 +286,7 @@ class FirmwareService:
     async def download_all_firmware(self, platform_slug):
         """Download all firmware for a given platform slug."""
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._http_adapter.request, _FIRMWARE_API)
+            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
         except Exception as e:
             self._logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -350,7 +345,7 @@ class FirmwareService:
     async def download_required_firmware(self, platform_slug):
         """Download only required firmware for a given platform slug."""
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._http_adapter.request, _FIRMWARE_API)
+            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
         except Exception as e:
             self._logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -458,7 +453,7 @@ class FirmwareService:
             registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
 
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._http_adapter.request, _FIRMWARE_API)
+            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
             files = self._collect_server_firmware(firmware_list, fw_slugs, registry_platform, active_core_so)
         except Exception:
             if not registry_platform:

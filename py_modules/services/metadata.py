@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import HttpAdapter
+    from services.protocols import RommApiProtocol
 
 
 class MetadataService:
@@ -23,7 +23,7 @@ class MetadataService:
     def __init__(
         self,
         *,
-        http_adapter: HttpAdapter,
+        romm_api: RommApiProtocol,
         state: dict,
         metadata_cache: dict,
         loop: asyncio.AbstractEventLoop,
@@ -31,7 +31,7 @@ class MetadataService:
         save_metadata_cache: Callable,
         log_debug: Callable,
     ) -> None:
-        self._http_adapter = http_adapter
+        self._romm_api = romm_api
         self._state = state
         self._metadata_cache = metadata_cache
         self._loop = loop
@@ -91,7 +91,7 @@ class MetadataService:
         # Cache miss or stale — fetch from RomM API
         self._log_debug(f"Metadata cache miss for rom_id={rom_id}, fetching from API")
         try:
-            rom_data = await self._loop.run_in_executor(None, self._http_adapter.request, f"/api/roms/{rom_id}")
+            rom_data = await self._loop.run_in_executor(None, self._romm_api.get_rom, rom_id)
             metadata = self.extract_metadata(rom_data)
             self._metadata_cache[rom_id_str] = metadata
             self._save_metadata_cache()

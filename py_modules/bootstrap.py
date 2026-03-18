@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from adapters.persistence import PersistenceAdapter
+from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
-from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
@@ -25,7 +25,7 @@ from services.library import LibraryService
 from services.metadata import MetadataService
 from services.migration import MigrationService
 from services.playtime import PlaytimeService
-from services.protocols import HttpAdapter
+from services.protocols import RommApiProtocol
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.saves import SaveService
 from services.steamgrid import SteamGridService
@@ -37,8 +37,8 @@ class WiringConfig:
     into a single object to keep the composition root readable."""
 
     # Adapters
-    save_api: Any
-    http_adapter: HttpAdapter
+    http_adapter: RommHttpAdapter
+    romm_api: RommApiProtocol
     steam_config: SteamConfigProtocol
 
     # State (live dict refs)
@@ -93,14 +93,13 @@ def bootstrap(
     """
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
-    version_router = VersionRouter(http_adapter)
+    romm_api = ApiRouter(http_adapter)
     steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
     return {
         "persistence": persistence,
         "http_adapter": http_adapter,
-        "save_api": version_router,
-        "version_router": version_router,
+        "romm_api": romm_api,
         "steam_config": steam_config,
     }
 
@@ -118,7 +117,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     ``sync_service``, ``download_service``, and ``firmware_service``.
     """
     save_sync_service = SaveService(
-        save_api=cfg.save_api,
+        romm_api=cfg.romm_api,
         with_retry=cfg.http_adapter.with_retry,
         is_retryable=cfg.http_adapter.is_retryable,
         state=cfg.state,
@@ -130,7 +129,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     playtime_service = PlaytimeService(
-        save_api=cfg.save_api,
+        romm_api=cfg.romm_api,
         with_retry=cfg.http_adapter.with_retry,
         is_retryable=cfg.http_adapter.is_retryable,
         save_sync_state=cfg.save_sync_state,
@@ -140,7 +139,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     metadata_service = MetadataService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         state=cfg.state,
         metadata_cache=cfg.metadata_cache,
         loop=cfg.loop,
@@ -150,7 +149,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     sync_service = LibraryService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         steam_config=cfg.steam_config,
         state=cfg.state,
         settings=cfg.settings,
@@ -166,7 +165,8 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     download_service = DownloadService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
+        resolve_system=cfg.http_adapter.resolve_system,
         state=cfg.state,
         save_sync_state=cfg.save_sync_state,
         loop=cfg.loop,
@@ -178,7 +178,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     firmware_service = FirmwareService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         state=cfg.state,
         loop=cfg.loop,
         logger=cfg.logger,
@@ -187,7 +187,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     sgdb_service = SteamGridService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         steam_config=cfg.steam_config,
         state=cfg.state,
         settings=cfg.settings,
@@ -200,7 +200,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     achievements_service = AchievementsService(
-        http_adapter=cfg.http_adapter,
+        romm_api=cfg.romm_api,
         state=cfg.state,
         loop=cfg.loop,
         logger=cfg.logger,
