@@ -214,6 +214,23 @@ function extractBiosInfo(b: BiosStatus): Partial<InfoState> {
   };
 }
 
+/** Promise that rejects after `ms` milliseconds — used with Promise.race for timeouts. */
+function timeoutMs(ms: number): Promise<never> {
+  return new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms));
+}
+
+/** Fire-and-forget BIOS refresh — kept at module scope to avoid nesting. */
+function refreshBiosInBackground(
+  romId: number,
+  cancelled: boolean,
+  setter: React.Dispatch<React.SetStateAction<InfoState>>,
+) {
+  getBiosStatus(romId).then((result) => {
+    const b = result.bios_status;
+    if (!cancelled && b) setter((prev) => ({ ...prev, ...extractBiosInfo(b as BiosStatus) }));
+  }).catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
+}
+
 export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   // Read playtime from Steam's own overview synchronously (already written by metadataPatches)
   // This avoids an unnecessary render from setting it inside the async effect.
@@ -347,12 +364,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
 
         const biosCachedAt = cachedBios?.cached_at;
         if (!cachedBios || isStale(biosCachedAt, BIOS_TTL_SEC)) {
-          getBiosStatus(romId).then((result) => {
-            const b = result.bios_status;
-            if (!cancelled && b) {
-              setInfo((prev) => ({ ...prev, ...extractBiosInfo(b as BiosStatus) }));
-            }
-          }).catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
+          refreshBiosInBackground(romId, cancelled, setInfo);
         }
       } catch (e) {
         debugLog(`RomMPlaySection: loadCached error: ${e}`);
@@ -457,10 +469,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       globalThis.dispatchEvent(new CustomEvent("romm_connection_changed", { detail: { state: "checking" } }));
 
       try {
-        const result = await Promise.race([
-          testConnection(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-        ]);
+        const result = await Promise.race([testConnection(), timeoutMs(5000)]);
         if (cancelled) return;
         const connected = result.success;
         const connState = connected ? "connected" : "offline";
