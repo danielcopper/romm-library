@@ -423,6 +423,7 @@ class TestGetCachedGameDetailBiosFromCache:
             },
         ]
         plugin._firmware_service._firmware_cache_at = 99.0
+        plugin._firmware_service._firmware_cache_epoch = 99.0
 
         with (
             patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
@@ -462,6 +463,7 @@ class TestGetCachedGameDetailBiosFromCache:
         }
         plugin._firmware_service._firmware_cache = []
         plugin._firmware_service._firmware_cache_at = 50.0
+        plugin._firmware_service._firmware_cache_epoch = 50.0
 
         with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
             result = await plugin.get_cached_game_detail(50000)

@@ -20,7 +20,7 @@ export interface CachedGameDetail {
   save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
 
   metadata?: Record<string, unknown> | null;
-  bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string; cores?: Record<string, { required: boolean }>; used_by_active?: boolean }> } | null;
+  bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; cached_at?: number; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string; cores?: Record<string, { required: boolean }>; used_by_active?: boolean }> } | null;
   rom_file?: string;
   ra_id?: number | null;
   achievement_summary?: AchievementSummary | null;

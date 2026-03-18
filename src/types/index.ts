@@ -321,6 +321,7 @@ export interface AchievementSummary {
   earned: number;
   total: number;
   earned_hardcore: number;
+  cached_at?: number;
 }
 
 export interface AchievementList {

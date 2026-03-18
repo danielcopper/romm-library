@@ -1634,6 +1634,7 @@ class TestCheckPlatformBiosCached:
         )
         fw._firmware_cache = firmware_cache
         fw._firmware_cache_at = firmware_cache_at
+        fw._firmware_cache_epoch = firmware_cache_at
         if bios_registry:
             fw._bios_registry = bios_registry
         return fw
@@ -1708,6 +1709,7 @@ class TestCheckPlatformBiosCached:
         )
         fw._firmware_cache = []
         fw._firmware_cache_at = 1.0
+        fw._firmware_cache_epoch = 1.0
 
         from unittest.mock import patch
 

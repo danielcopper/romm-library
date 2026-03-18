@@ -292,16 +292,24 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
             .catch((e) => debugLog(`Auto-artwork error: ${e}`));
         }
 
-        // Background: fetch metadata if missing or stale (>7 days)
+        // Staleness helper: true if cached_at is missing or older than ttlSec
+        const nowSec = Date.now() / 1000;
+        const isStale = (cachedAt: number | undefined, ttlSec: number) =>
+          !cachedAt || (nowSec - cachedAt) > ttlSec;
+
         const METADATA_TTL_SEC = 7 * 24 * 3600;
+        const BIOS_TTL_SEC = 3600;
+        const ACHIEVEMENT_TTL_SEC = 3600;
+
+        // Background: fetch metadata if missing or stale (>7 days)
         const metaCachedAt = (cached.metadata as Record<string, unknown> | null)?.cached_at as number | undefined;
-        const metaStale = !metaCachedAt || (Date.now() / 1000 - metaCachedAt) > METADATA_TTL_SEC;
-        if (romId && (!cached.metadata || metaStale)) {
+        if (romId && (!cached.metadata || isStale(metaCachedAt, METADATA_TTL_SEC))) {
           getRomMetadata(romId).catch((e) => debugLog(`Background metadata fetch error: ${e}`));
         }
 
-        // Background: fetch achievement progress if ra_id exists but no summary cached
-        if (cached.ra_id && !cached.achievement_summary) {
+        // Achievements: render from cache, background refresh if stale or missing
+        const achCachedAt = cached.achievement_summary?.cached_at as number | undefined;
+        if (cached.ra_id && (!cached.achievement_summary || isStale(achCachedAt, ACHIEVEMENT_TTL_SEC))) {
           getAchievementProgress(romId).then((result) => {
             if (!cancelled && result.success) {
               setInfo((prev) => ({
@@ -313,26 +321,46 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           }).catch((e) => debugLog(`Background achievement progress fetch error: ${e}`));
         }
 
-        // Background: fetch BIOS status (moved out of get_cached_game_detail for speed)
-        getBiosStatus(romId).then((result) => {
-          if (cancelled) return;
-          const b = result.bios_status;
-          if (b) {
-            const activeCoreLabel = b.active_core_label ?? null;
-            const availableCores = b.available_cores ?? [];
-            const defaultCore = availableCores.find((c) => c.is_default);
-            const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
-            setInfo((prev) => ({
-              ...prev,
-              biosNeeded: true,
-              biosStatus: getBiosLevel(b as BiosStatus),
-              biosLabel: formatBiosLabel(b as BiosStatus),
-              activeCoreLabel,
-              activeCoreIsDefault,
-              availableCores,
-            }));
-          }
-        }).catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
+        // BIOS: render from cache first, background refresh if stale or missing
+        const cachedBios = cached.bios_status;
+        if (cachedBios) {
+          const activeCoreLabel = cachedBios.active_core_label ?? null;
+          const availableCores = cachedBios.available_cores ?? [];
+          const defaultCore = availableCores.find((c: { is_default: boolean }) => c.is_default);
+          const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+          setInfo((prev) => ({
+            ...prev,
+            biosNeeded: true,
+            biosStatus: getBiosLevel(cachedBios as BiosStatus),
+            biosLabel: formatBiosLabel(cachedBios as BiosStatus),
+            activeCoreLabel,
+            activeCoreIsDefault,
+            availableCores,
+          }));
+        }
+
+        const biosCachedAt = cachedBios?.cached_at as number | undefined;
+        if (!cachedBios || isStale(biosCachedAt, BIOS_TTL_SEC)) {
+          getBiosStatus(romId).then((result) => {
+            if (cancelled) return;
+            const b = result.bios_status;
+            if (b) {
+              const activeCoreLabel = b.active_core_label ?? null;
+              const availableCores = b.available_cores ?? [];
+              const defaultCore = availableCores.find((c) => c.is_default);
+              const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+              setInfo((prev) => ({
+                ...prev,
+                biosNeeded: true,
+                biosStatus: getBiosLevel(b as BiosStatus),
+                biosLabel: formatBiosLabel(b as BiosStatus),
+                activeCoreLabel,
+                activeCoreIsDefault,
+                availableCores,
+              }));
+            }
+          }).catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
+        }
       } catch (e) {
         debugLog(`RomMPlaySection: loadCached error: ${e}`);
       }

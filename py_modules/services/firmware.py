@@ -49,6 +49,7 @@ class FirmwareService:
         self._bios_files_index: dict = {}
         self._firmware_cache: list | None = None
         self._firmware_cache_at: float = 0
+        self._firmware_cache_epoch: float = 0
 
     @property
     def bios_files_index(self) -> dict:
@@ -153,6 +154,7 @@ class FirmwareService:
             result = self._romm_api.list_firmware()
             self._firmware_cache = result
             self._firmware_cache_at = time.monotonic()
+            self._firmware_cache_epoch = time.time()
             return result
         except Exception as e:
             self._logger.warning(f"Failed to fetch firmware list: {e}")
@@ -164,6 +166,7 @@ class FirmwareService:
         """Clear cached firmware list so the next call re-fetches."""
         self._firmware_cache = None
         self._firmware_cache_at = 0
+        self._firmware_cache_epoch = 0
 
     def check_platform_bios_cached(self, platform_slug, rom_filename=None):
         """Return BIOS status from in-memory cache only — no HTTP.
@@ -184,7 +187,7 @@ class FirmwareService:
         files = self._collect_server_firmware(self._firmware_cache, fw_slugs, registry_platform, active_core_so)
 
         if not files:
-            return {"needs_bios": False, "cached_at": self._firmware_cache_at}
+            return {"needs_bios": False, "cached_at": self._firmware_cache_epoch}
 
         server_count = len(files)
         local_count = sum(1 for f in files if f["downloaded"])
@@ -203,7 +206,7 @@ class FirmwareService:
             "active_core": active_core_so,
             "active_core_label": active_core_label,
             "available_cores": es_de_config.get_available_cores(platform_slug),
-            "cached_at": self._firmware_cache_at,
+            "cached_at": self._firmware_cache_epoch,
         }
 
     # ── Public API ───────────────────────────────────────────
