@@ -17,6 +17,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from domain.save_conflicts import (
+    build_conflict_dict,
+    check_local_changes,
+    check_server_changes_fast,
+    detect_conflict_lightweight,
+    determine_action,
+    resolve_conflict_by_mode,
+)
+
 from lib.errors import RommApiError, RommConflictError, classify_error
 from services.protocols import RommApiProtocol
 
@@ -259,24 +268,15 @@ class SaveService:
     # Conflict Detection
     # ------------------------------------------------------------------
 
-    def _check_local_changes(self, local_hash: str, last_sync_hash: str) -> bool:
-        """Compare local hash against baseline to detect local modifications."""
-        return local_hash != last_sync_hash
-
     def _check_server_changes(self, file_state: dict, server_save: dict, last_sync_hash: str) -> bool:
         """Compare server metadata/hash against baseline to detect server modifications."""
-        stored_updated_at = file_state.get("last_sync_server_updated_at")
-        stored_size = file_state.get("last_sync_server_size")
-        server_updated_at = server_save.get("updated_at", "")
-        server_size = server_save.get("file_size_bytes")
-
-        # Fast path: timestamp unchanged
-        if stored_updated_at and server_updated_at == stored_updated_at:
-            if stored_size is not None and server_size is not None and server_size != stored_size:
-                return True  # size changed
-            return False  # unchanged
+        fast = check_server_changes_fast(file_state, server_save, last_sync_hash)
+        if fast is not None:
+            return fast
 
         # Slow path: timestamp changed or no stored timestamp — download and hash
+        server_updated_at = server_save.get("updated_at", "")
+        server_size = server_save.get("file_size_bytes")
         try:
             server_hash = self._with_retry(self._get_server_save_hash, server_save)
         except Exception:
@@ -290,17 +290,6 @@ class SaveService:
             if server_size is not None:
                 file_state["last_sync_server_size"] = server_size
         return False
-
-    @staticmethod
-    def _determine_action(local_changed: bool, server_changed: bool) -> str:
-        """Decide skip/upload/download/conflict based on local and server change flags."""
-        if not local_changed and not server_changed:
-            return "skip"
-        if not local_changed:
-            return "download"
-        if not server_changed:
-            return "upload"
-        return "conflict"
 
     def _detect_conflict(self, rom_id: int, filename: str, local_hash: str, server_save: dict) -> str:
         """Hybrid conflict detection (no content_hash on RomM 4.6.1).
@@ -324,9 +313,9 @@ class SaveService:
                 return "skip" if local_hash == server_hash else "conflict"
             return "download"
 
-        local_changed = self._check_local_changes(local_hash, last_sync_hash)
+        local_changed = check_local_changes(local_hash, last_sync_hash)
         server_changed = self._check_server_changes(file_state, server_save, last_sync_hash)
-        result = self._determine_action(local_changed, server_changed)
+        result = determine_action(local_changed, server_changed)
 
         self._log_debug(
             f"_detect_conflict({rom_id}, {filename}): "
@@ -337,32 +326,11 @@ class SaveService:
         return result
 
     def _resolve_conflict_by_mode(self, local_mtime: float, server_save: dict) -> str:
-        """Apply configured conflict resolution mode.
-
-        Returns: ``"upload"``, ``"download"``, or ``"ask"``.
-        """
+        """Wrapper: apply configured conflict resolution mode via domain function."""
         settings = self._save_sync_state.get("settings", {})
         mode = settings.get("conflict_mode", "ask_me")
-
-        if mode == "always_upload":
-            return "upload"
-        if mode == "always_download":
-            return "download"
-        if mode == "ask_me":
-            return "ask"
-
-        # newest_wins (default)
         tolerance = settings.get("clock_skew_tolerance_sec", 60)
-        server_updated = server_save.get("updated_at", "")
-        try:
-            server_dt = datetime.fromisoformat(server_updated.replace("Z", "+00:00"))
-            local_dt = datetime.fromtimestamp(local_mtime, tz=timezone.utc)
-            diff = abs((local_dt - server_dt).total_seconds())
-            if diff <= tolerance:
-                return "ask"
-            return "upload" if local_dt > server_dt else "download"
-        except (ValueError, TypeError):
-            return "ask"
+        return resolve_conflict_by_mode(mode, local_mtime, server_save, tolerance)
 
     def _detect_conflict_lightweight(
         self,
@@ -371,39 +339,8 @@ class SaveService:
         server_save: dict | None,
         file_state: dict,
     ) -> str:
-        """Timestamp-only conflict detection. No file hashing or server downloads.
-
-        Returns: ``"skip"``, ``"download"``, ``"upload"``, or ``"conflict"``.
-        """
-        last_sync_hash = file_state.get("last_sync_hash")
-
-        # Never synced — can't determine state without hashing
-        if not last_sync_hash:
-            return "conflict" if server_save else "upload"
-
-        # Local change: compare mtime against stored sync mtime
-        stored_local_mtime = file_state.get("last_sync_local_mtime")
-        if stored_local_mtime is not None:
-            local_changed = abs(local_mtime - stored_local_mtime) > 1.0
-        else:
-            # No stored mtime — fall back to size comparison
-            stored_local_size = file_state.get("last_sync_local_size")
-            local_changed = stored_local_size is not None and local_size != stored_local_size
-
-        # Server change detection
-        server_changed = False
-        if server_save:
-            stored_updated_at = file_state.get("last_sync_server_updated_at")
-            stored_size = file_state.get("last_sync_server_size")
-            server_updated_at = server_save.get("updated_at", "")
-            server_size = server_save.get("file_size_bytes")
-
-            if (stored_updated_at and server_updated_at != stored_updated_at) or (
-                stored_size is not None and server_size is not None and server_size != stored_size
-            ):
-                server_changed = True
-
-        return self._determine_action(local_changed, server_changed)
+        """Wrapper: timestamp-only conflict detection via domain function."""
+        return detect_conflict_lightweight(local_mtime, local_size, server_save, file_state)
 
     def _update_file_sync_state(
         self, rom_id_str: str, filename: str, server_response: dict, local_path: str, system: str
@@ -477,31 +414,6 @@ class SaveService:
         self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str}")
         return result
 
-    @staticmethod
-    def _build_conflict_dict(
-        rom_id: int,
-        filename: str,
-        local: dict | None,
-        local_hash: str | None,
-        server: dict,
-    ) -> dict:
-        """Build a conflict descriptor for the frontend."""
-        local_mtime_val = os.path.getmtime(local["path"]) if local and os.path.isfile(local["path"]) else None
-        return {
-            "rom_id": rom_id,
-            "filename": filename,
-            "local_path": local["path"] if local else None,
-            "local_hash": local_hash,
-            "local_mtime": (
-                datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat() if local_mtime_val else None
-            ),
-            "local_size": (os.path.getsize(local["path"]) if local and os.path.isfile(local["path"]) else None),
-            "server_save_id": server.get("id"),
-            "server_updated_at": server.get("updated_at", ""),
-            "server_size": server.get("file_size_bytes"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-
     def _sync_single_save_file(
         self,
         rom_id: int,
@@ -563,7 +475,13 @@ class SaveService:
                 return True
         except RommConflictError:
             if local and server:
-                conflicts.append(self._build_conflict_dict(rom_id, filename, local, local_hash, server))
+                local_path = local["path"]
+                local_info = {
+                    "path": local_path,
+                    "mtime": os.path.getmtime(local_path) if os.path.isfile(local_path) else None,
+                    "size": os.path.getsize(local_path) if os.path.isfile(local_path) else None,
+                }
+                conflicts.append(build_conflict_dict(rom_id, filename, local_info, local_hash, server))
             else:
                 errors.append(f"{filename}: conflict without matching local+server")
         except RommApiError as e:
@@ -605,7 +523,13 @@ class SaveService:
 
         if action == "ask":
             if local and server:
-                conflicts.append(self._build_conflict_dict(rom_id, filename, local, local_hash, server))
+                local_path = local["path"]
+                local_info = {
+                    "path": local_path,
+                    "mtime": os.path.getmtime(local_path) if os.path.isfile(local_path) else None,
+                    "size": os.path.getsize(local_path) if os.path.isfile(local_path) else None,
+                }
+                conflicts.append(build_conflict_dict(rom_id, filename, local_info, local_hash, server))
             return False
 
         t_action = time.time()
@@ -895,7 +819,7 @@ class SaveService:
             local_mtime = os.path.getmtime(lf["path"])
             local_size = os.path.getsize(lf["path"])
 
-            status = self._detect_conflict_lightweight(local_mtime, local_size, server, files_state.get(fn, {}))
+            status = detect_conflict_lightweight(local_mtime, local_size, server, files_state.get(fn, {}))
 
             file_statuses.append(
                 {

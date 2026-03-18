@@ -82,6 +82,7 @@ py_modules/
     bios.py                               # BIOS status formatting and computation
     es_de_config.py                       # CoreResolver + GamelistXmlEditor classes (core resolution, gamelist.xml)
     retrodeck_config.py                   # RetroDECK path resolution (roms, saves, BIOS, states)
+    save_conflicts.py                     # Save file conflict detection and resolution logic
     state_migrations.py                   # Schema migration functions for state files
   lib/
     errors.py                             # Exception hierarchy (RommApiError, classify_error)
@@ -95,7 +96,7 @@ src/
   utils/                                  # Shortcut management, sync, downloads, collections, sessions
 bin/romm-launcher                         # Bash launcher for RetroDECK
 defaults/config.json                      # 149 platform slug → RetroDECK system mappings
-tests/test_*.py                           # Per-module backend tests (951 tests)
+tests/test_*.py                           # Per-module backend tests (1150 tests)
 tests/conftest.py                         # Mock decky module for test isolation
 ```
 
