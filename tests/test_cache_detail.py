@@ -1,11 +1,14 @@
 import asyncio
 import logging
 import os
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
 from fakes.fake_save_api import FakeSaveApi
+from services.achievements import AchievementsService
+from services.firmware import FirmwareService
 from services.library import LibraryService
 from services.playtime import PlaytimeService
 from services.saves import SaveService
@@ -28,7 +31,13 @@ def plugin(tmp_path):
         "enabled_platforms": {},
         "log_level": "warn",
     }
-    p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
+    p._state = {
+        "shortcut_registry": {},
+        "installed_roms": {},
+        "last_sync": None,
+        "sync_stats": {},
+        "downloaded_bios": {},
+    }
     p._metadata_cache = {}
 
     import decky
@@ -80,6 +89,23 @@ def plugin(tmp_path):
         loop=asyncio.get_event_loop(),
         logger=logging.getLogger("test"),
         save_state=p._save_sync_service.save_state,
+    )
+
+    p._achievements_service = AchievementsService(
+        romm_api=MagicMock(),
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=logging.getLogger("test"),
+        log_debug=p._log_debug,
+    )
+
+    p._firmware_service = FirmwareService(
+        romm_api=MagicMock(),
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=logging.getLogger("test"),
+        plugin_dir=decky.DECKY_PLUGIN_DIR,
+        save_state=MagicMock(),
     )
 
     # Store fake_api on plugin for test access
@@ -351,6 +377,96 @@ class TestGetCachedGameDetailConflictFiltering:
         result = await plugin.get_cached_game_detail("50000")
         assert result["found"] is True
         assert result["rom_id"] == 10
+
+
+# ============================================================================
+# get_cached_game_detail bios_status from cache tests
+# ============================================================================
+
+
+class TestGetCachedGameDetailBiosFromCache:
+    """Test that get_cached_game_detail returns bios_status from firmware cache."""
+
+    @pytest.mark.asyncio
+    async def test_bios_status_none_when_cache_empty(self, plugin):
+        """No firmware cache → bios_status is None."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Pokemon",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        # firmware cache is empty by default (None)
+        result = await plugin.get_cached_game_detail(50000)
+        assert result["found"] is True
+        assert result["bios_status"] is None
+
+    @pytest.mark.asyncio
+    async def test_bios_status_from_populated_cache(self, plugin, tmp_path):
+        """Firmware cache populated → bios_status returned with cached_at."""
+        from unittest.mock import patch
+
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Pokemon",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        # Populate firmware cache
+        plugin._firmware_service._firmware_cache = [
+            {
+                "file_path": "bios/gba/gba_bios.bin",
+                "file_name": "gba_bios.bin",
+                "file_size_bytes": 16384,
+                "md5_hash": "abc123",
+                "id": 1,
+            },
+        ]
+        plugin._firmware_service._firmware_cache_at = 99.0
+
+        with (
+            patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
+            patch("lib.es_de_config.get_available_cores", return_value=[]),
+            patch("lib.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
+        ):
+            result = await plugin.get_cached_game_detail(50000)
+
+        assert result["found"] is True
+        bs = result["bios_status"]
+        assert bs is not None
+        assert bs["platform_slug"] == "gba"
+        assert bs["cached_at"] == 99.0
+        assert bs["total"] == 1
+        assert bs["downloaded"] == 0
+
+    @pytest.mark.asyncio
+    async def test_bios_status_none_when_no_platform_slug(self, plugin):
+        """No platform_slug in registry → bios_status is None (skipped)."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Game",
+        }
+        result = await plugin.get_cached_game_detail(50000)
+        assert result["bios_status"] is None
+
+    @pytest.mark.asyncio
+    async def test_bios_status_none_when_needs_bios_false(self, plugin):
+        """Cache populated but no firmware for platform → bios_status is None."""
+        from unittest.mock import patch
+
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Tetris",
+            "platform_slug": "gb",
+            "platform_name": "Game Boy",
+        }
+        plugin._firmware_service._firmware_cache = []
+        plugin._firmware_service._firmware_cache_at = 50.0
+
+        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+            result = await plugin.get_cached_game_detail(50000)
+
+        assert result["bios_status"] is None
 
 
 # ============================================================================
@@ -666,3 +782,109 @@ class TestLightweightSaveStatusAPIError:
         assert result["files"][0]["filename"] == "pokemon.srm"
         assert result["files"][0]["status"] == "upload"
         assert result["files"][0]["server_save_id"] is None
+
+
+class TestAchievementSummaryCachedAt:
+    """Test that achievement_summary includes cached_at from progress cache."""
+
+    @pytest.mark.asyncio
+    async def test_achievement_summary_includes_cached_at(self, plugin):
+        """When progress is cached, achievement_summary includes cached_at timestamp."""
+        cached_time = time.time() - 600  # 10 minutes ago
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Sonic",
+            "platform_slug": "genesis",
+            "platform_name": "Genesis",
+            "ra_id": 555,
+        }
+        # Seed RA username cache
+        plugin._achievements_service._achievements_cache["_ra_user"] = {
+            "username": "testuser",
+            "cached_at": time.time(),
+        }
+        # Seed progress cache
+        plugin._achievements_service._achievements_cache["42"] = {
+            "user_progress": {
+                "earned": 5,
+                "earned_hardcore": 3,
+                "total": 20,
+                "earned_achievements": [],
+                "cached_at": cached_time,
+            },
+            "cached_at": time.time(),
+        }
+
+        result = await plugin.get_cached_game_detail(99999)
+
+        assert result["achievement_summary"] is not None
+        assert result["achievement_summary"]["earned"] == 5
+        assert result["achievement_summary"]["total"] == 20
+        assert result["achievement_summary"]["earned_hardcore"] == 3
+        assert result["achievement_summary"]["cached_at"] == cached_time
+
+    @pytest.mark.asyncio
+    async def test_achievement_summary_cached_at_reflects_storage_time(self, plugin):
+        """cached_at in summary matches the time progress was stored, not current time."""
+        storage_time = time.time() - 1800  # 30 minutes ago
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Sonic",
+            "platform_slug": "genesis",
+            "platform_name": "Genesis",
+            "ra_id": 555,
+        }
+        plugin._achievements_service._achievements_cache["_ra_user"] = {
+            "username": "testuser",
+            "cached_at": time.time(),
+        }
+        plugin._achievements_service._achievements_cache["42"] = {
+            "user_progress": {
+                "earned": 10,
+                "earned_hardcore": 10,
+                "total": 10,
+                "earned_achievements": [],
+                "cached_at": storage_time,
+            },
+            "cached_at": time.time(),
+        }
+
+        result = await plugin.get_cached_game_detail(99999)
+
+        # cached_at should be the storage time, not a fresh timestamp
+        assert result["achievement_summary"]["cached_at"] == storage_time
+        assert result["achievement_summary"]["cached_at"] < time.time() - 1700
+
+    @pytest.mark.asyncio
+    async def test_no_achievement_summary_without_ra_username(self, plugin):
+        """Without RA username, achievement_summary is None even with ra_id."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Sonic",
+            "platform_slug": "genesis",
+            "platform_name": "Genesis",
+            "ra_id": 555,
+        }
+
+        result = await plugin.get_cached_game_detail(99999)
+
+        assert result["achievement_summary"] is None
+
+    @pytest.mark.asyncio
+    async def test_no_achievement_summary_without_cached_progress(self, plugin):
+        """With RA username but no cached progress, achievement_summary is None."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Sonic",
+            "platform_slug": "genesis",
+            "platform_name": "Genesis",
+            "ra_id": 555,
+        }
+        plugin._achievements_service._achievements_cache["_ra_user"] = {
+            "username": "testuser",
+            "cached_at": time.time(),
+        }
+
+        result = await plugin.get_cached_game_detail(99999)
+
+        assert result["achievement_summary"] is None

@@ -165,6 +165,47 @@ class FirmwareService:
         self._firmware_cache = None
         self._firmware_cache_at = 0
 
+    def check_platform_bios_cached(self, platform_slug, rom_filename=None):
+        """Return BIOS status from in-memory cache only — no HTTP.
+
+        Returns None if the firmware cache is empty (never fetched).
+        Includes ``cached_at`` timestamp so the frontend can decide staleness.
+        """
+        if self._firmware_cache is None:
+            return None
+
+        fw_slugs = self._platform_to_firmware_slugs(platform_slug)
+        active_core_so, active_core_label = es_de_config.get_active_core(platform_slug, rom_filename=rom_filename)
+
+        registry_platform = {}
+        for slug in fw_slugs:
+            registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
+
+        files = self._collect_server_firmware(self._firmware_cache, fw_slugs, registry_platform, active_core_so)
+
+        if not files:
+            return {"needs_bios": False, "cached_at": self._firmware_cache_at}
+
+        server_count = len(files)
+        local_count = sum(1 for f in files if f["downloaded"])
+        active_files = [f for f in files if f.get("used_by_active", True)]
+        required_files = [f for f in active_files if f["classification"] == "required"]
+
+        return {
+            "needs_bios": True,
+            "server_count": server_count,
+            "local_count": local_count,
+            "all_downloaded": local_count >= server_count,
+            "required_count": len(required_files),
+            "required_downloaded": sum(1 for f in required_files if f["downloaded"]),
+            "unknown_count": sum(1 for f in files if f["classification"] == "unknown"),
+            "files": files,
+            "active_core": active_core_so,
+            "active_core_label": active_core_label,
+            "available_cores": es_de_config.get_available_cores(platform_slug),
+            "cached_at": self._firmware_cache_at,
+        }
+
     # ── Public API ───────────────────────────────────────────
 
     def _group_server_firmware(self, firmware_list):

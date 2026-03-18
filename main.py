@@ -401,6 +401,27 @@ class Plugin:
 
         platform_slug = entry.get("platform_slug", "")
 
+        # BIOS status from firmware cache (no HTTP — cache-only read)
+        bios_status = None
+        if platform_slug:
+            cached_bios = self._firmware_service.check_platform_bios_cached(
+                platform_slug, rom_filename=rom_file or None
+            )
+            if cached_bios and cached_bios.get("needs_bios"):
+                bios_status = {
+                    "platform_slug": platform_slug,
+                    "total": cached_bios.get("server_count", 0),
+                    "downloaded": cached_bios.get("local_count", 0),
+                    "all_downloaded": cached_bios.get("all_downloaded", False),
+                    "required_count": cached_bios.get("required_count"),
+                    "required_downloaded": cached_bios.get("required_downloaded"),
+                    "files": cached_bios.get("files", []),
+                    "active_core": cached_bios.get("active_core"),
+                    "active_core_label": cached_bios.get("active_core_label"),
+                    "available_cores": cached_bios.get("available_cores", []),
+                    "cached_at": cached_bios.get("cached_at"),
+                }
+
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
         achievement_summary = None
@@ -412,6 +433,7 @@ class Plugin:
                     "earned": cached_progress.get("earned", 0),
                     "total": cached_progress.get("total", 0),
                     "earned_hardcore": cached_progress.get("earned_hardcore", 0),
+                    "cached_at": cached_progress.get("cached_at"),
                 }
             else:
                 # Return None — frontend will fetch on demand
@@ -427,7 +449,7 @@ class Plugin:
             "save_sync_enabled": save_sync_enabled,
             "save_status": save_status,
             "metadata": metadata,
-            "bios_status": None,
+            "bios_status": bios_status,
             "rom_file": rom_file,
             "ra_id": ra_id,
             "achievement_summary": achievement_summary,

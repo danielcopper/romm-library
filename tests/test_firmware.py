@@ -1616,3 +1616,103 @@ class TestFirmwareListCache:
 
         with pytest.raises(Exception, match="connection refused"):
             fw._get_firmware_list()
+
+
+class TestCheckPlatformBiosCached:
+    """Tests for check_platform_bios_cached — cache-only BIOS status read."""
+
+    def _make_service(self, firmware_cache=None, firmware_cache_at=0, bios_registry=None, state=None):
+        import logging
+
+        fw = FirmwareService(
+            romm_api=MagicMock(),
+            state=state or {"shortcut_registry": {}, "installed_roms": {}, "downloaded_bios": {}},
+            loop=asyncio.get_event_loop(),
+            logger=logging.getLogger("test"),
+            plugin_dir="/fake",
+            save_state=MagicMock(),
+        )
+        fw._firmware_cache = firmware_cache
+        fw._firmware_cache_at = firmware_cache_at
+        if bios_registry:
+            fw._bios_registry = bios_registry
+        return fw
+
+    def test_returns_none_when_cache_empty(self):
+        """No firmware cache → returns None."""
+        fw = self._make_service(firmware_cache=None)
+        result = fw.check_platform_bios_cached("gba")
+        assert result is None
+
+    def test_returns_needs_bios_false_no_matching_firmware(self):
+        """Cache populated but no firmware for this platform → needs_bios=False."""
+        fw = self._make_service(
+            firmware_cache=[
+                {"file_path": "bios/snes/some.bin", "file_name": "some.bin", "file_size_bytes": 100, "md5_hash": ""}
+            ],
+            firmware_cache_at=1000.0,
+        )
+        from unittest.mock import patch
+
+        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+            result = fw.check_platform_bios_cached("gba")
+
+        assert result is not None
+        assert result["needs_bios"] is False
+        assert result["cached_at"] == 1000.0
+
+    def test_returns_bios_status_from_cache(self, tmp_path):
+        """Cache populated with matching firmware → full BIOS status with cached_at."""
+        fw = self._make_service(
+            firmware_cache=[
+                {
+                    "file_path": "bios/gba/gba_bios.bin",
+                    "file_name": "gba_bios.bin",
+                    "file_size_bytes": 16384,
+                    "md5_hash": "abc123",
+                    "id": 1,
+                },
+            ],
+            firmware_cache_at=42.0,
+        )
+        from unittest.mock import patch
+
+        with (
+            patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
+            patch("lib.es_de_config.get_available_cores", return_value=[{"label": "mGBA", "so": "mgba_libretro.so"}]),
+            patch("lib.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
+        ):
+            result = fw.check_platform_bios_cached("gba")
+
+        assert result["needs_bios"] is True
+        assert result["cached_at"] == 42.0
+        assert result["server_count"] == 1
+        assert result["local_count"] == 0
+        assert result["active_core"] == "mgba_libretro.so"
+        assert result["active_core_label"] == "mGBA"
+        assert len(result["files"]) == 1
+        assert result["files"][0]["file_name"] == "gba_bios.bin"
+
+    def test_does_not_call_http(self):
+        """Cache-only method must not invoke any HTTP calls."""
+        api = MagicMock()
+        import logging
+
+        fw = FirmwareService(
+            romm_api=api,
+            state={"shortcut_registry": {}, "installed_roms": {}, "downloaded_bios": {}},
+            loop=asyncio.get_event_loop(),
+            logger=logging.getLogger("test"),
+            plugin_dir="/fake",
+            save_state=MagicMock(),
+        )
+        fw._firmware_cache = []
+        fw._firmware_cache_at = 1.0
+
+        from unittest.mock import patch
+
+        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+            fw.check_platform_bios_cached("gba")
+
+        api.list_firmware.assert_not_called()
+        api.get_firmware.assert_not_called()
