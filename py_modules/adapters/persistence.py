@@ -10,6 +10,7 @@ import os
 
 _STATE_VERSION = 1
 _METADATA_CACHE_VERSION = 1
+_LOCK_EXT = ".lock"
 
 DEFAULT_SETTINGS: dict = {
     "romm_url": "",
@@ -112,7 +113,7 @@ class PersistenceAdapter:
         os.makedirs(self._runtime_dir, exist_ok=True)
         state_path = os.path.join(self._runtime_dir, "state.json")
         tmp_path = state_path + ".tmp"
-        lock_fd = os.open(state_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        lock_fd = os.open(state_path + _LOCK_EXT, os.O_WRONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
             fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -145,7 +146,7 @@ class PersistenceAdapter:
         os.makedirs(self._runtime_dir, exist_ok=True)
         cache_path = os.path.join(self._runtime_dir, "metadata_cache.json")
         tmp_path = cache_path + ".tmp"
-        lock_fd = os.open(cache_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        lock_fd = os.open(cache_path + _LOCK_EXT, os.O_WRONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
             fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -176,7 +177,7 @@ class PersistenceAdapter:
         os.makedirs(self._runtime_dir, exist_ok=True)
         cache_path = os.path.join(self._runtime_dir, "firmware_cache.json")
         tmp_path = cache_path + ".tmp"
-        lock_fd = os.open(cache_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        lock_fd = os.open(cache_path + _LOCK_EXT, os.O_WRONLY | os.O_CREAT, 0o600)
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
             fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
