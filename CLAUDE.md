@@ -80,6 +80,7 @@ py_modules/
   domain/
     es_de_config.py                       # CoreResolver + GamelistXmlEditor classes (core resolution, gamelist.xml)
     retrodeck_config.py                   # RetroDECK path resolution (roms, saves, BIOS, states)
+    state_migrations.py                   # Schema migration functions for state files
   lib/
     errors.py                             # Exception hierarchy (RommApiError, classify_error)
   vdf/                                    # Vendored VDF library (binary VDF read/write)

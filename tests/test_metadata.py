@@ -288,17 +288,18 @@ class TestLoadMetadataCache:
 
     def test_loads_from_disk(self, plugin, tmp_path):
         import decky
+        from adapters.persistence import _METADATA_CACHE_VERSION
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
 
-        cache_data = {"42": {"summary": "test", "cached_at": 100}}
+        rom_entry = {"summary": "test", "cached_at": 100}
+        cache_data = {"version": _METADATA_CACHE_VERSION, "42": rom_entry}
         cache_path = os.path.join(str(tmp_path), "metadata_cache.json")
         with open(cache_path, "w") as f:
             json.dump(cache_data, f)
 
         plugin._load_metadata_cache()
-        # version key is auto-added during load
-        assert plugin._metadata_cache["42"] == cache_data["42"]
+        assert plugin._metadata_cache["42"] == rom_entry
         assert "version" in plugin._metadata_cache
 
     def test_empty_when_file_missing(self, plugin, tmp_path):
