@@ -440,10 +440,15 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
+      // Reset stale connection state immediately so downstream consumers
+      // (e.g. CustomPlayButton) don't stay stuck on a previous "offline"
+      setRommConnectionState("checking");
+      window.dispatchEvent(new CustomEvent("romm_connection_changed", { detail: { state: "checking" } }));
+
       try {
         const result = await Promise.race([
           testConnection(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
         ]);
         if (cancelled) return;
         const connected = result.success;
