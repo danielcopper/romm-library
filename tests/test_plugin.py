@@ -17,7 +17,6 @@ def plugin():
     p = Plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_adapter = MagicMock()
-    p._version_router = MagicMock()
     p._romm_api = MagicMock()
     p._state = {"shortcut_registry": {}, "installed_roms": {}, "last_sync": None, "sync_stats": {}}
     p._metadata_cache = {}

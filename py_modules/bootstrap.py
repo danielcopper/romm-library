@@ -17,7 +17,6 @@ from typing import Any
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
-from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
@@ -26,7 +25,7 @@ from services.library import LibraryService
 from services.metadata import MetadataService
 from services.migration import MigrationService
 from services.playtime import PlaytimeService
-from services.protocols import HttpAdapter, RommApiProtocol
+from services.protocols import RommApiProtocol
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.saves import SaveService
 from services.steamgrid import SteamGridService
@@ -38,7 +37,7 @@ class WiringConfig:
     into a single object to keep the composition root readable."""
 
     # Adapters
-    http_adapter: HttpAdapter
+    http_adapter: RommHttpAdapter
     romm_api: RommApiProtocol
     steam_config: SteamConfigProtocol
 
@@ -94,15 +93,12 @@ def bootstrap(
     """
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
-    version_router = VersionRouter(http_adapter)
     romm_api = ApiRouter(http_adapter)
     steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
     return {
         "persistence": persistence,
         "http_adapter": http_adapter,
-        "save_api": version_router,
-        "version_router": version_router,
         "romm_api": romm_api,
         "steam_config": steam_config,
     }

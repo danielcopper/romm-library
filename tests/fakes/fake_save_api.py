@@ -1,4 +1,4 @@
-"""In-memory SaveApiProtocol implementation for service tests."""
+"""In-memory RommApiProtocol (save/note methods) implementation for service tests."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 
 class FakeSaveApi:
-    """In-memory fake that satisfies SaveApiProtocol without HTTP."""
+    """In-memory fake that satisfies RommApiProtocol save/note methods without HTTP."""
 
     def __init__(self) -> None:
         self.saves: dict[int, dict] = {}  # save_id -> save dict

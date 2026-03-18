@@ -117,7 +117,6 @@ class Plugin:
         )
         self._persistence = adapters["persistence"]
         self._http_adapter = adapters["http_adapter"]
-        self._version_router = adapters["version_router"]
         self._romm_api = adapters["romm_api"]
         self._steam_config = adapters["steam_config"]
         self._state = {

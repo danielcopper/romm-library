@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
-from adapters.romm.version_router import VersionRouter
 from adapters.steam_config import SteamConfigAdapter
 from bootstrap import WiringConfig, bootstrap, wire_services
 from services.achievements import AchievementsService
@@ -72,21 +71,6 @@ class TestBootstrap:
         )
         assert result["persistence"]._settings_dir == settings_dir
         assert result["persistence"]._runtime_dir == runtime_dir
-
-    def test_returns_save_api_and_version_router(self, tmp_path):
-        result = bootstrap(
-            settings_dir=str(tmp_path / "settings"),
-            runtime_dir=str(tmp_path / "runtime"),
-            plugin_dir=str(tmp_path / "plugin"),
-            user_home=str(tmp_path / "home"),
-            logger=logging.getLogger("test"),
-            settings={},
-        )
-        assert "save_api" in result
-        assert "version_router" in result
-        assert isinstance(result["version_router"], VersionRouter)
-        # save_api is the same object as version_router
-        assert result["save_api"] is result["version_router"]
 
     def test_returns_steam_config(self, tmp_path):
         result = bootstrap(

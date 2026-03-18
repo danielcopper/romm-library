@@ -15,9 +15,6 @@ forbidden_modules =
     adapters.romm.api_base
     adapters.romm.api_v47
     adapters.romm.api_router
-    adapters.romm.save_api.v46
-    adapters.romm.save_api.v47
-    adapters.romm.version_router
     adapters.steam_config
     adapters.persistence
 
