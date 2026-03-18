@@ -119,7 +119,6 @@ class TestWireServices:
         settings = {}
         http_adapter = MagicMock(spec=RommHttpAdapter)
         steam_config = SteamConfigAdapter(user_home=str(tmp_path), logger=logger)
-        save_api = MagicMock(spec=VersionRouter)
         state = {
             "shortcut_registry": {},
             "installed_roms": {},
@@ -129,7 +128,6 @@ class TestWireServices:
         }
         romm_api = MagicMock(spec=ApiRouter)
         return {
-            "save_api": save_api,
             "http_adapter": http_adapter,
             "romm_api": romm_api,
             "steam_config": steam_config,

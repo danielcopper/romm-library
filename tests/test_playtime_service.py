@@ -27,7 +27,7 @@ def make_service(tmp_path=None, fake_api=None, **overrides):
     saved = []
 
     defaults = dict(
-        save_api=fake,
+        romm_api=fake,
         with_retry=_no_retry,
         is_retryable=lambda e: False,
         save_sync_state=state,

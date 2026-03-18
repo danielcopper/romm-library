@@ -1,6 +1,6 @@
 """PlaytimeService — playtime tracking via RomM Notes API.
 
-All RomM communication goes through ``SaveApiProtocol``.
+All RomM communication goes through ``RommApiProtocol``.
 No ``import decky``.
 """
 
@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from services.protocols import SaveApiProtocol
+from services.protocols import RommApiProtocol
 
 if TYPE_CHECKING:
     import asyncio
@@ -23,7 +23,7 @@ class PlaytimeService:
 
     Parameters
     ----------
-    save_api:
+    romm_api:
         Protocol adapter for RomM HTTP operations.
     with_retry:
         Retry wrapper — ``fn(*args, **kwargs)`` with exponential backoff.
@@ -45,7 +45,7 @@ class PlaytimeService:
     def __init__(
         self,
         *,
-        save_api: SaveApiProtocol,
+        romm_api: RommApiProtocol,
         with_retry: Callable[..., Any],
         is_retryable: Callable[[Exception], bool],
         save_sync_state: dict,
@@ -53,7 +53,7 @@ class PlaytimeService:
         logger: logging.Logger,
         save_state: Callable[[], None],
     ) -> None:
-        self._save_api = save_api
+        self._romm_api = romm_api
         self._with_retry = with_retry
         self._is_retryable = is_retryable
         self._save_sync_state = save_sync_state
@@ -77,7 +77,7 @@ class PlaytimeService:
 
         Reads ``all_user_notes`` from ROM detail and filters by title.
         """
-        rom_detail = self._save_api.get_rom_detail(rom_id)
+        rom_detail = self._romm_api.get_rom_with_notes(rom_id)
         if not isinstance(rom_detail, dict):
             return None
         notes = rom_detail.get("all_user_notes", [])
@@ -90,7 +90,7 @@ class PlaytimeService:
 
     def _create_playtime_note(self, rom_id: int, playtime_data: dict) -> dict:
         """Create a new playtime note for a ROM."""
-        result = self._save_api.create_note(
+        result = self._romm_api.create_note(
             rom_id,
             {
                 "title": self.PLAYTIME_NOTE_TITLE,
@@ -109,7 +109,7 @@ class PlaytimeService:
 
     def _update_playtime_note(self, rom_id: int, note_id: int, playtime_data: dict) -> dict:
         """Update an existing playtime note."""
-        return self._save_api.update_note(
+        return self._romm_api.update_note(
             rom_id,
             note_id,
             {"content": json.dumps(playtime_data)},

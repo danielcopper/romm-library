@@ -139,7 +139,6 @@ class Plugin:
         # ── Wire services (composition, uses live state refs) ──
         services = wire_services(
             WiringConfig(
-                save_api=adapters["save_api"],
                 http_adapter=self._http_adapter,
                 romm_api=self._romm_api,
                 steam_config=self._steam_config,

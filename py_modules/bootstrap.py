@@ -38,7 +38,6 @@ class WiringConfig:
     into a single object to keep the composition root readable."""
 
     # Adapters
-    save_api: Any
     http_adapter: HttpAdapter
     romm_api: RommApiProtocol
     steam_config: SteamConfigProtocol
@@ -122,7 +121,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     ``sync_service``, ``download_service``, and ``firmware_service``.
     """
     save_sync_service = SaveService(
-        save_api=cfg.save_api,
+        romm_api=cfg.romm_api,
         with_retry=cfg.http_adapter.with_retry,
         is_retryable=cfg.http_adapter.is_retryable,
         state=cfg.state,
@@ -134,7 +133,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     playtime_service = PlaytimeService(
-        save_api=cfg.save_api,
+        romm_api=cfg.romm_api,
         with_retry=cfg.http_adapter.with_retry,
         is_retryable=cfg.http_adapter.is_retryable,
         save_sync_state=cfg.save_sync_state,
