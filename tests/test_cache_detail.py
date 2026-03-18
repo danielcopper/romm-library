@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
@@ -356,6 +356,136 @@ class TestGetCachedGameDetailConflictFiltering:
 # ============================================================================
 # check_save_status_lightweight tests
 # ============================================================================
+
+
+# ============================================================================
+# get_bios_status tests
+# ============================================================================
+
+
+class TestGetBiosStatusFound:
+    """Test get_bios_status when ROM has BIOS requirements."""
+
+    @pytest.mark.asyncio
+    async def test_returns_bios_status(self, plugin):
+        """ROM with needs_bios=True returns full bios_status dict."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Game",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        mock_fw = MagicMock()
+        mock_fw.check_platform_bios = AsyncMock(
+            return_value={
+                "needs_bios": True,
+                "server_count": 3,
+                "local_count": 1,
+                "all_downloaded": False,
+                "required_count": 2,
+                "required_downloaded": 1,
+                "files": [{"file_name": "gba_bios.bin", "downloaded": True}],
+                "active_core": "mgba_libretro.so",
+                "active_core_label": "mGBA",
+                "available_cores": [],
+            }
+        )
+        plugin._firmware_service = mock_fw
+
+        result = await plugin.get_bios_status(42)
+        bs = result["bios_status"]
+        assert bs is not None
+        assert bs["platform_slug"] == "gba"
+        assert bs["total"] == 3
+        assert bs["downloaded"] == 1
+        assert bs["all_downloaded"] is False
+        assert bs["required_count"] == 2
+        assert bs["required_downloaded"] == 1
+        assert bs["active_core_label"] == "mGBA"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_bios_needed(self, plugin):
+        """ROM with needs_bios=False returns bios_status=None."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Game",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        mock_fw = MagicMock()
+        mock_fw.check_platform_bios = AsyncMock(
+            return_value={
+                "needs_bios": False,
+            }
+        )
+        plugin._firmware_service = mock_fw
+
+        result = await plugin.get_bios_status(42)
+        assert result["bios_status"] is None
+
+    @pytest.mark.asyncio
+    async def test_uses_rom_file_from_installed(self, plugin):
+        """Uses file_name from installed_roms for per-game core detection."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Game",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+            "fs_name": "registry_file.gba",
+        }
+        plugin._state["installed_roms"]["42"] = {
+            "rom_id": 42,
+            "file_name": "installed_file.gba",
+        }
+
+        captured_args = {}
+
+        async def capture_check(slug, rom_filename=None):
+            captured_args["slug"] = slug
+            captured_args["rom_filename"] = rom_filename
+            return {"needs_bios": False}
+
+        mock_fw = MagicMock()
+        mock_fw.check_platform_bios = capture_check
+        plugin._firmware_service = mock_fw
+
+        await plugin.get_bios_status(42)
+        assert captured_args["rom_filename"] == "installed_file.gba"
+
+
+class TestGetBiosStatusNotFound:
+    """Test get_bios_status when ROM is not in registry."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_rom_id(self, plugin):
+        """Unknown rom_id returns bios_status=None."""
+        result = await plugin.get_bios_status(999)
+        assert result["bios_status"] is None
+
+    @pytest.mark.asyncio
+    async def test_no_platform_slug(self, plugin):
+        """Registry entry without platform_slug returns bios_status=None."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Game",
+        }
+        result = await plugin.get_bios_status(42)
+        assert result["bios_status"] is None
+
+    @pytest.mark.asyncio
+    async def test_firmware_error_returns_none(self, plugin):
+        """Firmware service exception returns bios_status=None."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 50000,
+            "name": "Game",
+            "platform_slug": "gba",
+        }
+        mock_fw = MagicMock()
+        mock_fw.check_platform_bios = AsyncMock(side_effect=Exception("fail"))
+        plugin._firmware_service = mock_fw
+
+        result = await plugin.get_bios_status(42)
+        assert result["bios_status"] is None
 
 
 class TestLightweightSaveStatusNoSaves:

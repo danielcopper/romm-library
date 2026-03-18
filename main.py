@@ -399,27 +399,7 @@ class Plugin:
         if not rom_file:
             rom_file = entry.get("fs_name", "")
 
-        # BIOS status (pass rom_file for per-game core override detection)
         platform_slug = entry.get("platform_slug", "")
-        bios_status = None
-        if platform_slug:
-            try:
-                bios = await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_file or None)
-                if bios.get("needs_bios"):
-                    bios_status = {
-                        "platform_slug": platform_slug,
-                        "total": bios.get("server_count", 0),
-                        "downloaded": bios.get("local_count", 0),
-                        "all_downloaded": bios.get("all_downloaded", False),
-                        "required_count": bios.get("required_count"),
-                        "required_downloaded": bios.get("required_downloaded"),
-                        "files": bios.get("files", []),
-                        "active_core": bios.get("active_core"),
-                        "active_core_label": bios.get("active_core_label"),
-                        "available_cores": bios.get("available_cores", []),
-                    }
-            except Exception as e:
-                decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
 
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
@@ -447,7 +427,7 @@ class Plugin:
             "save_sync_enabled": save_sync_enabled,
             "save_status": save_status,
             "metadata": metadata,
-            "bios_status": bios_status,
+            "bios_status": None,
             "rom_file": rom_file,
             "ra_id": ra_id,
             "achievement_summary": achievement_summary,
@@ -527,6 +507,47 @@ class Plugin:
 
     async def check_platform_bios(self, platform_slug, rom_filename=None):
         return await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_filename)
+
+    async def get_bios_status(self, rom_id):
+        """Return BIOS status for a ROM by looking up platform/rom_file from registry."""
+        rom_id_str = str(rom_id)
+        entry = self._state["shortcut_registry"].get(rom_id_str)
+        if not entry:
+            return {"bios_status": None}
+
+        platform_slug = entry.get("platform_slug", "")
+        if not platform_slug:
+            return {"bios_status": None}
+
+        # Resolve rom_file for per-game core override detection
+        rom_file = ""
+        installed_rom = self._state["installed_roms"].get(rom_id_str, {})
+        if installed_rom:
+            rom_file = installed_rom.get("file_name", "")
+        if not rom_file:
+            rom_file = entry.get("fs_name", "")
+
+        try:
+            bios = await self._firmware_service.check_platform_bios(platform_slug, rom_filename=rom_file or None)
+            if bios.get("needs_bios"):
+                return {
+                    "bios_status": {
+                        "platform_slug": platform_slug,
+                        "total": bios.get("server_count", 0),
+                        "downloaded": bios.get("local_count", 0),
+                        "all_downloaded": bios.get("all_downloaded", False),
+                        "required_count": bios.get("required_count"),
+                        "required_downloaded": bios.get("required_downloaded"),
+                        "files": bios.get("files", []),
+                        "active_core": bios.get("active_core"),
+                        "active_core_label": bios.get("active_core_label"),
+                        "available_cores": bios.get("available_cores", []),
+                    }
+                }
+        except Exception as e:
+            decky.logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
+
+        return {"bios_status": None}
 
     async def delete_platform_bios(self, platform_slug):
         return await self._firmware_service.delete_platform_bios(platform_slug)

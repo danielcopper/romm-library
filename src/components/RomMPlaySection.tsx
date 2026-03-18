@@ -31,6 +31,7 @@ import {
   testConnection,
   getSaveStatus,
   checkPlatformBios,
+  getBiosStatus,
   getSgdbArtworkBase64,
   getRomMetadata,
   removeRom,
@@ -268,39 +269,6 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           saveSyncLabel = display.label;
         }
 
-        // Process BIOS from cached data
-        let biosNeeded = false;
-        let biosStatus: "ok" | "partial" | "missing" | null = null;
-        let biosLabel = "";
-        if (cached.bios_status) {
-          biosNeeded = true;
-          const b = cached.bios_status;
-          const reqCount = b.required_count;
-          const reqDone = b.required_downloaded;
-          if (reqCount != null && reqDone != null) {
-            if (reqDone >= reqCount) { biosStatus = "ok"; biosLabel = "OK"; }
-            else if (reqDone > 0) { biosStatus = "partial"; biosLabel = `${reqDone}/${reqCount} required`; }
-            else { biosStatus = "missing"; biosLabel = "Missing"; }
-          } else {
-            if (b.all_downloaded) {
-              biosStatus = "ok";
-              biosLabel = "OK";
-            } else if (b.downloaded > 0) {
-              biosStatus = "partial";
-              biosLabel = `${b.downloaded}/${b.total}`;
-            } else {
-              biosStatus = "missing";
-              biosLabel = "Missing";
-            }
-          }
-        }
-
-        // Resolve core info from cached BIOS status
-        const activeCoreLabel = cached.bios_status?.active_core_label ?? null;
-        const availableCores = cached.bios_status?.available_cores ?? [];
-        const defaultCore = availableCores.find((c) => c.is_default);
-        const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
-
         if (cancelled) return;
         setInfo((prev) => ({
           ...prev,
@@ -311,12 +279,6 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           saveSyncEnabled: cached.save_sync_enabled ?? false,
           saveSyncStatus,
           saveSyncLabel,
-          biosNeeded,
-          biosStatus,
-          biosLabel,
-          activeCoreLabel,
-          activeCoreIsDefault,
-          availableCores,
           raId: cached.ra_id ?? null,
           achievementEarned: cached.achievement_summary?.earned ?? 0,
           achievementTotal: cached.achievement_summary?.total ?? 0,
@@ -350,6 +312,27 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
             }
           }).catch((e) => debugLog(`Background achievement progress fetch error: ${e}`));
         }
+
+        // Background: fetch BIOS status (moved out of get_cached_game_detail for speed)
+        getBiosStatus(romId).then((result) => {
+          if (cancelled) return;
+          const b = result.bios_status;
+          if (b) {
+            const activeCoreLabel = b.active_core_label ?? null;
+            const availableCores = b.available_cores ?? [];
+            const defaultCore = availableCores.find((c) => c.is_default);
+            const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+            setInfo((prev) => ({
+              ...prev,
+              biosNeeded: true,
+              biosStatus: getBiosLevel(b as BiosStatus),
+              biosLabel: formatBiosLabel(b as BiosStatus),
+              activeCoreLabel,
+              activeCoreIsDefault,
+              availableCores,
+            }));
+          }
+        }).catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
       } catch (e) {
         debugLog(`RomMPlaySection: loadCached error: ${e}`);
       }
@@ -382,22 +365,25 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
 
       // Handle core changed (from QAM BiosManager or other source)
       if (detail?.type === "core_changed") {
-        // Invalidate cache and re-fetch
-        delete (_cachedGameDetailCache as Record<number, unknown>)[appId];
-        const cached = await getCachedGameDetail(appId);
-        if (cancelled || !cached.found) return;
-        const activeCoreLabel = cached.bios_status?.active_core_label ?? null;
-        const availableCores = cached.bios_status?.available_cores ?? [];
-        const defaultCore = availableCores.find((c) => c.is_default);
-        const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
-        setInfo((prev) => ({
-          ...prev,
-          activeCoreLabel,
-          activeCoreIsDefault,
-          availableCores,
-          biosStatus: cached.bios_status ? getBiosLevel(cached.bios_status as BiosStatus) : prev.biosStatus,
-          biosLabel: cached.bios_status ? formatBiosLabel(cached.bios_status as BiosStatus) : prev.biosLabel,
-        }));
+        const rid = romIdRef.current;
+        if (!rid) return;
+        const result = await getBiosStatus(rid);
+        if (cancelled) return;
+        const b = result.bios_status;
+        if (b) {
+          const activeCoreLabel = b.active_core_label ?? null;
+          const availableCores = b.available_cores ?? [];
+          const defaultCore = availableCores.find((c) => c.is_default);
+          const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+          setInfo((prev) => ({
+            ...prev,
+            activeCoreLabel,
+            activeCoreIsDefault,
+            availableCores,
+            biosStatus: getBiosLevel(b as BiosStatus),
+            biosLabel: formatBiosLabel(b as BiosStatus),
+          }));
+        }
         return;
       }
 
