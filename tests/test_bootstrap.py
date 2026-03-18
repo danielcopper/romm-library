@@ -154,9 +154,10 @@ class TestWireServices:
         assert result["sync_service"]._state is deps["state"]
         deps["loop"].close()
 
-    def test_returns_nine_services(self, tmp_path):
+    def test_returns_ten_services(self, tmp_path):
         deps = self._make_deps(tmp_path)
         result = wire_services(WiringConfig(**deps))
-        assert len(result) == 9
+        assert len(result) == 10
         assert "migration_service" in result
+        assert "game_detail_service" in result
         deps["loop"].close()

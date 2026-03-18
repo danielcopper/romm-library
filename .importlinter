@@ -55,12 +55,13 @@ forbidden_modules =
 name = Services must not import other services
 type = independence
 modules =
-    services.library
-    services.saves
-    services.playtime
+    services.achievements
     services.downloads
     services.firmware
-    services.steamgrid
+    services.game_detail
+    services.library
     services.metadata
-    services.achievements
     services.migration
+    services.playtime
+    services.saves
+    services.steamgrid
