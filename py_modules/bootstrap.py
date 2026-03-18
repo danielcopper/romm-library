@@ -59,6 +59,8 @@ class WiringConfig:
     save_state: Callable
     save_settings_to_disk: Callable
     save_metadata_cache: Callable
+    save_firmware_cache: Callable
+    load_firmware_cache: Callable
     log_debug: Callable
 
 
@@ -184,6 +186,8 @@ def wire_services(cfg: WiringConfig) -> dict:
         logger=cfg.logger,
         plugin_dir=cfg.plugin_dir,
         save_state=cfg.save_state,
+        save_firmware_cache=cfg.save_firmware_cache,
+        load_firmware_cache=cfg.load_firmware_cache,
     )
 
     sgdb_service = SteamGridService(

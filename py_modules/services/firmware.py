@@ -38,6 +38,8 @@ class FirmwareService:
         logger: logging.Logger,
         plugin_dir: str,
         save_state: Callable[[], None],
+        save_firmware_cache: Callable[[dict], None] | None = None,
+        load_firmware_cache: Callable[[], dict] | None = None,
     ) -> None:
         self._romm_api = romm_api
         self._state = state
@@ -45,11 +47,14 @@ class FirmwareService:
         self._logger = logger
         self._plugin_dir = plugin_dir
         self._save_state = save_state
+        self._save_firmware_cache = save_firmware_cache
+        self._load_firmware_cache = load_firmware_cache
         self._bios_registry: dict = {}
         self._bios_files_index: dict = {}
         self._firmware_cache: list | None = None
         self._firmware_cache_at: float = 0
         self._firmware_cache_epoch: float = 0
+        self._restore_firmware_cache()
 
     @property
     def bios_files_index(self) -> dict:
@@ -141,6 +146,29 @@ class FirmwareService:
 
     # ── Firmware list cache ─────────────────────────────────
 
+    def _restore_firmware_cache(self) -> None:
+        """Load firmware cache from disk on init."""
+        if not self._load_firmware_cache:
+            return
+        try:
+            data = self._load_firmware_cache()
+            if data and "items" in data and "cached_at" in data:
+                self._firmware_cache = data["items"]
+                self._firmware_cache_epoch = data["cached_at"]
+                self._firmware_cache_at = time.monotonic()
+                self._logger.info("Restored firmware cache from disk (%d items)", len(data["items"]))
+        except Exception as e:
+            self._logger.warning(f"Failed to load firmware cache from disk: {e}")
+
+    def _persist_firmware_cache(self) -> None:
+        """Write current firmware cache to disk."""
+        if not self._save_firmware_cache or self._firmware_cache is None:
+            return
+        try:
+            self._save_firmware_cache({"items": self._firmware_cache, "cached_at": self._firmware_cache_epoch})
+        except Exception as e:
+            self._logger.warning(f"Failed to persist firmware cache: {e}")
+
     def _get_firmware_list(self) -> list:
         """Return firmware list, using cache if TTL has not expired.
 
@@ -155,6 +183,7 @@ class FirmwareService:
             self._firmware_cache = result
             self._firmware_cache_at = time.monotonic()
             self._firmware_cache_epoch = time.time()
+            self._persist_firmware_cache()
             return result
         except Exception as e:
             self._logger.warning(f"Failed to fetch firmware list: {e}")
@@ -167,6 +196,11 @@ class FirmwareService:
         self._firmware_cache = None
         self._firmware_cache_at = 0
         self._firmware_cache_epoch = 0
+        if self._save_firmware_cache:
+            try:
+                self._save_firmware_cache({})
+            except Exception as e:
+                self._logger.warning(f"Failed to clear persisted firmware cache: {e}")
 
     def check_platform_bios_cached(self, platform_slug, rom_filename=None):
         """Return BIOS status from in-memory cache only — no HTTP.

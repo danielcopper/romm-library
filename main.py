@@ -154,6 +154,8 @@ class Plugin:
                 save_state=self._save_state,
                 save_settings_to_disk=self._save_settings_to_disk,
                 save_metadata_cache=self._save_metadata_cache,
+                save_firmware_cache=self._persistence.save_firmware_cache,
+                load_firmware_cache=self._persistence.load_firmware_cache,
                 log_debug=self._log_debug,
             )
         )

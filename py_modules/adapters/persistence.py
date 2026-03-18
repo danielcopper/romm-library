@@ -154,3 +154,34 @@ class PersistenceAdapter:
             os.replace(tmp_path, cache_path)
         finally:
             os.close(lock_fd)
+
+    # ------------------------------------------------------------------
+    # Firmware cache
+    # ------------------------------------------------------------------
+
+    def load_firmware_cache(self) -> dict:
+        """Read ``firmware_cache.json``."""
+        cache_path = os.path.join(self._runtime_dir, "firmware_cache.json")
+        try:
+            with open(cache_path, "r") as f:
+                loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                return {}
+            return loaded
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def save_firmware_cache(self, data: dict) -> None:
+        """Atomic write of *data* to ``firmware_cache.json`` with flock."""
+        os.makedirs(self._runtime_dir, exist_ok=True)
+        cache_path = os.path.join(self._runtime_dir, "firmware_cache.json")
+        tmp_path = cache_path + ".tmp"
+        lock_fd = os.open(cache_path + ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, cache_path)
+        finally:
+            os.close(lock_fd)

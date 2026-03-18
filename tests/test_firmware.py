@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -39,6 +40,8 @@ def plugin():
         logger=decky.logger,
         plugin_dir=decky.DECKY_PLUGIN_DIR,
         save_state=MagicMock(),
+        save_firmware_cache=MagicMock(),
+        load_firmware_cache=MagicMock(return_value={}),
     )
 
     p._sync_service = LibraryService(
@@ -1601,8 +1604,9 @@ class TestFirmwareListCache:
         result1 = fw._get_firmware_list()
         assert len(result1) == 1
 
-        # Expire the cache so it tries to re-fetch
-        fw._firmware_cache_at = 0
+        # Expire the cache so it tries to re-fetch (must be far enough in the past
+        # to exceed TTL even when system uptime is short)
+        fw._firmware_cache_at = time.monotonic() - 7200
 
         result2 = fw._get_firmware_list()
         assert result2 == result1  # Falls back to stale cache
@@ -1718,3 +1722,113 @@ class TestCheckPlatformBiosCached:
 
         api.list_firmware.assert_not_called()
         api.get_firmware.assert_not_called()
+
+
+class TestFirmwareCachePersistence:
+    """Tests for firmware cache disk persistence."""
+
+    def test_cache_loaded_from_disk_on_init(self):
+        """Firmware cache restored from disk when data is present."""
+        import decky
+
+        cached_items = [{"id": 1, "file_name": "bios.bin", "file_path": "bios/dc/bios.bin"}]
+        load_fn = MagicMock(return_value={"items": cached_items, "cached_at": 1000.0})
+        fw = FirmwareService(
+            romm_api=MagicMock(),
+            state={"shortcut_registry": {}, "downloaded_bios": {}},
+            loop=asyncio.get_event_loop(),
+            logger=decky.logger,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
+            save_state=MagicMock(),
+            save_firmware_cache=MagicMock(),
+            load_firmware_cache=load_fn,
+        )
+        assert fw._firmware_cache == cached_items
+        assert fw._firmware_cache_epoch == 1000.0
+        assert fw._firmware_cache_at > 0
+        load_fn.assert_called_once()
+
+    def test_empty_disk_cache_leaves_memory_none(self):
+        """Empty disk cache doesn't populate in-memory cache."""
+        import decky
+
+        load_fn = MagicMock(return_value={})
+        fw = FirmwareService(
+            romm_api=MagicMock(),
+            state={"shortcut_registry": {}, "downloaded_bios": {}},
+            loop=asyncio.get_event_loop(),
+            logger=decky.logger,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
+            save_state=MagicMock(),
+            save_firmware_cache=MagicMock(),
+            load_firmware_cache=load_fn,
+        )
+        assert fw._firmware_cache is None
+
+    def test_missing_file_handled_gracefully(self):
+        """FileNotFoundError from load doesn't crash init."""
+        import decky
+
+        load_fn = MagicMock(side_effect=FileNotFoundError("no file"))
+        fw = FirmwareService(
+            romm_api=MagicMock(),
+            state={"shortcut_registry": {}, "downloaded_bios": {}},
+            loop=asyncio.get_event_loop(),
+            logger=decky.logger,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
+            save_state=MagicMock(),
+            save_firmware_cache=MagicMock(),
+            load_firmware_cache=load_fn,
+        )
+        assert fw._firmware_cache is None
+
+    def test_no_load_callback_skips_restore(self):
+        """No load_firmware_cache callback skips disk restore gracefully."""
+        import decky
+
+        fw = FirmwareService(
+            romm_api=MagicMock(),
+            state={"shortcut_registry": {}, "downloaded_bios": {}},
+            loop=asyncio.get_event_loop(),
+            logger=decky.logger,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
+            save_state=MagicMock(),
+        )
+        assert fw._firmware_cache is None
+
+    def test_cache_persisted_after_http_fetch(self, fw):
+        """Firmware cache written to disk after successful HTTP fetch."""
+        firmware_list = [{"id": 1, "file_name": "bios.bin", "file_path": "bios/dc/bios.bin"}]
+        fw._romm_api.list_firmware.return_value = firmware_list
+        fw._firmware_cache = None  # Force refetch
+
+        result = fw._get_firmware_list()
+
+        assert result == firmware_list
+        fw._save_firmware_cache.assert_called_once()
+        call_data = fw._save_firmware_cache.call_args[0][0]
+        assert call_data["items"] == firmware_list
+        assert "cached_at" in call_data
+
+    def test_invalidate_clears_persisted_cache(self, fw):
+        """invalidate_firmware_cache writes empty dict to disk."""
+        fw._firmware_cache = [{"id": 1}]
+        fw._firmware_cache_at = 1.0
+        fw._firmware_cache_epoch = 1.0
+
+        fw.invalidate_firmware_cache()
+
+        assert fw._firmware_cache is None
+        fw._save_firmware_cache.assert_called_once_with({})
+
+    def test_persist_failure_does_not_crash_fetch(self, fw):
+        """Disk write failure during fetch doesn't break the return value."""
+        firmware_list = [{"id": 1, "file_name": "bios.bin", "file_path": "bios/dc/bios.bin"}]
+        fw._romm_api.list_firmware.return_value = firmware_list
+        fw._save_firmware_cache.side_effect = OSError("disk full")
+        fw._firmware_cache = None
+
+        result = fw._get_firmware_list()
+
+        assert result == firmware_list
+        assert fw._firmware_cache == firmware_list
