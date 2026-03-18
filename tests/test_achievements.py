@@ -397,6 +397,35 @@ class TestProgressCacheEntry:
         result = svc.get_progress_cache_entry("42")
         assert result is None
 
+    def test_entry_includes_cached_at(self, svc):
+        """Returned progress entry includes cached_at timestamp."""
+        store_time = time.time() - 300
+        svc._achievements_cache["42"] = {
+            "user_progress": {
+                "earned": 3,
+                "total": 10,
+                "cached_at": store_time,
+            },
+        }
+        result = svc.get_progress_cache_entry("42")
+        assert result is not None
+        assert "cached_at" in result
+        assert result["cached_at"] == store_time
+
+    def test_cached_at_reflects_storage_time(self, svc):
+        """cached_at is the original storage time, not current time."""
+        store_time = time.time() - 1800  # 30 min ago
+        svc._achievements_cache["42"] = {
+            "user_progress": {
+                "earned": 1,
+                "total": 5,
+                "cached_at": store_time,
+            },
+        }
+        result = svc.get_progress_cache_entry("42")
+        assert result["cached_at"] == store_time
+        assert result["cached_at"] < time.time() - 1700
+
 
 # ══════════════════════════════════════════════════════════════
 # get_achievements
