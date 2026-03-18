@@ -92,16 +92,13 @@ class TestSettings:
 
 class TestConnection:
     @pytest.mark.asyncio
-    async def test_test_connection_sets_version_on_both_routers(self, plugin):
+    async def test_test_connection_sets_version_on_romm_api(self, plugin):
         plugin.loop = asyncio.get_event_loop()
         plugin.settings["romm_url"] = "http://romm.local"
-        plugin._http_adapter.request.side_effect = [
-            {"SYSTEM": {"VERSION": "4.7.0"}},  # heartbeat
-            [{"id": 1, "slug": "n64"}],  # platforms
-        ]
+        plugin._romm_api.heartbeat.return_value = {"SYSTEM": {"VERSION": "4.7.0"}}
+        plugin._romm_api.list_platforms.return_value = [{"id": 1, "slug": "n64"}]
         result = await plugin.test_connection()
         assert result["success"] is True
-        plugin._version_router.set_version.assert_called_once_with("4.7.0")
         plugin._romm_api.set_version.assert_called_once_with("4.7.0")
 
 
