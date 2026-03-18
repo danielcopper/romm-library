@@ -1517,3 +1517,102 @@ class TestGetFirmwareStatusOfflineFallback:
         assert result["server_offline"] is True
         assert len(result["platforms"]) == 1
         assert result["platforms"][0]["platform_slug"] == "dc"
+
+
+# ── Firmware list cache tests ─────────────────────────────
+
+
+class TestFirmwareListCache:
+    """Tests for _get_firmware_list caching behaviour."""
+
+    def _make_service(self, romm_api):
+        import decky
+
+        return FirmwareService(
+            romm_api=romm_api,
+            state={"shortcut_registry": {}, "downloaded_bios": {}},
+            loop=asyncio.get_event_loop(),
+            logger=decky.logger,
+            plugin_dir=decky.DECKY_PLUGIN_DIR,
+            save_state=MagicMock(),
+        )
+
+    def test_firmware_list_cached(self):
+        """Second call returns cached data without hitting the API again."""
+        api = MagicMock()
+        api.list_firmware.return_value = [{"id": 1, "file_name": "bios.bin"}]
+        fw = self._make_service(api)
+
+        result1 = fw._get_firmware_list()
+        result2 = fw._get_firmware_list()
+
+        assert result1 == [{"id": 1, "file_name": "bios.bin"}]
+        assert result2 == result1
+        assert api.list_firmware.call_count == 1
+
+    def test_firmware_cache_ttl_expired(self):
+        """After TTL expires, _get_firmware_list re-fetches from the API."""
+        import time
+
+        api = MagicMock()
+        api.list_firmware.side_effect = [
+            [{"id": 1}],
+            [{"id": 1}, {"id": 2}],
+        ]
+        fw = self._make_service(api)
+
+        result1 = fw._get_firmware_list()
+        assert len(result1) == 1
+        assert api.list_firmware.call_count == 1
+
+        # Simulate TTL expiry by backdating the cache timestamp
+        fw._firmware_cache_at = time.monotonic() - 3601
+
+        result2 = fw._get_firmware_list()
+        assert len(result2) == 2
+        assert api.list_firmware.call_count == 2
+
+    def test_firmware_cache_invalidate(self):
+        """Explicit invalidation triggers a re-fetch on next call."""
+        api = MagicMock()
+        api.list_firmware.side_effect = [
+            [{"id": 1}],
+            [{"id": 1}, {"id": 2}],
+        ]
+        fw = self._make_service(api)
+
+        fw._get_firmware_list()
+        assert api.list_firmware.call_count == 1
+
+        fw.invalidate_firmware_cache()
+        result = fw._get_firmware_list()
+        assert len(result) == 2
+        assert api.list_firmware.call_count == 2
+
+    def test_firmware_cache_fallback_on_error(self):
+        """HTTP error returns stale cached data instead of raising."""
+        api = MagicMock()
+        api.list_firmware.side_effect = [
+            [{"id": 1, "file_name": "bios.bin"}],
+            Exception("connection refused"),
+        ]
+        fw = self._make_service(api)
+
+        result1 = fw._get_firmware_list()
+        assert len(result1) == 1
+
+        # Expire the cache so it tries to re-fetch
+        fw._firmware_cache_at = 0
+
+        result2 = fw._get_firmware_list()
+        assert result2 == result1  # Falls back to stale cache
+        assert api.list_firmware.call_count == 2
+
+    def test_firmware_cache_error_no_cache_raises(self):
+        """HTTP error with no prior cache re-raises so callers can detect offline."""
+        api = MagicMock()
+        api.list_firmware.side_effect = Exception("connection refused")
+        fw = self._make_service(api)
+
+        with pytest.raises(Exception, match="connection refused"):
+            fw._get_firmware_list()
