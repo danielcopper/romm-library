@@ -20,7 +20,7 @@ export interface CachedGameDetail {
   save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
 
   metadata?: Record<string, unknown> | null;
-  bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string; cores?: Record<string, { required: boolean }>; used_by_active?: boolean }> } | null;
+  bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; cached_at?: number; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string; cores?: Record<string, { required: boolean }>; used_by_active?: boolean }> } | null;
   rom_file?: string;
   ra_id?: number | null;
   achievement_summary?: AchievementSummary | null;
@@ -89,6 +89,7 @@ export const downloadFirmware = callable<[number], FirmwareDownloadResult>("down
 export const downloadAllFirmware = callable<[string], FirmwareDownloadResult>("download_all_firmware");
 export const downloadRequiredFirmware = callable<[string], FirmwareDownloadResult>("download_required_firmware");
 export const checkPlatformBios = callable<[string], BiosStatus>("check_platform_bios");
+export const getBiosStatus = callable<[number], { bios_status: CachedGameDetail["bios_status"] }>("get_bios_status");
 export const getAvailableCores = callable<[string], { cores: AvailableCore[]; active_core: string | null; active_core_label: string | null }>("get_available_cores");
 export const setSystemCore = callable<[string, string], { success: boolean; message?: string; bios_status?: BiosStatus }>("set_system_core");
 export const setGameCore = callable<[string, string, string], { success: boolean; message?: string; bios_status?: BiosStatus }>("set_game_core");

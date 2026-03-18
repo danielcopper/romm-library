@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from services.protocols import RommApiProtocol
+
+_FIRMWARE_CACHE_TTL = 3600  # 1 hour
 
 
 class FirmwareService:
@@ -35,6 +38,8 @@ class FirmwareService:
         logger: logging.Logger,
         plugin_dir: str,
         save_state: Callable[[], None],
+        save_firmware_cache: Callable[[dict], None] | None = None,
+        load_firmware_cache: Callable[[], dict] | None = None,
     ) -> None:
         self._romm_api = romm_api
         self._state = state
@@ -42,8 +47,14 @@ class FirmwareService:
         self._logger = logger
         self._plugin_dir = plugin_dir
         self._save_state = save_state
+        self._save_firmware_cache = save_firmware_cache
+        self._load_firmware_cache = load_firmware_cache
         self._bios_registry: dict = {}
         self._bios_files_index: dict = {}
+        self._firmware_cache: list | None = None
+        self._firmware_cache_at: float = 0
+        self._firmware_cache_epoch: float = 0
+        self._restore_firmware_cache()
 
     @property
     def bios_files_index(self) -> dict:
@@ -133,6 +144,105 @@ class FirmwareService:
             return os.path.join(bios_base, reg_entry["firmware_path"])
         return os.path.join(bios_base, file_name)
 
+    # ── Firmware list cache ─────────────────────────────────
+
+    def _restore_firmware_cache(self) -> None:
+        """Load firmware cache from disk on init."""
+        if not self._load_firmware_cache:
+            return
+        try:
+            data = self._load_firmware_cache()
+            if data and "items" in data and "cached_at" in data:
+                self._firmware_cache = data["items"]
+                self._firmware_cache_epoch = data["cached_at"]
+                self._firmware_cache_at = time.monotonic()
+                self._logger.info("Restored firmware cache from disk (%d items)", len(data["items"]))
+        except Exception as e:
+            self._logger.warning(f"Failed to load firmware cache from disk: {e}")
+
+    def _persist_firmware_cache(self) -> None:
+        """Write current firmware cache to disk."""
+        if not self._save_firmware_cache or self._firmware_cache is None:
+            return
+        try:
+            self._save_firmware_cache({"items": self._firmware_cache, "cached_at": self._firmware_cache_epoch})
+        except Exception as e:
+            self._logger.warning(f"Failed to persist firmware cache: {e}")
+
+    def _get_firmware_list(self) -> list:
+        """Return firmware list, using cache if TTL has not expired.
+
+        On HTTP error, falls back to cached data (if any) or empty list.
+        """
+        now = time.monotonic()
+        if self._firmware_cache is not None and (now - self._firmware_cache_at) < _FIRMWARE_CACHE_TTL:
+            return self._firmware_cache
+
+        try:
+            result = self._romm_api.list_firmware()
+            self._firmware_cache = result
+            self._firmware_cache_at = time.monotonic()
+            self._firmware_cache_epoch = time.time()
+            self._persist_firmware_cache()
+            return result
+        except Exception as e:
+            self._logger.warning(f"Failed to fetch firmware list: {e}")
+            if self._firmware_cache is not None:
+                return self._firmware_cache
+            raise
+
+    def invalidate_firmware_cache(self) -> None:
+        """Clear cached firmware list so the next call re-fetches."""
+        self._firmware_cache = None
+        self._firmware_cache_at = 0
+        self._firmware_cache_epoch = 0
+        if self._save_firmware_cache:
+            try:
+                self._save_firmware_cache({})
+            except Exception as e:
+                self._logger.warning(f"Failed to clear persisted firmware cache: {e}")
+
+    def check_platform_bios_cached(self, platform_slug, rom_filename=None):
+        """Return BIOS status from in-memory cache only — no HTTP.
+
+        Returns None if the firmware cache is empty (never fetched).
+        Includes ``cached_at`` timestamp so the frontend can decide staleness.
+        """
+        if self._firmware_cache is None:
+            return None
+
+        fw_slugs = self._platform_to_firmware_slugs(platform_slug)
+        active_core_so, active_core_label = es_de_config.get_active_core(platform_slug, rom_filename=rom_filename)
+
+        registry_platform = {}
+        for slug in fw_slugs:
+            registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
+
+        files = self._collect_server_firmware(self._firmware_cache, fw_slugs, registry_platform, active_core_so)
+
+        if not files:
+            return {"needs_bios": False, "cached_at": self._firmware_cache_epoch}
+
+        server_count = len(files)
+        local_count = sum(1 for f in files if f["downloaded"])
+        active_files = [f for f in files if f.get("used_by_active", True)]
+        required_files = [f for f in active_files if f["classification"] == "required"]
+
+        return {
+            "needs_bios": True,
+            "server_count": server_count,
+            "local_count": local_count,
+            "all_downloaded": local_count >= server_count,
+            "required_count": len(required_files),
+            "required_downloaded": sum(1 for f in required_files if f["downloaded"]),
+            "unknown_count": sum(1 for f in files if f["classification"] == "unknown"),
+            "files": files,
+            "active_core": active_core_so,
+            "active_core_label": active_core_label,
+            "available_cores": es_de_config.get_available_cores(platform_slug),
+            "cached_at": self._firmware_cache_epoch,
+        }
+
     # ── Public API ───────────────────────────────────────────
 
     def _group_server_firmware(self, firmware_list):
@@ -201,7 +311,7 @@ class FirmwareService:
         """
         server_offline = False
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
+            firmware_list = await self._loop.run_in_executor(None, self._get_firmware_list)
             platforms_map = self._group_server_firmware(firmware_list)
         except Exception as e:
             self._logger.warning(f"Failed to fetch firmware from server: {e}")
@@ -280,13 +390,14 @@ class FirmwareService:
             None, self._download_firmware_post_io, fw, firmware_id, dest, tmp_path
         )
 
+        self.invalidate_firmware_cache()
         self._logger.info(f"Firmware downloaded: {file_name} -> {dest}")
         return {"success": True, "file_path": dest, "md5_match": md5_match, "registry_hash_valid": registry_hash_valid}
 
     async def download_all_firmware(self, platform_slug):
         """Download all firmware for a given platform slug."""
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
+            firmware_list = await self._loop.run_in_executor(None, self._get_firmware_list)
         except Exception as e:
             self._logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -345,7 +456,7 @@ class FirmwareService:
     async def download_required_firmware(self, platform_slug):
         """Download only required firmware for a given platform slug."""
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
+            firmware_list = await self._loop.run_in_executor(None, self._get_firmware_list)
         except Exception as e:
             self._logger.error(f"Failed to fetch firmware: {e}")
             resp = error_response(e)
@@ -453,7 +564,7 @@ class FirmwareService:
             registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
 
         try:
-            firmware_list = await self._loop.run_in_executor(None, self._romm_api.list_firmware)
+            firmware_list = await self._loop.run_in_executor(None, self._get_firmware_list)
             files = self._collect_server_firmware(firmware_list, fw_slugs, registry_platform, active_core_so)
         except Exception:
             if not registry_platform:
@@ -511,6 +622,7 @@ class FirmwareService:
             return {"success": True, "deleted_count": 0, "message": "No BIOS files for this platform"}
 
         deleted, errors = await self._loop.run_in_executor(None, self._delete_platform_bios_io, bios_status["files"])
+        self.invalidate_firmware_cache()
 
         if errors:
             return {
