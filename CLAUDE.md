@@ -79,7 +79,7 @@ py_modules/
         v47.py                            # SaveApiV47 — RomM 4.7.0 save API adapter
   models/                                 # Domain dataclasses (currently empty — types inlined in services)
   domain/
-    bios.py                               # BIOS status formatting for game detail page
+    bios.py                               # BIOS status formatting and computation
     es_de_config.py                       # CoreResolver + GamelistXmlEditor classes (core resolution, gamelist.xml)
     retrodeck_config.py                   # RetroDECK path resolution (roms, saves, BIOS, states)
     state_migrations.py                   # Schema migration functions for state files

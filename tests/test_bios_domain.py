@@ -1,6 +1,13 @@
-"""Tests for domain.bios.format_bios_status."""
+"""Tests for domain.bios pure functions."""
 
-from domain.bios import format_bios_status
+from domain.bios import (
+    build_cores_info,
+    build_file_entry,
+    classify_firmware_file,
+    collect_firmware_status,
+    format_bios_status,
+    is_used_by_active_core,
+)
 
 
 class TestFormatBiosStatusFullDict:
@@ -102,3 +109,247 @@ class TestFormatBiosStatusNeedsBiosContext:
         bios = {"needs_bios": True, "server_count": 1}
         result = format_bios_status(bios, "gba")
         assert "needs_bios" not in result
+
+
+class TestClassifyFirmwareFile:
+    """Tests for classify_firmware_file pure function."""
+
+    def test_active_core_with_per_core_entry_required(self):
+        """Active core that requires the file returns required=True."""
+        reg_entry = {
+            "description": "GBA BIOS",
+            "required": True,
+            "cores": {"gpsp_libretro.so": {"required": True}, "mgba_libretro.so": {"required": False}},
+        }
+        is_required, classification, description = classify_firmware_file(reg_entry, "gba_bios.bin", "gpsp_libretro.so")
+        assert is_required is True
+        assert classification == "required"
+        assert description == "GBA BIOS"
+
+    def test_active_core_with_per_core_entry_optional(self):
+        """Active core that marks file optional returns required=False."""
+        reg_entry = {
+            "description": "GBA BIOS",
+            "required": True,
+            "cores": {"gpsp_libretro.so": {"required": True}, "mgba_libretro.so": {"required": False}},
+        }
+        is_required, classification, description = classify_firmware_file(reg_entry, "gba_bios.bin", "mgba_libretro.so")
+        assert is_required is False
+        assert classification == "optional"
+        assert description == "GBA BIOS"
+
+    def test_active_core_not_in_cores_dict(self):
+        """Active core absent from cores dict yields required=False."""
+        reg_entry = {
+            "description": "Some BIOS",
+            "required": True,
+            "cores": {"known_core.so": {"required": True}},
+        }
+        is_required, classification, description = classify_firmware_file(reg_entry, "some.bin", "unknown_core.so")
+        assert is_required is False
+        assert classification == "optional"
+
+    def test_no_active_core_uses_toplevel_required(self):
+        """Without active core, top-level required value is used."""
+        reg_entry = {"description": "DC BIOS", "required": True}
+        is_required, classification, description = classify_firmware_file(reg_entry, "dc_boot.bin", None)
+        assert is_required is True
+        assert classification == "required"
+        assert description == "DC BIOS"
+
+    def test_no_active_core_toplevel_optional(self):
+        """Without active core, top-level required=False yields optional."""
+        reg_entry = {"description": "DC Flash", "required": False}
+        is_required, classification, description = classify_firmware_file(reg_entry, "dc_flash.bin", None)
+        assert is_required is False
+        assert classification == "optional"
+
+    def test_no_reg_entry_yields_unknown(self):
+        """File not in registry yields unknown classification."""
+        is_required, classification, description = classify_firmware_file(None, "mystery.bin", None)
+        assert is_required is False
+        assert classification == "unknown"
+        assert description == "mystery.bin"
+
+    def test_no_reg_entry_with_active_core_yields_unknown(self):
+        """File not in registry with active core still yields unknown."""
+        is_required, classification, description = classify_firmware_file(None, "alien.bin", "some_core.so")
+        assert is_required is False
+        assert classification == "unknown"
+        assert description == "alien.bin"
+
+    def test_description_falls_back_to_file_name(self):
+        """reg_entry without description falls back to file_name."""
+        reg_entry = {"required": True}
+        _, _, description = classify_firmware_file(reg_entry, "bios.bin", None)
+        assert description == "bios.bin"
+
+
+class TestBuildCoresInfo:
+    """Tests for build_cores_info pure function."""
+
+    def test_with_cores_data_returns_formatted_dict(self):
+        """reg_entry with cores key produces per-core required dict."""
+        reg_entry = {
+            "cores": {
+                "mgba_libretro.so": {"required": False},
+                "gpsp_libretro.so": {"required": True},
+            }
+        }
+        result = build_cores_info(reg_entry)
+        assert result == {
+            "mgba_libretro.so": {"required": False},
+            "gpsp_libretro.so": {"required": True},
+        }
+
+    def test_no_reg_entry_returns_empty_dict(self):
+        """None reg_entry returns empty dict."""
+        assert build_cores_info(None) == {}
+
+    def test_reg_entry_without_cores_key_returns_empty_dict(self):
+        """reg_entry missing cores key returns empty dict."""
+        reg_entry = {"description": "Some BIOS", "required": True}
+        assert build_cores_info(reg_entry) == {}
+
+    def test_core_missing_required_defaults_to_true(self):
+        """Core entry without required key defaults to True."""
+        reg_entry = {"cores": {"some_core.so": {}}}
+        result = build_cores_info(reg_entry)
+        assert result["some_core.so"]["required"] is True
+
+
+class TestIsUsedByActiveCore:
+    """Tests for is_used_by_active_core pure function."""
+
+    def test_no_active_core_returns_true(self):
+        """No active core — file is considered used by all."""
+        reg_entry = {"cores": {"mgba_libretro.so": {"required": False}}}
+        assert is_used_by_active_core(reg_entry, None) is True
+
+    def test_no_reg_entry_returns_true(self):
+        """No registry entry — unknown file, considered used."""
+        assert is_used_by_active_core(None, "mgba_libretro.so") is True
+
+    def test_reg_entry_without_cores_returns_true(self):
+        """Registry entry without cores key — file used by all cores."""
+        reg_entry = {"description": "DC BIOS", "required": True}
+        assert is_used_by_active_core(reg_entry, "some_core.so") is True
+
+    def test_active_core_in_cores_returns_true(self):
+        """Active core present in cores dict — file is used by it."""
+        reg_entry = {"cores": {"mgba_libretro.so": {"required": False}}}
+        assert is_used_by_active_core(reg_entry, "mgba_libretro.so") is True
+
+    def test_active_core_not_in_cores_returns_false(self):
+        """Active core not in cores dict — file not used by it."""
+        reg_entry = {"cores": {"gpsp_libretro.so": {"required": True}}}
+        assert is_used_by_active_core(reg_entry, "mgba_libretro.so") is False
+
+
+class TestBuildFileEntry:
+    """Tests for build_file_entry pure function."""
+
+    def test_full_entry_with_reg_entry(self):
+        """Full entry is built correctly when reg_entry is present."""
+        reg_entry = {
+            "description": "Dreamcast BIOS",
+            "required": True,
+            "cores": {"dc_libretro.so": {"required": True}},
+        }
+        result = build_file_entry("dc_boot.bin", True, "/bios/dc/dc_boot.bin", reg_entry, None)
+        assert result["file_name"] == "dc_boot.bin"
+        assert result["downloaded"] is True
+        assert result["local_path"] == "/bios/dc/dc_boot.bin"
+        assert result["required"] is True
+        assert result["description"] == "Dreamcast BIOS"
+        assert result["classification"] == "required"
+        assert result["cores"] == {"dc_libretro.so": {"required": True}}
+        assert result["used_by_active"] is True
+
+    def test_no_reg_entry_yields_unknown(self):
+        """Without reg_entry, classification is unknown and required is False."""
+        result = build_file_entry("mystery.bin", False, "/bios/mystery.bin", None, None)
+        assert result["file_name"] == "mystery.bin"
+        assert result["downloaded"] is False
+        assert result["required"] is False
+        assert result["classification"] == "unknown"
+        assert result["description"] == "mystery.bin"
+        assert result["cores"] == {}
+        assert result["used_by_active"] is True
+
+    def test_downloaded_false_reflected(self):
+        """downloaded=False is reflected in the entry."""
+        reg_entry = {"description": "BIOS", "required": True}
+        result = build_file_entry("bios.bin", False, "/bios/bios.bin", reg_entry, None)
+        assert result["downloaded"] is False
+
+    def test_downloaded_true_reflected(self):
+        """downloaded=True is reflected in the entry."""
+        reg_entry = {"description": "BIOS", "required": True}
+        result = build_file_entry("bios.bin", True, "/bios/bios.bin", reg_entry, None)
+        assert result["downloaded"] is True
+
+    def test_active_core_not_in_cores_marks_not_used(self):
+        """File with cores dict where active_core is absent has used_by_active=False."""
+        reg_entry = {
+            "description": "GBA BIOS",
+            "required": True,
+            "cores": {"gpsp_libretro.so": {"required": True}},
+        }
+        result = build_file_entry("gba_bios.bin", False, "/bios/gba_bios.bin", reg_entry, "mgba_libretro.so")
+        assert result["used_by_active"] is False
+        assert result["required"] is False
+        assert result["classification"] == "optional"
+
+
+class TestCollectFirmwareStatus:
+    """Tests for collect_firmware_status pure function."""
+
+    def test_multiple_items_mix_of_registered_and_unknown(self):
+        """Mix of known and unknown files produces correct entries."""
+        registry_platform = {
+            "known.bin": {"description": "Known BIOS", "required": True},
+        }
+        items = [
+            {"file_name": "known.bin", "downloaded": True, "dest": "/bios/known.bin"},
+            {"file_name": "unknown.bin", "downloaded": False, "dest": "/bios/unknown.bin"},
+        ]
+        result = collect_firmware_status(items, registry_platform, None)
+        assert len(result) == 2
+
+        known = next(f for f in result if f["file_name"] == "known.bin")
+        unknown = next(f for f in result if f["file_name"] == "unknown.bin")
+
+        assert known["classification"] == "required"
+        assert known["downloaded"] is True
+        assert unknown["classification"] == "unknown"
+        assert unknown["downloaded"] is False
+
+    def test_empty_items_returns_empty_list(self):
+        """No items produces empty result."""
+        result = collect_firmware_status([], {"some.bin": {"required": True}}, None)
+        assert result == []
+
+    def test_registry_platform_lookup_by_file_name(self):
+        """reg_entry is looked up from registry_platform by file_name."""
+        registry_platform = {
+            "bios.bin": {"description": "My BIOS", "required": False},
+        }
+        items = [{"file_name": "bios.bin", "downloaded": False, "dest": "/bios/bios.bin"}]
+        result = collect_firmware_status(items, registry_platform, None)
+        assert result[0]["classification"] == "optional"
+        assert result[0]["description"] == "My BIOS"
+
+    def test_active_core_forwarded_to_classify(self):
+        """active_core_so is passed through to per-core classification."""
+        registry_platform = {
+            "gba_bios.bin": {
+                "description": "GBA BIOS",
+                "required": True,
+                "cores": {"mgba_libretro.so": {"required": False}},
+            }
+        }
+        items = [{"file_name": "gba_bios.bin", "downloaded": False, "dest": "/bios/gba_bios.bin"}]
+        result = collect_firmware_status(items, registry_platform, "mgba_libretro.so")
+        assert result[0]["required"] is False
+        assert result[0]["classification"] == "optional"

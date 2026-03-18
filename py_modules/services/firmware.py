@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from domain import es_de_config, retrodeck_config
+from domain.bios import collect_firmware_status
 
 from lib.errors import error_response
 
@@ -219,7 +220,16 @@ class FirmwareService:
         for slug in fw_slugs:
             registry_platform.update(self._bios_registry.get("platforms", {}).get(slug, {}))
 
-        files = self._collect_server_firmware(self._firmware_cache, fw_slugs, registry_platform, active_core_so)
+        items = [
+            {
+                "file_name": fw.get("file_name", ""),
+                "downloaded": os.path.exists(self._firmware_dest_path(fw)),
+                "dest": self._firmware_dest_path(fw),
+            }
+            for fw in self._firmware_cache
+            if self._firmware_slug(fw.get("file_path", "")) in fw_slugs
+        ]
+        files = collect_firmware_status(items, registry_platform, active_core_so)
 
         if not files:
             return {"needs_bios": False, "cached_at": self._firmware_cache_epoch}
@@ -481,79 +491,6 @@ class FirmwareService:
             msg += f" ({len(errors)} failed: {', '.join(errors)})"
         return {"success": True, "message": msg, "downloaded": downloaded}
 
-    def _classify_firmware_file(self, reg_entry, file_name, active_core_so):
-        """Classify a firmware file as required/optional/unknown based on active core."""
-        if active_core_so and reg_entry and "cores" in reg_entry:
-            if active_core_so in reg_entry["cores"]:
-                is_required = reg_entry["cores"][active_core_so]["required"]
-            else:
-                is_required = False
-            description = reg_entry.get("description", file_name)
-            classification = "required" if is_required else "optional"
-        elif reg_entry:
-            is_required = reg_entry.get("required", True)
-            classification = "required" if is_required else "optional"
-            description = reg_entry.get("description", file_name)
-        else:
-            is_required = False
-            classification = "unknown"
-            description = file_name
-        return is_required, classification, description
-
-    def _build_cores_info(self, reg_entry):
-        """Build per-core info dict for frontend display."""
-        if not reg_entry or "cores" not in reg_entry:
-            return {}
-        return {
-            core_so_key: {"required": core_data.get("required", True)}
-            for core_so_key, core_data in reg_entry["cores"].items()
-        }
-
-    def _is_used_by_active_core(self, reg_entry, active_core_so):
-        """Check if a firmware file is used by the active core."""
-        if not active_core_so or not reg_entry or "cores" not in reg_entry:
-            return True
-        return active_core_so in reg_entry["cores"]
-
-    def _build_file_entry(self, file_name, downloaded, dest, reg_entry, active_core_so):
-        """Build a single file status entry dict."""
-        is_required, classification, description = self._classify_firmware_file(reg_entry, file_name, active_core_so)
-        return {
-            "file_name": file_name,
-            "downloaded": downloaded,
-            "local_path": dest,
-            "required": is_required,
-            "description": description,
-            "classification": classification,
-            "cores": self._build_cores_info(reg_entry),
-            "used_by_active": self._is_used_by_active_core(reg_entry, active_core_so),
-        }
-
-    def _collect_server_firmware(self, firmware_list, fw_slugs, registry_platform, active_core_so):
-        """Collect file entries from server firmware list."""
-        files = []
-        for fw in firmware_list:
-            fw_slug = self._firmware_slug(fw.get("file_path", ""))
-            if not fw_slug or fw_slug not in fw_slugs:
-                continue
-            file_name = fw.get("file_name", "")
-            reg_entry = registry_platform.get(file_name)
-            dest = self._firmware_dest_path(fw)
-            downloaded = os.path.exists(dest)
-            files.append(self._build_file_entry(file_name, downloaded, dest, reg_entry, active_core_so))
-        return files
-
-    def _collect_registry_firmware(self, registry_platform, active_core_so):
-        """Collect file entries from registry (offline fallback)."""
-        bios_base = retrodeck_config.get_bios_path()
-        files = []
-        for file_name, reg_entry in registry_platform.items():
-            firmware_path = reg_entry.get("firmware_path", file_name)
-            dest = os.path.join(bios_base, firmware_path)
-            downloaded = os.path.exists(dest)
-            files.append(self._build_file_entry(file_name, downloaded, dest, reg_entry, active_core_so))
-        return files
-
     async def check_platform_bios(self, platform_slug, rom_filename=None):
         """Check if RomM has firmware for this platform and whether it's downloaded."""
         fw_slugs = self._platform_to_firmware_slugs(platform_slug)
@@ -566,11 +503,29 @@ class FirmwareService:
 
         try:
             firmware_list = await self._loop.run_in_executor(None, self._get_firmware_list)
-            files = self._collect_server_firmware(firmware_list, fw_slugs, registry_platform, active_core_so)
+            items = [
+                {
+                    "file_name": fw.get("file_name", ""),
+                    "downloaded": os.path.exists(self._firmware_dest_path(fw)),
+                    "dest": self._firmware_dest_path(fw),
+                }
+                for fw in firmware_list
+                if self._firmware_slug(fw.get("file_path", "")) in fw_slugs
+            ]
+            files = collect_firmware_status(items, registry_platform, active_core_so)
         except Exception:
             if not registry_platform:
                 return {"needs_bios": False}
-            files = self._collect_registry_firmware(registry_platform, active_core_so)
+            bios_base = retrodeck_config.get_bios_path()
+            registry_items = [
+                {
+                    "file_name": file_name,
+                    "downloaded": os.path.exists(os.path.join(bios_base, reg_entry.get("firmware_path", file_name))),
+                    "dest": os.path.join(bios_base, reg_entry.get("firmware_path", file_name)),
+                }
+                for file_name, reg_entry in registry_platform.items()
+            ]
+            files = collect_firmware_status(registry_items, registry_platform, active_core_so)
 
         if not files:
             return {"needs_bios": False}
