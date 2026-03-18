@@ -85,27 +85,17 @@ class Plugin:
         if pruned:
             self._save_state()
 
-    # -- settings loading with migrations --------------------------------------
-
-    def _load_settings(self):
-        self.settings = self._persistence.load_settings()
-        # Migrate old boolean setting
-        if "disable_steam_input" in self.settings:
-            if self.settings.pop("disable_steam_input"):
-                self.settings["steam_input_mode"] = "force_off"
-            self._save_settings_to_disk()
-        # Migrate old boolean debug_logging to log_level
-        if "debug_logging" in self.settings:
-            if self.settings.pop("debug_logging"):
-                self.settings.setdefault("log_level", "debug")
-            self._save_settings_to_disk()
-        self.settings.setdefault("log_level", "warn")
-
     async def _main(self):  # Decky lifecycle — must be async
         self.loop = asyncio.get_event_loop()
-        # ── Load settings (uses lazy _persistence property) ──
-        self._load_settings()
-        # ── Wire adapters from composition root ──
+
+        # ── 1. Load settings & run migrations ───────────────────────────────
+        from domain.state_migrations import migrate_settings, migrate_state
+
+        self.settings = self._persistence.load_settings()
+        self.settings = migrate_settings(self.settings)
+        self._save_settings_to_disk()
+
+        # ── 2. Wire adapters ────────────────────────────────────────────────
         adapters = bootstrap(
             settings_dir=decky.DECKY_PLUGIN_SETTINGS_DIR,
             runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
@@ -118,6 +108,8 @@ class Plugin:
         self._http_adapter = adapters["http_adapter"]
         self._romm_api = adapters["romm_api"]
         self._steam_config = adapters["steam_config"]
+
+        # ── 3. Load state ───────────────────────────────────────────────────
         self._state = {
             "shortcut_registry": {},
             "installed_roms": {},
@@ -129,12 +121,13 @@ class Plugin:
         self._metadata_cache = {}
         self._romm_version = None  # Detected on test_connection
         self._state = self._persistence.load_state(self._state)
+        self._state = migrate_state(self._state)
         self._metadata_cache = self._persistence.load_metadata_cache()
-        # ── Save sync state (owned by SaveService) ──
+
+        # ── 4. Wire services ────────────────────────────────────────────────
         from services.saves import SaveService
 
         self._save_sync_state = SaveService.make_default_state()
-        # ── Wire services (composition, uses live state refs) ──
         services = wire_services(
             WiringConfig(
                 http_adapter=self._http_adapter,
@@ -168,17 +161,18 @@ class Plugin:
         self._achievements_service = services["achievements_service"]
         self._migration_service = services["migration_service"]
         self._firmware_service.load_bios_registry()
-        # Load persisted state into the live dict
+
+        # ── 5. Startup healing ──────────────────────────────────────────────
         self._save_sync_service.init_state()
         self._save_sync_service.load_state()
-        # ── Startup state healing ──
         self._prune_stale_installed_roms()
         self._prune_stale_registry()
-        self._save_sync_service.prune_orphaned_state()  # services/saves.py
-        self._sgdb_service.prune_orphaned_artwork_cache()  # services/steamgrid.py
-        self._sync_service.prune_orphaned_staging_artwork()  # services/library.py
-        self._download_service.cleanup_leftover_tmp_files()  # services/downloads.py
-        # ── RetroDECK path change detection ──
+        self._save_sync_service.prune_orphaned_state()
+        self._sgdb_service.prune_orphaned_artwork_cache()
+        self._sync_service.prune_orphaned_staging_artwork()
+        self._download_service.cleanup_leftover_tmp_files()
+
+        # ── 6. Background tasks ─────────────────────────────────────────────
         self._migration_service.detect_retrodeck_path_change()
         self.loop.create_task(self._download_service.poll_download_requests())
         decky.logger.info("RomM Sync plugin loaded")

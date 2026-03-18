@@ -245,28 +245,33 @@ class TestLogLevel:
 
     def test_migration_debug_logging_true(self, plugin, tmp_path):
         """Old debug_logging=True migrates to log_level='debug'."""
-        import decky
+        import logging
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
-        # Write old-format settings
+        from adapters.persistence import PersistenceAdapter
+        from domain.state_migrations import migrate_settings
+
         settings_path = os.path.join(str(tmp_path), "settings.json")
         os.makedirs(str(tmp_path), exist_ok=True)
         with open(settings_path, "w") as f:
             json.dump({"debug_logging": True, "romm_url": ""}, f)
-        plugin._load_settings()
+        persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), logging.getLogger("test"))
+        plugin.settings = migrate_settings(persistence.load_settings())
         assert "debug_logging" not in plugin.settings
         assert plugin.settings["log_level"] == "debug"
 
     def test_migration_debug_logging_false(self, plugin, tmp_path):
         """Old debug_logging=False migrates to log_level='warn' (default)."""
-        import decky
+        import logging
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        from adapters.persistence import PersistenceAdapter
+        from domain.state_migrations import migrate_settings
+
         settings_path = os.path.join(str(tmp_path), "settings.json")
         os.makedirs(str(tmp_path), exist_ok=True)
         with open(settings_path, "w") as f:
             json.dump({"debug_logging": False, "romm_url": ""}, f)
-        plugin._load_settings()
+        persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), logging.getLogger("test"))
+        plugin.settings = migrate_settings(persistence.load_settings())
         assert "debug_logging" not in plugin.settings
         assert plugin.settings["log_level"] == "warn"
 
@@ -307,14 +312,16 @@ class TestLogLevel:
 
 class TestInsecureSslSetting:
     def test_load_settings_defaults_false(self, plugin, tmp_path):
-        import decky
+        import logging
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        from adapters.persistence import PersistenceAdapter
+
         settings_path = os.path.join(str(tmp_path), "settings.json")
         os.makedirs(str(tmp_path), exist_ok=True)
         with open(settings_path, "w") as f:
             json.dump({"romm_url": "https://romm.local"}, f)
-        plugin._load_settings()
+        persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), logging.getLogger("test"))
+        plugin.settings = persistence.load_settings()
         assert plugin.settings["romm_allow_insecure_ssl"] is False
 
     @pytest.mark.asyncio
@@ -368,9 +375,10 @@ class TestSettingsFilePermissions:
         assert mode == 0o600
 
     def test_load_settings_fixes_permissions(self, plugin, tmp_path):
-        import decky
+        import logging
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        from adapters.persistence import PersistenceAdapter
+
         settings_path = tmp_path / "settings.json"
         import json as _json
 
@@ -378,7 +386,8 @@ class TestSettingsFilePermissions:
             _json.dump({"romm_url": "http://example.com"}, f)
         os.chmod(settings_path, 0o644)
         assert os.stat(settings_path).st_mode & 0o777 == 0o644
-        plugin._load_settings()
+        persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), logging.getLogger("test"))
+        persistence.load_settings()
         assert os.stat(settings_path).st_mode & 0o777 == 0o600
 
 
