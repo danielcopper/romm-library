@@ -198,6 +198,22 @@ function computeSaveSyncDisplay(saveStatus: SaveStatus | null): { status: "synce
 
 import { setRommConnectionState } from "../utils/connectionState";
 
+/** Extract BIOS fields from a bios_status response into an InfoState partial. */
+function extractBiosInfo(b: Record<string, unknown>): Partial<InfoState> {
+  const activeCoreLabel = (b.active_core_label as string) ?? null;
+  const availableCores = (b.available_cores as Array<{ core_so: string; label: string; is_default: boolean }>) ?? [];
+  const defaultCore = availableCores.find((c) => c.is_default);
+  const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+  return {
+    biosNeeded: true,
+    biosStatus: getBiosLevel(b as BiosStatus),
+    biosLabel: formatBiosLabel(b as BiosStatus),
+    activeCoreLabel,
+    activeCoreIsDefault,
+    availableCores,
+  };
+}
+
 export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   // Read playtime from Steam's own overview synchronously (already written by metadataPatches)
   // This avoids an unnecessary render from setting it inside the async effect.
@@ -326,44 +342,16 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         // BIOS: render from cache first, background refresh if stale or missing
         const cachedBios = cached.bios_status;
         if (cachedBios) {
-          const activeCoreLabel = cachedBios.active_core_label ?? null;
-          const availableCores = cachedBios.available_cores ?? [];
-          const defaultCore = availableCores.find((c: { is_default: boolean }) => c.is_default);
-          const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
-          setInfo((prev) => ({
-            ...prev,
-            biosNeeded: true,
-            biosStatus: getBiosLevel(cachedBios as BiosStatus),
-            biosLabel: formatBiosLabel(cachedBios as BiosStatus),
-            activeCoreLabel,
-            activeCoreIsDefault,
-            availableCores,
-          }));
+          setInfo((prev) => ({ ...prev, ...extractBiosInfo(cachedBios) }));
         }
 
-        const refreshBiosStatus = (result: { bios_status: typeof cachedBios }) => {
-          if (cancelled) return;
-          const b = result.bios_status;
-          if (b) {
-            const activeCoreLabel = b.active_core_label ?? null;
-            const availableCores = b.available_cores ?? [];
-            const defaultCore = availableCores.find((c) => c.is_default);
-            const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
-            setInfo((prev) => ({
-              ...prev,
-              biosNeeded: true,
-              biosStatus: getBiosLevel(b as BiosStatus),
-              biosLabel: formatBiosLabel(b as BiosStatus),
-              activeCoreLabel,
-              activeCoreIsDefault,
-              availableCores,
-            }));
-          }
-        };
         const biosCachedAt = cachedBios?.cached_at;
         if (!cachedBios || isStale(biosCachedAt, BIOS_TTL_SEC)) {
-          getBiosStatus(romId).then(refreshBiosStatus)
-            .catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
+          getBiosStatus(romId).then((result) => {
+            if (!cancelled && result.bios_status) {
+              setInfo((prev) => ({ ...prev, ...extractBiosInfo(result.bios_status) }));
+            }
+          }).catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
         }
       } catch (e) {
         debugLog(`RomMPlaySection: loadCached error: ${e}`);
@@ -443,6 +431,24 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   // If connected + installed + save sync enabled, also runs lightweight save status check
   useEffect(() => {
     let cancelled = false;
+
+    async function doSaveCheck(isCancelled: boolean) {
+      const romId = romIdRef.current;
+      if (!romId || !info.saveSyncEnabled) return;
+      try {
+        const saveStatus = await getSaveStatus(romId);
+        if (isCancelled) return;
+        const hasConflict = saveStatus?.files?.some((f: { status: string }) => f.status === "conflict") ?? false;
+        globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
+          detail: { type: "save_sync", rom_id: romId, has_conflict: hasConflict },
+        }));
+        const { status: ss, label: sl } = computeSaveSyncDisplay(saveStatus);
+        setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl }));
+      } catch (e) {
+        debugLog(`RomMPlaySection: lightweight save check error: ${e}`);
+      }
+    }
+
     const check = async () => {
       // Reset stale connection state immediately so downstream consumers
       // (e.g. CustomPlayButton) don't stay stuck on a previous "offline"
@@ -462,23 +468,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         globalThis.dispatchEvent(new CustomEvent("romm_connection_changed", { detail: { state: connState } }));
 
         // If connected, do lightweight save status check to detect new conflicts
-        const romId = romIdRef.current;
-        if (connected && romId && info.saveSyncEnabled) {
-          try {
-            const saveStatus = await getSaveStatus(romId);
-            if (cancelled) return;
-            const hasConflict = saveStatus?.files?.some((f: { status: string }) => f.status === "conflict") ?? false;
-            // Always notify CustomPlayButton with fresh conflict status
-            globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
-              detail: { type: "save_sync", rom_id: romId, has_conflict: hasConflict },
-            }));
-            // Update save sync display in PlaySection info items
-            const { status: ss, label: sl } = computeSaveSyncDisplay(saveStatus);
-            setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl }));
-          } catch (e) {
-            debugLog(`RomMPlaySection: lightweight save check error: ${e}`);
-          }
-        }
+        if (connected) await doSaveCheck(cancelled);
       } catch {
         if (!cancelled) {
           setRommConnectionState("offline");
