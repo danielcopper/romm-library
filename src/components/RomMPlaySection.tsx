@@ -199,15 +199,15 @@ function computeSaveSyncDisplay(saveStatus: SaveStatus | null): { status: "synce
 import { setRommConnectionState } from "../utils/connectionState";
 
 /** Extract BIOS fields from a bios_status response into an InfoState partial. */
-function extractBiosInfo(b: Record<string, unknown>): Partial<InfoState> {
-  const activeCoreLabel = (b.active_core_label as string) ?? null;
-  const availableCores = (b.available_cores as Array<{ core_so: string; label: string; is_default: boolean }>) ?? [];
+function extractBiosInfo(b: BiosStatus): Partial<InfoState> {
+  const activeCoreLabel = b.active_core_label ?? null;
+  const availableCores = b.available_cores ?? [];
   const defaultCore = availableCores.find((c) => c.is_default);
   const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
   return {
     biosNeeded: true,
-    biosStatus: getBiosLevel(b as BiosStatus),
-    biosLabel: formatBiosLabel(b as BiosStatus),
+    biosStatus: getBiosLevel(b),
+    biosLabel: formatBiosLabel(b),
     activeCoreLabel,
     activeCoreIsDefault,
     availableCores,
@@ -342,14 +342,15 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         // BIOS: render from cache first, background refresh if stale or missing
         const cachedBios = cached.bios_status;
         if (cachedBios) {
-          setInfo((prev) => ({ ...prev, ...extractBiosInfo(cachedBios) }));
+          setInfo((prev) => ({ ...prev, ...extractBiosInfo(cachedBios as BiosStatus) }));
         }
 
         const biosCachedAt = cachedBios?.cached_at;
         if (!cachedBios || isStale(biosCachedAt, BIOS_TTL_SEC)) {
           getBiosStatus(romId).then((result) => {
-            if (!cancelled && result.bios_status) {
-              setInfo((prev) => ({ ...prev, ...extractBiosInfo(result.bios_status) }));
+            const b = result.bios_status;
+            if (!cancelled && b) {
+              setInfo((prev) => ({ ...prev, ...extractBiosInfo(b as BiosStatus) }));
             }
           }).catch((e) => debugLog(`Background BIOS status fetch error: ${e}`));
         }
