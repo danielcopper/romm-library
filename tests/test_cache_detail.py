@@ -426,9 +426,9 @@ class TestGetCachedGameDetailBiosFromCache:
         plugin._firmware_service._firmware_cache_epoch = 99.0
 
         with (
-            patch("lib.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
-            patch("lib.es_de_config.get_available_cores", return_value=[]),
-            patch("lib.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
+            patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
+            patch("domain.es_de_config.get_available_cores", return_value=[]),
+            patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
         ):
             result = await plugin.get_cached_game_detail(50000)
 
@@ -465,7 +465,7 @@ class TestGetCachedGameDetailBiosFromCache:
         plugin._firmware_service._firmware_cache_at = 50.0
         plugin._firmware_service._firmware_cache_epoch = 50.0
 
-        with patch("lib.es_de_config.get_active_core", return_value=(None, None)):
+        with patch("domain.es_de_config.get_active_core", return_value=(None, None)):
             result = await plugin.get_cached_game_detail(50000)
 
         assert result["bios_status"] is None

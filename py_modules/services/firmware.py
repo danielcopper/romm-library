@@ -13,7 +13,8 @@ import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from lib import es_de_config, retrodeck_config
+from domain import es_de_config, retrodeck_config
+
 from lib.errors import error_response
 
 if TYPE_CHECKING:

@@ -20,8 +20,9 @@ RomM Server <-HTTP-> Python Backend (main.py + services/ + adapters/)
 - **`main.py`** — Plugin entry point, callable routing, composition root
 - **`py_modules/services/`** — Business logic (9 services, depend on Protocols only)
 - **`py_modules/adapters/`** — I/O boundaries (HTTP, persistence, Steam VDF, save API)
+- **`py_modules/domain/`** — Domain logic (ES-DE config, RetroDECK path resolution)
 - **`py_modules/models/`** — Domain dataclasses
-- **`py_modules/lib/`** — Utilities (errors, ES-DE config, RetroDECK paths)
+- **`py_modules/lib/`** — Utilities (errors, certifi bundle)
 
 **Frontend** (`src/`): SteamClient shortcut CRUD, QAM panel UI, game detail page injection
 
@@ -30,7 +31,8 @@ RomM Server <-HTTP-> Python Backend (main.py + services/ + adapters/)
 **Layer rules** (enforced by import-linter in CI):
 - Services must not import concrete adapter implementations (Protocols OK)
 - Adapters must not import services
-- Utilities must not import services or adapters
+- Domain must not import services, adapters, or lib
+- Utilities must not import services, adapters, or domain
 - Services must be independent of each other
 
 ## Key Technical Constraints
@@ -75,10 +77,11 @@ py_modules/
         v46.py                            # SaveApiV46 — RomM 4.6.1 save API adapter
         v47.py                            # SaveApiV47 — RomM 4.7.0 save API adapter
   models/                                 # Domain dataclasses (currently empty — types inlined in services)
-  lib/
-    errors.py                             # Exception hierarchy (RommApiError, classify_error)
+  domain/
     es_de_config.py                       # CoreResolver + GamelistXmlEditor classes (core resolution, gamelist.xml)
     retrodeck_config.py                   # RetroDECK path resolution (roms, saves, BIOS, states)
+  lib/
+    errors.py                             # Exception hierarchy (RommApiError, classify_error)
   vdf/                                    # Vendored VDF library (binary VDF read/write)
 src/
   index.tsx                               # Plugin entry, event listeners, QAM router

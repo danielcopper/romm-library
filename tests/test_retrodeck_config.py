@@ -4,7 +4,7 @@ import os
 import pytest
 
 # conftest.py patches decky before this import
-from lib import retrodeck_config
+from domain import retrodeck_config
 
 
 @pytest.fixture(autouse=True)

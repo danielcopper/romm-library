@@ -1,12 +1,11 @@
-"""Tests for lib/es_de_config module."""
+"""Tests for domain/es_de_config module."""
 
 import os
 import tempfile
 from unittest import mock
 
 import pytest
-
-from lib import es_de_config
+from domain import es_de_config
 
 # conftest.py patches decky before this import
 # main.py adds py_modules to sys.path (provides vdf, etc.)
@@ -68,14 +67,14 @@ def _write_temp_xml(content):
 
 
 class TestFindEsSystemsXml:
-    @mock.patch("lib.es_de_config.os.path.exists")
+    @mock.patch("domain.es_de_config.os.path.exists")
     def test_finds_xml_in_linux_path(self, mock_exists):
         mock_exists.return_value = True
         result = es_de_config.find_es_systems_xml()
         assert result == es_de_config._ES_SYSTEMS_CANDIDATES[0]
         assert "linux" in result
 
-    @mock.patch("lib.es_de_config.os.path.exists")
+    @mock.patch("domain.es_de_config.os.path.exists")
     def test_falls_back_to_unix_path(self, mock_exists):
         # linux/ doesn't exist, unix/ does
         mock_exists.side_effect = [False, True]
@@ -83,7 +82,7 @@ class TestFindEsSystemsXml:
         assert result == es_de_config._ES_SYSTEMS_CANDIDATES[1]
         assert "unix" in result
 
-    @mock.patch("lib.es_de_config.os.path.exists")
+    @mock.patch("domain.es_de_config.os.path.exists")
     def test_returns_none_when_not_found(self, mock_exists):
         mock_exists.return_value = False
         result = es_de_config.find_es_systems_xml()
@@ -242,7 +241,7 @@ class TestGetActiveCore:
 
     @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     @mock.patch.object(es_de_config.CoreResolver, "get_system_override", return_value=None)
-    @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value="/fake/retrodeck")
+    @mock.patch("domain.retrodeck_config.get_retrodeck_home", return_value="/fake/retrodeck")
     def test_default_core_from_live_xml(self, mock_home, mock_override, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         result = es_de_config.get_active_core("gba")
@@ -250,7 +249,7 @@ class TestGetActiveCore:
 
     @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     @mock.patch.object(es_de_config.CoreResolver, "get_system_override", return_value="gpSP")
-    @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value="/fake/retrodeck")
+    @mock.patch("domain.retrodeck_config.get_retrodeck_home", return_value="/fake/retrodeck")
     def test_system_override_takes_precedence(self, mock_home, mock_override, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         result = es_de_config.get_active_core("gba")
@@ -258,7 +257,7 @@ class TestGetActiveCore:
 
     @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
-    @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value=None)
+    @mock.patch("domain.retrodeck_config.get_retrodeck_home", return_value=None)
     def test_fallback_to_core_defaults(self, mock_home, mock_defaults, mock_load):
         mock_load.return_value = {}
         mock_defaults.return_value = {
@@ -273,7 +272,7 @@ class TestGetActiveCore:
 
     @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
-    @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value=None)
+    @mock.patch("domain.retrodeck_config.get_retrodeck_home", return_value=None)
     def test_returns_none_when_all_fail(self, mock_home, mock_defaults, mock_load):
         mock_load.return_value = {}
         mock_defaults.return_value = {}
@@ -282,7 +281,7 @@ class TestGetActiveCore:
 
     @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
     @mock.patch.object(es_de_config.CoreResolver, "_load_core_defaults")
-    @mock.patch("lib.retrodeck_config.get_retrodeck_home", return_value=None)
+    @mock.patch("domain.retrodeck_config.get_retrodeck_home", return_value=None)
     def test_unknown_system_returns_none(self, mock_home, mock_defaults, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         mock_defaults.return_value = {}
@@ -532,7 +531,7 @@ class TestGetActiveCoreWithGameOverride:
     }
 
     @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
-    @mock.patch("lib.retrodeck_config.get_retrodeck_home")
+    @mock.patch("domain.retrodeck_config.get_retrodeck_home")
     def test_per_game_override_takes_precedence(self, mock_home, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -551,7 +550,7 @@ class TestGetActiveCoreWithGameOverride:
             assert result == ("gpsp_libretro", "gpSP")
 
     @mock.patch.object(es_de_config.CoreResolver, "_load_es_systems")
-    @mock.patch("lib.retrodeck_config.get_retrodeck_home")
+    @mock.patch("domain.retrodeck_config.get_retrodeck_home")
     def test_falls_through_to_system_when_no_game_override(self, mock_home, mock_load):
         mock_load.return_value = self.GBA_SYSTEM_INFO
         with tempfile.TemporaryDirectory() as tmpdir:

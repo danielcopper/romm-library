@@ -10,7 +10,7 @@ import os
 import shutil
 from typing import TYPE_CHECKING
 
-from lib import retrodeck_config
+from domain import retrodeck_config
 
 if TYPE_CHECKING:
     import asyncio
