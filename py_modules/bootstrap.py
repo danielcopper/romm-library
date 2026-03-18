@@ -21,6 +21,7 @@ from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
+from services.game_detail import GameDetailService
 from services.library import LibraryService
 from services.metadata import MetadataService
 from services.migration import MigrationService
@@ -220,6 +221,17 @@ def wire_services(cfg: WiringConfig) -> dict:
         firmware_service_bios_files_index=firmware_service.bios_files_index,
     )
 
+    game_detail_service = GameDetailService(
+        state=cfg.state,
+        metadata_cache=cfg.metadata_cache,
+        save_sync_state=cfg.save_sync_state,
+        logger=cfg.logger,
+        check_platform_bios_cached=firmware_service.check_platform_bios_cached,
+        check_platform_bios=firmware_service.check_platform_bios,
+        get_ra_username=achievements_service.get_ra_username,
+        get_progress_cache_entry=achievements_service.get_progress_cache_entry,
+    )
+
     return {
         "save_sync_service": save_sync_service,
         "playtime_service": playtime_service,
@@ -230,4 +242,5 @@ def wire_services(cfg: WiringConfig) -> dict:
         "metadata_service": metadata_service,
         "achievements_service": achievements_service,
         "migration_service": migration_service,
+        "game_detail_service": game_detail_service,
     }

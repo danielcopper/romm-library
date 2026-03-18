@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
+from services.game_detail import GameDetailService
 from services.library import LibraryService
 
 # conftest.py patches decky before this import
@@ -56,6 +57,17 @@ def plugin():
         loop=asyncio.get_event_loop(),
         logger=decky.logger,
         log_debug=p._log_debug,
+    )
+    p._save_sync_state = {"settings": {}, "saves": {}}
+    p._game_detail_service = GameDetailService(
+        state=p._state,
+        metadata_cache=p._metadata_cache,
+        save_sync_state=p._save_sync_state,
+        logger=decky.logger,
+        check_platform_bios_cached=MagicMock(return_value=None),
+        check_platform_bios=MagicMock(return_value={"needs_bios": False}),
+        get_ra_username=p._achievements_service.get_ra_username,
+        get_progress_cache_entry=p._achievements_service.get_progress_cache_entry,
     )
     return p
 
@@ -975,7 +987,8 @@ class TestGetCachedGameDetailAchievements:
                 "cached_at": time.time(),
             },
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}}
+        plugin._save_sync_state.clear()
+        plugin._save_sync_state.update({"settings": {}, "saves": {}})
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -995,7 +1008,8 @@ class TestGetCachedGameDetailAchievements:
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}}
+        plugin._save_sync_state.clear()
+        plugin._save_sync_state.update({"settings": {}, "saves": {}})
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -1011,7 +1025,8 @@ class TestGetCachedGameDetailAchievements:
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}}
+        plugin._save_sync_state.clear()
+        plugin._save_sync_state.update({"settings": {}, "saves": {}})
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -1029,7 +1044,8 @@ class TestGetCachedGameDetailAchievements:
             "name": "Test Game",
             "platform_slug": "",
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}}
+        plugin._save_sync_state.clear()
+        plugin._save_sync_state.update({"settings": {}, "saves": {}})
 
         result = await plugin.get_cached_game_detail(100)
 
@@ -1055,7 +1071,8 @@ class TestGetCachedGameDetailAchievements:
                 "cached_at": time.time() - (2 * 3600),  # expired
             },
         }
-        plugin._save_sync_state = {"settings": {}, "saves": {}}
+        plugin._save_sync_state.clear()
+        plugin._save_sync_state.update({"settings": {}, "saves": {}})
 
         result = await plugin.get_cached_game_detail(100)
 

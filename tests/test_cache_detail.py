@@ -9,6 +9,7 @@ from adapters.steam_config import SteamConfigAdapter
 from fakes.fake_save_api import FakeSaveApi
 from services.achievements import AchievementsService
 from services.firmware import FirmwareService
+from services.game_detail import GameDetailService
 from services.library import LibraryService
 from services.playtime import PlaytimeService
 from services.saves import SaveService
@@ -115,6 +116,21 @@ def plugin(tmp_path):
     return p
 
 
+@pytest.fixture
+def game_detail_service(plugin):
+    """Create a GameDetailService wired to the plugin's state."""
+    return GameDetailService(
+        state=plugin._state,
+        metadata_cache=plugin._metadata_cache,
+        save_sync_state=plugin._save_sync_state,
+        logger=logging.getLogger("test"),
+        check_platform_bios_cached=plugin._firmware_service.check_platform_bios_cached,
+        check_platform_bios=plugin._firmware_service.check_platform_bios,
+        get_ra_username=plugin._achievements_service.get_ra_username,
+        get_progress_cache_entry=plugin._achievements_service.get_progress_cache_entry,
+    )
+
+
 @pytest.fixture(autouse=True)
 async def _set_event_loop(plugin):
     loop = asyncio.get_event_loop()
@@ -162,7 +178,7 @@ class TestGetCachedGameDetailFound:
     """Test get_cached_game_detail when app_id is in the registry."""
 
     @pytest.mark.asyncio
-    async def test_found_with_full_data(self, plugin):
+    async def test_found_with_full_data(self, plugin, game_detail_service):
         """All data present: registry, installed, save status, metadata, conflicts."""
         plugin._state["shortcut_registry"]["123"] = {
             "app_id": 99999,
@@ -191,7 +207,7 @@ class TestGetCachedGameDetailFound:
             "cached_at": 100,
         }
 
-        result = await plugin.get_cached_game_detail(99999)
+        result = await game_detail_service.get_cached_game_detail(99999)
 
         assert result["found"] is True
         assert result["rom_id"] == 123
@@ -212,20 +228,20 @@ class TestGetCachedGameDetailNotFound:
     """Test get_cached_game_detail when app_id is NOT in the registry."""
 
     @pytest.mark.asyncio
-    async def test_not_found(self, plugin):
+    async def test_not_found(self, game_detail_service):
         """Unknown app_id returns found=False."""
-        result = await plugin.get_cached_game_detail(12345)
+        result = await game_detail_service.get_cached_game_detail(12345)
         assert result == {"found": False}
 
     @pytest.mark.asyncio
-    async def test_not_found_empty_registry(self, plugin):
+    async def test_not_found_empty_registry(self, plugin, game_detail_service):
         """Empty registry returns found=False."""
         plugin._state["shortcut_registry"] = {}
-        result = await plugin.get_cached_game_detail(1)
+        result = await game_detail_service.get_cached_game_detail(1)
         assert result == {"found": False}
 
     @pytest.mark.asyncio
-    async def test_not_found_different_app_id(self, plugin):
+    async def test_not_found_different_app_id(self, plugin, game_detail_service):
         """Registry has entries but none match the requested app_id."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 11111,
@@ -233,7 +249,7 @@ class TestGetCachedGameDetailNotFound:
             "platform_slug": "nes",
             "platform_name": "NES",
         }
-        result = await plugin.get_cached_game_detail(99999)
+        result = await game_detail_service.get_cached_game_detail(99999)
         assert result == {"found": False}
 
 
@@ -241,7 +257,7 @@ class TestGetCachedGameDetailPartialData:
     """Test with missing optional data (no save status, no metadata, etc.)."""
 
     @pytest.mark.asyncio
-    async def test_no_save_status(self, plugin):
+    async def test_no_save_status(self, plugin, game_detail_service):
         """No save data for this rom returns save_status=None."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -249,12 +265,12 @@ class TestGetCachedGameDetailPartialData:
             "platform_slug": "snes",
             "platform_name": "Super Nintendo",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["save_status"] is None
 
     @pytest.mark.asyncio
-    async def test_no_metadata(self, plugin):
+    async def test_no_metadata(self, plugin, game_detail_service):
         """No metadata cached returns metadata=None."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -262,12 +278,12 @@ class TestGetCachedGameDetailPartialData:
             "platform_slug": "snes",
             "platform_name": "Super Nintendo",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["metadata"] is None
 
     @pytest.mark.asyncio
-    async def test_no_pending_conflicts_key(self, plugin):
+    async def test_no_pending_conflicts_key(self, plugin, game_detail_service):
         """pending_conflicts is no longer in the response (conflicts are inline)."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -275,12 +291,12 @@ class TestGetCachedGameDetailPartialData:
             "platform_slug": "snes",
             "platform_name": "Super Nintendo",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert "pending_conflicts" not in result
 
     @pytest.mark.asyncio
-    async def test_save_sync_disabled(self, plugin):
+    async def test_save_sync_disabled(self, plugin, game_detail_service):
         """save_sync_enabled reflects the setting."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -289,16 +305,16 @@ class TestGetCachedGameDetailPartialData:
             "platform_name": "Super Nintendo",
         }
         plugin._save_sync_state["settings"]["save_sync_enabled"] = False
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["save_sync_enabled"] is False
 
     @pytest.mark.asyncio
-    async def test_missing_registry_fields_default_empty(self, plugin):
+    async def test_missing_registry_fields_default_empty(self, plugin, game_detail_service):
         """Registry entry missing optional fields returns empty strings."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["rom_name"] == ""
         assert result["platform_slug"] == ""
@@ -309,7 +325,7 @@ class TestGetCachedGameDetailInstalled:
     """Test installed vs not installed detection."""
 
     @pytest.mark.asyncio
-    async def test_installed(self, plugin):
+    async def test_installed(self, plugin, game_detail_service):
         """ROM in installed_roms returns installed=True."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -321,11 +337,11 @@ class TestGetCachedGameDetailInstalled:
             "rom_id": 10,
             "file_path": "/roms/game.sfc",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["installed"] is True
 
     @pytest.mark.asyncio
-    async def test_not_installed(self, plugin):
+    async def test_not_installed(self, plugin, game_detail_service):
         """ROM not in installed_roms returns installed=False."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -333,7 +349,7 @@ class TestGetCachedGameDetailInstalled:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["installed"] is False
 
 
@@ -341,7 +357,7 @@ class TestGetCachedGameDetailConflictFiltering:
     """pending_conflicts was removed from get_cached_game_detail response."""
 
     @pytest.mark.asyncio
-    async def test_no_pending_conflicts_in_response(self, plugin):
+    async def test_no_pending_conflicts_in_response(self, plugin, game_detail_service):
         """pending_conflicts key is no longer in the response."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -349,11 +365,11 @@ class TestGetCachedGameDetailConflictFiltering:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert "pending_conflicts" not in result
 
     @pytest.mark.asyncio
-    async def test_response_still_has_save_status(self, plugin):
+    async def test_response_still_has_save_status(self, plugin, game_detail_service):
         """Response still includes save status fields."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -361,12 +377,12 @@ class TestGetCachedGameDetailConflictFiltering:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert "save_sync_enabled" in result
 
     @pytest.mark.asyncio
-    async def test_app_id_as_string(self, plugin):
+    async def test_app_id_as_string(self, plugin, game_detail_service):
         """app_id passed as string is handled correctly."""
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
@@ -374,7 +390,7 @@ class TestGetCachedGameDetailConflictFiltering:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await plugin.get_cached_game_detail("50000")
+        result = await game_detail_service.get_cached_game_detail("50000")
         assert result["found"] is True
         assert result["rom_id"] == 10
 
@@ -388,7 +404,7 @@ class TestGetCachedGameDetailBiosFromCache:
     """Test that get_cached_game_detail returns bios_status from firmware cache."""
 
     @pytest.mark.asyncio
-    async def test_bios_status_none_when_cache_empty(self, plugin):
+    async def test_bios_status_none_when_cache_empty(self, plugin, game_detail_service):
         """No firmware cache → bios_status is None."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 50000,
@@ -397,12 +413,12 @@ class TestGetCachedGameDetailBiosFromCache:
             "platform_name": "GBA",
         }
         # firmware cache is empty by default (None)
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["bios_status"] is None
 
     @pytest.mark.asyncio
-    async def test_bios_status_from_populated_cache(self, plugin, tmp_path):
+    async def test_bios_status_from_populated_cache(self, plugin, game_detail_service, tmp_path):
         """Firmware cache populated → bios_status returned with cached_at."""
         from unittest.mock import patch
 
@@ -430,7 +446,7 @@ class TestGetCachedGameDetailBiosFromCache:
             patch("domain.es_de_config.get_available_cores", return_value=[]),
             patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
         ):
-            result = await plugin.get_cached_game_detail(50000)
+            result = await game_detail_service.get_cached_game_detail(50000)
 
         assert result["found"] is True
         bs = result["bios_status"]
@@ -441,17 +457,17 @@ class TestGetCachedGameDetailBiosFromCache:
         assert bs["downloaded"] == 0
 
     @pytest.mark.asyncio
-    async def test_bios_status_none_when_no_platform_slug(self, plugin):
+    async def test_bios_status_none_when_no_platform_slug(self, plugin, game_detail_service):
         """No platform_slug in registry → bios_status is None (skipped)."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 50000,
             "name": "Game",
         }
-        result = await plugin.get_cached_game_detail(50000)
+        result = await game_detail_service.get_cached_game_detail(50000)
         assert result["bios_status"] is None
 
     @pytest.mark.asyncio
-    async def test_bios_status_none_when_needs_bios_false(self, plugin):
+    async def test_bios_status_none_when_needs_bios_false(self, plugin, game_detail_service):
         """Cache populated but no firmware for platform → bios_status is None."""
         from unittest.mock import patch
 
@@ -466,7 +482,7 @@ class TestGetCachedGameDetailBiosFromCache:
         plugin._firmware_service._firmware_cache_epoch = 50.0
 
         with patch("domain.es_de_config.get_active_core", return_value=(None, None)):
-            result = await plugin.get_cached_game_detail(50000)
+            result = await game_detail_service.get_cached_game_detail(50000)
 
         assert result["bios_status"] is None
 
@@ -485,7 +501,7 @@ class TestGetBiosStatusFound:
     """Test get_bios_status when ROM has BIOS requirements."""
 
     @pytest.mark.asyncio
-    async def test_returns_bios_status(self, plugin):
+    async def test_returns_bios_status(self, plugin, game_detail_service):
         """ROM with needs_bios=True returns full bios_status dict."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 50000,
@@ -493,8 +509,7 @@ class TestGetBiosStatusFound:
             "platform_slug": "gba",
             "platform_name": "GBA",
         }
-        mock_fw = MagicMock()
-        mock_fw.check_platform_bios = AsyncMock(
+        mock_check = AsyncMock(
             return_value={
                 "needs_bios": True,
                 "server_count": 3,
@@ -508,9 +523,9 @@ class TestGetBiosStatusFound:
                 "available_cores": [],
             }
         )
-        plugin._firmware_service = mock_fw
+        game_detail_service._check_platform_bios = mock_check
 
-        result = await plugin.get_bios_status(42)
+        result = await game_detail_service.get_bios_status(42)
         bs = result["bios_status"]
         assert bs is not None
         assert bs["platform_slug"] == "gba"
@@ -522,7 +537,7 @@ class TestGetBiosStatusFound:
         assert bs["active_core_label"] == "mGBA"
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_bios_needed(self, plugin):
+    async def test_returns_none_when_no_bios_needed(self, plugin, game_detail_service):
         """ROM with needs_bios=False returns bios_status=None."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 50000,
@@ -530,19 +545,13 @@ class TestGetBiosStatusFound:
             "platform_slug": "gba",
             "platform_name": "GBA",
         }
-        mock_fw = MagicMock()
-        mock_fw.check_platform_bios = AsyncMock(
-            return_value={
-                "needs_bios": False,
-            }
-        )
-        plugin._firmware_service = mock_fw
+        game_detail_service._check_platform_bios = AsyncMock(return_value={"needs_bios": False})
 
-        result = await plugin.get_bios_status(42)
+        result = await game_detail_service.get_bios_status(42)
         assert result["bios_status"] is None
 
     @pytest.mark.asyncio
-    async def test_uses_rom_file_from_installed(self, plugin):
+    async def test_uses_rom_file_from_installed(self, plugin, game_detail_service):
         """Uses file_name from installed_roms for per-game core detection."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 50000,
@@ -563,11 +572,9 @@ class TestGetBiosStatusFound:
             captured_args["rom_filename"] = rom_filename
             return {"needs_bios": False}
 
-        mock_fw = MagicMock()
-        mock_fw.check_platform_bios = capture_check
-        plugin._firmware_service = mock_fw
+        game_detail_service._check_platform_bios = capture_check
 
-        await plugin.get_bios_status(42)
+        await game_detail_service.get_bios_status(42)
         assert captured_args["rom_filename"] == "installed_file.gba"
 
 
@@ -575,34 +582,32 @@ class TestGetBiosStatusNotFound:
     """Test get_bios_status when ROM is not in registry."""
 
     @pytest.mark.asyncio
-    async def test_unknown_rom_id(self, plugin):
+    async def test_unknown_rom_id(self, game_detail_service):
         """Unknown rom_id returns bios_status=None."""
-        result = await plugin.get_bios_status(999)
+        result = await game_detail_service.get_bios_status(999)
         assert result["bios_status"] is None
 
     @pytest.mark.asyncio
-    async def test_no_platform_slug(self, plugin):
+    async def test_no_platform_slug(self, plugin, game_detail_service):
         """Registry entry without platform_slug returns bios_status=None."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 50000,
             "name": "Game",
         }
-        result = await plugin.get_bios_status(42)
+        result = await game_detail_service.get_bios_status(42)
         assert result["bios_status"] is None
 
     @pytest.mark.asyncio
-    async def test_firmware_error_returns_none(self, plugin):
+    async def test_firmware_error_returns_none(self, plugin, game_detail_service):
         """Firmware service exception returns bios_status=None."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 50000,
             "name": "Game",
             "platform_slug": "gba",
         }
-        mock_fw = MagicMock()
-        mock_fw.check_platform_bios = AsyncMock(side_effect=Exception("fail"))
-        plugin._firmware_service = mock_fw
+        game_detail_service._check_platform_bios = AsyncMock(side_effect=Exception("fail"))
 
-        result = await plugin.get_bios_status(42)
+        result = await game_detail_service.get_bios_status(42)
         assert result["bios_status"] is None
 
 
@@ -790,7 +795,7 @@ class TestAchievementSummaryCachedAt:
     """Test that achievement_summary includes cached_at from progress cache."""
 
     @pytest.mark.asyncio
-    async def test_achievement_summary_includes_cached_at(self, plugin):
+    async def test_achievement_summary_includes_cached_at(self, plugin, game_detail_service):
         """When progress is cached, achievement_summary includes cached_at timestamp."""
         cached_time = time.time() - 600  # 10 minutes ago
         plugin._state["shortcut_registry"]["42"] = {
@@ -817,7 +822,7 @@ class TestAchievementSummaryCachedAt:
             "cached_at": time.time(),
         }
 
-        result = await plugin.get_cached_game_detail(99999)
+        result = await game_detail_service.get_cached_game_detail(99999)
 
         assert result["achievement_summary"] is not None
         assert result["achievement_summary"]["earned"] == 5
@@ -826,7 +831,7 @@ class TestAchievementSummaryCachedAt:
         assert result["achievement_summary"]["cached_at"] == cached_time
 
     @pytest.mark.asyncio
-    async def test_achievement_summary_cached_at_reflects_storage_time(self, plugin):
+    async def test_achievement_summary_cached_at_reflects_storage_time(self, plugin, game_detail_service):
         """cached_at in summary matches the time progress was stored, not current time."""
         storage_time = time.time() - 1800  # 30 minutes ago
         plugin._state["shortcut_registry"]["42"] = {
@@ -851,14 +856,14 @@ class TestAchievementSummaryCachedAt:
             "cached_at": time.time(),
         }
 
-        result = await plugin.get_cached_game_detail(99999)
+        result = await game_detail_service.get_cached_game_detail(99999)
 
         # cached_at should be the storage time, not a fresh timestamp
         assert result["achievement_summary"]["cached_at"] == storage_time
         assert result["achievement_summary"]["cached_at"] < time.time() - 1700
 
     @pytest.mark.asyncio
-    async def test_no_achievement_summary_without_ra_username(self, plugin):
+    async def test_no_achievement_summary_without_ra_username(self, plugin, game_detail_service):
         """Without RA username, achievement_summary is None even with ra_id."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 99999,
@@ -868,12 +873,12 @@ class TestAchievementSummaryCachedAt:
             "ra_id": 555,
         }
 
-        result = await plugin.get_cached_game_detail(99999)
+        result = await game_detail_service.get_cached_game_detail(99999)
 
         assert result["achievement_summary"] is None
 
     @pytest.mark.asyncio
-    async def test_no_achievement_summary_without_cached_progress(self, plugin):
+    async def test_no_achievement_summary_without_cached_progress(self, plugin, game_detail_service):
         """With RA username but no cached progress, achievement_summary is None."""
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 99999,
@@ -887,6 +892,6 @@ class TestAchievementSummaryCachedAt:
             "cached_at": time.time(),
         }
 
-        result = await plugin.get_cached_game_detail(99999)
+        result = await game_detail_service.get_cached_game_detail(99999)
 
         assert result["achievement_summary"] is None

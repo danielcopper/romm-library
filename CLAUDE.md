@@ -65,6 +65,7 @@ py_modules/
     steamgrid.py                          # SteamGridService — SteamGridDB fetch, cache, icons
     metadata.py                           # MetadataService — ROM metadata caching (TTL, app_id mapping)
     achievements.py                       # AchievementsService — RetroAchievements progress, caching
+    game_detail.py                        # GameDetailService — game detail page data aggregation
     migration.py                          # MigrationService — RetroDECK path change detection, file migration
     _util.py                              # Shared service utilities (run_api_sync)
   adapters/
@@ -78,6 +79,7 @@ py_modules/
         v47.py                            # SaveApiV47 — RomM 4.7.0 save API adapter
   models/                                 # Domain dataclasses (currently empty — types inlined in services)
   domain/
+    bios.py                               # BIOS status formatting for game detail page
     es_de_config.py                       # CoreResolver + GamelistXmlEditor classes (core resolution, gamelist.xml)
     retrodeck_config.py                   # RetroDECK path resolution (roms, saves, BIOS, states)
     state_migrations.py                   # Schema migration functions for state files
