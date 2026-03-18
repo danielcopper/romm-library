@@ -59,6 +59,42 @@ class GameDetailService:
             rom_file = entry.get("fs_name", "")
         return rom_file
 
+    def _build_save_status(self, rom_id_str: str) -> dict | None:
+        """Build lightweight save-sync status for a ROM, or None if no saves."""
+        raw_save = self._save_sync_state.get("saves", {}).get(rom_id_str)
+        if not raw_save:
+            return None
+        raw_files = raw_save.get("files", {})
+        if isinstance(raw_files, dict):
+            files_list = [
+                {
+                    "filename": fn,
+                    "status": "synced" if fdata.get("last_sync_hash") else "unknown",
+                    "last_sync_at": fdata.get("last_sync_at"),
+                }
+                for fn, fdata in raw_files.items()
+            ]
+        else:
+            files_list = raw_files
+        return {
+            "files": files_list,
+            "last_sync_check_at": raw_save.get("last_sync_check_at"),
+        }
+
+    def _build_achievement_summary(self, rom_id_str: str, ra_id) -> dict | None:
+        """Build cached achievement summary for badge rendering, or None."""
+        if not ra_id or not self._get_ra_username():
+            return None
+        cached_progress = self._get_progress_cache_entry(rom_id_str)
+        if not cached_progress:
+            return None
+        return {
+            "earned": cached_progress.get("earned", 0),
+            "total": cached_progress.get("total", 0),
+            "earned_hardcore": cached_progress.get("earned_hardcore", 0),
+            "cached_at": cached_progress.get("cached_at"),
+        }
+
     async def get_cached_game_detail(self, app_id) -> dict:
         """Return cached + lightweight data for a game."""
         app_id = int(app_id)
@@ -76,26 +112,7 @@ class GameDetailService:
 
         # Save sync
         save_sync_enabled = self._save_sync_state.get("settings", {}).get("save_sync_enabled", False)
-        raw_save = self._save_sync_state.get("saves", {}).get(rom_id_str)
-        save_status = None
-        if raw_save:
-            # Normalize files from dict {filename: {...}} to array [{filename, ...}]
-            raw_files = raw_save.get("files", {})
-            if isinstance(raw_files, dict):
-                files_list = [
-                    {
-                        "filename": fn,
-                        "status": "synced" if fdata.get("last_sync_hash") else "unknown",
-                        "last_sync_at": fdata.get("last_sync_at"),
-                    }
-                    for fn, fdata in raw_files.items()
-                ]
-            else:
-                files_list = raw_files
-            save_status = {
-                "files": files_list,
-                "last_sync_check_at": raw_save.get("last_sync_check_at"),
-            }
+        save_status = self._build_save_status(rom_id_str)
 
         # Metadata from cache
         metadata = self._metadata_cache.get(rom_id_str)
@@ -116,20 +133,7 @@ class GameDetailService:
 
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
-        achievement_summary = None
-        if ra_id and self._get_ra_username():
-            # Try cache first for quick badge rendering
-            cached_progress = self._get_progress_cache_entry(rom_id_str)
-            if cached_progress:
-                achievement_summary = {
-                    "earned": cached_progress.get("earned", 0),
-                    "total": cached_progress.get("total", 0),
-                    "earned_hardcore": cached_progress.get("earned_hardcore", 0),
-                    "cached_at": cached_progress.get("cached_at"),
-                }
-            else:
-                # Return None — frontend will fetch on demand
-                achievement_summary = None
+        achievement_summary = self._build_achievement_summary(rom_id_str, ra_id)
 
         return {
             "found": True,
