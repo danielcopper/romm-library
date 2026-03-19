@@ -129,6 +129,7 @@ export interface SyncPreviewSummary {
   unchanged_count: number;
   remove_count: number;
   disabled_platform_remove_count: number;
+  has_collection_updates?: boolean;
 }
 
 export interface SyncPreview {

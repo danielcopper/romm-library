@@ -300,6 +300,7 @@ class LibraryService:
                     "unchanged_count": len(unchanged_ids),
                     "remove_count": len(stale),
                     "disabled_platform_remove_count": disabled_count,
+                    "has_collection_updates": bool(collection_memberships),
                 },
                 "new_names": [s["name"] for s in new[:10]],
                 "changed_names": [s["name"] for s in changed[:10]],

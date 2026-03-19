@@ -128,7 +128,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
       const result = await syncPreview();
       stopPolling();
       if (result.success) {
-        if (skipPreview && (result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0)) {
+        if (skipPreview && (result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0 || result.summary.has_collection_updates)) {
           // Auto-apply: skip preview UI
           setSyncProgress({ running: true, phase: "applying", message: "Applying changes..." });
           const applyResult = await syncApplyDelta(result.preview_id);
