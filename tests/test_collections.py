@@ -708,3 +708,611 @@ class TestFetchCollectionRoms:
         assert third_fn == plugin._sync_service._romm_api.list_roms_by_virtual_collection
         assert "Mario" in memberships
         assert roms[0]["id"] == 42
+
+
+# ---------------------------------------------------------------------------
+# TestCollectionSyncEdgeCases
+# ---------------------------------------------------------------------------
+
+
+def _make_rom(rom_id, name, platform_name, platform_slug="gba"):
+    """Build a minimal ROM dict as returned by the RomM API."""
+    return {
+        "id": rom_id,
+        "name": name,
+        "fs_name": f"{name}.zip",
+        "platform_name": platform_name,
+        "platform_slug": platform_slug,
+    }
+
+
+def _make_registry_entry(name, platform_name, app_id, platform_slug="gba"):
+    """Build a minimal shortcut registry entry."""
+    return {
+        "app_id": app_id,
+        "name": name,
+        "fs_name": f"{name}.zip",
+        "platform_name": platform_name,
+        "platform_slug": platform_slug,
+        "cover_path": "",
+    }
+
+
+def _page(items):
+    """Wrap items in a paginated API response dict."""
+    return {"items": items, "total": len(items)}
+
+
+class TestCollectionSyncEdgeCases:
+    """Edge-case tests for the merged platform + collection sync engine.
+
+    Tests exercise _classify_roms() and _report_sync_results_io() directly,
+    and use _fetch_collection_roms() for collection-fetch scenarios.
+    """
+
+    # ------------------------------------------------------------------
+    # Scenario 1: Platform disabled, collection keeps game alive
+    # ------------------------------------------------------------------
+
+    def test_sc1_collection_keeps_rom_alive_when_platform_disabled(self, plugin):
+        """ROM A stays because Favorites collection references it; ROM B becomes stale.
+
+        Platform GBA is disabled between sync 1 and sync 2. The registry has
+        both ROM A (id=1) and ROM B (id=2) from the previous sync. On sync 2,
+        only ROM A appears in shortcuts_data (via collection). ROM B has no
+        source and must be classified as stale.
+        """
+        svc = plugin._sync_service
+
+        # Registry after first sync
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001),
+            "2": _make_registry_entry("ROM B", "Game Boy Advance", app_id=1002),
+        }
+
+        # Second sync: GBA platform is disabled, Favorites collection keeps ROM A
+        # shortcuts_data only contains ROM A (fetched via collection)
+        shortcuts_data = [
+            {
+                "rom_id": 1,
+                "name": "ROM A",
+                "fs_name": "ROM A.zip",
+                "platform_name": "Game Boy Advance",
+                "platform_slug": "gba",
+            }
+        ]
+        # GBA is not in fetched platform names (platform disabled)
+        fetched_platform_names = set()
+
+        new, _changed, unchanged_ids, stale, _disabled_count = svc._classify_roms(
+            shortcuts_data, fetched_platform_names
+        )
+
+        assert 1 in unchanged_ids, "ROM A should be unchanged (collection keeps it alive)"
+        assert 2 in stale, "ROM B should be stale (no source references it)"
+        assert len(new) == 0
+        assert len(_changed) == 0
+
+    # ------------------------------------------------------------------
+    # Scenario 2: Collection disabled, platform keeps game alive
+    # ------------------------------------------------------------------
+
+    def test_sc2_platform_keeps_rom_alive_when_collection_disabled(self, plugin):
+        """ROM A stays (platform reference); ROM C becomes stale (collection-only, now disabled).
+
+        Platform GBA enabled → ROM A stays. PSX not enabled and Favorites
+        collection disabled → ROM C has no source and is stale.
+        """
+        svc = plugin._sync_service
+
+        # Registry after first sync: ROM A (GBA via platform), ROM C (PSX via collection)
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001, platform_slug="gba"),
+            "3": _make_registry_entry("ROM C", "PlayStation", app_id=1003, platform_slug="psx"),
+        }
+
+        # Second sync: Favorites disabled, GBA still enabled
+        # shortcuts_data only contains ROM A from the GBA platform
+        shortcuts_data = [
+            {
+                "rom_id": 1,
+                "name": "ROM A",
+                "fs_name": "ROM A.zip",
+                "platform_name": "Game Boy Advance",
+                "platform_slug": "gba",
+            }
+        ]
+        fetched_platform_names = {"Game Boy Advance"}
+
+        new, _changed, unchanged_ids, stale, disabled_count = svc._classify_roms(shortcuts_data, fetched_platform_names)
+
+        assert 1 in unchanged_ids, "ROM A should be unchanged (platform still enabled)"
+        assert 3 in stale, "ROM C should be stale (collection disabled, PSX not enabled)"
+        assert len(new) == 0
+        # disabled_count: ROM C's platform (PlayStation) is NOT in fetched_platform_names
+        assert disabled_count == 1
+
+    # ------------------------------------------------------------------
+    # Scenario 3: Game in multiple collections, one disabled
+    # ------------------------------------------------------------------
+
+    def test_sc3_rom_stays_alive_when_one_of_two_collections_disabled(self, plugin):
+        """ROM A stays because RPG collection still references it even after Favorites is disabled."""
+        svc = plugin._sync_service
+
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001),
+        }
+
+        # ROM A still appears in shortcuts_data (RPG collection enabled)
+        shortcuts_data = [
+            {
+                "rom_id": 1,
+                "name": "ROM A",
+                "fs_name": "ROM A.zip",
+                "platform_name": "Game Boy Advance",
+                "platform_slug": "gba",
+            }
+        ]
+        fetched_platform_names = set()
+
+        _new, _changed, unchanged_ids, stale, _disabled_count = svc._classify_roms(
+            shortcuts_data, fetched_platform_names
+        )
+
+        assert 1 in unchanged_ids, "ROM A should stay alive via RPG collection"
+        assert len(stale) == 0
+
+    # ------------------------------------------------------------------
+    # Scenario 4: Collection-only game (no platform enabled)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_sc4_collection_only_rom_is_synced_without_platform(self, plugin):
+        """ROM A is synced via collection fetch when its platform is not enabled."""
+        svc = plugin._sync_service
+        svc._settings["enabled_platforms"] = {}  # No platforms enabled
+        svc._settings["enabled_collections"] = {"10": True}
+
+        # API mocks: no enabled platforms → no platform ROMs
+        # list_collections → one collection; list_roms_by_collection → ROM A
+        rom_a = {
+            "id": 1,
+            "name": "ROM A",
+            "fs_name": "ROM A.zip",
+            "platform_name": "Game Boy Advance",
+            "platform_slug": "gba",
+        }
+        user_collections = [{"id": 10, "name": "Favorites", "is_virtual": False}]
+        franchise_collections: list = []
+
+        mock_loop = MagicMock()
+        call_num = 0
+
+        async def _executor(_exec, fn, *args):
+            nonlocal call_num
+            call_num += 1
+            if call_num == 1:
+                # list_platforms → empty (but this is called by _fetch_enabled_platforms)
+                return []
+            if call_num == 2:
+                # list_collections inside _fetch_collection_roms
+                return user_collections
+            if call_num == 3:
+                # list_virtual_collections (franchise)
+                return franchise_collections
+            # list_roms_by_collection for collection id=10
+            return _page([rom_a])
+
+        mock_loop.run_in_executor = AsyncMock(side_effect=_executor)
+        svc._loop = mock_loop
+
+        # _fetch_and_prepare drives the whole flow
+        all_roms, shortcuts_data, _platforms, collection_memberships, platform_rom_ids = await svc._fetch_and_prepare()
+
+        assert len(all_roms) == 1
+        assert all_roms[0]["id"] == 1
+        assert len(shortcuts_data) == 1
+        assert shortcuts_data[0]["rom_id"] == 1
+        # ROM A came from collection, not platform
+        assert 1 not in platform_rom_ids
+        assert "Favorites" in collection_memberships
+        assert 1 in collection_memberships["Favorites"]
+
+    # ------------------------------------------------------------------
+    # Scenario 5: collection_create_platform_groups = False (default)
+    # ------------------------------------------------------------------
+
+    def test_sc5_collection_rom_excluded_from_platform_groups_by_default(self, plugin):
+        """With toggle OFF, collection-only ROM B (PSX) is not included in platform_app_ids for PSX."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = False
+
+        # ROM A (id=1) came via GBA platform; ROM B (id=2) came via collection only (PSX)
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001, platform_slug="gba"),
+            "2": _make_registry_entry("ROM B", "PlayStation", app_id=1002, platform_slug="psx"),
+        }
+
+        # platform_rom_ids only contains ROM A (from platform fetch)
+        svc._pending_platform_rom_ids = {1}
+        svc._pending_collection_memberships = {"Favorites": [1, 2]}
+        svc._pending_sync = {
+            1: {
+                "name": "ROM A",
+                "platform_name": "Game Boy Advance",
+                "platform_slug": "gba",
+                "cover_path": "",
+            },
+            2: {
+                "name": "ROM B",
+                "platform_name": "PlayStation",
+                "platform_slug": "psx",
+                "cover_path": "",
+            },
+        }
+
+        platform_app_ids, _romm_collection_app_ids = svc._report_sync_results_io({}, [])
+
+        assert "Game Boy Advance" in platform_app_ids
+        assert 1001 in platform_app_ids["Game Boy Advance"]
+        # PSX platform group should NOT be created because ROM B is collection-only
+        assert "PlayStation" not in platform_app_ids
+
+    # ------------------------------------------------------------------
+    # Scenario 6: collection_create_platform_groups = True
+    # ------------------------------------------------------------------
+
+    def test_sc6_collection_rom_included_in_platform_groups_when_toggle_on(self, plugin):
+        """With toggle ON, collection-only ROM B (PSX) IS included in platform_app_ids for PSX."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = True
+
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001, platform_slug="gba"),
+            "2": _make_registry_entry("ROM B", "PlayStation", app_id=1002, platform_slug="psx"),
+        }
+
+        svc._pending_platform_rom_ids = {1}
+        svc._pending_collection_memberships = {"Favorites": [1, 2]}
+        svc._pending_sync = {
+            1: {
+                "name": "ROM A",
+                "platform_name": "Game Boy Advance",
+                "platform_slug": "gba",
+                "cover_path": "",
+            },
+            2: {
+                "name": "ROM B",
+                "platform_name": "PlayStation",
+                "platform_slug": "psx",
+                "cover_path": "",
+            },
+        }
+
+        platform_app_ids, _romm_collection_app_ids = svc._report_sync_results_io({}, [])
+
+        assert "Game Boy Advance" in platform_app_ids
+        assert 1001 in platform_app_ids["Game Boy Advance"]
+        # PSX platform group SHOULD exist because toggle is on
+        assert "PlayStation" in platform_app_ids
+        assert 1002 in platform_app_ids["PlayStation"]
+
+    # ------------------------------------------------------------------
+    # Scenario 7: Deduplication — ROM in both platform and collection
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_sc7_rom_in_platform_and_collection_appears_once(self, plugin):
+        """ROM A fetched from GBA platform is not duplicated when Favorites collection also has it."""
+        svc = plugin._sync_service
+        svc._settings["enabled_platforms"] = {"5": True}
+        svc._settings["enabled_collections"] = {"10": True}
+
+        rom_a = {
+            "id": 1,
+            "name": "ROM A",
+            "fs_name": "ROM A.zip",
+            "platform_name": "Game Boy Advance",
+            "platform_slug": "gba",
+        }
+        platform = {"id": 5, "name": "Game Boy Advance", "slug": "gba", "rom_count": 1}
+        user_collections = [{"id": 10, "name": "Favorites", "is_virtual": False}]
+
+        mock_loop = MagicMock()
+        call_num = 0
+
+        async def _executor(_exec, fn, *args):
+            nonlocal call_num
+            call_num += 1
+            if call_num == 1:
+                # list_platforms
+                return [platform]
+            if call_num == 2:
+                # list_roms for GBA (paginated)
+                return _page([rom_a])
+            if call_num == 3:
+                # list_collections inside _fetch_collection_roms
+                return user_collections
+            if call_num == 4:
+                # list_virtual_collections (franchise)
+                return []
+            # list_roms_by_collection for Favorites — ROM A already seen
+            return _page([rom_a])
+
+        mock_loop.run_in_executor = AsyncMock(side_effect=_executor)
+        svc._loop = mock_loop
+
+        _all_roms, shortcuts_data, _platforms, collection_memberships, platform_rom_ids = await svc._fetch_and_prepare()
+
+        # ROM A should appear exactly once despite being in both platform and collection
+        rom_ids_in_shortcuts = [sd["rom_id"] for sd in shortcuts_data]
+        assert rom_ids_in_shortcuts.count(1) == 1, "ROM A must not be duplicated"
+
+        # ROM A is in platform_rom_ids (fetched from platform)
+        assert 1 in platform_rom_ids
+
+        # ROM A must be in the Favorites collection membership
+        assert "Favorites" in collection_memberships
+        assert 1 in collection_memberships["Favorites"]
+
+    def test_sc7_rom_appears_in_both_platform_and_collection_app_ids(self, plugin):
+        """ROM A (in both GBA platform and Favorites collection) appears in both platform_app_ids
+        and romm_collection_app_ids after _report_sync_results_io."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = False
+
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001, platform_slug="gba"),
+        }
+
+        # ROM A came from platform
+        svc._pending_platform_rom_ids = {1}
+        svc._pending_collection_memberships = {"Favorites": [1]}
+        svc._pending_sync = {}
+
+        platform_app_ids, romm_collection_app_ids = svc._report_sync_results_io({}, [])
+
+        # Platform group for GBA exists (ROM A is a platform ROM)
+        assert "Game Boy Advance" in platform_app_ids
+        assert 1001 in platform_app_ids["Game Boy Advance"]
+
+        # Favorites collection app_ids also contains ROM A
+        assert "Favorites" in romm_collection_app_ids
+        assert 1001 in romm_collection_app_ids["Favorites"]
+
+    # ------------------------------------------------------------------
+    # Scenario 8: All sources removed — game gets stale
+    # ------------------------------------------------------------------
+
+    def test_sc8_rom_becomes_stale_when_no_source_references_it(self, plugin):
+        """ROM A classified as stale when neither platform nor collection brings it in."""
+        svc = plugin._sync_service
+
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001),
+        }
+
+        # Empty shortcuts_data — no ROM was fetched from any source
+        shortcuts_data: list = []
+        fetched_platform_names: set = set()
+
+        new, changed, unchanged_ids, stale, _disabled_count = svc._classify_roms(shortcuts_data, fetched_platform_names)
+
+        assert 1 in stale
+        assert len(new) == 0
+        assert len(changed) == 0
+        assert len(unchanged_ids) == 0
+
+    # ------------------------------------------------------------------
+    # Scenario 9: Empty collection
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_sc9_empty_collection_does_not_error(self, plugin):
+        """An enabled collection with no ROMs causes no errors and returns empty results."""
+        svc = plugin._sync_service
+        svc._settings["enabled_collections"] = {"10": True}
+
+        user_collections = [{"id": 10, "name": "Empty", "is_virtual": False}]
+
+        mock_loop = MagicMock()
+        call_num = 0
+
+        async def _executor(_exec, fn, *args):
+            nonlocal call_num
+            call_num += 1
+            if call_num == 1:
+                return user_collections
+            if call_num == 2:
+                return []  # no franchise collections
+            # list_roms_by_collection returns an empty page
+            return _page([])
+
+        mock_loop.run_in_executor = AsyncMock(side_effect=_executor)
+        svc._loop = mock_loop
+
+        roms, memberships = await svc._fetch_collection_roms(set())
+
+        assert roms == []
+        # Empty collection produces no membership entry (no rom_ids collected)
+        assert "Empty" not in memberships
+
+    # ------------------------------------------------------------------
+    # Scenario 10: Collection API failure is non-fatal
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_sc10_collection_api_failure_does_not_crash_sync(self, plugin):
+        """When the collection API fails, sync continues with platform ROMs only."""
+        svc = plugin._sync_service
+        svc._settings["enabled_platforms"] = {"5": True}
+        svc._settings["enabled_collections"] = {"10": True}
+
+        rom_a = {
+            "id": 1,
+            "name": "ROM A",
+            "fs_name": "ROM A.zip",
+            "platform_name": "Game Boy Advance",
+            "platform_slug": "gba",
+        }
+        platform = {"id": 5, "name": "Game Boy Advance", "slug": "gba", "rom_count": 1}
+
+        mock_loop = MagicMock()
+        call_num = 0
+
+        async def _executor(_exec, fn, *args):
+            nonlocal call_num
+            call_num += 1
+            if call_num == 1:
+                # list_platforms
+                return [platform]
+            if call_num == 2:
+                # list_roms for GBA
+                return _page([rom_a])
+            # All subsequent calls (list_collections, etc.) raise
+            raise Exception("Collection API unavailable")
+
+        mock_loop.run_in_executor = AsyncMock(side_effect=_executor)
+        svc._loop = mock_loop
+
+        # Should not raise; collection errors are caught and logged as warnings
+        (
+            all_roms,
+            _shortcuts_data,
+            _platforms,
+            collection_memberships,
+            _platform_rom_ids,
+        ) = await svc._fetch_and_prepare()
+
+        # Platform ROM was still fetched
+        assert len(all_roms) == 1
+        assert all_roms[0]["id"] == 1
+        # No collection memberships because the fetch failed
+        assert collection_memberships == {}
+
+    # ------------------------------------------------------------------
+    # Additional edge cases for _report_sync_results_io
+    # ------------------------------------------------------------------
+
+    def test_report_sync_clears_pending_state(self, plugin):
+        """_report_sync_results_io clears pending_sync, pending_collection_memberships,
+        and pending_platform_rom_ids after completion."""
+        svc = plugin._sync_service
+
+        svc._state["shortcut_registry"] = {}
+        svc._pending_sync = {1: {"name": "ROM A", "platform_name": "GBA", "cover_path": ""}}
+        svc._pending_collection_memberships = {"Favorites": [1]}
+        svc._pending_platform_rom_ids = {1}
+
+        svc._report_sync_results_io({}, [])
+
+        assert svc._pending_sync == {}
+        assert svc._pending_collection_memberships == {}
+        assert svc._pending_platform_rom_ids == set()
+
+    def test_report_sync_collection_app_ids_empty_when_no_memberships(self, plugin):
+        """romm_collection_app_ids is empty when no collection memberships are set."""
+        svc = plugin._sync_service
+
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "GBA", app_id=1001),
+        }
+        svc._pending_platform_rom_ids = {1}
+        svc._pending_collection_memberships = {}
+        svc._pending_sync = {}
+
+        _platform_app_ids, romm_collection_app_ids = svc._report_sync_results_io({}, [])
+
+        assert romm_collection_app_ids == {}
+
+    def test_report_sync_collection_app_ids_excludes_missing_registry_entries(self, plugin):
+        """romm_collection_app_ids skips rom_ids that have no registry entry."""
+        svc = plugin._sync_service
+
+        # Only ROM id=1 is in the registry; ROM id=99 is referenced in memberships but missing
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "GBA", app_id=1001),
+        }
+        svc._pending_platform_rom_ids = {1}
+        svc._pending_collection_memberships = {"Favorites": [1, 99]}
+        svc._pending_sync = {}
+
+        _platform_app_ids, romm_collection_app_ids = svc._report_sync_results_io({}, [])
+
+        assert "Favorites" in romm_collection_app_ids
+        assert 1001 in romm_collection_app_ids["Favorites"]
+        # ROM 99 has no registry entry, so its app_id is not included
+        assert len(romm_collection_app_ids["Favorites"]) == 1
+
+    def test_report_sync_platform_groups_include_newly_added_roms(self, plugin):
+        """ROMs added in this sync (via rom_id_to_app_id) appear in platform_app_ids."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = False
+
+        # Registry is initially empty; the sync adds ROM A
+        svc._state["shortcut_registry"] = {}
+        svc._pending_platform_rom_ids = {1}
+        svc._pending_collection_memberships = {}
+        svc._pending_sync = {
+            1: {
+                "name": "ROM A",
+                "platform_name": "Game Boy Advance",
+                "platform_slug": "gba",
+                "cover_path": "",
+                "fs_name": "ROM A.zip",
+            }
+        }
+
+        platform_app_ids, _romm = svc._report_sync_results_io({"1": 1001}, [])
+
+        assert "Game Boy Advance" in platform_app_ids
+        assert 1001 in platform_app_ids["Game Boy Advance"]
+
+    def test_classify_roms_new_when_not_in_registry(self, plugin):
+        """ROMs not present in the registry at all are classified as new."""
+        svc = plugin._sync_service
+        svc._state["shortcut_registry"] = {}
+
+        shortcuts_data = [
+            {
+                "rom_id": 1,
+                "name": "ROM A",
+                "fs_name": "ROM A.zip",
+                "platform_name": "GBA",
+                "platform_slug": "gba",
+            }
+        ]
+
+        new, changed, unchanged_ids, stale, _disabled_count = svc._classify_roms(shortcuts_data, {"GBA"})
+
+        assert len(new) == 1
+        assert new[0]["rom_id"] == 1
+        assert len(changed) == 0
+        assert len(unchanged_ids) == 0
+        assert len(stale) == 0
+
+    def test_classify_roms_changed_when_name_differs(self, plugin):
+        """ROMs whose name changed since last sync are classified as changed."""
+        svc = plugin._sync_service
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("Old Name", "GBA", app_id=1001),
+        }
+
+        shortcuts_data = [
+            {
+                "rom_id": 1,
+                "name": "New Name",  # name changed
+                "fs_name": "Old Name.zip",
+                "platform_name": "GBA",
+                "platform_slug": "gba",
+            }
+        ]
+
+        new, changed, unchanged_ids, _stale, _disabled_count = svc._classify_roms(shortcuts_data, {"GBA"})
+
+        assert len(changed) == 1
+        assert changed[0]["rom_id"] == 1
+        assert changed[0]["existing_app_id"] == 1001
+        assert len(new) == 0
+        assert len(unchanged_ids) == 0
