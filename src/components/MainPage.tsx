@@ -128,7 +128,8 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
       const result = await syncPreview();
       stopPolling();
       if (result.success) {
-        if (skipPreview && (result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0 || result.summary.has_collection_updates)) {
+        const hasChanges = result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0 || !!result.summary.has_collection_updates;
+        if (skipPreview && hasChanges) {
           // Auto-apply: skip preview UI
           setSyncProgress({ running: true, phase: "applying", message: "Applying changes..." });
           const applyResult = await syncApplyDelta(result.preview_id);
@@ -351,7 +352,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
               <Field
                 label="Preview"
                 description={
-                  preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count === 0
+                  preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count === 0 && !preview.summary.has_collection_updates
                     ? "Everything is up to date."
                     : `${preview.summary.new_count} new, ${preview.summary.changed_count} updated, ${preview.summary.unchanged_count} unchanged` +
                       (preview.summary.remove_count > 0
@@ -359,11 +360,12 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                           (preview.summary.disabled_platform_remove_count > 0
                             ? ` (${preview.summary.disabled_platform_remove_count} from disabled platforms)`
                             : "")
-                        : "")
+                        : "") +
+                      (preview.summary.has_collection_updates ? "\nCollections will be updated" : "")
                 }
               />
             </PanelSectionRow>
-            {preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count > 0 ? (
+            {preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count > 0 || preview.summary.has_collection_updates ? (
               <>
                 <PanelSectionRow>
                   <ButtonItem layout="below" onClick={handleApply}>
@@ -490,13 +492,13 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
 
       <PanelSection title="Settings">
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("settings")}>
-            Settings
+          <ButtonItem layout="below" onClick={() => onNavigate("library")}>
+            Library
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("library")}>
-            Library
+          <ButtonItem layout="below" onClick={() => onNavigate("settings")}>
+            Settings
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
