@@ -364,9 +364,16 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                     }
                     parts.push(line);
                   }
-                  if (s.collection_updates?.length) {
-                    const count = s.collection_updates.length;
-                    parts.push(`${count} collection${count !== 1 ? "s" : ""} to sync`);
+                  if (s.collection_diff?.has_changes) {
+                    const d = s.collection_diff;
+                    const cParts: string[] = [];
+                    if (d.added.length > 0) cParts.push(`+${d.added.length} collection${d.added.length !== 1 ? "s" : ""}`);
+                    if (d.removed.length > 0) cParts.push(`-${d.removed.length} collection${d.removed.length !== 1 ? "s" : ""}`);
+                    if (cParts.length > 0) {
+                      parts.push(`Collections: ${cParts.join(", ")}`);
+                    } else if (d.unchanged_count > 0) {
+                      parts.push(`${d.unchanged_count} collection${d.unchanged_count !== 1 ? "s" : ""} synced`);
+                    }
                   }
                   return parts.join("\n");
                 })()}

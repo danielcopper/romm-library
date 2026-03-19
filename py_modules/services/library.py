@@ -315,10 +315,8 @@ class LibraryService:
                     "unchanged_count": len(unchanged_ids),
                     "remove_count": len(stale),
                     "disabled_platform_remove_count": disabled_count,
-                    "has_collection_updates": bool(collection_memberships),
-                    "collection_updates": [
-                        {"name": name, "rom_count": len(rids)} for name, rids in sorted(collection_memberships.items())
-                    ],
+                    "has_collection_updates": self._compute_collection_diff(collection_memberships)["has_changes"],
+                    "collection_diff": self._compute_collection_diff(collection_memberships),
                 },
                 "new_names": [s["name"] for s in new[:10]],
                 "changed_names": [s["name"] for s in changed[:10]],
@@ -512,6 +510,20 @@ class LibraryService:
 
         return new, changed, unchanged_ids, stale, disabled_count
 
+    def _compute_collection_diff(self, collection_memberships: dict[str, list[int]]) -> dict:
+        """Compare current enabled collections against last synced state."""
+        current = set(collection_memberships.keys())
+        previous = set(self._state.get("last_synced_collections", []))
+        added = sorted(current - previous)
+        removed = sorted(previous - current)
+        unchanged = sorted(current & previous)
+        return {
+            "has_changes": bool(added or removed or current),
+            "added": added,
+            "removed": removed,
+            "unchanged_count": len(unchanged),
+        }
+
     # ── Fetch & prepare ──────────────────────────────────────
 
     async def _fetch_enabled_platforms(self):
@@ -645,7 +657,9 @@ class LibraryService:
         collection_memberships: dict[str, list[int]] = {}
 
         enabled_collections = self._settings.get("enabled_collections", {})
-        if not any(enabled_collections.values()):
+        enabled_ids = {k for k, v in enabled_collections.items() if v}
+        self._log_debug(f"Collection sync: {len(enabled_ids)} enabled: {enabled_ids}")
+        if not enabled_ids:
             return collection_only_roms, collection_memberships
 
         try:
@@ -658,16 +672,21 @@ class LibraryService:
             except Exception as e:
                 self._logger.warning(f"Failed to fetch franchise collections: {e}")
 
+            self._log_debug(
+                f"Collection metadata: {len(user_collections)} user, {len(franchise_collections)} franchise"
+            )
             all_seen = set(seen_rom_ids)  # Copy so we don't mutate caller's set
 
             for c in user_collections + franchise_collections:
                 cid = str(c.get("id", ""))
-                if not enabled_collections.get(cid, False):
+                if cid not in enabled_ids:
+                    self._log_debug(f"  Skipping collection '{c.get('name', cid)}' (id={cid}, not enabled)")
                     continue
 
                 coll_name = c.get("name", cid)
                 is_virtual = c.get("is_virtual", False)
                 coll_rom_ids: list[int] = []
+                self._log_debug(f"  Fetching collection '{coll_name}' (id={cid}, virtual={is_virtual})")
 
                 # Paginated fetch of ROMs in this collection
                 offset = 0
@@ -700,6 +719,7 @@ class LibraryService:
 
                 if coll_rom_ids:
                     collection_memberships[coll_name] = coll_rom_ids
+                    self._log_debug(f"  Collection '{coll_name}': {len(coll_rom_ids)} ROMs")
 
         except RommUnsupportedError:
             self._logger.info("Collections not supported on this RomM version")
@@ -927,6 +947,7 @@ class LibraryService:
                 self._logger.error(f"Failed to set Steam Input config: {e}")
 
         self._state["last_sync"] = datetime.now(UTC).isoformat()
+        self._state["last_synced_collections"] = list(self._pending_collection_memberships.keys())
         self._save_state()
 
         # Capture pending collection memberships and platform rom ids before clearing

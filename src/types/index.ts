@@ -131,7 +131,12 @@ export interface SyncPreviewSummary {
   remove_count: number;
   disabled_platform_remove_count: number;
   has_collection_updates?: boolean;
-  collection_updates?: { name: string; rom_count: number }[];
+  collection_diff?: {
+    has_changes: boolean;
+    added: string[];
+    removed: string[];
+    unchanged_count: number;
+  };
 }
 
 export interface SyncPreview {
