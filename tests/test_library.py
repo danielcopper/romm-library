@@ -968,7 +968,9 @@ class TestSyncPreview:
             {"rom_id": 2, "name": "Game B", "platform_name": "N64", "platform_slug": "n64", "fs_name": "b.z64"},
             {"rom_id": 3, "name": "Game C", "platform_name": "N64", "platform_slug": "n64", "fs_name": "c.z64"},
         ]
-        plugin._sync_service._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms, {}))
+        plugin._sync_service._fetch_and_prepare = AsyncMock(
+            return_value=(all_roms, shortcuts_data, platforms, {}, set())
+        )
         plugin._sync_service._emit_progress = AsyncMock()
 
         # Set up registry: rom 1 unchanged, rom 2 changed name
@@ -1000,7 +1002,9 @@ class TestSyncPreview:
         shortcuts_data = [
             {"rom_id": 1, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
         ]
-        plugin._sync_service._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms, {}))
+        plugin._sync_service._fetch_and_prepare = AsyncMock(
+            return_value=(all_roms, shortcuts_data, platforms, {}, set())
+        )
         plugin._sync_service._emit_progress = AsyncMock()
 
         result = await plugin.sync_preview()
@@ -1031,7 +1035,9 @@ class TestSyncPreview:
         shortcuts_data = [
             {"rom_id": 1, "name": "Game A", "platform_name": "N64", "platform_slug": "n64", "fs_name": "a.z64"},
         ]
-        plugin._sync_service._fetch_and_prepare = AsyncMock(return_value=(all_roms, shortcuts_data, platforms, {}))
+        plugin._sync_service._fetch_and_prepare = AsyncMock(
+            return_value=(all_roms, shortcuts_data, platforms, {}, set())
+        )
         plugin._sync_service._emit_progress = AsyncMock()
 
         await plugin.sync_preview()

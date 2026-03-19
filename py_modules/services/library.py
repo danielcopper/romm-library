@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from domain.shortcut_data import build_registry_entry, build_shortcuts_data
 from domain.sync_state import SyncState
-from lib.errors import classify_error
+from lib.errors import RommUnsupportedError, classify_error
 
 if TYPE_CHECKING:
     import logging
@@ -86,6 +86,7 @@ class LibraryService:
         self._pending_sync: dict = {}
         self._pending_delta: dict | None = None
         self._pending_collection_memberships: dict = {}
+        self._pending_platform_rom_ids: set[int] = set()
 
     @property
     def sync_state(self) -> SyncState:
@@ -143,17 +144,23 @@ class LibraryService:
     async def get_collections(self):
         try:
             user_collections = await self._loop.run_in_executor(None, self._romm_api.list_collections)
-            try:
-                franchise_collections = await self._loop.run_in_executor(
-                    None, self._romm_api.list_virtual_collections, "franchise"
-                )
-            except Exception as e:
-                self._logger.warning(f"Failed to fetch franchise collections, continuing without them: {e}")
-                franchise_collections = []
+        except RommUnsupportedError:
+            return {
+                "success": False,
+                "message": "Collections require RomM 4.7.0 or newer",
+                "error_code": "unsupported_error",
+            }
         except Exception as e:
             self._logger.error(f"Failed to fetch collections: {e}")
             _code, _msg = classify_error(e)
             return {"success": False, "message": _msg, "error_code": _code}
+        try:
+            franchise_collections = await self._loop.run_in_executor(
+                None, self._romm_api.list_virtual_collections, "franchise"
+            )
+        except Exception as e:
+            self._logger.warning(f"Failed to fetch franchise collections, continuing without them: {e}")
+            franchise_collections = []
 
         enabled = self._settings.get("enabled_collections", {})
         result = []
@@ -193,17 +200,23 @@ class LibraryService:
         enabled = bool(enabled)
         try:
             user_collections = await self._loop.run_in_executor(None, self._romm_api.list_collections)
-            try:
-                franchise_collections = await self._loop.run_in_executor(
-                    None, self._romm_api.list_virtual_collections, "franchise"
-                )
-            except Exception as e:
-                self._logger.warning(f"Failed to fetch franchise collections, continuing without them: {e}")
-                franchise_collections = []
+        except RommUnsupportedError:
+            return {
+                "success": False,
+                "message": "Collections require RomM 4.7.0 or newer",
+                "error_code": "unsupported_error",
+            }
         except Exception as e:
             self._logger.error(f"Failed to fetch collections: {e}")
             _code, _msg = classify_error(e)
             return {"success": False, "message": _msg, "error_code": _code}
+        try:
+            franchise_collections = await self._loop.run_in_executor(
+                None, self._romm_api.list_virtual_collections, "franchise"
+            )
+        except Exception as e:
+            self._logger.warning(f"Failed to fetch franchise collections, continuing without them: {e}")
+            franchise_collections = []
 
         all_collections = []
         for c in user_collections:
@@ -267,7 +280,8 @@ class LibraryService:
         self._sync_state = SyncState.RUNNING
         self._sync_last_heartbeat = time.monotonic()
         try:
-            all_roms, shortcuts_data, platforms, collection_memberships = await self._fetch_and_prepare()
+            fetch_result = await self._fetch_and_prepare()
+            all_roms, shortcuts_data, platforms, collection_memberships, platform_rom_ids = fetch_result
             platform_names = {p.get("name") for p in platforms}
             new, changed, unchanged_ids, stale, disabled_count = self._classify_roms(shortcuts_data, platform_names)
 
@@ -288,6 +302,7 @@ class LibraryService:
                 "platforms_count": len(platforms),
                 "total_roms": len(all_roms),
                 "collection_memberships": collection_memberships,
+                "platform_rom_ids": platform_rom_ids,
             }
 
             await self._emit_progress("done", message="Preview ready", running=False)
@@ -376,6 +391,7 @@ class LibraryService:
         # Populate _pending_sync for report_sync_results and get_artwork_base64
         self._pending_sync = delta["all_shortcuts"]
         self._pending_collection_memberships = delta.get("collection_memberships", {})
+        self._pending_platform_rom_ids = delta.get("platform_rom_ids", set())
 
         # Update sync_stats
         self._state["sync_stats"] = {
@@ -404,7 +420,6 @@ class LibraryService:
                 "changed_shortcuts": delta["changed"],
                 "remove_rom_ids": delta["remove_rom_ids"],
                 "collection_platform_app_ids": collection_map,
-                "romm_collection_memberships": delta.get("collection_memberships", {}),
                 "next_step": next_step,
                 "total_steps": total_steps,
             },
@@ -619,9 +634,89 @@ class LibraryService:
         """Build shortcut data list from ROM list."""
         return build_shortcuts_data(all_roms, self._plugin_dir)
 
+    async def _fetch_collection_roms(self, seen_rom_ids: set[int]) -> tuple[list[dict], dict[str, list[int]]]:
+        """Fetch ROMs from enabled collections, deduplicating against seen_rom_ids.
+
+        Returns (collection_only_roms, collection_memberships).
+        collection_only_roms: ROMs not already fetched via platforms
+        collection_memberships: {collection_name: [all rom_ids in collection]}
+        """
+        collection_only_roms: list[dict] = []
+        collection_memberships: dict[str, list[int]] = {}
+
+        enabled_collections = self._settings.get("enabled_collections", {})
+        if not any(enabled_collections.values()):
+            return collection_only_roms, collection_memberships
+
+        try:
+            user_collections = await self._loop.run_in_executor(None, self._romm_api.list_collections)
+            franchise_collections: list[dict] = []
+            try:
+                franchise_collections = await self._loop.run_in_executor(
+                    None, self._romm_api.list_virtual_collections, "franchise"
+                )
+            except Exception as e:
+                self._logger.warning(f"Failed to fetch franchise collections: {e}")
+
+            all_seen = set(seen_rom_ids)  # Copy so we don't mutate caller's set
+
+            for c in user_collections + franchise_collections:
+                cid = str(c.get("id", ""))
+                if not enabled_collections.get(cid, False):
+                    continue
+
+                coll_name = c.get("name", cid)
+                is_virtual = c.get("is_virtual", False)
+                coll_rom_ids: list[int] = []
+
+                # Paginated fetch of ROMs in this collection
+                offset = 0
+                limit = 50
+                while True:
+                    self._check_cancelling()
+                    if is_virtual:
+                        page = await self._loop.run_in_executor(
+                            None, self._romm_api.list_roms_by_virtual_collection, cid, limit, offset
+                        )
+                    else:
+                        page = await self._loop.run_in_executor(
+                            None, self._romm_api.list_roms_by_collection, c["id"], limit, offset
+                        )
+
+                    items = page.get("items", [])
+                    for rom in items:
+                        rid = rom["id"]
+                        coll_rom_ids.append(rid)
+                        if rid not in all_seen:
+                            all_seen.add(rid)
+                            rom["platform_name"] = rom.get("platform_name", rom.get("platform_display_name", "Unknown"))
+                            rom["platform_slug"] = rom.get("platform_slug", rom.get("platform_fs_slug", ""))
+                            rom.pop("files", None)
+                            collection_only_roms.append(rom)
+
+                    if len(items) < limit:
+                        break
+                    offset += limit
+
+                if coll_rom_ids:
+                    collection_memberships[coll_name] = coll_rom_ids
+
+        except RommUnsupportedError:
+            self._logger.info("Collections not supported on this RomM version")
+        except Exception as e:
+            self._logger.warning(f"Failed to fetch collection ROMs: {e}")
+
+        if collection_only_roms:
+            self._logger.info(
+                f"Fetched {len(collection_only_roms)} additional ROMs from {len(collection_memberships)} collections"
+            )
+
+        return collection_only_roms, collection_memberships
+
     async def _fetch_and_prepare(self):
-        """Fetch platforms + ROMs, prepare shortcut data.
-        Returns (all_roms, shortcuts_data, platforms, collection_memberships) or raises on cancel/error.
+        """Fetch platforms + ROMs + collection ROMs, prepare shortcut data.
+        Returns (all_roms, shortcuts_data, platforms, collection_memberships, platform_rom_ids)
+        or raises on cancel/error.
         Artwork download is deferred to the apply phase.
         Uses updated_after on subsequent syncs to skip unchanged platforms.
         Emits sync_progress events throughout."""
@@ -636,7 +731,7 @@ class LibraryService:
         last_sync = self._state.get("last_sync")
         registry = self._state.get("shortcut_registry", {})
 
-        all_roms = []
+        all_roms: list[dict] = []
         total_platforms = len(platforms)
         for pi, platform in enumerate(platforms, 1):
             self._check_cancelling()
@@ -654,7 +749,14 @@ class LibraryService:
         self._check_cancelling()
         self._logger.info(f"Fetched {len(all_roms)} ROMs from {len(platforms)} platforms")
 
-        # Phase 3: Prepare shortcut data
+        # Record which rom_ids came from platforms
+        platform_rom_ids: set[int] = {r["id"] for r in all_roms}
+
+        # Phase 3: Fetch collection ROMs (adds ROMs not already in all_roms)
+        collection_only_roms, collection_memberships = await self._fetch_collection_roms(platform_rom_ids)
+        all_roms.extend(collection_only_roms)
+
+        # Phase 4: Prepare shortcut data
         shortcuts_data = self._build_shortcuts_data(all_roms)
         self._check_cancelling()
 
@@ -667,37 +769,15 @@ class LibraryService:
             self._metadata_service.flush_metadata_if_dirty()
         self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
-        # Phase 4: Fetch enabled collection memberships
-        collection_memberships: dict[str, list[int]] = {}
-        enabled_collections = self._settings.get("enabled_collections", {})
-        if any(enabled_collections.values()):
-            try:
-                user_collections = await self._loop.run_in_executor(None, self._romm_api.list_collections)
-                franchise_collections: list = []
-                try:
-                    franchise_collections = await self._loop.run_in_executor(
-                        None, self._romm_api.list_virtual_collections, "franchise"
-                    )
-                except Exception as e:
-                    self._logger.warning(f"Failed to fetch franchise collections: {e}")
-
-                for c in user_collections + franchise_collections:
-                    cid = str(c.get("id", ""))
-                    if enabled_collections.get(cid, False):
-                        rom_ids = c.get("rom_ids", [])
-                        if rom_ids:
-                            collection_memberships[c.get("name", cid)] = rom_ids
-            except Exception as e:
-                self._logger.warning(f"Failed to fetch collections for sync: {e}")
-
-        return all_roms, shortcuts_data, platforms, collection_memberships
+        return all_roms, shortcuts_data, platforms, collection_memberships, platform_rom_ids
 
     # ── Full sync ────────────────────────────────────────────
 
     async def _do_sync(self):
         try:
             try:
-                all_roms, shortcuts_data, platforms, collection_memberships = await self._fetch_and_prepare()
+                fetch_result = await self._fetch_and_prepare()
+                all_roms, shortcuts_data, platforms, collection_memberships, platform_rom_ids = fetch_result
             except asyncio.CancelledError:
                 await self._finish_sync(_SYNC_CANCELLED)
                 raise
@@ -766,13 +846,13 @@ class LibraryService:
             # Store pending data for report_sync_results to reference
             self._pending_sync = {sd["rom_id"]: sd for sd in shortcuts_data}
             self._pending_collection_memberships = collection_memberships
+            self._pending_platform_rom_ids = platform_rom_ids
 
             await self._emit(
                 "sync_apply",
                 {
                     "shortcuts": shortcuts_data,
                     "remove_rom_ids": stale_rom_ids,
-                    "romm_collection_memberships": collection_memberships,
                     "next_step": next_step,
                     "total_steps": full_total_steps,
                 },
@@ -849,15 +929,27 @@ class LibraryService:
         self._state["last_sync"] = datetime.now(UTC).isoformat()
         self._save_state()
 
-        # Capture pending collection memberships before clearing
+        # Capture pending collection memberships and platform rom ids before clearing
         pending_collection_memberships = self._pending_collection_memberships
+        pending_platform_rom_ids = self._pending_platform_rom_ids
         self._pending_collection_memberships = {}
+        self._pending_platform_rom_ids = set()
         self._pending_sync = {}
 
         # Rebuild platform_app_ids from registry
+        # If collection_create_platform_groups is False (default), only include
+        # ROMs that came from platforms (not collection-only ROMs)
         registry = self._state["shortcut_registry"]
+        collection_create_platform_groups = self._settings.get("collection_create_platform_groups", False)
         platform_app_ids = {}
-        for entry in registry.values():
+        for rid_str, entry in registry.items():
+            # Skip collection-only ROMs from platform groups when setting is False
+            if (
+                not collection_create_platform_groups
+                and pending_platform_rom_ids
+                and int(rid_str) not in pending_platform_rom_ids
+            ):
+                continue
             pname = entry.get("platform_name", "Unknown")
             platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
 

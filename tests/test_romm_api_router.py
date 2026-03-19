@@ -24,9 +24,9 @@ def router(mock_client):
 
 
 class TestSetVersion:
-    def test_default_is_base(self, router):
-        """Before set_version, _active should be the base (4.6) impl."""
-        assert router._active is router._base
+    def test_default_is_v46(self, router):
+        """Before set_version, _active should be the v46 impl."""
+        assert router._active is router._v46
 
     def test_v470_switches_to_v47(self, router):
         router.set_version("4.7.0")
@@ -40,31 +40,31 @@ class TestSetVersion:
         router.set_version("4.8.0")
         assert router._active is router._v47
 
-    def test_v461_stays_base(self, router):
+    def test_v461_stays_v46(self, router):
         router.set_version("4.6.1")
-        assert router._active is router._base
+        assert router._active is router._v46
 
-    def test_v460_stays_base(self, router):
+    def test_v460_stays_v46(self, router):
         router.set_version("4.6.0")
-        assert router._active is router._base
+        assert router._active is router._v46
 
     def test_development_switches_to_v47(self, router):
         router.set_version("development")
         assert router._active is router._v47
 
-    def test_empty_string_stays_base(self, router):
+    def test_empty_string_stays_v46(self, router):
         router.set_version("")
-        assert router._active is router._base
+        assert router._active is router._v46
 
-    def test_garbage_stays_base(self, router):
+    def test_garbage_stays_v46(self, router):
         router.set_version("not-a-version")
-        assert router._active is router._base
+        assert router._active is router._v46
 
-    def test_can_switch_back_to_base(self, router):
+    def test_can_switch_back_to_v46(self, router):
         router.set_version("4.7.0")
         assert router._active is router._v47
         router.set_version("4.6.1")
-        assert router._active is router._base
+        assert router._active is router._v46
 
 
 # -- Delegation --

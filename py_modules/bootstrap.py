@@ -12,6 +12,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.api_router import ApiRouter
@@ -111,7 +112,7 @@ def bootstrap(
 
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
-    romm_api = ApiRouter(http_adapter)
+    romm_api = cast(RommApiProtocol, ApiRouter(http_adapter))
     steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
 
     return {

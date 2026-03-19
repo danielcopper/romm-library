@@ -2,7 +2,7 @@ import { addEventListener } from "@decky/api";
 import type { SyncApplyData, SyncChangedItem } from "../types";
 import { getArtworkBase64, reportSyncResults, syncHeartbeat, logInfo, logError } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
-import { createOrUpdateCollections, createOrUpdateRomMCollections, clearPlatformCollection } from "./collections";
+import { createOrUpdateCollections, clearPlatformCollection } from "./collections";
 import { updateSyncProgress } from "./syncProgress";
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -259,30 +259,14 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
         });
       }
 
-      // --- Create Steam collections for RomM collections ---
-      const rommCollectionAppIds: Record<string, number[]> = {};
-      if (!cancelled && data.romm_collection_memberships) {
-        for (const [collName, romIds] of Object.entries(data.romm_collection_memberships)) {
-          const appIds = romIds
-            .map((rid) => romIdToAppId[String(rid)])
-            .filter((id): id is number => id !== undefined);
-          if (appIds.length > 0) {
-            rommCollectionAppIds[collName] = appIds;
-          }
-        }
-        if (Object.keys(rommCollectionAppIds).length > 0) {
-          await createOrUpdateRomMCollections(rommCollectionAppIds);
-        }
-      }
-
-      // Clean up stale collections
+      // Clean up stale platform collections
       if (!cancelled && typeof collectionStore !== "undefined") {
         // Remove stale platform collections: "RomM: PlatformName (hostname)"
         const activePlatforms = new Set(Object.keys(platformAppIds));
         const staleCollections = collectionStore.userCollections.filter((c) => {
           if (!c.displayName.startsWith("RomM: ")) return false;
           const afterPrefix = c.displayName.slice(6);
-          // Skip RomM collection-based collections (bracket format) — handled separately
+          // Skip RomM collection-based collections (bracket format) — handled by sync_complete
           if (afterPrefix.startsWith("[")) return false;
           const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
           return !activePlatforms.has(platformName);
@@ -292,22 +276,6 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
           const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
           logInfo(`Removing stale platform collection "${c.displayName}"`);
           await clearPlatformCollection(platformName);
-        }
-
-        // Remove stale RomM collection-based Steam collections: "RomM: [CollectionName] (hostname)"
-        if (data.romm_collection_memberships) {
-          const activeRommCollections = new Set(Object.keys(rommCollectionAppIds));
-          const staleRommCollections = collectionStore.userCollections.filter((c) => {
-            if (!c.displayName.startsWith("RomM: [")) return false;
-            // Extract collection name from "RomM: [CollectionName] (hostname)"
-            const match = c.displayName.match(/^RomM: \[([^\]]+)\]/);
-            if (!match) return false;
-            return !activeRommCollections.has(match[1]);
-          });
-          for (const c of staleRommCollections) {
-            logInfo(`Removing stale RomM collection "${c.displayName}"`);
-            await c.Delete();
-          }
         }
       }
   

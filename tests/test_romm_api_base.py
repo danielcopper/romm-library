@@ -1,4 +1,4 @@
-"""Tests for RommApiBase — verifies correct URL construction and transport delegation."""
+"""Tests for RommApiV46 — verifies correct URL construction and transport delegation."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from adapters.romm.api_base import RommApiBase
+from adapters.romm.api_v46 import RommApiV46
 
 
 @pytest.fixture()
@@ -22,13 +22,7 @@ def client():
 
 @pytest.fixture()
 def api(client):
-    return RommApiBase(client)
-
-
-class TestSetVersion:
-    def test_no_op(self, api):
-        """set_version is a no-op on the base class."""
-        api.set_version("4.6.1")  # should not raise
+    return RommApiV46(client)
 
 
 class TestHeartbeat:

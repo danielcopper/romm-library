@@ -10,7 +10,7 @@ import { logInfo, logWarn, logError } from "../api/backend";
 
 let _hostname = "";
 
-async function getHostname(): Promise<string> {
+export async function getHostname(): Promise<string> {
   if (_hostname) return _hostname;
   try {
     const info = await SteamClient.System.GetSystemInfo();

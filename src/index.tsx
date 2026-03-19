@@ -18,6 +18,7 @@ import { registerGameDetailPatch, unregisterGameDetailPatch, registerRomMAppId }
 import { registerMetadataPatches, unregisterMetadataPatches, applyAllPlaytime } from "./patches/metadataPatches";
 import { registerLaunchInterceptor, unregisterLaunchInterceptor } from "./utils/launchInterceptor";
 import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveSyncSettings, getAllPlaytime, getMigrationStatus, logError, logInfo } from "./api/backend";
+import { createOrUpdateRomMCollections, getHostname } from "./utils/collections";
 import { setMigrationStatus } from "./utils/migrationStore";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
@@ -162,6 +163,33 @@ export default definePlugin(() => {
         registerRomMAppId(appId);
       }
     }
+
+    // Create RomM Steam collections
+    if (data.romm_collection_app_ids && Object.keys(data.romm_collection_app_ids).length > 0) {
+      createOrUpdateRomMCollections(data.romm_collection_app_ids);
+    }
+
+    // Clean stale RomM collections
+    (async () => {
+      try {
+        if (typeof collectionStore !== "undefined" && data.romm_collection_app_ids) {
+          const hostname = await getHostname();
+          const activeNames = new Set(Object.keys(data.romm_collection_app_ids));
+          const suffix = ` (${hostname})`;
+          const staleRomm = collectionStore.userCollections.filter((c) => {
+            if (!c.displayName.startsWith("RomM: [")) return false;
+            if (!c.displayName.endsWith(suffix)) return false;
+            const match = c.displayName.match(/^RomM: \[([^\]]+)\]/);
+            return match ? !activeNames.has(match[1]) : false;
+          });
+          for (const c of staleRomm) {
+            await c.Delete();
+          }
+        }
+      } catch (e) {
+        logError(`Failed to clean stale RomM collections: ${e}`);
+      }
+    })();
 
     // Re-apply playtime to Steam UI (app IDs may have changed after re-sync)
     (async () => {
