@@ -75,6 +75,7 @@ export const setAllPlatformsSync = callable<[boolean], { success: boolean; messa
 export const getCollections = callable<[], { success: boolean; collections: CollectionSyncSetting[]; message?: string; error_code?: RommErrorCode }>("get_collections");
 export const saveCollectionSync = callable<[string, boolean], { success: boolean }>("save_collection_sync");
 export const setAllCollectionsSync = callable<[boolean, string | null], { success: boolean }>("set_all_collections_sync");
+export const saveCollectionPlatformGroups = callable<[boolean], { success: boolean }>("save_collection_platform_groups");
 export const getRegistryPlatforms = callable<[], { platforms: RegistryPlatform[] }>("get_registry_platforms");
 export const removePlatformShortcuts = callable<[string], { success: boolean; app_ids: number[]; rom_ids: (string | number)[]; platform_name: string }>("remove_platform_shortcuts");
 export const removeAllShortcuts = callable<[], { success: boolean; message: string; removed_count: number; app_ids: number[]; rom_ids: (string | number)[] }>("remove_all_shortcuts");

@@ -17,6 +17,8 @@ import {
   getCollections,
   saveCollectionSync,
   setAllCollectionsSync,
+  saveCollectionPlatformGroups,
+  getSettings,
   getFirmwareStatus,
   downloadAllFirmware,
   downloadRequiredFirmware,
@@ -41,6 +43,7 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
   const [collectionsLoading, setCollectionsLoading] = useState(true);
   const [collectionsError, setCollectionsError] = useState(false);
   const collectionsLoaded = useRef(false);
+  const [platformGroups, setPlatformGroups] = useState(false);
 
   // --- BIOS tab state ---
   const [biosPlatforms, setBiosPlatforms] = useState<FirmwarePlatformExt[]>([]);
@@ -70,15 +73,17 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
   useEffect(() => {
     if (activeTab === "collections" && !collectionsLoaded.current) {
       collectionsLoaded.current = true;
-      getCollections()
-        .then((result) => {
-          if (result.success) {
-            setCollections(result.collections);
-          } else {
-            setCollectionsError(true);
-          }
-        })
-        .catch(() => setCollectionsError(true))
+      Promise.all([
+        getCollections(),
+        getSettings(),
+      ]).then(([collResult, settingsResult]) => {
+        if (collResult.success) {
+          setCollections(collResult.collections);
+        } else {
+          setCollectionsError(true);
+        }
+        setPlatformGroups(!!settingsResult.collection_create_platform_groups);
+      }).catch(() => setCollectionsError(true))
         .finally(() => setCollectionsLoading(false));
     }
   }, [activeTab]);
@@ -468,6 +473,17 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
                   <ButtonItem layout="below" onClick={() => handleSetAllCollections(false)}>
                     Disable All
                   </ButtonItem>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ToggleField
+                    label="Add to platform collections"
+                    description="Include collection games in platform collections"
+                    checked={platformGroups}
+                    onChange={async (value: boolean) => {
+                      setPlatformGroups(value);
+                      try { await saveCollectionPlatformGroups(value); } catch { setPlatformGroups(!value); }
+                    }}
+                  />
                 </PanelSectionRow>
               </PanelSection>
               {/* Favorites section */}

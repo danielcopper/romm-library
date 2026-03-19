@@ -60,6 +60,7 @@ export interface PluginSettings {
   log_level: "debug" | "info" | "warn" | "error";
   romm_allow_insecure_ssl: boolean;
   retroarch_input_check?: RetroArchInputCheck;
+  collection_create_platform_groups?: boolean;
 }
 
 export interface DownloadItem {

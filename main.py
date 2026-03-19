@@ -323,6 +323,7 @@ class Plugin:
             "retroarch_input_check": self._steam_config.check_retroarch_input_driver(),
             "log_level": self.settings.get("log_level", "warn"),
             "romm_allow_insecure_ssl": self.settings.get("romm_allow_insecure_ssl", False),
+            "collection_create_platform_groups": self.settings.get("collection_create_platform_groups", False),
         }
 
     async def get_whitelist_settings(self):
@@ -446,6 +447,11 @@ class Plugin:
 
     async def set_all_collections_sync(self, enabled, category=None):
         return await self._sync_service.set_all_collections_sync(enabled, category)
+
+    async def save_collection_platform_groups(self, enabled):
+        self.settings["collection_create_platform_groups"] = bool(enabled)
+        self._save_settings_to_disk()
+        return {"success": True}
 
     async def start_sync(self):
         return self._sync_service.start_sync()
