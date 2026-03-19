@@ -345,8 +345,11 @@ class LibraryService:
 
         # Build collection_platform_app_ids from registry (unchanged)
         registry = self._state["shortcut_registry"]
+        platform_rom_ids = delta.get("platform_rom_ids", set())
         collection_map = {}
         for rid in delta["unchanged_ids"]:
+            if not self._should_include_in_platform_collection(rid, platform_rom_ids):
+                continue
             reg = registry.get(str(rid), {})
             pname = reg.get("platform_name", "")
             app_id = reg.get("app_id")
@@ -523,6 +526,19 @@ class LibraryService:
             "removed": removed,
             "unchanged_count": len(unchanged),
         }
+
+    def _should_include_in_platform_collection(self, rom_id: int, platform_rom_ids: set[int]) -> bool:
+        """Check if a ROM should appear in platform collections.
+
+        If collection_create_platform_groups is False (default), only ROMs
+        fetched via enabled platforms are included. Collection-only ROMs
+        are excluded from platform collections but still synced.
+        """
+        if self._settings.get("collection_create_platform_groups", False):
+            return True
+        if not platform_rom_ids:
+            return True  # No platform tracking → include all (backwards compat)
+        return rom_id in platform_rom_ids
 
     # ── Fetch & prepare ──────────────────────────────────────
 
@@ -958,18 +974,10 @@ class LibraryService:
         self._pending_sync = {}
 
         # Rebuild platform_app_ids from registry
-        # If collection_create_platform_groups is False (default), only include
-        # ROMs that came from platforms (not collection-only ROMs)
         registry = self._state["shortcut_registry"]
-        collection_create_platform_groups = self._settings.get("collection_create_platform_groups", False)
         platform_app_ids = {}
         for rid_str, entry in registry.items():
-            # Skip collection-only ROMs from platform groups when setting is False
-            if (
-                not collection_create_platform_groups
-                and pending_platform_rom_ids
-                and int(rid_str) not in pending_platform_rom_ids
-            ):
+            if not self._should_include_in_platform_collection(int(rid_str), pending_platform_rom_ids):
                 continue
             pname = entry.get("platform_name", "Unknown")
             platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
