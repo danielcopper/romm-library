@@ -301,6 +301,9 @@ class LibraryService:
                     "remove_count": len(stale),
                     "disabled_platform_remove_count": disabled_count,
                     "has_collection_updates": bool(collection_memberships),
+                    "collection_updates": [
+                        {"name": name, "rom_count": len(rids)} for name, rids in sorted(collection_memberships.items())
+                    ],
                 },
                 "new_names": [s["name"] for s in new[:10]],
                 "changed_names": [s["name"] for s in changed[:10]],

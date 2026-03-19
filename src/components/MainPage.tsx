@@ -364,7 +364,10 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                     }
                     parts.push(line);
                   }
-                  if (s.has_collection_updates) parts.push("Collections will be updated");
+                  if (s.collection_updates?.length) {
+                    const count = s.collection_updates.length;
+                    parts.push(`${count} collection${count !== 1 ? "s" : ""} to sync`);
+                  }
                   return parts.join("\n");
                 })()}
               />
