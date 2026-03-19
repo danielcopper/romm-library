@@ -1,14 +1,17 @@
 import asyncio
+import contextlib
 import os
 import sys
+from typing import ClassVar
 
 plugin_dir = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(plugin_dir, "py_modules"))
 sys.path.insert(0, plugin_dir)
 
 import decky
-from adapters.persistence import PersistenceAdapter
 from bootstrap import WiringConfig, bootstrap, wire_services
+
+from adapters.persistence import PersistenceAdapter
 from domain import retrodeck_config
 
 
@@ -18,7 +21,7 @@ class Plugin:
 
     # -- logging ---------------------------------------------------------------
 
-    LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+    LOG_LEVELS: ClassVar[dict] = {"debug": 0, "info": 1, "warn": 2, "error": 3}
 
     def _log_debug(self, msg):
         """Log a message only when log_level allows debug messages."""
@@ -215,10 +218,8 @@ class Plugin:
 
         # Extract server version from heartbeat
         self._romm_version = None
-        try:
+        with contextlib.suppress(AttributeError, TypeError):
             self._romm_version = heartbeat.get("SYSTEM", {}).get("VERSION")
-        except (AttributeError, TypeError):
-            pass
         if self._romm_version:
             decky.logger.info(f"RomM server version: {self._romm_version}")
             self._romm_api.set_version(self._romm_version)
@@ -343,7 +344,7 @@ class Plugin:
         return {"success": True}
 
     async def get_cached_game_detail(self, app_id):
-        return await self._game_detail_service.get_cached_game_detail(app_id)
+        return self._game_detail_service.get_cached_game_detail(app_id)
 
     async def get_available_cores(self, platform_slug):
         """Return available RetroArch cores for a platform."""
@@ -584,7 +585,7 @@ class Plugin:
     # ── Metadata delegation to MetadataService ────────────────
 
     async def get_rom_metadata(self, rom_id):
-        return await self._metadata_service.get_rom_metadata(rom_id)
+        return self._metadata_service.get_rom_metadata(rom_id)
 
     async def get_all_metadata_cache(self):
         return self._metadata_service.get_all_metadata_cache()

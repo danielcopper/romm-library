@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
+    from services.protocols import EventEmitter, StatePersister
+
 
 class MigrationService:
     """Handles RetroDECK path change detection and file migration."""
@@ -27,16 +29,16 @@ class MigrationService:
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
-        save_state: Callable[[], None],
-        emit: Callable,
-        firmware_service_bios_files_index: dict,
+        save_state: StatePersister,
+        emit: EventEmitter,
+        get_bios_files_index: Callable[[], dict],
     ) -> None:
         self._state = state
         self._loop = loop
         self._logger = logger
         self._save_state = save_state
         self._emit = emit
-        self._firmware_bios_files_index = firmware_service_bios_files_index
+        self._get_bios_files_index = get_bios_files_index
 
     def detect_retrodeck_path_change(self) -> None:
         """Check if RetroDECK home path changed since last run."""
@@ -137,7 +139,7 @@ class MigrationService:
         if not os.path.isdir(old_bios):
             return items
         downloaded_bios = self._state.get("downloaded_bios", {})
-        for file_name, reg_entry in self._firmware_bios_files_index.items():
+        for file_name, reg_entry in self._get_bios_files_index().items():
             if file_name in downloaded_bios:
                 continue
             firmware_path = reg_entry.get("firmware_path", file_name)

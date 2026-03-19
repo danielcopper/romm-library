@@ -9,17 +9,16 @@ from domain import retrodeck_config
 
 @pytest.fixture(autouse=True)
 def _reset_retrodeck_cache():
-    """Reset retrodeck_config module-level cache between tests."""
+    """Reset retrodeck_config module-level cache and configured user home between tests."""
     retrodeck_config._cached_config = None
     retrodeck_config._cache_time = 0.0
     retrodeck_config._cache_config_path = None
+    retrodeck_config._user_home = None
 
 
 class TestGetBiosPath:
     def test_from_config(self, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -30,9 +29,7 @@ class TestGetBiosPath:
         assert result == "/run/media/deck/SD/retrodeck/bios"
 
     def test_fallback_when_config_missing(self, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         result = retrodeck_config.get_bios_path()
         assert result == os.path.join(str(tmp_path), "retrodeck", "bios")
@@ -40,9 +37,7 @@ class TestGetBiosPath:
 
 class TestGetRomsPath:
     def test_from_config(self, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -53,9 +48,7 @@ class TestGetRomsPath:
         assert result == "/run/media/deck/SD/retrodeck/roms"
 
     def test_fallback_when_config_missing(self, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         result = retrodeck_config.get_roms_path()
         assert result == os.path.join(str(tmp_path), "retrodeck", "roms")
@@ -63,9 +56,7 @@ class TestGetRomsPath:
 
 class TestGetSavesPath:
     def test_from_config(self, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -78,9 +69,7 @@ class TestGetSavesPath:
 
 class TestGetRetroDeckHome:
     def test_from_config(self, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -91,9 +80,7 @@ class TestGetRetroDeckHome:
         assert result == "/run/media/deck/SD/retrodeck"
 
     def test_fallback_when_config_missing(self, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         result = retrodeck_config.get_retrodeck_home()
         # fallback_subdir is "" for home, so returns ~/retrodeck/
@@ -103,9 +90,7 @@ class TestGetRetroDeckHome:
 class TestTTLCache:
     def test_cache_returns_same_result_without_rereading(self, tmp_path):
         """Second call within TTL should return cached result."""
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -122,9 +107,7 @@ class TestTTLCache:
 
     def test_cache_expires_after_ttl(self, tmp_path, monkeypatch):
         """After TTL expires, cache should re-read from disk."""
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -147,9 +130,7 @@ class TestTTLCache:
 
     def test_cache_reset_allows_new_values(self, tmp_path):
         """After cache reset (via fixture), new config values are picked up."""
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -171,9 +152,7 @@ class TestTTLCache:
 class TestEdgeCases:
     def test_fallback_when_key_missing(self, tmp_path):
         """Config exists but missing the requested path key."""
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -185,9 +164,7 @@ class TestEdgeCases:
 
     def test_fallback_when_json_malformed(self, tmp_path):
         """Corrupt JSON falls back gracefully."""
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -199,9 +176,7 @@ class TestEdgeCases:
 
     def test_fallback_when_path_empty_string(self, tmp_path):
         """Key exists but value is empty string — should fallback."""
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)
@@ -213,9 +188,7 @@ class TestEdgeCases:
 
     def test_no_paths_key_in_config(self, tmp_path):
         """Config exists but has no 'paths' key at all."""
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        retrodeck_config.configure(user_home=str(tmp_path))
 
         config_dir = tmp_path / ".var" / "app" / "net.retrodeck.retrodeck" / "config" / "retrodeck"
         config_dir.mkdir(parents=True)

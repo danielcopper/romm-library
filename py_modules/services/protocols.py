@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from domain.sync_state import SyncState
+
 
 class SteamConfigAdapter(Protocol):
     """Protocol for Steam configuration operations."""
@@ -17,12 +19,6 @@ class SteamConfigAdapter(Protocol):
     def read_shortcuts(self) -> dict: ...
     def write_shortcuts(self, data: dict) -> None: ...
     def set_steam_input_config(self, app_ids: list, mode: str = "default") -> None: ...
-
-    @staticmethod
-    def generate_app_id(exe: str, appname: str) -> int: ...
-
-    @staticmethod
-    def generate_artwork_id(exe: str, appname: str) -> int: ...
 
 
 class RommApiProtocol(Protocol):
@@ -192,3 +188,106 @@ class RommApiProtocol(Protocol):
         PUT /api/roms/{rom_id}/notes/{note_id}.
         """
         ...
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure callback Protocols
+# ---------------------------------------------------------------------------
+
+
+class StatePersister(Protocol):
+    """Persist plugin state to disk (zero-argument callable)."""
+
+    def __call__(self) -> None: ...
+
+
+class SettingsPersister(Protocol):
+    """Persist settings to disk (zero-argument callable)."""
+
+    def __call__(self) -> None: ...
+
+
+class EventEmitter(Protocol):
+    """Emit named events with a data payload to the frontend."""
+
+    async def __call__(self, event: str, /, *args: object) -> None: ...
+
+
+class DebugLogger(Protocol):
+    """Log a debug/trace message string."""
+
+    def __call__(self, msg: str) -> None: ...
+
+
+class SystemResolver(Protocol):
+    """Resolve a RomM platform slug to a RetroDECK system path."""
+
+    def __call__(self, platform_slug: str, platform_fs_slug: str | None = None) -> str: ...
+
+
+class SavesPathProvider(Protocol):
+    """Return the current RetroDECK saves directory path."""
+
+    def __call__(self) -> str: ...
+
+
+class SyncStateRef(Protocol):
+    """Return the current sync state value (used by ArtworkService)."""
+
+    def __call__(self) -> SyncState: ...
+
+
+# ---------------------------------------------------------------------------
+# Multi-method cross-service Protocols
+# ---------------------------------------------------------------------------
+
+
+class RetryStrategy(Protocol):
+    """HTTP retry wrapper pair consumed by SaveService and PlaytimeService."""
+
+    def is_retryable(self, exc: Exception) -> bool: ...
+
+    def with_retry(self, fn: Any, *args: Any, max_attempts: int = 3, base_delay: int = 1, **kwargs: Any) -> Any: ...
+
+
+class BiosChecker(Protocol):
+    """BIOS status checking consumed by GameDetailService."""
+
+    def check_platform_bios_cached(self, platform_slug: str, rom_filename: str | None = None) -> dict | None: ...
+
+    async def check_platform_bios(self, platform_slug: str, rom_filename: str | None = None) -> dict: ...
+
+
+class AchievementsReader(Protocol):
+    """Achievement data access consumed by GameDetailService."""
+
+    def get_ra_username(self) -> str: ...
+
+    def get_progress_cache_entry(self, rom_id_str: str) -> dict | None: ...
+
+
+class MetadataExtractor(Protocol):
+    """Metadata extraction and cache flushing consumed by LibraryService."""
+
+    def extract_metadata(self, rom: dict) -> dict: ...
+
+    def mark_metadata_dirty(self) -> None: ...
+
+    def flush_metadata_if_dirty(self) -> None: ...
+
+
+class ArtworkManager(Protocol):
+    """Artwork operations consumed by LibraryService."""
+
+    async def download_artwork(
+        self,
+        all_roms: list[dict],
+        emit_progress: Any,
+        is_cancelling: Any,
+        progress_step: int = 4,
+        progress_total_steps: int = 6,
+    ) -> dict: ...
+
+    def finalize_cover_path(self, grid: str | None, cover_path: str, app_id: int, rom_id_str: str) -> str: ...
+
+    def remove_artwork_files(self, grid: str, rom_id: str | int, entry: dict) -> None: ...

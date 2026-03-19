@@ -7,15 +7,15 @@ to Steam grid directory, and orphaned artwork cache pruning.
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import pathlib
 import ssl
 import struct
 import urllib.error
-import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from lib.certifi_bundle import ca_bundle as _ca_bundle
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol, SteamConfigAdapter
+    from services.protocols import RommApiProtocol, SettingsPersister, StatePersister, SteamConfigAdapter
 
 
 _USER_AGENT = "decky-romm-sync/0.1"
@@ -43,9 +43,9 @@ class SteamGridService:
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         runtime_dir: str,
-        save_state: Callable[[], None],
-        save_settings_to_disk: Callable[[], None],
-        pending_sync: dict,
+        save_state: StatePersister,
+        save_settings_to_disk: SettingsPersister,
+        get_pending_sync: Callable[[], dict],
     ) -> None:
         self._romm_api = romm_api
         self._steam_config = steam_config
@@ -56,11 +56,11 @@ class SteamGridService:
         self._runtime_dir = runtime_dir
         self._save_state = save_state
         self._save_settings_to_disk = save_settings_to_disk
-        self._pending_sync = pending_sync
+        self._get_pending_sync = get_pending_sync
 
     # -- logging -----------------------------------------------------------
 
-    _LOG_LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+    _LOG_LEVELS: ClassVar[dict[str, int]] = {"debug": 0, "info": 1, "warn": 2, "error": 3}
 
     def _log_debug(self, msg: str) -> None:
         configured = self._settings.get("log_level", "warn")
@@ -130,22 +130,19 @@ class SteamGridService:
             # S4423: false positive — Python 3.10+ defaults are TLS 1.2+ secure
             ctx = ssl.create_default_context(cafile=_ca_bundle())
             tmp_path = cached + ".tmp"
-            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                with open(tmp_path, "wb") as f:
-                    while True:
-                        chunk = resp.read(8192)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp, open(tmp_path, "wb") as f:
+                while True:
+                    chunk = resp.read(8192)
+                    if not chunk:
+                        break
+                    f.write(chunk)
             os.replace(tmp_path, cached)
             return cached
         except Exception as e:
             self._logger.warning(f"SGDB {asset_type} download failed for game {sgdb_game_id}: {e}")
             if os.path.exists(cached + ".tmp"):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(cached + ".tmp")
-                except OSError:
-                    pass
             return None
 
     # -- artwork base64 (callable) -----------------------------------------
@@ -167,7 +164,7 @@ class SteamGridService:
         igdb_id = reg.get("igdb_id")
 
         if not sgdb_id:
-            pending = self._pending_sync.get(rom_id, {})
+            pending = self._get_pending_sync().get(rom_id, {})
             sgdb_id = pending.get("sgdb_id")
             igdb_id = igdb_id or pending.get("igdb_id")
 
@@ -334,10 +331,8 @@ class SteamGridService:
         except Exception as e:
             self._logger.error(f"Failed to write icon file {icon_path}: {e}")
             if os.path.exists(tmp_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(tmp_path)
-                except OSError:
-                    pass
             return False
 
         # Update shortcuts.vdf icon field

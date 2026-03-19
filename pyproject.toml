@@ -3,10 +3,12 @@ pythonVersion = "3.12"
 extraPaths = ["py_modules"]
 stubPath = "typings"
 typeCheckingMode = "basic"
-exclude = ["py_modules/vdf", "tests", "scripts", ".venv"]
+exclude = ["py_modules/vdf", "scripts", ".venv"]
 reportMissingModuleSource = "none"
 reportMissingImports = "warning"
 reportRedeclaration = "none"
+reportUnusedParameter = "none"
+reportUnusedVariable = "warning"
 
 [tool.ruff]
 target-version = "py312"
@@ -14,14 +16,24 @@ line-length = 120
 extend-exclude = ["py_modules/vdf", "scripts"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "B",    # bugbear — common pitfalls
+    "SIM",  # simplify — unnecessary complexity
+    "UP",   # pyupgrade — modern Python syntax
+    "RUF",  # ruff-specific rules
+    "ARG",  # unused arguments
+]
 
 [tool.ruff.lint.per-file-ignores]
 "main.py" = ["E402"]
-"py_modules/lib/sync.py" = ["E402"]
+"tests/**" = ["ARG"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["lib"]
+known-first-party = ["lib", "domain", "services", "adapters"]
 known-third-party = ["decky"]
 
 [tool.pytest.ini_options]

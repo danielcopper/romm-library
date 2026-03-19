@@ -6,16 +6,16 @@ No ``import decky``.
 
 from __future__ import annotations
 
+import contextlib
 import json
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from services.protocols import RommApiProtocol
+from services.protocols import RetryStrategy, RommApiProtocol, StatePersister
 
 if TYPE_CHECKING:
     import asyncio
     import logging
-    from collections.abc import Callable
 
 
 class PlaytimeService:
@@ -25,10 +25,8 @@ class PlaytimeService:
     ----------
     romm_api:
         Protocol adapter for RomM HTTP operations.
-    with_retry:
-        Retry wrapper — ``fn(*args, **kwargs)`` with exponential backoff.
-    is_retryable:
-        Predicate: should the given exception trigger a retry?
+    retry:
+        Retry strategy — provides ``with_retry`` and ``is_retryable``.
     save_sync_state:
         Live reference to the save-sync state dict.  Playtime data lives
         in ``save_sync_state["playtime"]``.
@@ -46,16 +44,14 @@ class PlaytimeService:
         self,
         *,
         romm_api: RommApiProtocol,
-        with_retry: Callable[..., Any],
-        is_retryable: Callable[[Exception], bool],
+        retry: RetryStrategy,
         save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
-        save_state: Callable[[], None],
+        save_state: StatePersister,
     ) -> None:
         self._romm_api = romm_api
-        self._with_retry = with_retry
-        self._is_retryable = is_retryable
+        self._retry = retry
         self._save_sync_state = save_sync_state
         self._loop = loop
         self._logger = logger
@@ -144,7 +140,7 @@ class PlaytimeService:
         device_name = self._save_sync_state.get("device_name", "")
 
         try:
-            note = self._with_retry(self._get_playtime_note, rom_id)
+            note = self._retry.with_retry(self._get_playtime_note, rom_id)
             server_seconds = 0
             note_id = None
 
@@ -159,14 +155,14 @@ class PlaytimeService:
 
             playtime_data = {
                 "seconds": new_total,
-                "updated": datetime.now(timezone.utc).isoformat(),
+                "updated": datetime.now(UTC).isoformat(),
                 "device": device_name,
             }
 
             if note_id:
-                self._with_retry(self._update_playtime_note, rom_id, note_id, playtime_data)
+                self._retry.with_retry(self._update_playtime_note, rom_id, note_id, playtime_data)
             else:
-                self._with_retry(self._create_playtime_note, rom_id, playtime_data)
+                self._retry.with_retry(self._create_playtime_note, rom_id, playtime_data)
 
             # Sync local state to the merged total
             entry["total_seconds"] = new_total
@@ -193,7 +189,7 @@ class PlaytimeService:
                 "offline_deltas": [],
             },
         )
-        entry["last_session_start"] = datetime.now(timezone.utc).isoformat()
+        entry["last_session_start"] = datetime.now(UTC).isoformat()
         self._save_state()
         return {"success": True}
 
@@ -211,7 +207,7 @@ class PlaytimeService:
 
         try:
             start = datetime.fromisoformat(entry["last_session_start"])
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             duration = (now - start).total_seconds()
 
             # Sanity check: clamp to 0-24h
@@ -225,10 +221,8 @@ class PlaytimeService:
             self._save_state()
 
             # Best-effort sync playtime to RomM server notes
-            try:
+            with contextlib.suppress(Exception):
                 await self._loop.run_in_executor(None, self._sync_playtime_to_romm, int(rom_id), int(duration))
-            except Exception:
-                pass  # Already logged inside _sync_playtime_to_romm
 
             return {
                 "success": True,
@@ -251,7 +245,7 @@ class PlaytimeService:
         try:
             note = await self._loop.run_in_executor(
                 None,
-                lambda: self._with_retry(self._get_playtime_note, rom_id),
+                lambda: self._retry.with_retry(self._get_playtime_note, rom_id),
             )
             if note:
                 server_data = self._parse_playtime_note_content(note.get("content", ""))

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol, SteamConfigAdapter
+    from services.protocols import EventEmitter, RommApiProtocol, SteamConfigAdapter, SyncStateRef
 
 
 class ArtworkService:
@@ -26,8 +26,8 @@ class ArtworkService:
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
-        emit: Callable,
-        sync_state_ref: Callable,
+        emit: EventEmitter,
+        sync_state_ref: SyncStateRef,
     ) -> None:
         self._romm_api = romm_api
         self._steam_config = steam_config

@@ -4,12 +4,13 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
-from services.firmware import FirmwareService
-from services.library import LibraryService
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.firmware import FirmwareService
+from services.library import LibraryService
 
 
 @pytest.fixture
@@ -275,7 +276,7 @@ class TestDownloadFirmware:
 
         with (
             patch.object(plugin._romm_api, "get_firmware", return_value=fw_detail),
-            patch.object(plugin._romm_api, "download_firmware", side_effect=IOError("Connection reset")),
+            patch.object(plugin._romm_api, "download_firmware", side_effect=OSError("Connection reset")),
         ):
             result = await fw.download_firmware(10)
 
@@ -1184,12 +1185,12 @@ class TestPerCoreFiltering:
         assert result["active_core"] == "gpsp_libretro"
         assert result["active_core_label"] == "gpSP"
         # gpSP requires gba_bios.bin
-        gba_file = [f for f in result["files"] if f["file_name"] == "gba_bios.bin"][0]
+        gba_file = next(f for f in result["files"] if f["file_name"] == "gba_bios.bin")
         assert gba_file["required"] is True
         assert gba_file["classification"] == "required"
         assert gba_file["used_by_active"] is True
         # gb_bios not used by gpSP
-        gb_file = [f for f in result["files"] if f["file_name"] == "gb_bios.bin"][0]
+        gb_file = next(f for f in result["files"] if f["file_name"] == "gb_bios.bin")
         assert gb_file["used_by_active"] is False
         assert gb_file["cores"] == {"gambatte_libretro": {"required": False}, "mgba_libretro": {"required": False}}
         # required_count should only count files used by active core
@@ -1369,9 +1370,9 @@ class TestPerCoreFiltering:
         assert "gba_bios.bin" in file_names
         assert "gb_bios.bin" in file_names  # present but not used by active
         # Check used_by_active flags
-        gba_file = [f for f in result["files"] if f["file_name"] == "gba_bios.bin"][0]
+        gba_file = next(f for f in result["files"] if f["file_name"] == "gba_bios.bin")
         assert gba_file["used_by_active"] is True
-        gb_file = [f for f in result["files"] if f["file_name"] == "gb_bios.bin"][0]
+        gb_file = next(f for f in result["files"] if f["file_name"] == "gb_bios.bin")
         assert gb_file["used_by_active"] is False
 
 
@@ -1457,7 +1458,7 @@ class TestDownloadFirmwarePostIORegistryHash:
 
         fw_data = {"file_name": "bad.bin", "file_path": "bios/test/bad.bin", "md5_hash": ""}
         with patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
-            md5_match, reg_hash_valid = fw._download_firmware_post_io(fw_data, 2, dest, tmp_path_file)
+            _md5_match, reg_hash_valid = fw._download_firmware_post_io(fw_data, 2, dest, tmp_path_file)
 
         assert reg_hash_valid is False
 
@@ -1629,7 +1630,7 @@ class TestFirmwareListCache:
 class TestCheckPlatformBiosCached:
     """Tests for check_platform_bios_cached — cache-only BIOS status read."""
 
-    def _make_service(self, firmware_cache=None, firmware_cache_at=0, bios_registry=None, state=None):
+    def _make_service(self, firmware_cache=None, firmware_cache_at: float = 0, bios_registry=None, state=None):
         import logging
 
         fw = FirmwareService(
@@ -1696,6 +1697,7 @@ class TestCheckPlatformBiosCached:
         ):
             result = fw.check_platform_bios_cached("gba")
 
+        assert result is not None
         assert result["needs_bios"] is True
         assert result["cached_at"] == 42.0
         assert result["server_count"] == 1

@@ -2,9 +2,11 @@
 
 import os
 import tempfile
+from typing import ClassVar
 from unittest import mock
 
 import pytest
+
 from domain import es_de_config
 
 # conftest.py patches decky before this import
@@ -14,7 +16,11 @@ from main import Plugin  # noqa: F401
 
 @pytest.fixture(autouse=True)
 def _reset_es_de_cache():
-    """Reset CoreResolver singleton caches between tests."""
+    """Reset CoreResolver singleton caches between tests and ensure module is configured."""
+    import logging
+
+    plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    es_de_config.configure(plugin_dir=plugin_dir, logger=logging.getLogger("test_es_de"))
     es_de_config._resolver.reset_cache()
 
 
@@ -71,6 +77,7 @@ class TestFindEsSystemsXml:
     def test_finds_xml_in_linux_path(self, mock_exists):
         mock_exists.return_value = True
         result = es_de_config.find_es_systems_xml()
+        assert result is not None
         assert result == es_de_config._ES_SYSTEMS_CANDIDATES[0]
         assert "linux" in result
 
@@ -79,6 +86,7 @@ class TestFindEsSystemsXml:
         # linux/ doesn't exist, unix/ does
         mock_exists.side_effect = [False, True]
         result = es_de_config.find_es_systems_xml()
+        assert result is not None
         assert result == es_de_config._ES_SYSTEMS_CANDIDATES[1]
         assert "unix" in result
 
@@ -222,7 +230,7 @@ class TestGetSystemOverride:
 
 
 class TestGetActiveCore:
-    GBA_SYSTEM_INFO = {
+    GBA_SYSTEM_INFO: ClassVar[dict] = {
         "gba": {
             "default_core": "mgba_libretro",
             "default_label": "mGBA",
@@ -290,7 +298,7 @@ class TestGetActiveCore:
 
 
 class TestGetAvailableCores:
-    GBA_SYSTEM_INFO = {
+    GBA_SYSTEM_INFO: ClassVar[dict] = {
         "gba": {
             "default_core": "mgba_libretro",
             "default_label": "mGBA",
@@ -366,7 +374,7 @@ class TestSetSystemOverride:
             assert result == "gpSP"
 
             # Game entry should be preserved
-            with open(gamelist_path, "r") as f:
+            with open(gamelist_path) as f:
                 content = f.read()
             assert "some_game.gba" in content
 
@@ -399,7 +407,7 @@ class TestSetGameOverride:
             es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
 
             gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
-            with open(gamelist_path, "r") as f:
+            with open(gamelist_path) as f:
                 content = f.read()
             assert "Pokemon.gba" in content
             assert "gpSP" in content
@@ -415,7 +423,7 @@ class TestSetGameOverride:
 
             es_de_config.set_game_override(tmpdir, "gba", "./some_game.gba", "gpSP")
 
-            with open(gamelist_path, "r") as f:
+            with open(gamelist_path) as f:
                 content = f.read()
             assert "gpSP" in content
             assert "Some Game" in content  # preserved
@@ -426,14 +434,14 @@ class TestSetGameOverride:
             es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", "gpSP")
 
             gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
-            with open(gamelist_path, "r") as f:
+            with open(gamelist_path) as f:
                 content = f.read()
             assert "<altemulator>" in content
 
             # Clear it
             es_de_config.set_game_override(tmpdir, "gba", "./Pokemon.gba", None)
 
-            with open(gamelist_path, "r") as f:
+            with open(gamelist_path) as f:
                 content = f.read()
             assert "<altemulator>" not in content
             assert "Pokemon.gba" in content  # game entry still there
@@ -451,7 +459,7 @@ class TestSetGameOverride:
             assert result == "VBA-M"
 
             gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
-            with open(gamelist_path, "r") as f:
+            with open(gamelist_path) as f:
                 content = f.read()
             assert "gpSP" in content
             assert "VBA-M" in content
@@ -472,7 +480,7 @@ class TestSetGameOverride:
 
             # Read gamelist — should have both games
             gamelist_path = os.path.join(tmpdir, "ES-DE", "gamelists", "gba", "gamelist.xml")
-            with open(gamelist_path, "r") as f:
+            with open(gamelist_path) as f:
                 content = f.read()
             assert "Pokemon.gba" in content
             assert "Zelda.gba" in content
@@ -513,7 +521,7 @@ class TestGetGameOverride:
 class TestGetActiveCoreWithGameOverride:
     """Test that get_active_core reads per-game overrides when rom_filename is provided."""
 
-    GBA_SYSTEM_INFO = {
+    GBA_SYSTEM_INFO: ClassVar[dict] = {
         "gba": {
             "default_core": "mgba_libretro",
             "default_label": "mGBA",

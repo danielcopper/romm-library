@@ -6,6 +6,7 @@ import os
 import threading
 
 import pytest
+
 from adapters.persistence import (
     _FIRMWARE_CACHE_VERSION,
     _METADATA_CACHE_VERSION,

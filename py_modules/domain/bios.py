@@ -29,10 +29,7 @@ def classify_firmware_file(
     Returns (is_required, classification, description).
     """
     if active_core_so and reg_entry and "cores" in reg_entry:
-        if active_core_so in reg_entry["cores"]:
-            is_required = reg_entry["cores"][active_core_so]["required"]
-        else:
-            is_required = False
+        is_required = reg_entry["cores"][active_core_so]["required"] if active_core_so in reg_entry["cores"] else False
         description = reg_entry.get("description", file_name)
         classification = "required" if is_required else "optional"
     elif reg_entry:

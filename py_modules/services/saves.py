@@ -6,6 +6,7 @@ No ``import decky`` — error utilities come from ``lib.errors``.
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -14,8 +15,8 @@ import socket
 import tempfile
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from domain.save_conflicts import (
     build_conflict_dict,
@@ -25,16 +26,14 @@ from domain.save_conflicts import (
     determine_action,
     resolve_conflict_by_mode,
 )
-
 from lib.errors import RommApiError, RommConflictError, classify_error
-from services.protocols import RommApiProtocol
+from services.protocols import RetryStrategy, RommApiProtocol, SavesPathProvider
 
 _DEVICE_NOT_REGISTERED = "Device not registered"
 
 if TYPE_CHECKING:
     import asyncio
     import logging
-    from collections.abc import Callable
 
 
 class SaveService:
@@ -44,10 +43,8 @@ class SaveService:
     ----------
     romm_api:
         Protocol adapter for all RomM save/notes HTTP operations.
-    with_retry:
-        Retry wrapper — ``fn(*args, **kwargs)`` with exponential backoff.
-    is_retryable:
-        Predicate: should the given exception trigger a retry?
+    retry:
+        Retry strategy — provides ``with_retry`` and ``is_retryable``.
     state:
         Live reference to the main plugin state dict (``installed_roms``,
         ``shortcut_registry``).
@@ -69,18 +66,16 @@ class SaveService:
         self,
         *,
         romm_api: RommApiProtocol,
-        with_retry: Callable[..., Any],
-        is_retryable: Callable[[Exception], bool],
+        retry: RetryStrategy,
         state: dict,
         save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         runtime_dir: str,
-        get_saves_path: Callable[[], str],
+        get_saves_path: SavesPathProvider,
     ) -> None:
         self._romm_api = romm_api
-        self._with_retry = with_retry
-        self._is_retryable = is_retryable
+        self._retry = retry
         self._state = state
         self._save_sync_state = save_sync_state
         self._loop = loop
@@ -130,7 +125,7 @@ class SaveService:
         """Load save sync state from disk, merging with defaults."""
         path = os.path.join(self._runtime_dir, "save_sync_state.json")
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 saved = json.load(f)
             for key in ("saves", "playtime"):
                 if key in saved:
@@ -254,15 +249,13 @@ class SaveService:
             return self._file_md5(tmp_path)
         except Exception as e:
             self._log_debug(f"Failed to hash server save {save_id}: {e}")
-            if self._is_retryable(e):
+            if self._retry.is_retryable(e):
                 raise
             return None
         finally:
             if tmp_path:
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(tmp_path)
-                except OSError:
-                    pass
 
     # ------------------------------------------------------------------
     # Conflict Detection
@@ -270,7 +263,7 @@ class SaveService:
 
     def _check_server_changes(self, file_state: dict, server_save: dict, last_sync_hash: str) -> bool:
         """Compare server metadata/hash against baseline to detect server modifications."""
-        fast = check_server_changes_fast(file_state, server_save, last_sync_hash)
+        fast = check_server_changes_fast(file_state, server_save)
         if fast is not None:
             return fast
 
@@ -278,7 +271,7 @@ class SaveService:
         server_updated_at = server_save.get("updated_at", "")
         server_size = server_save.get("file_size_bytes")
         try:
-            server_hash = self._with_retry(self._get_server_save_hash, server_save)
+            server_hash = self._retry.with_retry(self._get_server_save_hash, server_save)
         except Exception:
             server_hash = None
         if server_hash and server_hash != last_sync_hash:
@@ -291,7 +284,7 @@ class SaveService:
                 file_state["last_sync_server_size"] = server_size
         return False
 
-    def _detect_conflict(self, rom_id: int, filename: str, local_hash: str, server_save: dict) -> str:
+    def _detect_conflict(self, rom_id: int, filename: str, local_hash: str | None, server_save: dict) -> str:
         """Hybrid conflict detection (no content_hash on RomM 4.6.1).
 
         Returns: ``"skip"``, ``"download"``, ``"upload"``, or ``"conflict"``.
@@ -305,7 +298,7 @@ class SaveService:
         if not last_sync_hash:
             if local_hash:
                 try:
-                    server_hash = self._with_retry(self._get_server_save_hash, server_save)
+                    server_hash = self._retry.with_retry(self._get_server_save_hash, server_save)
                 except Exception:
                     server_hash = None
                 if server_hash is None:
@@ -355,10 +348,10 @@ class SaveService:
         save_entry = self._save_sync_state["saves"][rom_id_str]
         save_entry.setdefault("files", {})
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         local_hash = self._file_md5(local_path) if os.path.isfile(local_path) else ""
         local_mtime = (
-            datetime.fromtimestamp(os.path.getmtime(local_path), tz=timezone.utc).isoformat()
+            datetime.fromtimestamp(os.path.getmtime(local_path), tz=UTC).isoformat()
             if os.path.isfile(local_path)
             else now
         )
@@ -382,7 +375,7 @@ class SaveService:
         os.makedirs(saves_dir, exist_ok=True)
         tmp_path = local_path + ".tmp"
 
-        self._with_retry(lambda: self._romm_api.download_save(server_save["id"], tmp_path))
+        self._retry.with_retry(lambda: self._romm_api.download_save(server_save["id"], tmp_path))
 
         # Backup existing local save before overwriting
         if os.path.isfile(local_path):
@@ -408,7 +401,9 @@ class SaveService:
         """Upload a local save file to server."""
         save_id = server_save.get("id") if server_save else None
 
-        result = self._with_retry(lambda: self._romm_api.upload_save(int(rom_id), file_path, "retroarch", save_id))
+        result = self._retry.with_retry(
+            lambda: self._romm_api.upload_save(int(rom_id), file_path, "retroarch", save_id)
+        )
 
         self._update_file_sync_state(rom_id_str, filename, result, file_path, system)
         self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str}")
@@ -450,6 +445,42 @@ class SaveService:
 
         return action, local_hash
 
+    def _handle_conflict_error(
+        self,
+        rom_id: int,
+        filename: str,
+        local: dict | None,
+        server: dict | None,
+        local_hash: str,
+        errors: list[str],
+        conflicts: list[dict],
+    ) -> None:
+        """Handle a RommConflictError by recording a conflict or error entry."""
+        if local and server:
+            local_path = local["path"]
+            local_info = {
+                "path": local_path,
+                "mtime": os.path.getmtime(local_path) if os.path.isfile(local_path) else None,
+                "size": os.path.getsize(local_path) if os.path.isfile(local_path) else None,
+            }
+            conflicts.append(build_conflict_dict(rom_id, filename, local_info, local_hash, server))
+        else:
+            errors.append(f"{filename}: conflict without matching local+server")
+
+    def _handle_unexpected_error(
+        self,
+        e: Exception,
+        filename: str,
+        saves_dir: str,
+        errors: list[str],
+    ) -> None:
+        """Handle an unexpected exception by recording an error and cleaning up temp files."""
+        _code, _msg = classify_error(e)
+        errors.append(f"{filename}: {_msg}")
+        tmp = os.path.join(saves_dir, filename + ".tmp")
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+
     def _execute_sync_action(
         self,
         action: str,
@@ -474,28 +505,12 @@ class SaveService:
                 self._do_upload_save(rom_id, local["path"], filename, rom_id_str, system, server)
                 return True
         except RommConflictError:
-            if local and server:
-                local_path = local["path"]
-                local_info = {
-                    "path": local_path,
-                    "mtime": os.path.getmtime(local_path) if os.path.isfile(local_path) else None,
-                    "size": os.path.getsize(local_path) if os.path.isfile(local_path) else None,
-                }
-                conflicts.append(build_conflict_dict(rom_id, filename, local_info, local_hash, server))
-            else:
-                errors.append(f"{filename}: conflict without matching local+server")
+            self._handle_conflict_error(rom_id, filename, local, server, local_hash, errors, conflicts)
         except RommApiError as e:
             _code, _msg = classify_error(e)
             errors.append(f"{filename}: {_msg}")
         except Exception as e:
-            _code, _msg = classify_error(e)
-            errors.append(f"{filename}: {_msg}")
-            tmp = os.path.join(saves_dir, filename + ".tmp")
-            if os.path.exists(tmp):
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
+            self._handle_unexpected_error(e, filename, saves_dir, errors)
         return False
 
     def _process_single_file_sync(
@@ -567,7 +582,7 @@ class SaveService:
         # Fetch server saves (with retry)
         t0 = time.time()
         try:
-            server_saves = self._with_retry(lambda: self._romm_api.list_saves(rom_id))
+            server_saves = self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id))
         except Exception as e:
             self._logger.error(f"_sync_rom_saves({rom_id}): failed to list saves: {e}")
             _code, _msg = classify_error(e)
@@ -610,7 +625,7 @@ class SaveService:
 
         # Record when this sync check ran (regardless of whether files transferred)
         save_entry = self._save_sync_state["saves"].setdefault(rom_id_str, {})
-        save_entry["last_sync_check_at"] = datetime.now(timezone.utc).isoformat()
+        save_entry["last_sync_check_at"] = datetime.now(UTC).isoformat()
 
         self._log_debug(
             f"[TIMING] _sync_rom_saves({rom_id}): TOTAL {time.time() - t_total:.3f}s"
@@ -682,7 +697,7 @@ class SaveService:
                     fn,
                     local_path=lf["path"],
                     local_hash=local_hash,
-                    local_mtime=datetime.fromtimestamp(os.path.getmtime(lf["path"]), tz=timezone.utc).isoformat(),
+                    local_mtime=datetime.fromtimestamp(os.path.getmtime(lf["path"]), tz=UTC).isoformat(),
                     local_size=os.path.getsize(lf["path"]),
                     server=server,
                     last_sync_at=files_state.get(fn, {}).get("last_sync_at"),
@@ -731,7 +746,7 @@ class SaveService:
             server_save_id = conflict.get("server_save_id")
             if not server_save_id:
                 return {"success": False, "message": "No server save ID"}
-            server_save = self._with_retry(lambda: self._romm_api.get_save_metadata(server_save_id))
+            server_save = self._retry.with_retry(lambda: self._romm_api.get_save_metadata(server_save_id))
             self._do_download_save(server_save, saves_dir, filename, rom_id_str, system)
         else:  # upload
             local_path = conflict.get("local_path")
@@ -739,11 +754,9 @@ class SaveService:
                 return {"success": False, "message": "Local file not found"}
             server_save = None
             if conflict.get("server_save_id"):
-                try:
+                with contextlib.suppress(Exception):
                     ssid = conflict["server_save_id"]
-                    server_save = self._with_retry(lambda: self._romm_api.get_save_metadata(ssid))
-                except Exception:
-                    pass
+                    server_save = self._retry.with_retry(lambda: self._romm_api.get_save_metadata(ssid))
             self._do_upload_save(rom_id, local_path, filename, rom_id_str, system, server_save)
         return None  # Success — caller handles state update
 
@@ -783,7 +796,7 @@ class SaveService:
         try:
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._with_retry(lambda: self._romm_api.list_saves(rom_id)),
+                lambda: self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id)),
             )
         except Exception as e:
             self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
@@ -800,7 +813,7 @@ class SaveService:
         try:
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._with_retry(lambda: self._romm_api.list_saves(rom_id)),
+                lambda: self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id)),
             )
         except Exception as e:
             self._log_debug(f"Lightweight save check failed for rom {rom_id}: {e}")
@@ -826,7 +839,7 @@ class SaveService:
                     "filename": fn,
                     "local_path": lf["path"],
                     "local_hash": None,
-                    "local_mtime": datetime.fromtimestamp(local_mtime, tz=timezone.utc).isoformat(),
+                    "local_mtime": datetime.fromtimestamp(local_mtime, tz=UTC).isoformat(),
                     "local_size": local_size,
                     "server_save_id": server.get("id") if server else None,
                     "server_updated_at": server.get("updated_at", "") if server else None,

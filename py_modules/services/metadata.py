@@ -13,9 +13,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import asyncio
     import logging
-    from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol
+    from services.protocols import DebugLogger, RommApiProtocol, StatePersister
 
 
 class MetadataService:
@@ -29,8 +28,8 @@ class MetadataService:
         metadata_cache: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
-        save_metadata_cache: Callable,
-        log_debug: Callable,
+        save_metadata_cache: StatePersister,
+        log_debug: DebugLogger,
     ) -> None:
         self._romm_api = romm_api
         self._state = state
@@ -76,7 +75,7 @@ class MetadataService:
             self._save_metadata_cache()
             self._metadata_dirty_count = 0
 
-    async def get_rom_metadata(self, rom_id):
+    def get_rom_metadata(self, rom_id):
         """Return cached metadata for a ROM.
 
         Metadata is populated during sync via the list API. This method

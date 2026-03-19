@@ -6,7 +6,7 @@ operate only on the values passed to them.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def check_local_changes(local_hash: str | None, last_sync_hash: str) -> bool:
@@ -25,7 +25,6 @@ def check_local_changes(local_hash: str | None, last_sync_hash: str) -> bool:
 def check_server_changes_fast(
     file_state: dict,
     server_save: dict,
-    last_sync_hash: str,
 ) -> bool | None:
     """Fast-path server-change detection using stored timestamp and size.
 
@@ -47,9 +46,7 @@ def check_server_changes_fast(
 
     # Fast path: timestamp unchanged
     if stored_updated_at and server_updated_at == stored_updated_at:
-        if stored_size is not None and server_size is not None and server_size != stored_size:
-            return True  # size changed despite same timestamp
-        return False  # unchanged
+        return stored_size is not None and server_size is not None and server_size != stored_size
 
     # Timestamp changed or no stored timestamp — indeterminate without hash
     return None
@@ -119,10 +116,9 @@ def detect_conflict_lightweight(
         server_updated_at = server_save.get("updated_at", "")
         server_size = server_save.get("file_size_bytes")
 
-        if (stored_updated_at and server_updated_at != stored_updated_at) or (
+        server_changed = (stored_updated_at and server_updated_at != stored_updated_at) or (
             stored_size is not None and server_size is not None and server_size != stored_size
-        ):
-            server_changed = True
+        )
 
     return determine_action(local_changed, server_changed)
 
@@ -164,7 +160,7 @@ def resolve_conflict_by_mode(
     server_updated = server_save.get("updated_at", "")
     try:
         server_dt = datetime.fromisoformat(server_updated.replace("Z", "+00:00"))
-        local_dt = datetime.fromtimestamp(local_mtime, tz=timezone.utc)
+        local_dt = datetime.fromtimestamp(local_mtime, tz=UTC)
         diff = abs((local_dt - server_dt).total_seconds())
         if diff <= tolerance:
             return "ask"
@@ -209,13 +205,11 @@ def build_conflict_dict(
         "local_path": local_info["path"] if local_info else None,
         "local_hash": local_hash,
         "local_mtime": (
-            datetime.fromtimestamp(local_mtime_val, tz=timezone.utc).isoformat()
-            if local_mtime_val is not None
-            else None
+            datetime.fromtimestamp(local_mtime_val, tz=UTC).isoformat() if local_mtime_val is not None else None
         ),
         "local_size": local_info.get("size") if local_info else None,
         "server_save_id": server_save.get("id"),
         "server_updated_at": server_save.get("updated_at", ""),
         "server_size": server_save.get("file_size_bytes"),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }

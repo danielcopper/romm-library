@@ -5,6 +5,7 @@ Migration logic lives in ``domain/state_migrations.py``.
 No ``import decky``.
 """
 
+import contextlib
 import fcntl
 import json
 import logging
@@ -65,10 +66,8 @@ class PersistenceAdapter:
                     json.dump(data, f, indent=2)
                 os.replace(tmp_path, path)
             except Exception:
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(tmp_path)
-                except OSError:
-                    pass
                 raise
         finally:
             os.close(lock_fd)
@@ -87,7 +86,7 @@ class PersistenceAdapter:
         """
         settings_path = os.path.join(self._settings_dir, "settings.json")
         try:
-            with open(settings_path, "r") as f:
+            with open(settings_path) as f:
                 settings = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             settings = {}
@@ -125,7 +124,7 @@ class PersistenceAdapter:
         state_path = os.path.join(self._runtime_dir, "state.json")
         state = dict(defaults)
         try:
-            with open(state_path, "r") as f:
+            with open(state_path) as f:
                 saved = json.load(f)
             if not isinstance(saved, dict):
                 saved = {}
@@ -155,7 +154,7 @@ class PersistenceAdapter:
         """
         cache_path = os.path.join(self._runtime_dir, "metadata_cache.json")
         try:
-            with open(cache_path, "r") as f:
+            with open(cache_path) as f:
                 loaded = json.load(f)
             if not isinstance(loaded, dict):
                 return {"version": _METADATA_CACHE_VERSION}
@@ -183,7 +182,7 @@ class PersistenceAdapter:
         """
         cache_path = os.path.join(self._runtime_dir, "firmware_cache.json")
         try:
-            with open(cache_path, "r") as f:
+            with open(cache_path) as f:
                 loaded = json.load(f)
             if not isinstance(loaded, dict):
                 return {"version": _FIRMWARE_CACHE_VERSION}

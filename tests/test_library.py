@@ -3,14 +3,16 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
-from services.artwork import ArtworkService
-from services.library import LibraryService, SyncState
-from services.metadata import MetadataService
-from services.shortcut_removal import ShortcutRemovalService
+from domain.sync_state import SyncState
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.artwork import ArtworkService
+from services.library import LibraryService
+from services.metadata import MetadataService
+from services.shortcut_removal import ShortcutRemovalService
 
 
 @pytest.fixture
@@ -44,7 +46,7 @@ def plugin():
         loop=asyncio.get_event_loop(),
         logger=decky.logger,
         emit=decky.emit,
-        sync_state_ref=lambda: None,
+        sync_state_ref=lambda: SyncState.IDLE,
     )
     p._artwork_service = artwork_service
 
@@ -766,7 +768,7 @@ class TestClassifyRoms:
             self._make_sd(1, "Game A", fs_name="gamea.z64"),
             self._make_sd(2, "Game B", fs_name="gameb.z64"),
         ]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert new == []
         assert changed == []
         assert set(unchanged_ids) == {1, 2}
@@ -795,7 +797,7 @@ class TestClassifyRoms:
             self._make_sd(2, "New Name", fs_name="gameb.z64"),  # changed (name)
             self._make_sd(3, "Game C", fs_name="gamec.z64"),  # new
         ]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, _, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 1
         assert new[0]["rom_id"] == 3
         assert len(changed) == 1
@@ -813,7 +815,7 @@ class TestClassifyRoms:
         # Must also set fs_name in registry to match
         plugin._state["shortcut_registry"]["1"]["fs_name"] = ""
         plugin._state["shortcut_registry"]["1"]["platform_slug"] = "n64"
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        _, _, _, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert 99 in stale
         assert disabled == 0  # N64 is in fetched_platform_names
 
@@ -823,7 +825,7 @@ class TestClassifyRoms:
             "1": {"app_id": 1001, "name": "Game A", "platform_name": "SNES"},
         }
         sd = []  # nothing fetched
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        _, _, _, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert 1 in stale
         assert disabled == 1  # SNES is not in {"N64"}
 
@@ -839,7 +841,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "New Title")]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, _, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(changed) == 1
         assert changed[0]["existing_app_id"] == 1001
         assert new == []
@@ -857,7 +859,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A", platform_name="N64")]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        _, changed, _, _, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(changed) == 1
         assert changed[0]["rom_id"] == 1
 
@@ -873,7 +875,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A", fs_name="new.z64")]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        _, changed, _, _, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(changed) == 1
         assert changed[0]["rom_id"] == 1
 
@@ -889,7 +891,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A", igdb_id=999, sgdb_id=888)]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, _, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert unchanged_ids == [1]
         assert changed == []
         assert new == []
@@ -900,7 +902,7 @@ class TestClassifyRoms:
             "1": {"name": "Game A", "platform_name": "N64"},
         }
         sd = [self._make_sd(1, "Game A")]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        new, changed, _, _, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 1
         assert new[0]["rom_id"] == 1
         assert changed == []
@@ -927,7 +929,7 @@ class TestClassifyRoms:
             },
         }
         sd = [self._make_sd(1, "Game A")]
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        new, changed, unchanged_ids, stale, _ = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(new) == 0
         assert len(changed) == 0
         assert len(stale) == 0
@@ -941,7 +943,7 @@ class TestClassifyRoms:
         }
         sd = []  # nothing fetched
         # Neither GBA nor SNES in fetched set
-        new, changed, unchanged_ids, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
+        _, _, _, stale, disabled = plugin._sync_service._classify_roms(sd, {"N64"})
         assert len(stale) == 2
         assert disabled == 2
 

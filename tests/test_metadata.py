@@ -1,15 +1,17 @@
 import asyncio
+import http.client
 import json
 import os
 from unittest.mock import MagicMock
 
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
-from services.library import LibraryService
-from services.metadata import MetadataService
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.library import LibraryService
+from services.metadata import MetadataService
 
 
 @pytest.fixture
@@ -288,6 +290,7 @@ class TestLoadMetadataCache:
 
     def test_loads_from_disk(self, plugin, tmp_path):
         import decky
+
         from adapters.persistence import _METADATA_CACHE_VERSION
 
         decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
@@ -384,7 +387,7 @@ class TestSyncMetadataCapture:
         # Verify disk cache
         cache_path = os.path.join(str(tmp_path), "metadata_cache.json")
         assert os.path.exists(cache_path)
-        with open(cache_path, "r") as f:
+        with open(cache_path) as f:
             disk_cache = json.load(f)
         assert "1" in disk_cache
         assert "2" in disk_cache
@@ -426,7 +429,7 @@ class TestSyncMetadataCapture:
 
         # Verify on disk too
         cache_path = os.path.join(str(tmp_path), "metadata_cache.json")
-        with open(cache_path, "r") as f:
+        with open(cache_path) as f:
             disk_cache = json.load(f)
         assert "99" in disk_cache
         assert "1" in disk_cache
@@ -460,7 +463,7 @@ class TestGetRomMetadata404:
             url="http://example.com/api/roms/999",
             code=404,
             msg="Not Found",
-            hdrs={},
+            hdrs=http.client.HTTPMessage(),
             fp=None,
         )
 
@@ -496,7 +499,7 @@ class TestGetRomMetadata404:
             url="http://example.com/api/roms/999",
             code=404,
             msg="Not Found",
-            hdrs={},
+            hdrs=http.client.HTTPMessage(),
             fp=None,
         )
 

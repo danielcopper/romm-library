@@ -5,13 +5,15 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from fakes.fake_save_api import FakeSaveApi
-from services.saves import SaveService
 
 from lib.errors import RommApiError
+from services.saves import SaveService
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -22,13 +24,19 @@ def _no_retry(fn, *a, **kw):
     return fn(*a, **kw)
 
 
-def make_service(tmp_path, fake_api=None, **overrides):
+def _make_retry():
+    retry = MagicMock()
+    retry.with_retry.side_effect = _no_retry
+    retry.is_retryable.return_value = False
+    return retry
+
+
+def make_service(tmp_path, fake_api=None, **overrides) -> tuple["SaveService", "FakeSaveApi"]:
     """Create a SaveService with sensible defaults for testing."""
-    fake = fake_api or FakeSaveApi()
-    defaults = dict(
+    fake: FakeSaveApi = fake_api or FakeSaveApi()
+    defaults: dict[str, Any] = dict(
         romm_api=fake,
-        with_retry=_no_retry,
-        is_retryable=lambda e: False,
+        retry=_make_retry(),
         state={"shortcut_registry": {}, "installed_roms": {}},
         save_sync_state=SaveService.make_default_state(),
         loop=asyncio.get_event_loop(),
@@ -39,7 +47,7 @@ def make_service(tmp_path, fake_api=None, **overrides):
     defaults.update(overrides)
     svc = SaveService(**defaults)
     svc.init_state()
-    return svc, defaults.get("romm_api", fake) if fake_api is None else fake
+    return svc, fake
 
 
 def _install_rom(svc, tmp_path, rom_id=42, system="gba", file_name="pokemon.gba"):
@@ -189,7 +197,7 @@ class TestDeviceRegistration:
 
 class TestConflictDetection:
     def test_skip_when_unchanged(self, tmp_path):
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         content = b"save data"
         local_hash = hashlib.md5(content).hexdigest()
 
@@ -208,7 +216,7 @@ class TestConflictDetection:
         assert result == "skip"
 
     def test_upload_when_local_changed(self, tmp_path):
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         old_hash = hashlib.md5(b"old").hexdigest()
         new_hash = hashlib.md5(b"new data").hexdigest()
 
@@ -227,7 +235,7 @@ class TestConflictDetection:
         assert result == "upload"
 
     def test_download_when_server_changed(self, tmp_path):
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         local_hash = hashlib.md5(b"save data").hexdigest()
 
         svc._save_sync_state["saves"]["42"] = {
@@ -250,7 +258,7 @@ class TestConflictDetection:
         assert result == "download"
 
     def test_conflict_when_both_changed(self, tmp_path):
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         old_hash = hashlib.md5(b"baseline").hexdigest()
         new_local = hashlib.md5(b"local edit").hexdigest()
 
@@ -270,7 +278,7 @@ class TestConflictDetection:
 
     def test_never_synced_same_hash_skips(self, tmp_path):
         """When never synced but local and server have same content -> skip."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         # FakeSaveApi.download_save writes 1024 zero bytes
         content = b"\x00" * 1024
         local_hash = hashlib.md5(content).hexdigest()
@@ -281,7 +289,7 @@ class TestConflictDetection:
 
     def test_never_synced_different_hash_conflicts(self, tmp_path):
         """When never synced and hashes differ -> conflict."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         local_hash = hashlib.md5(b"different content").hexdigest()
 
         server = _server_save()
@@ -300,7 +308,7 @@ class TestConflictDetection:
 
     def test_no_local_file_downloads(self, tmp_path):
         """No local file (local_hash=None), server has save -> download."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
 
         server = _server_save()
         result = svc._detect_conflict(42, "pokemon.srm", None, server)
@@ -308,7 +316,7 @@ class TestConflictDetection:
 
     def test_server_size_change_fast_path(self, tmp_path):
         """Same timestamp but different size -> detects server changed."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         local_hash = hashlib.md5(b"save data").hexdigest()
 
         svc._save_sync_state["saves"]["42"] = {
@@ -338,7 +346,7 @@ class TestConflictDetectionFalseAlarm:
 
     def test_timestamp_changed_content_identical_skips(self, tmp_path):
         """Server timestamp changed but content hash matches baseline -> skip."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         # FakeSaveApi.download_save writes 1024 zero bytes by default
         baseline_hash = hashlib.md5(b"\x00" * 1024).hexdigest()
 
@@ -359,7 +367,7 @@ class TestConflictDetectionFalseAlarm:
 
     def test_false_alarm_updates_stored_metadata(self, tmp_path):
         """After false alarm, stored server_updated_at and server_size are updated."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         baseline_hash = hashlib.md5(b"\x00" * 1024).hexdigest()
 
         svc._save_sync_state["saves"]["42"] = {
@@ -381,7 +389,7 @@ class TestConflictDetectionFalseAlarm:
 
     def test_local_changed_server_content_unchanged_uploads(self, tmp_path):
         """Local changed + server timestamp changed but server content unchanged -> upload."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         baseline_hash = hashlib.md5(b"\x00" * 1024).hexdigest()
 
         svc._save_sync_state["saves"]["42"] = {
@@ -401,7 +409,7 @@ class TestConflictDetectionFalseAlarm:
 
     def test_no_stored_timestamp_triggers_slow_path(self, tmp_path):
         """No stored server_updated_at -> triggers slow path (download + hash)."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         baseline_hash = hashlib.md5(b"\x00" * 1024).hexdigest()
 
         svc._save_sync_state["saves"]["42"] = {
@@ -462,7 +470,7 @@ class TestConflictDetectionFalseAlarm:
 
     def test_fast_path_timestamp_and_size_match(self, tmp_path):
         """Both timestamp and size match stored -> skip."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         local_hash = hashlib.md5(b"save data").hexdigest()
 
         svc._save_sync_state["saves"]["42"] = {
@@ -481,7 +489,7 @@ class TestConflictDetectionFalseAlarm:
 
     def test_fast_path_stored_size_none(self, tmp_path):
         """stored_size is None (legacy), timestamp matches -> skip (size check skipped)."""
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         local_hash = hashlib.md5(b"save data").hexdigest()
 
         svc._save_sync_state["saves"]["42"] = {
@@ -586,7 +594,7 @@ class TestSyncRomSaves:
         ss = _server_save()
         fake.saves[100] = ss
 
-        synced, errors, conflicts = svc._sync_rom_saves(42)
+        synced, errors, _ = svc._sync_rom_saves(42)
         assert synced == 1
         assert errors == []
         # Verify the file was downloaded
@@ -621,7 +629,7 @@ class TestSyncRomSaves:
 
     def test_rom_not_installed(self, tmp_path):
         svc, _ = make_service(tmp_path)
-        synced, errors, conflicts = svc._sync_rom_saves(999)
+        synced, errors, _ = svc._sync_rom_saves(999)
         assert synced == 0
         assert errors == []
 
@@ -630,7 +638,7 @@ class TestSyncRomSaves:
         _install_rom(svc, tmp_path)
         fake.fail_on_next(RommApiError("Server error"))
 
-        synced, errors, conflicts = svc._sync_rom_saves(42)
+        synced, errors, _ = svc._sync_rom_saves(42)
         assert synced == 0
         assert len(errors) == 1
         assert "Failed to fetch saves" in errors[0]
@@ -644,7 +652,7 @@ class TestSyncRomSaves:
 class TestSyncAllSaves:
     @pytest.mark.asyncio
     async def test_syncs_multiple_roms(self, tmp_path):
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         svc._save_sync_state["settings"]["save_sync_enabled"] = True
         svc._save_sync_state["device_id"] = "test-device"
 
@@ -741,7 +749,7 @@ class TestPreLaunchSync:
 class TestPostExitSync:
     @pytest.mark.asyncio
     async def test_uploads_changed_saves(self, tmp_path):
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         svc._save_sync_state["settings"]["save_sync_enabled"] = True
         svc._save_sync_state["device_id"] = "test-device"
         _install_rom(svc, tmp_path)
@@ -770,7 +778,7 @@ class TestPostExitSync:
 
     @pytest.mark.asyncio
     async def test_auto_registers_device(self, tmp_path):
-        svc, fake = make_service(tmp_path)
+        svc, _ = make_service(tmp_path)
         svc._save_sync_state["settings"]["save_sync_enabled"] = True
         # No device_id set
         _install_rom(svc, tmp_path)
@@ -1138,7 +1146,7 @@ class TestResolveConflictByMode:
         svc, _ = make_service(tmp_path)
         svc._save_sync_state["settings"]["conflict_mode"] = "newest_wins"
         server = _server_save(updated_at="2026-02-17T10:00:00Z")
-        local_mtime = datetime(2026, 2, 17, 14, 0, 0, tzinfo=timezone.utc).timestamp()
+        local_mtime = datetime(2026, 2, 17, 14, 0, 0, tzinfo=UTC).timestamp()
 
         result = svc._resolve_conflict_by_mode(local_mtime, server)
 
@@ -1148,7 +1156,7 @@ class TestResolveConflictByMode:
         svc, _ = make_service(tmp_path)
         svc._save_sync_state["settings"]["conflict_mode"] = "newest_wins"
         server = _server_save(updated_at="2026-02-17T14:00:00Z")
-        local_mtime = datetime(2026, 2, 17, 10, 0, 0, tzinfo=timezone.utc).timestamp()
+        local_mtime = datetime(2026, 2, 17, 10, 0, 0, tzinfo=UTC).timestamp()
 
         result = svc._resolve_conflict_by_mode(local_mtime, server)
 
@@ -1159,7 +1167,7 @@ class TestResolveConflictByMode:
         svc._save_sync_state["settings"]["conflict_mode"] = "newest_wins"
         svc._save_sync_state["settings"]["clock_skew_tolerance_sec"] = 60
         server = _server_save(updated_at="2026-02-17T12:00:00Z")
-        local_mtime = datetime(2026, 2, 17, 12, 0, 30, tzinfo=timezone.utc).timestamp()
+        local_mtime = datetime(2026, 2, 17, 12, 0, 30, tzinfo=UTC).timestamp()
 
         result = svc._resolve_conflict_by_mode(local_mtime, server)
 
@@ -1180,7 +1188,7 @@ class TestClockSkewBoundary:
         svc._save_sync_state["settings"]["clock_skew_tolerance_sec"] = 60
 
         server = _server_save(updated_at="2026-02-17T12:00:00Z")
-        local_mtime = datetime(2026, 2, 17, 12, 1, 0, tzinfo=timezone.utc).timestamp()
+        local_mtime = datetime(2026, 2, 17, 12, 1, 0, tzinfo=UTC).timestamp()
 
         result = svc._resolve_conflict_by_mode(local_mtime, server)
 
@@ -1192,7 +1200,7 @@ class TestClockSkewBoundary:
         svc._save_sync_state["settings"]["clock_skew_tolerance_sec"] = 60
 
         server = _server_save(updated_at="2026-02-17T12:00:00Z")
-        local_mtime = datetime(2026, 2, 17, 12, 1, 1, tzinfo=timezone.utc).timestamp()
+        local_mtime = datetime(2026, 2, 17, 12, 1, 1, tzinfo=UTC).timestamp()
 
         result = svc._resolve_conflict_by_mode(local_mtime, server)
 
@@ -1204,7 +1212,7 @@ class TestClockSkewBoundary:
         svc._save_sync_state["settings"]["clock_skew_tolerance_sec"] = 0
 
         server = _server_save(updated_at="2026-02-17T12:00:00Z")
-        local_mtime = datetime(2026, 2, 17, 12, 0, 1, tzinfo=timezone.utc).timestamp()
+        local_mtime = datetime(2026, 2, 17, 12, 0, 1, tzinfo=UTC).timestamp()
 
         result = svc._resolve_conflict_by_mode(local_mtime, server)
 

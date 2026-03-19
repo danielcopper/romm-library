@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 import vdf
+
 from adapters.steam_config import SteamConfigAdapter
 
 
@@ -222,7 +223,7 @@ class TestSetSteamInputConfig:
         adapter.set_steam_input_config([12345], mode="force_on")
         # Re-read and verify
         userdata = tmp_path / ".local" / "share" / "Steam" / "userdata" / "123"
-        with open(str(userdata / "config" / "localconfig.vdf"), "r") as f:
+        with open(str(userdata / "config" / "localconfig.vdf")) as f:
             result = vdf.load(f)
         assert result["UserLocalConfigStore"]["Apps"]["12345"]["UseSteamControllerConfig"] == "2"
 
@@ -231,7 +232,7 @@ class TestSetSteamInputConfig:
         adapter = self._make_adapter_with_localconfig(tmp_path, data)
         adapter.set_steam_input_config([99], mode="force_off")
         userdata = tmp_path / ".local" / "share" / "Steam" / "userdata" / "123"
-        with open(str(userdata / "config" / "localconfig.vdf"), "r") as f:
+        with open(str(userdata / "config" / "localconfig.vdf")) as f:
             result = vdf.load(f)
         assert result["UserLocalConfigStore"]["Apps"]["99"]["UseSteamControllerConfig"] == "0"
 
@@ -240,7 +241,7 @@ class TestSetSteamInputConfig:
         adapter = self._make_adapter_with_localconfig(tmp_path, data)
         adapter.set_steam_input_config([42], mode="default")
         userdata = tmp_path / ".local" / "share" / "Steam" / "userdata" / "123"
-        with open(str(userdata / "config" / "localconfig.vdf"), "r") as f:
+        with open(str(userdata / "config" / "localconfig.vdf")) as f:
             result = vdf.load(f)
         # Key removed, but app entry remains because it has other keys
         assert "UseSteamControllerConfig" not in result["UserLocalConfigStore"]["Apps"]["42"]
@@ -250,7 +251,7 @@ class TestSetSteamInputConfig:
         adapter = self._make_adapter_with_localconfig(tmp_path, data)
         adapter.set_steam_input_config([42], mode="default")
         userdata = tmp_path / ".local" / "share" / "Steam" / "userdata" / "123"
-        with open(str(userdata / "config" / "localconfig.vdf"), "r") as f:
+        with open(str(userdata / "config" / "localconfig.vdf")) as f:
             result = vdf.load(f)
         assert "42" not in result["UserLocalConfigStore"]["Apps"]
 
@@ -265,7 +266,7 @@ class TestSetSteamInputConfig:
         adapter = self._make_adapter_with_localconfig(tmp_path, data)
         adapter.set_steam_input_config([42], mode="force_on")
         userdata = tmp_path / ".local" / "share" / "Steam" / "userdata" / "123"
-        with open(str(userdata / "config" / "localconfig.vdf"), "r") as f:
+        with open(str(userdata / "config" / "localconfig.vdf")) as f:
             result = vdf.load(f)
         assert result["UserLocalConfigStore"]["Apps"]["42"]["UseSteamControllerConfig"] == "2"
 
@@ -295,7 +296,7 @@ class TestSetSteamInputConfig:
         adapter = self._make_adapter_with_localconfig(tmp_path, data)
         adapter.set_steam_input_config([100, 200, 300], mode="force_on")
         userdata = tmp_path / ".local" / "share" / "Steam" / "userdata" / "123"
-        with open(str(userdata / "config" / "localconfig.vdf"), "r") as f:
+        with open(str(userdata / "config" / "localconfig.vdf")) as f:
             result = vdf.load(f)
         for app_id in ["100", "200", "300"]:
             assert result["UserLocalConfigStore"]["Apps"][app_id]["UseSteamControllerConfig"] == "2"
@@ -398,18 +399,17 @@ class TestFixRetroarchInputDriver:
         cfg_path = tmp_path / "retroarch.cfg"
         cfg_path.write_text('input_driver = "x"\n')
         adapter = SteamConfigAdapter(user_home=str(tmp_path), logger=logging.getLogger("test"))
-        with patch("adapters.steam_config.os.path.expanduser", return_value=str(cfg_path)):
-            # check_retroarch_input_driver opens the file once (read),
-            # fix_retroarch_input_driver opens it twice more (read lines, write).
-            # Let the first two opens succeed, then fail on write.
-            with patch(
+        with (
+            patch("adapters.steam_config.os.path.expanduser", return_value=str(cfg_path)),
+            patch(
                 "builtins.open",
                 side_effect=[
-                    open(str(cfg_path), "r"),  # check_retroarch_input_driver read
-                    open(str(cfg_path), "r"),  # fix_retroarch_input_driver read lines
+                    open(str(cfg_path)),  # check_retroarch_input_driver read
+                    open(str(cfg_path)),  # fix_retroarch_input_driver read lines
                     OSError("nope"),  # fix_retroarch_input_driver write
                 ],
-            ):
-                result = adapter.fix_retroarch_input_driver()
+            ),
+        ):
+            result = adapter.fix_retroarch_input_driver()
         assert result["success"] is False
         assert "failed" in result["message"].lower()

@@ -4,9 +4,39 @@ import json
 import os
 import re
 
-import decky  # for DECKY_USER_HOME and logging
-
 _CORE_SO_RE = re.compile(r"%CORE_RETROARCH%/([\w-]+_libretro)\.so")
+
+# Module-level configuration — set via configure() during bootstrap.
+# Falls back to importing decky lazily if not configured (dev/test fallback).
+_logger = None
+_plugin_dir = None
+
+
+def configure(plugin_dir: str, logger) -> None:
+    """Configure module-level logger and plugin_dir.
+
+    Must be called once during bootstrap before the first use of CoreResolver
+    methods that load files from the plugin directory.
+    """
+    global _logger, _plugin_dir
+    _logger = logger
+    _plugin_dir = plugin_dir
+
+
+def _get_logger():
+    """Return the configured logger, raising if not configured."""
+    if _logger is not None:
+        return _logger
+    raise RuntimeError("es_de_config not configured — call configure() during bootstrap")
+
+
+def _get_plugin_dir():
+    """Return the configured plugin_dir, raising if not configured."""
+    if _plugin_dir is not None:
+        return _plugin_dir
+    raise RuntimeError("es_de_config not configured — call configure() during bootstrap")
+
+
 _GAMELIST_FILENAME = "gamelist.xml"
 
 _FLATPAK_SYSTEMS_DIR = (
@@ -86,7 +116,7 @@ class CoreResolver:
             if game_label:
                 resolved = self._resolve_label(system_name, system_info, game_label)
                 if resolved:
-                    decky.logger.debug(
+                    _get_logger().debug(
                         "es_de_config: per-game override for %s/%s -> %s",
                         system_name,
                         rom_filename,
@@ -148,7 +178,7 @@ class CoreResolver:
                 {"core_so": core_so, "label": label, "is_default": core_so == default_core}
                 for core_so, label in system_info["cores"].items()
             ]
-            decky.logger.debug(
+            _get_logger().debug(
                 "es_de_config: get_available_cores(%s) -> %d cores from es_systems.xml",
                 system_name,
                 len(cores),
@@ -164,14 +194,14 @@ class CoreResolver:
                 {"core_so": core_so, "label": label, "is_default": core_so == default_core}
                 for core_so, label in default_info["cores"].items()
             ]
-            decky.logger.debug(
+            _get_logger().debug(
                 "es_de_config: get_available_cores(%s) -> %d cores from core_defaults.json (fallback)",
                 system_name,
                 len(cores),
             )
             return cores
 
-        decky.logger.debug("es_de_config: get_available_cores(%s) -> no cores found", system_name)
+        _get_logger().debug("es_de_config: get_available_cores(%s) -> no cores found", system_name)
         return []
 
     def get_system_override(self, retrodeck_home, system_name):
@@ -257,9 +287,9 @@ class CoreResolver:
             game_path = game.get("path", "")
             # Normalize: strip leading "./" for comparison
             normalized = game_path.lstrip("./") if game_path else ""
-            if normalized == rom_filename or game_path == rom_filename or game_path == f"./{rom_filename}":
-                if game.get("altemulator"):
-                    return game["altemulator"]
+            path_matches = normalized == rom_filename or game_path == rom_filename or game_path == f"./{rom_filename}"
+            if path_matches and game.get("altemulator"):
+                return game["altemulator"]
 
         return None
 
@@ -366,14 +396,14 @@ class CoreResolver:
         try:
             from xml.parsers import expat
         except ImportError:
-            decky.logger.warning("es_de_config: xml.parsers.expat not available")
+            _get_logger().warning("es_de_config: xml.parsers.expat not available")
             return {}
 
         try:
             with open(xml_path, "rb") as f:
                 data = f.read()
         except OSError as e:
-            decky.logger.warning("es_de_config: failed to read %s: %s", xml_path, e)
+            _get_logger().warning("es_de_config: failed to read %s: %s", xml_path, e)
             return {}
 
         systems = {}
@@ -396,11 +426,11 @@ class CoreResolver:
         try:
             parser.Parse(data, True)
         except expat.ExpatError as e:
-            decky.logger.warning("es_de_config: failed to parse %s: %s", xml_path, e)
+            _get_logger().warning("es_de_config: failed to parse %s: %s", xml_path, e)
             return {}
 
         if state["root_tag"] != "systemList":
-            decky.logger.warning(
+            _get_logger().warning(
                 "es_de_config: unexpected root tag '%s' (expected 'systemList')",
                 state["root_tag"],
             )
@@ -417,8 +447,8 @@ class CoreResolver:
         """
         # Check plugin root first (Decky CLI moves defaults/ contents to root),
         # then defaults/ subdirectory (dev deploys via mise run deploy)
-        root_path = os.path.join(decky.DECKY_PLUGIN_DIR, "core_defaults.json")
-        dev_path = os.path.join(decky.DECKY_PLUGIN_DIR, "defaults", "core_defaults.json")
+        root_path = os.path.join(_get_plugin_dir(), "core_defaults.json")
+        dev_path = os.path.join(_get_plugin_dir(), "defaults", "core_defaults.json")
         defaults_path = root_path if os.path.exists(root_path) else dev_path
 
         try:
@@ -434,11 +464,11 @@ class CoreResolver:
             return self._core_defaults_cache
 
         try:
-            with open(defaults_path, "r") as f:
+            with open(defaults_path) as f:
                 data = json.load(f)
             self._core_defaults_cache = data.get("systems", {})
         except (OSError, json.JSONDecodeError) as e:
-            decky.logger.warning("es_de_config: failed to load core_defaults.json: %s", e)
+            _get_logger().warning("es_de_config: failed to load core_defaults.json: %s", e)
             self._core_defaults_cache = {}
 
         self._core_defaults_path = defaults_path
@@ -469,7 +499,7 @@ class CoreResolver:
             self._es_systems_mtime = current_mtime
         else:
             if self._es_systems_cache is None:
-                decky.logger.info("es_de_config: es_systems.xml not found, using core_defaults.json fallback")
+                _get_logger().info("es_de_config: es_systems.xml not found, using core_defaults.json fallback")
             self._es_systems_cache = {}
             self._es_systems_path = None
             self._es_systems_mtime = None
@@ -501,7 +531,7 @@ class GamelistXmlEditor:
         if raw:
             parsed = self.parse_gamelist_preserving(raw)
             if parsed is None:
-                decky.logger.warning("es_de_config: failed to parse %s for writing", path)
+                _get_logger().warning("es_de_config: failed to parse %s for writing", path)
                 return False
             games_xml = [g["raw_xml"] for g in parsed["games"]]
         else:
@@ -510,7 +540,7 @@ class GamelistXmlEditor:
         content = self.reconstruct_gamelist(core_label or None, games_xml)
         self.write_gamelist_atomic(path, content)
         action = "cleared" if not core_label else f"set to '{core_label}'"
-        decky.logger.info("es_de_config: system override for %s %s (%s)", system_name, action, path)
+        _get_logger().info("es_de_config: system override for %s %s (%s)", system_name, action, path)
         return True
 
     def set_game_override(self, retrodeck_home, system_name, rom_path, core_label):
@@ -526,7 +556,7 @@ class GamelistXmlEditor:
         if raw:
             parsed = self.parse_gamelist_preserving(raw)
             if parsed is None:
-                decky.logger.warning("es_de_config: failed to parse %s for writing", path)
+                _get_logger().warning("es_de_config: failed to parse %s for writing", path)
                 return False
             alt_label = parsed["alt_emulator_label"]
             games = parsed["games"]
@@ -545,21 +575,18 @@ class GamelistXmlEditor:
             else:
                 new_games_xml.append(game["raw_xml"])
 
-        if not found:
-            # Create new game entry
-            if core_label:
-                escaped_path = self.escape_xml(rom_path)
-                escaped_label = self.escape_xml(core_label)
-                game_xml = (
-                    f"<game>\n    <path>{escaped_path}</path>\n"
-                    f"    <altemulator>{escaped_label}</altemulator>\n  </game>"
-                )
-                new_games_xml.append(game_xml)
+        if not found and core_label:
+            escaped_path = self.escape_xml(rom_path)
+            escaped_label = self.escape_xml(core_label)
+            game_xml = (
+                f"<game>\n    <path>{escaped_path}</path>\n    <altemulator>{escaped_label}</altemulator>\n  </game>"
+            )
+            new_games_xml.append(game_xml)
 
         content = self.reconstruct_gamelist(alt_label, new_games_xml)
         self.write_gamelist_atomic(path, content)
         action = "cleared" if not core_label else f"set to '{core_label}'"
-        decky.logger.info("es_de_config: game override for %s [%s] %s (%s)", system_name, rom_path, action, path)
+        _get_logger().info("es_de_config: game override for %s [%s] %s (%s)", system_name, rom_path, action, path)
         return True
 
     def get_system_override(self, retrodeck_home, system_name):

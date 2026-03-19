@@ -1,14 +1,13 @@
 import asyncio
-import socket
+import http.client
 import ssl
 import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
-from services.library import LibraryService
-
 from lib.errors import (
     RommApiError,
     RommAuthError,
@@ -23,6 +22,7 @@ from lib.errors import (
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.library import LibraryService
 
 
 @pytest.fixture
@@ -305,7 +305,7 @@ class TestTranslateHttpError:
     """Tests for _translate_http_error method."""
 
     def test_401_becomes_auth_error(self, plugin):
-        exc = urllib.error.HTTPError("http://romm.local/api/test", 401, "Unauthorized", {}, None)
+        exc = urllib.error.HTTPError("http://romm.local/api/test", 401, "Unauthorized", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/test", "GET")
         assert isinstance(result, RommAuthError)
         assert result.status_code == 401
@@ -314,44 +314,44 @@ class TestTranslateHttpError:
         assert "401" in str(result)
 
     def test_403_becomes_forbidden_error(self, plugin):
-        exc = urllib.error.HTTPError("url", 403, "Forbidden", {}, None)
+        exc = urllib.error.HTTPError("url", 403, "Forbidden", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x", "POST")
         assert isinstance(result, RommForbiddenError)
         assert result.status_code == 403
 
     def test_404_becomes_not_found_error(self, plugin):
-        exc = urllib.error.HTTPError("url", 404, "Not Found", {}, None)
+        exc = urllib.error.HTTPError("url", 404, "Not Found", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommNotFoundError)
         assert result.status_code == 404
 
     def test_409_becomes_conflict_error(self, plugin):
-        exc = urllib.error.HTTPError("url", 409, "Conflict", {}, None)
+        exc = urllib.error.HTTPError("url", 409, "Conflict", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x", "PUT")
         assert isinstance(result, RommConflictError)
         assert result.status_code == 409
 
     def test_500_becomes_server_error(self, plugin):
-        exc = urllib.error.HTTPError("url", 500, "Internal Server Error", {}, None)
+        exc = urllib.error.HTTPError("url", 500, "Internal Server Error", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommServerError)
         assert result.status_code == 500
 
     def test_502_becomes_server_error(self, plugin):
-        exc = urllib.error.HTTPError("url", 502, "Bad Gateway", {}, None)
+        exc = urllib.error.HTTPError("url", 502, "Bad Gateway", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommServerError)
         assert result.status_code == 502
 
     def test_429_becomes_server_error(self, plugin):
-        exc = urllib.error.HTTPError("url", 429, "Too Many Requests", {}, None)
+        exc = urllib.error.HTTPError("url", 429, "Too Many Requests", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommServerError)
         assert result.status_code == 429
         assert "Rate limited" in str(result)
 
     def test_other_4xx_becomes_generic_api_error(self, plugin):
-        exc = urllib.error.HTTPError("url", 418, "I'm a Teapot", {}, None)
+        exc = urllib.error.HTTPError("url", 418, "I'm a Teapot", http.client.HTTPMessage(), None)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommApiError)
         assert not isinstance(result, RommServerError)
@@ -369,7 +369,7 @@ class TestTranslateHttpError:
         assert isinstance(result, RommSSLError)
 
     def test_url_error_wrapping_timeout_becomes_timeout_error(self, plugin):
-        timeout_exc = socket.timeout("timed out")
+        timeout_exc = TimeoutError("timed out")
         exc = urllib.error.URLError(timeout_exc)
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommTimeoutError)
@@ -386,7 +386,7 @@ class TestTranslateHttpError:
         assert isinstance(result, RommSSLError)
 
     def test_direct_socket_timeout(self, plugin):
-        exc = socket.timeout("timed out")
+        exc = TimeoutError("timed out")
         result = plugin._http_adapter.translate_http_error(exc, "http://romm.local/api/x")
         assert isinstance(result, RommTimeoutError)
 
@@ -422,47 +422,46 @@ class TestRommRequestErrors:
 
     def test_401_raises_auth_error(self, plugin):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError("http://romm.local/api/test", 401, "Unauthorized", {}, None)
-        with patch("urllib.request.urlopen", side_effect=exc):
-            with pytest.raises(RommAuthError) as exc_info:
-                plugin._http_adapter.request("/api/test")
+        exc = urllib.error.HTTPError("http://romm.local/api/test", 401, "Unauthorized", http.client.HTTPMessage(), None)
+        with patch("urllib.request.urlopen", side_effect=exc), pytest.raises(RommAuthError) as exc_info:
+            plugin._http_adapter.request("/api/test")
         assert exc_info.value.status_code == 401
 
     def test_connection_refused_raises_connection_error(self, plugin):
         _setup_plugin(plugin)
-        with patch("urllib.request.urlopen", side_effect=ConnectionRefusedError("refused")):
-            with pytest.raises(RommConnectionError):
-                plugin._http_adapter.request("/api/test")
+        with (
+            patch("urllib.request.urlopen", side_effect=ConnectionRefusedError("refused")),
+            pytest.raises(RommConnectionError),
+        ):
+            plugin._http_adapter.request("/api/test")
 
     def test_timeout_raises_timeout_error(self, plugin):
         _setup_plugin(plugin)
-        with patch("urllib.request.urlopen", side_effect=socket.timeout("timed out")):
-            with pytest.raises(RommTimeoutError):
-                plugin._http_adapter.request("/api/test")
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")), pytest.raises(RommTimeoutError):
+            plugin._http_adapter.request("/api/test")
 
     def test_500_raises_server_error(self, plugin):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError("http://romm.local/api/test", 500, "Internal Server Error", {}, None)
-        with patch("urllib.request.urlopen", side_effect=exc):
-            with pytest.raises(RommServerError) as exc_info:
-                plugin._http_adapter.request("/api/test")
+        exc = urllib.error.HTTPError(
+            "http://romm.local/api/test", 500, "Internal Server Error", http.client.HTTPMessage(), None
+        )
+        with patch("urllib.request.urlopen", side_effect=exc), pytest.raises(RommServerError) as exc_info:
+            plugin._http_adapter.request("/api/test")
         assert exc_info.value.status_code == 500
 
     def test_preserves_cause_chain(self, plugin):
         _setup_plugin(plugin)
         original = ConnectionRefusedError("refused")
-        with patch("urllib.request.urlopen", side_effect=original):
-            with pytest.raises(RommConnectionError) as exc_info:
-                plugin._http_adapter.request("/api/test")
+        with patch("urllib.request.urlopen", side_effect=original), pytest.raises(RommConnectionError) as exc_info:
+            plugin._http_adapter.request("/api/test")
         assert exc_info.value.__cause__ is original
 
     def test_already_translated_error_not_rewrapped(self, plugin):
         """If a nested call already raised RommApiError, don't re-translate."""
         _setup_plugin(plugin)
         original_err = RommAuthError("already translated")
-        with patch("urllib.request.urlopen", side_effect=original_err):
-            with pytest.raises(RommAuthError) as exc_info:
-                plugin._http_adapter.request("/api/test")
+        with patch("urllib.request.urlopen", side_effect=original_err), pytest.raises(RommAuthError) as exc_info:
+            plugin._http_adapter.request("/api/test")
         assert str(exc_info.value) == "already translated"
 
 
@@ -471,16 +470,14 @@ class TestRommJsonRequestErrors:
 
     def test_404_raises_not_found(self, plugin):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError("http://romm.local/api/saves", 404, "Not Found", {}, None)
-        with patch("urllib.request.urlopen", side_effect=exc):
-            with pytest.raises(RommNotFoundError):
-                plugin._http_adapter.post_json("/api/saves", {"data": 1})
+        exc = urllib.error.HTTPError("http://romm.local/api/saves", 404, "Not Found", http.client.HTTPMessage(), None)
+        with patch("urllib.request.urlopen", side_effect=exc), pytest.raises(RommNotFoundError):
+            plugin._http_adapter.post_json("/api/saves", {"data": 1})
 
     def test_timeout_raises_timeout_error(self, plugin):
         _setup_plugin(plugin)
-        with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
-            with pytest.raises(RommTimeoutError):
-                plugin._http_adapter.put_json("/api/saves/1", {"data": 1})
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")), pytest.raises(RommTimeoutError):
+            plugin._http_adapter.put_json("/api/saves/1", {"data": 1})
 
 
 class TestRommDownloadErrors:
@@ -488,11 +485,12 @@ class TestRommDownloadErrors:
 
     def test_403_raises_forbidden(self, plugin, tmp_path):
         _setup_plugin(plugin)
-        exc = urllib.error.HTTPError("http://romm.local/assets/rom.zip", 403, "Forbidden", {}, None)
+        exc = urllib.error.HTTPError(
+            "http://romm.local/assets/rom.zip", 403, "Forbidden", http.client.HTTPMessage(), None
+        )
         dest = str(tmp_path / "rom.zip")
-        with patch("urllib.request.urlopen", side_effect=exc):
-            with pytest.raises(RommForbiddenError):
-                plugin._http_adapter.download("/assets/rom.zip", dest)
+        with patch("urllib.request.urlopen", side_effect=exc), pytest.raises(RommForbiddenError):
+            plugin._http_adapter.download("/assets/rom.zip", dest)
 
 
 class TestRommUploadMultipartErrors:
@@ -502,10 +500,9 @@ class TestRommUploadMultipartErrors:
         _setup_plugin(plugin)
         save_file = tmp_path / "test.srm"
         save_file.write_bytes(b"data")
-        exc = urllib.error.HTTPError("http://romm.local/api/saves", 409, "Conflict", {}, None)
-        with patch("urllib.request.urlopen", side_effect=exc):
-            with pytest.raises(RommConflictError):
-                plugin._http_adapter.upload_multipart("/api/saves", str(save_file))
+        exc = urllib.error.HTTPError("http://romm.local/api/saves", 409, "Conflict", http.client.HTTPMessage(), None)
+        with patch("urllib.request.urlopen", side_effect=exc), pytest.raises(RommConflictError):
+            plugin._http_adapter.upload_multipart("/api/saves", str(save_file))
 
 
 # ============================================================================
@@ -519,13 +516,13 @@ class TestRetryLogic:
     def test_is_retryable_5xx(self, plugin):
         """HTTP 500/502/503 are retryable."""
         for code in (500, 502, 503):
-            exc = urllib.error.HTTPError("url", code, "err", {}, None)
+            exc = urllib.error.HTTPError("url", code, "err", http.client.HTTPMessage(), None)
             assert RommHttpAdapter.is_retryable(exc) is True
 
     def test_is_not_retryable_4xx(self, plugin):
         """HTTP 400/401/404/409 are NOT retryable."""
         for code in (400, 401, 403, 404, 409):
-            exc = urllib.error.HTTPError("url", code, "err", {}, None)
+            exc = urllib.error.HTTPError("url", code, "err", http.client.HTTPMessage(), None)
             assert RommHttpAdapter.is_retryable(exc) is False
 
     def test_is_retryable_connection_errors(self, plugin):
@@ -590,14 +587,13 @@ class TestRetryLogic:
     def test_retry_exhausted_raises(self, plugin):
         """All attempts fail -> raises last exception."""
         fn = MagicMock(side_effect=ConnectionError("refused"))
-        with patch("time.sleep"):
-            with pytest.raises(ConnectionError):
-                plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
+        with patch("time.sleep"), pytest.raises(ConnectionError):
+            plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
         assert fn.call_count == 3
 
     def test_retry_no_retry_on_4xx(self, plugin):
         """4xx errors raise immediately without retry."""
-        err = urllib.error.HTTPError("url", 404, "not found", {}, None)
+        err = urllib.error.HTTPError("url", 404, "not found", http.client.HTTPMessage(), None)
         fn = MagicMock(side_effect=err)
         with pytest.raises(urllib.error.HTTPError):
             plugin._http_adapter.with_retry(fn, max_attempts=3, base_delay=0)
@@ -909,7 +905,7 @@ class TestTranslateUnwrapped:
         assert isinstance(err, RommSSLError)
 
     def test_socket_timeout(self):
-        err = RommHttpAdapter._translate_unwrapped(socket.timeout("timed out"), "/api", "GET")
+        err = RommHttpAdapter._translate_unwrapped(TimeoutError("timed out"), "/api", "GET")
         assert isinstance(err, RommTimeoutError)
 
     def test_timeout_error(self):
@@ -1014,7 +1010,7 @@ class TestDownloadTimeout:
         resp = MagicMock()
         resp.headers = {"Content-Length": "65536"}
         # First read returns data, second raises socket.timeout
-        resp.read.side_effect = [b"x" * 256, socket.timeout("timed out")]
+        resp.read.side_effect = [b"x" * 256, TimeoutError("timed out")]
 
         dest = tmp_path / "rom.zip"
         with pytest.raises(RommTimeoutError, match="stalled"):
@@ -1090,15 +1086,18 @@ class TestDownloadTimeout:
             call_count += 1
             if call_count == 1:
                 return b"x" * 65536
-            raise socket.timeout("no data")
+            raise TimeoutError("no data")
 
         mock_resp.read = _read
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        with patch("urllib.request.urlopen", return_value=mock_resp):
-            with pytest.raises(RommTimeoutError, match="stalled") as exc_info:
-                adapter.download("/roms/big.zip", dest)
+        with (
+            patch("urllib.request.urlopen", return_value=mock_resp),
+            pytest.raises(RommTimeoutError, match="stalled") as exc_info,
+        ):
+            adapter.download("/roms/big.zip", dest)
+        assert exc_info.value.url is not None
         assert "romm.local" in exc_info.value.url
 
     def test_large_download_succeeds_with_slow_chunks(self, tmp_path):
@@ -1119,24 +1118,29 @@ class TestDownloadTimeout:
         with patch("urllib.request.urlopen", return_value=mock_resp):
             adapter.download("/roms/game.zip", dest)
 
-        assert open(dest, "rb").read() == data
+        with open(dest, "rb") as f:
+            assert f.read() == data
 
     def test_connection_timeout_still_works(self, tmp_path):
         """socket.timeout raised by urlopen (connection phase) -> RommTimeoutError."""
         adapter = self._make_adapter()
         dest = str(tmp_path / "rom.zip")
 
-        with patch("urllib.request.urlopen", side_effect=socket.timeout("connection timed out")):
-            with pytest.raises(RommTimeoutError):
-                adapter.download("/roms/game.zip", dest)
+        with (
+            patch("urllib.request.urlopen", side_effect=TimeoutError("connection timed out")),
+            pytest.raises(RommTimeoutError),
+        ):
+            adapter.download("/roms/game.zip", dest)
 
     def test_connection_timeout_via_urlerror(self, tmp_path):
         """URLError-wrapped socket.timeout (real urllib path) -> RommTimeoutError."""
         adapter = self._make_adapter()
         dest = str(tmp_path / "rom.zip")
-        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError(socket.timeout("connection timed out"))):
-            with pytest.raises(RommTimeoutError):
-                adapter.download("/roms/game.zip", dest)
+        with (
+            patch("urllib.request.urlopen", side_effect=urllib.error.URLError(TimeoutError("connection timed out"))),
+            pytest.raises(RommTimeoutError),
+        ):
+            adapter.download("/roms/game.zip", dest)
 
     def test_download_sets_read_timeout_on_socket(self, tmp_path):
         """After urlopen succeeds, settimeout(_READ_TIMEOUT) is called on the raw socket."""
@@ -1184,4 +1188,5 @@ class TestDownloadTimeout:
         with patch("urllib.request.urlopen", return_value=mock_resp):
             adapter.download("/roms/game.zip", dest)  # should not raise
 
-        assert open(dest, "rb").read() == data
+        with open(dest, "rb") as f:
+            assert f.read() == data

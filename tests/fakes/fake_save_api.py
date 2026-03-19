@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 
 class FakeSaveApi:
-    """In-memory fake that satisfies RommApiProtocol save/note methods without HTTP."""
+    """In-memory fake that satisfies RommApiProtocol save/note methods without HTTP.
+
+    Only save, note, and download_save methods are implemented.
+    ROM, firmware, and platform methods raise NotImplementedError — use MagicMock()
+    when those methods are needed.
+    """
 
     def __init__(self) -> None:
         self.saves: dict[int, dict] = {}  # save_id -> save dict
@@ -29,6 +35,62 @@ class FakeSaveApi:
             self._fail_on_next = None
             raise exc
 
+    # ------------------------------------------------------------------
+    # Unimplemented RommApiProtocol methods (use MagicMock for these)
+    # ------------------------------------------------------------------
+
+    def set_version(self, version: str) -> None:
+        raise NotImplementedError
+
+    def heartbeat(self) -> dict:
+        raise NotImplementedError
+
+    def list_platforms(self) -> list[dict]:
+        raise NotImplementedError
+
+    def get_current_user(self) -> dict:
+        raise NotImplementedError
+
+    def get_rom(self, rom_id: int) -> dict:
+        raise NotImplementedError
+
+    def list_roms(self, platform_id: int, limit: int = 50, offset: int = 0) -> dict:
+        raise NotImplementedError
+
+    def list_roms_updated_after(
+        self,
+        platform_id: int,
+        updated_after: str,
+        limit: int = 1,
+        offset: int = 0,
+    ) -> dict:
+        raise NotImplementedError
+
+    def download_rom_content(
+        self,
+        rom_id: int,
+        filename: str,
+        dest: str,
+        progress_callback: Any = None,
+    ) -> None:
+        raise NotImplementedError
+
+    def download_cover(self, cover_url: str, dest: str) -> None:
+        raise NotImplementedError
+
+    def list_firmware(self) -> list[dict]:
+        raise NotImplementedError
+
+    def get_firmware(self, firmware_id: int) -> dict:
+        raise NotImplementedError
+
+    def download_firmware(self, firmware_id: int, filename: str, dest: str) -> None:
+        raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # Implemented save/note methods
+    # ------------------------------------------------------------------
+
     def list_saves(self, rom_id: int) -> list[dict]:
         self.call_log.append(("list_saves", (rom_id,), {}))
         self._check_fail()
@@ -47,7 +109,7 @@ class FakeSaveApi:
         import os
 
         filename = os.path.basename(file_path)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
 
         if save_id and save_id in self.saves:
@@ -82,6 +144,7 @@ class FakeSaveApi:
                 }
                 self.saves[save_id] = entry
 
+        assert save_id is not None
         self.uploaded_files[save_id] = file_path
         return dict(entry)
 

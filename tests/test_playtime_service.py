@@ -3,33 +3,41 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-
-import pytest
-from fakes.fake_save_api import FakeSaveApi
-from services.playtime import PlaytimeService
-
-from lib.errors import RommApiError
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+from unittest.mock import MagicMock
+
+import pytest
+from fakes.fake_save_api import FakeSaveApi
+
+from lib.errors import RommApiError
+from services.playtime import PlaytimeService
 
 
 def _no_retry(fn, *a, **kw):
     return fn(*a, **kw)
 
 
+def _make_retry():
+    retry = MagicMock()
+    retry.with_retry.side_effect = _no_retry
+    retry.is_retryable.return_value = False
+    return retry
+
+
 def make_service(tmp_path=None, fake_api=None, **overrides):
     """Create a PlaytimeService with sensible defaults."""
     fake = fake_api or FakeSaveApi()
-    state = {"playtime": {}}
-    saved = []
+    state: dict[str, Any] = {"playtime": {}}
+    saved: list[bool] = []
 
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         romm_api=fake,
-        with_retry=_no_retry,
-        is_retryable=lambda e: False,
+        retry=_make_retry(),
         save_sync_state=state,
         loop=asyncio.get_event_loop(),
         logger=logging.getLogger("test"),
@@ -57,13 +65,13 @@ class TestRecordSession:
 
     @pytest.mark.asyncio
     async def test_end_records_duration(self):
-        svc, fake, state, saved = make_service()
+        svc, _, state, _ = make_service()
 
         # Start session
         svc.record_session_start(42)
 
         # Backdate session start by 60 seconds
-        start = datetime.now(timezone.utc) - timedelta(seconds=60)
+        start = datetime.now(UTC) - timedelta(seconds=60)
         state["playtime"]["42"]["last_session_start"] = start.isoformat()
 
         result = await svc.record_session_end(42)
@@ -80,17 +88,17 @@ class TestRecordSession:
 
     @pytest.mark.asyncio
     async def test_multiple_sessions_accumulate(self):
-        svc, fake, state, _ = make_service()
+        svc, _, state, _ = make_service()
 
         # Session 1
         svc.record_session_start(42)
-        start = datetime.now(timezone.utc) - timedelta(seconds=30)
+        start = datetime.now(UTC) - timedelta(seconds=30)
         state["playtime"]["42"]["last_session_start"] = start.isoformat()
         await svc.record_session_end(42)
 
         # Session 2
         svc.record_session_start(42)
-        start = datetime.now(timezone.utc) - timedelta(seconds=45)
+        start = datetime.now(UTC) - timedelta(seconds=45)
         state["playtime"]["42"]["last_session_start"] = start.isoformat()
         result2 = await svc.record_session_end(42)
 
@@ -155,7 +163,7 @@ class TestSyncPlaytime:
     @pytest.mark.asyncio
     async def test_merge_takes_max(self):
         """new_total = max(local_total, server_seconds + session_duration)"""
-        svc, fake, state, saved = make_service()
+        svc, fake, state, _ = make_service()
         state["playtime"]["42"] = {
             "total_seconds": 300,
             "session_count": 3,
@@ -259,7 +267,7 @@ class TestPlaytimeNotes:
         assert note["id"] == 2
 
     def test_get_playtime_note_missing(self):
-        svc, fake, _, _ = make_service()
+        svc, _, _, _ = make_service()
         note = svc._get_playtime_note(42)
         assert note is None
 
@@ -327,11 +335,11 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_session_clamps_to_24h(self):
-        svc, fake, state, _ = make_service()
+        svc, _, state, _ = make_service()
         svc.record_session_start(42)
 
         # Backdate by 25 hours
-        start = datetime.now(timezone.utc) - timedelta(hours=25)
+        start = datetime.now(UTC) - timedelta(hours=25)
         state["playtime"]["42"]["last_session_start"] = start.isoformat()
 
         result = await svc.record_session_end(42)

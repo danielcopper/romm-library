@@ -3,13 +3,14 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
-from services.firmware import FirmwareService
-from services.library import LibraryService
-from services.migration import MigrationService
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.firmware import FirmwareService
+from services.library import LibraryService
+from services.migration import MigrationService
 
 
 @pytest.fixture
@@ -63,7 +64,7 @@ def plugin():
         logger=decky.logger,
         save_state=p._save_state,
         emit=decky.emit,
-        firmware_service_bios_files_index=p._firmware_service.bios_files_index,
+        get_bios_files_index=lambda: p._firmware_service.bios_files_index,
     )
     return p
 

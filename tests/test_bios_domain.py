@@ -145,7 +145,7 @@ class TestClassifyFirmwareFile:
             "required": True,
             "cores": {"known_core.so": {"required": True}},
         }
-        is_required, classification, description = classify_firmware_file(reg_entry, "some.bin", "unknown_core.so")
+        is_required, classification, _ = classify_firmware_file(reg_entry, "some.bin", "unknown_core.so")
         assert is_required is False
         assert classification == "optional"
 
@@ -160,7 +160,7 @@ class TestClassifyFirmwareFile:
     def test_no_active_core_toplevel_optional(self):
         """Without active core, top-level required=False yields optional."""
         reg_entry = {"description": "DC Flash", "required": False}
-        is_required, classification, description = classify_firmware_file(reg_entry, "dc_flash.bin", None)
+        is_required, classification, _ = classify_firmware_file(reg_entry, "dc_flash.bin", None)
         assert is_required is False
         assert classification == "optional"
 

@@ -11,7 +11,8 @@ from domain import retrodeck_config
 
 if TYPE_CHECKING:
     import logging
-    from collections.abc import Callable
+
+    from services.protocols import StatePersister
 
 
 class RomRemovalService:
@@ -24,8 +25,8 @@ class RomRemovalService:
         save_sync_state: dict,
         logger: logging.Logger,
         loop: asyncio.AbstractEventLoop,
-        save_state: Callable,
-        save_save_sync_state: Callable,
+        save_state: StatePersister,
+        save_save_sync_state: StatePersister,
     ):
         self._state = state
         self._save_sync_state = save_sync_state
@@ -44,9 +45,7 @@ class RomRemovalService:
         # Must be at least 2 levels deep (e.g. roms/gb/file.zip, not roms/gb/)
         rel = os.path.relpath(resolved, real_base)
         parts = rel.split(os.sep)
-        if len(parts) < 2:
-            return False
-        return True
+        return len(parts) >= 2
 
     def _delete_rom_files(self, installed: dict) -> None:
         """Delete ROM files for an installed entry. Handles both single-file and multi-file ROMs."""

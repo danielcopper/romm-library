@@ -12,12 +12,13 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
+from domain import es_de_config as _es_de_config
+from domain import retrodeck_config as _retrodeck_config
 from services.achievements import AchievementsService
 from services.artwork import ArtworkService
 from services.downloads import DownloadService
@@ -27,7 +28,14 @@ from services.library import LibraryService
 from services.metadata import MetadataService
 from services.migration import MigrationService
 from services.playtime import PlaytimeService
-from services.protocols import RommApiProtocol
+from services.protocols import (
+    DebugLogger,
+    EventEmitter,
+    RommApiProtocol,
+    SavesPathProvider,
+    SettingsPersister,
+    StatePersister,
+)
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.rom_removal import RomRemovalService
 from services.saves import SaveService
@@ -56,16 +64,16 @@ class WiringConfig:
     logger: logging.Logger
     plugin_dir: str
     runtime_dir: str
-    emit: Any
+    emit: EventEmitter
 
     # Callbacks
-    get_saves_path: Callable
-    save_state: Callable
-    save_settings_to_disk: Callable
-    save_metadata_cache: Callable
-    save_firmware_cache: Callable
-    load_firmware_cache: Callable
-    log_debug: Callable
+    get_saves_path: SavesPathProvider
+    save_state: StatePersister
+    save_settings_to_disk: SettingsPersister
+    save_metadata_cache: StatePersister
+    save_firmware_cache: Callable[[dict], None]
+    load_firmware_cache: Callable[[], dict]
+    log_debug: DebugLogger
 
 
 def bootstrap(
@@ -97,6 +105,10 @@ def bootstrap(
     dict with keys ``persistence``, ``http_adapter``, and ``wire_services``
     (a factory callable for deferred service creation).
     """
+    # Configure domain modules with runtime paths/logger (removes decky coupling from domain).
+    _retrodeck_config.configure(user_home=user_home)
+    _es_de_config.configure(plugin_dir=plugin_dir, logger=logger)
+
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
     romm_api = ApiRouter(http_adapter)
@@ -124,8 +136,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     """
     save_sync_service = SaveService(
         romm_api=cfg.romm_api,
-        with_retry=cfg.http_adapter.with_retry,
-        is_retryable=cfg.http_adapter.is_retryable,
+        retry=cfg.http_adapter,
         state=cfg.state,
         save_sync_state=cfg.save_sync_state,
         loop=cfg.loop,
@@ -136,8 +147,7 @@ def wire_services(cfg: WiringConfig) -> dict:
 
     playtime_service = PlaytimeService(
         romm_api=cfg.romm_api,
-        with_retry=cfg.http_adapter.with_retry,
-        is_retryable=cfg.http_adapter.is_retryable,
+        retry=cfg.http_adapter,
         save_sync_state=cfg.save_sync_state,
         loop=cfg.loop,
         logger=cfg.logger,
@@ -154,6 +164,13 @@ def wire_services(cfg: WiringConfig) -> dict:
         log_debug=cfg.log_debug,
     )
 
+    # Mutable container to break the circular dependency:
+    # ArtworkService needs sync_state_ref but LibraryService isn't created yet.
+    # We put a mutable list with one element; after LibraryService is created we
+    # replace that element.  ArtworkService reads _sync_state_box[0]() so it always
+    # gets the live value without any post-construction attribute mutation.
+    _sync_state_box: list = [lambda: None]
+
     artwork_service = ArtworkService(
         romm_api=cfg.romm_api,
         steam_config=cfg.steam_config,
@@ -161,7 +178,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         loop=cfg.loop,
         logger=cfg.logger,
         emit=cfg.emit,
-        sync_state_ref=lambda: None,  # placeholder; overwritten below after LibraryService is created
+        sync_state_ref=lambda: _sync_state_box[0](),
     )
 
     shortcut_removal_service = ShortcutRemovalService(
@@ -192,8 +209,8 @@ def wire_services(cfg: WiringConfig) -> dict:
         artwork=artwork_service,
     )
 
-    # Wire sync_state_ref after sync_service is created (breaks circular dependency)
-    artwork_service._sync_state_ref = lambda: sync_service.sync_state
+    # Resolve the circular dependency: point the box at the real sync_state getter.
+    _sync_state_box[0] = lambda: sync_service.sync_state
 
     download_service = DownloadService(
         romm_api=cfg.romm_api,
@@ -236,7 +253,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         runtime_dir=cfg.runtime_dir,
         save_state=cfg.save_state,
         save_settings_to_disk=cfg.save_settings_to_disk,
-        pending_sync=sync_service.pending_sync,
+        get_pending_sync=lambda: sync_service.pending_sync,
     )
 
     achievements_service = AchievementsService(
@@ -253,7 +270,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         logger=cfg.logger,
         save_state=cfg.save_state,
         emit=cfg.emit,
-        firmware_service_bios_files_index=firmware_service.bios_files_index,
+        get_bios_files_index=lambda: firmware_service.bios_files_index,
     )
 
     game_detail_service = GameDetailService(
@@ -261,10 +278,8 @@ def wire_services(cfg: WiringConfig) -> dict:
         metadata_cache=cfg.metadata_cache,
         save_sync_state=cfg.save_sync_state,
         logger=cfg.logger,
-        check_platform_bios_cached=firmware_service.check_platform_bios_cached,
-        check_platform_bios=firmware_service.check_platform_bios,
-        get_ra_username=achievements_service.get_ra_username,
-        get_progress_cache_entry=achievements_service.get_progress_cache_entry,
+        bios_checker=firmware_service,
+        achievements=achievements_service,
     )
 
     return {

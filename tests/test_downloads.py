@@ -4,18 +4,19 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# conftest.py patches decky before this import; use _make_testable_plugin for test-only attrs
+from conftest import _make_testable_plugin
+
 from adapters.steam_config import SteamConfigAdapter
 from services.downloads import DownloadService
 from services.library import LibraryService
 from services.rom_removal import RomRemovalService
 
-# conftest.py patches decky before this import
-from main import Plugin
-
 
 @pytest.fixture
 def plugin():
-    p = Plugin()
+    p = _make_testable_plugin()
     p.settings = {"romm_url": "", "romm_user": "", "romm_pass": "", "enabled_platforms": {}}
     p._http_adapter = MagicMock()
     p._romm_api = MagicMock()
@@ -479,7 +480,7 @@ class TestPollDownloadRequestsIO:
         assert result[0]["rom_id"] == 42
         assert result[1]["rom_id"] == 99
         # File should be cleared
-        with open(str(requests_path), "r") as f:
+        with open(str(requests_path)) as f:
             remaining = json.load(f)
         assert remaining == []
 
@@ -514,7 +515,7 @@ class TestDownloadRequestPolling:
 
         with patch.object(plugin, "start_download", new_callable=AsyncMock) as mock_start:
             # Call internal logic directly: read file, process, clear
-            with open(requests_path, "r") as f:
+            with open(requests_path) as f:
                 requests = json.load(f)
             with open(requests_path, "w") as f:
                 json.dump([], f)
@@ -535,13 +536,13 @@ class TestDownloadRequestPolling:
         requests_path.write_text(json.dumps([{"rom_id": 1}, {"rom_id": 2}]))
 
         # Simulate the cleanup logic from _poll_download_requests
-        with open(requests_path, "r") as f:
+        with open(requests_path) as f:
             requests = json.load(f)
         with open(requests_path, "w") as f:
             json.dump([], f)
 
         # Verify file was cleared
-        with open(requests_path, "r") as f:
+        with open(requests_path) as f:
             remaining = json.load(f)
         assert remaining == []
         assert len(requests) == 2
@@ -946,9 +947,11 @@ class TestDoDownloadCancelled:
         plugin._download_service._loop = asyncio.get_event_loop()
         plugin._download_service._download_queue[42] = {"rom_id": 42, "status": "downloading", "progress": 0}
 
-        with patch.object(plugin._romm_api, "download_rom_content", side_effect=fake_download_cancel):
-            with pytest.raises(asyncio.CancelledError):
-                await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
+        with (
+            patch.object(plugin._romm_api, "download_rom_content", side_effect=fake_download_cancel),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await plugin._download_service._do_download(42, rom_detail, target_path, "n64")
 
         assert plugin._download_service._download_queue[42]["status"] == "cancelled"
         assert not os.path.exists(target_path)

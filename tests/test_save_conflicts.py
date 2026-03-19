@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from domain.save_conflicts import (
     build_conflict_dict,
@@ -57,36 +57,36 @@ class TestCheckServerChangesFast:
     def test_timestamp_and_size_match_returns_false(self):
         file_state = self._file_state()
         server_save = self._server_save()
-        result = check_server_changes_fast(file_state, server_save, "hash123")
+        result = check_server_changes_fast(file_state, server_save)
         assert result is False
 
     def test_timestamp_matches_size_differs_returns_true(self):
         file_state = self._file_state(size=1024)
         server_save = self._server_save(size=2048)
-        result = check_server_changes_fast(file_state, server_save, "hash123")
+        result = check_server_changes_fast(file_state, server_save)
         assert result is True
 
     def test_timestamp_changed_returns_none(self):
         file_state = self._file_state(updated_at="2026-02-17T06:00:00Z")
         server_save = self._server_save(updated_at="2026-02-17T12:00:00Z")
-        result = check_server_changes_fast(file_state, server_save, "hash123")
+        result = check_server_changes_fast(file_state, server_save)
         assert result is None
 
     def test_no_stored_timestamp_returns_none(self):
         file_state = {"last_sync_server_size": 1024}  # no last_sync_server_updated_at
         server_save = self._server_save()
-        result = check_server_changes_fast(file_state, server_save, "hash123")
+        result = check_server_changes_fast(file_state, server_save)
         assert result is None
 
     def test_empty_file_state_returns_none(self):
-        result = check_server_changes_fast({}, self._server_save(), "hash123")
+        result = check_server_changes_fast({}, self._server_save())
         assert result is None
 
     def test_stored_size_none_timestamp_matches_returns_false(self):
         """If stored_size is None (legacy), size check is skipped when timestamp matches."""
         file_state = {"last_sync_server_updated_at": "2026-02-17T06:00:00Z", "last_sync_server_size": None}
         server_save = self._server_save(size=2048)
-        result = check_server_changes_fast(file_state, server_save, "hash123")
+        result = check_server_changes_fast(file_state, server_save)
         # stored_size is None — condition `stored_size is not None and ...` is False -> unchanged
         assert result is False
 
@@ -94,7 +94,7 @@ class TestCheckServerChangesFast:
         """If server returns no size, size check is skipped."""
         file_state = self._file_state(size=1024)
         server_save = {"updated_at": "2026-02-17T06:00:00Z", "file_size_bytes": None}
-        result = check_server_changes_fast(file_state, server_save, "hash123")
+        result = check_server_changes_fast(file_state, server_save)
         assert result is False
 
 
@@ -230,19 +230,19 @@ class TestResolveConflictByMode:
     def test_newest_wins_local_newer_uploads(self):
         # Server updated at 2026-02-17T06:00:00Z
         # local_mtime is after that
-        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=timezone.utc)
+        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=UTC)
         local_mtime = server_dt.timestamp() + 3600  # 1 hour later
         result = resolve_conflict_by_mode("newest_wins", local_mtime, self._server_save(), tolerance=60)
         assert result == "upload"
 
     def test_newest_wins_server_newer_downloads(self):
-        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=timezone.utc)
+        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=UTC)
         local_mtime = server_dt.timestamp() - 3600  # 1 hour earlier
         result = resolve_conflict_by_mode("newest_wins", local_mtime, self._server_save(), tolerance=60)
         assert result == "download"
 
     def test_newest_wins_within_tolerance_asks(self):
-        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=timezone.utc)
+        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=UTC)
         local_mtime = server_dt.timestamp() + 30  # 30s later, within 60s tolerance
         result = resolve_conflict_by_mode("newest_wins", local_mtime, self._server_save(), tolerance=60)
         assert result == "ask"
@@ -257,7 +257,7 @@ class TestResolveConflictByMode:
 
     def test_unknown_mode_falls_through_to_newest_wins(self):
         """Unrecognised mode falls through to newest_wins logic."""
-        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=timezone.utc)
+        server_dt = datetime(2026, 2, 17, 6, 0, 0, tzinfo=UTC)
         local_mtime = server_dt.timestamp() + 3600
         result = resolve_conflict_by_mode("some_future_mode", local_mtime, self._server_save(), tolerance=60)
         assert result == "upload"
@@ -277,7 +277,7 @@ class TestBuildConflictDict:
         }
 
     def test_full_dict_structure(self):
-        local_mtime = datetime(2026, 2, 17, 5, 0, 0, tzinfo=timezone.utc).timestamp()
+        local_mtime = datetime(2026, 2, 17, 5, 0, 0, tzinfo=UTC).timestamp()
         local_info = {"path": "/saves/pokemon.srm", "mtime": local_mtime, "size": 1024}
         result = build_conflict_dict(42, "pokemon.srm", local_info, "abc123", self._server_save())
 

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol, SteamConfigAdapter
+    from services.protocols import EventEmitter, RommApiProtocol, StatePersister, SteamConfigAdapter
 
 
 class ShortcutRemovalService:
@@ -23,9 +23,9 @@ class ShortcutRemovalService:
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
-        emit: Callable,
-        save_state: Callable,
-        remove_artwork_files: Callable,
+        emit: EventEmitter,
+        save_state: StatePersister,
+        remove_artwork_files: Callable[[str, str | int, dict], None],
     ) -> None:
         self._romm_api = romm_api
         self._steam_config = steam_config

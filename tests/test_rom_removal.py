@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "py_modules"))
 sys.path.insert(0, os.path.dirname(__file__))
 
 # conftest.py patches decky before this import
-from services.rom_removal import RomRemovalService  # noqa: E402
+from services.rom_removal import RomRemovalService
 
 
 @pytest.fixture
@@ -416,9 +416,8 @@ class TestUninstallAllRoms:
         }
 
         # Make deletion fail
-        with patch("shutil.rmtree", side_effect=OSError("perm")):
-            with patch("os.remove", side_effect=OSError("perm")):
-                result = await service.uninstall_all_roms()
+        with patch("shutil.rmtree", side_effect=OSError("perm")), patch("os.remove", side_effect=OSError("perm")):
+            result = await service.uninstall_all_roms()
 
         assert result["success"] is True
         assert "errors" in result["message"]

@@ -123,7 +123,7 @@ class SteamConfigAdapter:
             return None, None
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return vdf.load(f), path
         except Exception as e:
             self._logger.error(f"Failed to parse localconfig.vdf: {e}")
@@ -183,7 +183,7 @@ class SteamConfigAdapter:
         for candidate in candidates:
             cfg_path = os.path.expanduser(candidate)
             try:
-                with open(cfg_path, "r") as f:
+                with open(cfg_path) as f:
                     for line in f:
                         line = line.strip()
                         if line.startswith("input_driver"):
@@ -206,7 +206,7 @@ class SteamConfigAdapter:
             return {"success": False, "message": "No fix needed"}
         cfg_path = check["config_path"]
         try:
-            with open(cfg_path, "r") as f:
+            with open(cfg_path) as f:
                 lines = f.readlines()
             with open(cfg_path, "w") as f:
                 for line in lines:

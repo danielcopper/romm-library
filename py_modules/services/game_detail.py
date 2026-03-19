@@ -14,7 +14,8 @@ from domain.bios import format_bios_status
 
 if TYPE_CHECKING:
     import logging
-    from collections.abc import Callable
+
+    from services.protocols import AchievementsReader, BiosChecker
 
 
 class GameDetailService:
@@ -27,20 +28,15 @@ class GameDetailService:
         metadata_cache: dict,
         save_sync_state: dict,
         logger: logging.Logger,
-        # Callbacks (cross-service, maintains independence)
-        check_platform_bios_cached: Callable,
-        check_platform_bios: Callable,
-        get_ra_username: Callable,
-        get_progress_cache_entry: Callable,
+        bios_checker: BiosChecker,
+        achievements: AchievementsReader,
     ) -> None:
         self._state = state
         self._metadata_cache = metadata_cache
         self._save_sync_state = save_sync_state
         self._logger = logger
-        self._check_platform_bios_cached = check_platform_bios_cached
-        self._check_platform_bios = check_platform_bios
-        self._get_ra_username = get_ra_username
-        self._get_progress_cache_entry = get_progress_cache_entry
+        self._bios_checker = bios_checker
+        self._achievements = achievements
 
     def _resolve_rom_by_app_id(self, app_id: int) -> tuple[int | None, dict | None]:
         """Reverse lookup: find rom_id by app_id in shortcut_registry."""
@@ -83,9 +79,9 @@ class GameDetailService:
 
     def _build_achievement_summary(self, rom_id_str: str, ra_id) -> dict | None:
         """Build cached achievement summary for badge rendering, or None."""
-        if not ra_id or not self._get_ra_username():
+        if not ra_id or not self._achievements.get_ra_username():
             return None
-        cached_progress = self._get_progress_cache_entry(rom_id_str)
+        cached_progress = self._achievements.get_progress_cache_entry(rom_id_str)
         if not cached_progress:
             return None
         return {
@@ -95,7 +91,7 @@ class GameDetailService:
             "cached_at": cached_progress.get("cached_at"),
         }
 
-    async def get_cached_game_detail(self, app_id) -> dict:
+    def get_cached_game_detail(self, app_id) -> dict:
         """Return cached + lightweight data for a game."""
         app_id = int(app_id)
 
@@ -126,7 +122,7 @@ class GameDetailService:
         # BIOS status from firmware cache (no HTTP — cache-only read)
         bios_status = None
         if platform_slug:
-            cached_bios = self._check_platform_bios_cached(platform_slug, rom_filename=rom_file or None)
+            cached_bios = self._bios_checker.check_platform_bios_cached(platform_slug, rom_filename=rom_file or None)
             if cached_bios and cached_bios.get("needs_bios"):
                 bios_status = format_bios_status(cached_bios, platform_slug)
                 bios_status["cached_at"] = cached_bios.get("cached_at")
@@ -166,7 +162,7 @@ class GameDetailService:
         rom_file = self._resolve_rom_file(rom_id_str, entry)
 
         try:
-            bios = await self._check_platform_bios(platform_slug, rom_filename=rom_file or None)
+            bios = await self._bios_checker.check_platform_bios(platform_slug, rom_filename=rom_file or None)
             if bios.get("needs_bios"):
                 return {"bios_status": format_bios_status(bios, platform_slug)}
         except Exception as e:

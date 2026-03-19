@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import ClassVar
 
 from lib.certifi_bundle import ca_bundle as _ca_bundle
 from lib.errors import (
@@ -64,7 +65,7 @@ class RommHttpAdapter:
         root_path = os.path.join(self._plugin_dir, "config.json")
         dev_path = os.path.join(self._plugin_dir, "defaults", "config.json")
         config_path = root_path if os.path.exists(root_path) else dev_path
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             config = json.load(f)
         return config.get("platform_map", {})
 
@@ -109,7 +110,7 @@ class RommHttpAdapter:
 
     # Maps HTTP status codes to (error_class, custom_message_template_or_None).
     # None means use the default ``msg``.
-    _HTTP_STATUS_MAP: dict[int, tuple[type[RommApiError], str | None]] = {
+    _HTTP_STATUS_MAP: ClassVar[dict[int, tuple[type[RommApiError], str | None]]] = {
         400: (RommApiError, "Bad request ({method} {url})"),
         401: (RommAuthError, None),
         403: (RommForbiddenError, None),
@@ -164,9 +165,7 @@ class RommHttpAdapter:
         # Backward compat for non-RomM exceptions
         if isinstance(exc, urllib.error.HTTPError):
             return exc.code >= 500
-        if isinstance(exc, (urllib.error.URLError, ConnectionError, TimeoutError, OSError)):
-            return True
-        return False
+        return isinstance(exc, (urllib.error.URLError, ConnectionError, TimeoutError, OSError))
 
     def with_retry(self, fn, *args, max_attempts: int = 3, base_delay: int = 1, **kwargs):
         """Call fn(*args, **kwargs) with exponential backoff retry.
@@ -221,7 +220,7 @@ class RommHttpAdapter:
             while True:
                 try:
                     chunk = resp.read(block_size)
-                except (socket.timeout, TimeoutError) as exc:
+                except TimeoutError as exc:
                     raise RommTimeoutError(
                         "Download stalled: no data received within read timeout",
                         url=url,
@@ -239,9 +238,9 @@ class RommHttpAdapter:
     def _validate_download(total: int, downloaded: int) -> None:
         """Raise if the download was incomplete or empty."""
         if total > 0 and downloaded != total:
-            raise IOError(f"Download incomplete: got {downloaded} bytes, expected {total}")
+            raise OSError(f"Download incomplete: got {downloaded} bytes, expected {total}")
         if total == 0 and downloaded == 0:
-            raise IOError("Download produced 0 bytes (no Content-Length header and no data received)")
+            raise OSError("Download produced 0 bytes (no Content-Length header and no data received)")
 
     def download(self, path: str, dest: str, progress_callback=None):
         """Download a file from the RomM API to a local path."""

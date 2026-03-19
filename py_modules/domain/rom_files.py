@@ -43,8 +43,8 @@ def build_m3u_content(disc_files: list[str]) -> str:
     return "\n".join(sorted_files) + "\n"
 
 
-def detect_launch_file(files: list[str]) -> str | None:
-    """Pick the best launch file from a list of absolute file paths.
+def detect_launch_file(files: list[tuple[str, int]]) -> str | None:
+    """Pick the best launch file from a list of (path, size) tuples.
 
     Priority order:
     1. M3U playlist
@@ -58,7 +58,8 @@ def detect_launch_file(files: list[str]) -> str | None:
     Parameters
     ----------
     files:
-        Absolute file paths to consider. If empty, returns None.
+        List of (absolute_path, size_in_bytes) tuples to consider.
+        If empty, returns None.
 
     Returns
     -------
@@ -68,34 +69,35 @@ def detect_launch_file(files: list[str]) -> str | None:
     if not files:
         return None
 
+    paths = [path for path, _size in files]
+
     # Prefer M3U > CUE
     for ext in (".m3u", ".cue"):
-        matches = [f for f in files if f.lower().endswith(ext)]
+        matches = [p for p in paths if p.lower().endswith(ext)]
         if matches:
             return matches[0]
 
     # WiiU: loadiine format has .rpx in code/ subdirectory
-    rpx_files = [f for f in files if f.lower().endswith(".rpx")]
+    rpx_files = [p for p in paths if p.lower().endswith(".rpx")]
     if rpx_files:
         return rpx_files[0]
 
     # WiiU disc images
     for ext in (".wud", ".wux", ".wua"):
-        matches = [f for f in files if f.lower().endswith(ext)]
+        matches = [p for p in paths if p.lower().endswith(ext)]
         if matches:
             return matches[0]
 
     # PS3: EBOOT.BIN in PS3_GAME/USRDIR/
-    eboot_files = [f for f in files if f.endswith("EBOOT.BIN")]
+    eboot_files = [p for p in paths if p.endswith("EBOOT.BIN")]
     if eboot_files:
         return eboot_files[0]
 
     # 3DS: prefer .3ds > .cia > .cxi
     for ext in (".3ds", ".cia", ".cxi"):
-        matches = [f for f in files if f.lower().endswith(ext)]
+        matches = [p for p in paths if p.lower().endswith(ext)]
         if matches:
             return matches[0]
 
-    import os
-
-    return max(files, key=os.path.getsize)
+    # Largest file by pre-computed size
+    return max(files, key=lambda t: t[1])[0]

@@ -19,14 +19,12 @@ from typing import TYPE_CHECKING
 
 from domain import retrodeck_config
 from domain.rom_files import build_m3u_content, detect_launch_file, needs_m3u
-
 from lib.errors import error_response
 
 if TYPE_CHECKING:
     import logging
-    from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol
+    from services.protocols import EventEmitter, RommApiProtocol, StatePersister, SystemResolver
 
 _DOWNLOAD_QUEUE_MAX_TERMINAL = 50
 _ZIP_TMP_EXT = ".zip.tmp"
@@ -40,13 +38,13 @@ class DownloadService:
         self,
         *,
         romm_api: RommApiProtocol,
-        resolve_system: Callable,
+        resolve_system: SystemResolver,
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         runtime_dir: str,
-        emit: Callable,
-        save_state: Callable,
+        emit: EventEmitter,
+        save_state: StatePersister,
     ):
         self._romm_api = romm_api
         self._resolve_system = resolve_system
@@ -126,9 +124,9 @@ class DownloadService:
             if not os.path.isdir(system_path):
                 continue
             for filename in os.listdir(system_path):
-                if filename.endswith((_TMP_EXT, _ZIP_TMP_EXT)):
-                    if self._remove_tmp_file(os.path.join(system_path, filename)):
-                        cleaned += 1
+                full_path = os.path.join(system_path, filename)
+                if filename.endswith((_TMP_EXT, _ZIP_TMP_EXT)) and self._remove_tmp_file(full_path):
+                    cleaned += 1
         return cleaned
 
     def _clean_bios_tmp_files(self):
@@ -139,9 +137,8 @@ class DownloadService:
             return cleaned
         for root, _dirs, files in os.walk(bios_base):
             for filename in files:
-                if filename.endswith(_TMP_EXT):
-                    if self._remove_tmp_file(os.path.join(root, filename)):
-                        cleaned += 1
+                if filename.endswith(_TMP_EXT) and self._remove_tmp_file(os.path.join(root, filename)):
+                    cleaned += 1
         return cleaned
 
     def cleanup_leftover_tmp_files(self):
@@ -216,10 +213,7 @@ class DownloadService:
         os.makedirs(roms_dir, exist_ok=True)
         free_space = shutil.disk_usage(roms_dir).free
         buffer = 100 * 1024 * 1024
-        if rom_detail.get("has_multiple_files"):
-            required = file_size * 2 + buffer  # ZIP + extracted + buffer
-        else:
-            required = file_size + buffer
+        required = file_size * 2 + buffer if rom_detail.get("has_multiple_files") else file_size + buffer
         if file_size and free_space < required:
             self._download_in_progress.discard(rom_id)
             free_mb = free_space // (1024 * 1024)
@@ -451,10 +445,15 @@ class DownloadService:
 
     def _collect_and_detect_launch_file(self, extract_dir: str) -> str:
         """Find the best launch file in an extracted multi-file ROM directory."""
-        all_files = []
+        all_files: list[tuple[str, int]] = []
         for root, _dirs, files in os.walk(extract_dir):
             for f in files:
-                all_files.append(os.path.join(root, f))
+                path = os.path.join(root, f)
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = 0
+                all_files.append((path, size))
 
         result = detect_launch_file(all_files)
         return result if result is not None else extract_dir

@@ -5,8 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from adapters.romm.api_router import ApiRouter
 
+from adapters.romm.api_router import ApiRouter
 from lib.errors import RommUnsupportedError
 
 
@@ -202,7 +202,7 @@ class TestGetattr:
 
     def test_unknown_attr_is_romm_api_error(self, router):
         with pytest.raises(RommUnsupportedError) as exc_info:
-            router.nonexistent
+            _ = router.nonexistent
         assert exc_info.value.min_version == "unknown"
 
 

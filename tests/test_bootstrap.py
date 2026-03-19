@@ -4,11 +4,12 @@ import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
+from bootstrap import WiringConfig, bootstrap, wire_services
+
 from adapters.persistence import PersistenceAdapter
 from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
-from bootstrap import WiringConfig, bootstrap, wire_services
 from services.achievements import AchievementsService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService

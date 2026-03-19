@@ -10,12 +10,11 @@ import hashlib
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from domain import es_de_config, retrodeck_config
 from domain.bios import collect_firmware_status
-
 from lib.errors import error_response
 
 if TYPE_CHECKING:
@@ -23,7 +22,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol
+    from services.protocols import RommApiProtocol, StatePersister
 
 _FIRMWARE_CACHE_TTL = 3600  # 1 hour
 
@@ -39,7 +38,7 @@ class FirmwareService:
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         plugin_dir: str,
-        save_state: Callable[[], None],
+        save_state: StatePersister,
         save_firmware_cache: Callable[[dict], None] | None = None,
         load_firmware_cache: Callable[[], dict] | None = None,
     ) -> None:
@@ -74,7 +73,7 @@ class FirmwareService:
         defaults_path = os.path.join(self._plugin_dir, "defaults", "bios_registry.json")
         registry_path = root_path if os.path.exists(root_path) else defaults_path
         try:
-            with open(registry_path, "r") as f:
+            with open(registry_path) as f:
                 self._bios_registry = json.load(f)
             # Build flat reverse index: {filename: {entry_data + "platform": slug}}
             for platform, files in self._bios_registry.get("platforms", {}).items():
@@ -369,7 +368,7 @@ class FirmwareService:
             "file_path": dest,
             "firmware_id": firmware_id,
             "platform_slug": self._firmware_slug(fw.get("file_path", "")),
-            "downloaded_at": datetime.now(timezone.utc).isoformat(),
+            "downloaded_at": datetime.now(UTC).isoformat(),
         }
         self._save_state()
 

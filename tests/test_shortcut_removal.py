@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 # conftest.py patches decky before this import
 import decky
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
+from domain.sync_state import SyncState
 from services.shortcut_removal import ShortcutRemovalService
 
 
@@ -241,7 +243,7 @@ class TestRemovalCleansUpArtwork:
             loop=asyncio.get_event_loop(),
             logger=decky.logger,
             emit=decky.emit,
-            sync_state_ref=lambda: None,
+            sync_state_ref=lambda: SyncState.IDLE,
         )
 
         svc = ShortcutRemovalService(
@@ -280,7 +282,7 @@ class TestRemovalCleansUpArtwork:
             loop=asyncio.get_event_loop(),
             logger=decky.logger,
             emit=decky.emit,
-            sync_state_ref=lambda: None,
+            sync_state_ref=lambda: SyncState.IDLE,
         )
 
         svc = ShortcutRemovalService(

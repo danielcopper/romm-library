@@ -1,13 +1,15 @@
 import asyncio
+import http.client
 from unittest.mock import MagicMock
 
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
-from services.library import LibraryService
-from services.steamgrid import SteamGridService
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.library import LibraryService
+from services.steamgrid import SteamGridService
 
 
 @pytest.fixture
@@ -49,7 +51,7 @@ def plugin():
         runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
         save_state=MagicMock(),
         save_settings_to_disk=MagicMock(),
-        pending_sync=p._sync_service._pending_sync,
+        get_pending_sync=lambda: p._sync_service._pending_sync,
     )
     return p
 
@@ -133,7 +135,9 @@ class TestVerifySgdbApiKey:
 
         with patch(
             "urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError("https://steamgriddb.com", 401, "Unauthorized", {}, None),
+            side_effect=urllib.error.HTTPError(
+                "https://steamgriddb.com", 401, "Unauthorized", http.client.HTTPMessage(), None
+            ),
         ):
             result = await plugin.verify_sgdb_api_key("bad-key")
 
@@ -149,7 +153,9 @@ class TestVerifySgdbApiKey:
 
         with patch(
             "urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError("https://steamgriddb.com", 403, "Forbidden", {}, None),
+            side_effect=urllib.error.HTTPError(
+                "https://steamgriddb.com", 403, "Forbidden", http.client.HTTPMessage(), None
+            ),
         ):
             result = await plugin.verify_sgdb_api_key("bad-key")
 
@@ -251,7 +257,9 @@ class TestVerifySgdbApiKey:
 
         with patch(
             "urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError("https://steamgriddb.com", 500, "Internal Server Error", {}, None),
+            side_effect=urllib.error.HTTPError(
+                "https://steamgriddb.com", 500, "Internal Server Error", http.client.HTTPMessage(), None
+            ),
         ):
             result = await plugin.verify_sgdb_api_key("some-key")
 

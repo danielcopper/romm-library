@@ -5,8 +5,12 @@ import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from adapters.steam_config import SteamConfigAdapter
+
+# conftest.py patches decky before this import; use _make_testable_plugin for test-only attrs
+from conftest import _make_testable_plugin
 from fakes.fake_save_api import FakeSaveApi
+
+from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
 from services.firmware import FirmwareService
 from services.game_detail import GameDetailService
@@ -14,17 +18,21 @@ from services.library import LibraryService
 from services.playtime import PlaytimeService
 from services.saves import SaveService
 
-# conftest.py patches decky before this import
-from main import Plugin
-
 
 def _no_retry(fn, *a, **kw):
     return fn(*a, **kw)
 
 
+def _make_retry():
+    retry = MagicMock()
+    retry.with_retry.side_effect = _no_retry
+    retry.is_retryable.return_value = False
+    return retry
+
+
 @pytest.fixture
 def plugin(tmp_path):
-    p = Plugin()
+    p = _make_testable_plugin()
     p.settings = {
         "romm_url": "http://romm.local",
         "romm_user": "user",
@@ -71,8 +79,7 @@ def plugin(tmp_path):
 
     p._save_sync_service = SaveService(
         romm_api=fake_api,
-        with_retry=_no_retry,
-        is_retryable=lambda e: isinstance(e, ConnectionError),
+        retry=_make_retry(),
         state=p._state,
         save_sync_state=p._save_sync_state,
         loop=asyncio.get_event_loop(),
@@ -84,8 +91,7 @@ def plugin(tmp_path):
 
     p._playtime_service = PlaytimeService(
         romm_api=fake_api,
-        with_retry=_no_retry,
-        is_retryable=lambda e: isinstance(e, ConnectionError),
+        retry=_make_retry(),
         save_sync_state=p._save_sync_state,
         loop=asyncio.get_event_loop(),
         logger=logging.getLogger("test"),
@@ -124,10 +130,8 @@ def game_detail_service(plugin):
         metadata_cache=plugin._metadata_cache,
         save_sync_state=plugin._save_sync_state,
         logger=logging.getLogger("test"),
-        check_platform_bios_cached=plugin._firmware_service.check_platform_bios_cached,
-        check_platform_bios=plugin._firmware_service.check_platform_bios,
-        get_ra_username=plugin._achievements_service.get_ra_username,
-        get_progress_cache_entry=plugin._achievements_service.get_progress_cache_entry,
+        bios_checker=plugin._firmware_service,
+        achievements=plugin._achievements_service,
     )
 
 
@@ -207,7 +211,7 @@ class TestGetCachedGameDetailFound:
             "cached_at": 100,
         }
 
-        result = await game_detail_service.get_cached_game_detail(99999)
+        result = game_detail_service.get_cached_game_detail(99999)
 
         assert result["found"] is True
         assert result["rom_id"] == 123
@@ -230,14 +234,14 @@ class TestGetCachedGameDetailNotFound:
     @pytest.mark.asyncio
     async def test_not_found(self, game_detail_service):
         """Unknown app_id returns found=False."""
-        result = await game_detail_service.get_cached_game_detail(12345)
+        result = game_detail_service.get_cached_game_detail(12345)
         assert result == {"found": False}
 
     @pytest.mark.asyncio
     async def test_not_found_empty_registry(self, plugin, game_detail_service):
         """Empty registry returns found=False."""
         plugin._state["shortcut_registry"] = {}
-        result = await game_detail_service.get_cached_game_detail(1)
+        result = game_detail_service.get_cached_game_detail(1)
         assert result == {"found": False}
 
     @pytest.mark.asyncio
@@ -249,7 +253,7 @@ class TestGetCachedGameDetailNotFound:
             "platform_slug": "nes",
             "platform_name": "NES",
         }
-        result = await game_detail_service.get_cached_game_detail(99999)
+        result = game_detail_service.get_cached_game_detail(99999)
         assert result == {"found": False}
 
 
@@ -265,7 +269,7 @@ class TestGetCachedGameDetailPartialData:
             "platform_slug": "snes",
             "platform_name": "Super Nintendo",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["save_status"] is None
 
@@ -278,7 +282,7 @@ class TestGetCachedGameDetailPartialData:
             "platform_slug": "snes",
             "platform_name": "Super Nintendo",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["metadata"] is None
 
@@ -291,7 +295,7 @@ class TestGetCachedGameDetailPartialData:
             "platform_slug": "snes",
             "platform_name": "Super Nintendo",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert "pending_conflicts" not in result
 
@@ -305,7 +309,7 @@ class TestGetCachedGameDetailPartialData:
             "platform_name": "Super Nintendo",
         }
         plugin._save_sync_state["settings"]["save_sync_enabled"] = False
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["save_sync_enabled"] is False
 
     @pytest.mark.asyncio
@@ -314,7 +318,7 @@ class TestGetCachedGameDetailPartialData:
         plugin._state["shortcut_registry"]["10"] = {
             "app_id": 50000,
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["rom_name"] == ""
         assert result["platform_slug"] == ""
@@ -337,7 +341,7 @@ class TestGetCachedGameDetailInstalled:
             "rom_id": 10,
             "file_path": "/roms/game.sfc",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["installed"] is True
 
     @pytest.mark.asyncio
@@ -349,7 +353,7 @@ class TestGetCachedGameDetailInstalled:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["installed"] is False
 
 
@@ -365,7 +369,7 @@ class TestGetCachedGameDetailConflictFiltering:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert "pending_conflicts" not in result
 
     @pytest.mark.asyncio
@@ -377,7 +381,7 @@ class TestGetCachedGameDetailConflictFiltering:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert "save_sync_enabled" in result
 
@@ -390,7 +394,7 @@ class TestGetCachedGameDetailConflictFiltering:
             "platform_slug": "snes",
             "platform_name": "SNES",
         }
-        result = await game_detail_service.get_cached_game_detail("50000")
+        result = game_detail_service.get_cached_game_detail("50000")
         assert result["found"] is True
         assert result["rom_id"] == 10
 
@@ -413,7 +417,7 @@ class TestGetCachedGameDetailBiosFromCache:
             "platform_name": "GBA",
         }
         # firmware cache is empty by default (None)
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["found"] is True
         assert result["bios_status"] is None
 
@@ -446,13 +450,13 @@ class TestGetCachedGameDetailBiosFromCache:
             patch("domain.es_de_config.get_available_cores", return_value=[]),
             patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
         ):
-            result = await game_detail_service.get_cached_game_detail(50000)
+            result = game_detail_service.get_cached_game_detail(50000)
 
         assert result["found"] is True
         bs = result["bios_status"]
         assert bs is not None
         assert bs["platform_slug"] == "gba"
-        assert bs["cached_at"] == 99.0
+        assert bs["cached_at"] == pytest.approx(99.0)
         assert bs["total"] == 1
         assert bs["downloaded"] == 0
 
@@ -463,7 +467,7 @@ class TestGetCachedGameDetailBiosFromCache:
             "app_id": 50000,
             "name": "Game",
         }
-        result = await game_detail_service.get_cached_game_detail(50000)
+        result = game_detail_service.get_cached_game_detail(50000)
         assert result["bios_status"] is None
 
     @pytest.mark.asyncio
@@ -482,7 +486,7 @@ class TestGetCachedGameDetailBiosFromCache:
         plugin._firmware_service._firmware_cache_epoch = 50.0
 
         with patch("domain.es_de_config.get_active_core", return_value=(None, None)):
-            result = await game_detail_service.get_cached_game_detail(50000)
+            result = game_detail_service.get_cached_game_detail(50000)
 
         assert result["bios_status"] is None
 
@@ -523,7 +527,7 @@ class TestGetBiosStatusFound:
                 "available_cores": [],
             }
         )
-        game_detail_service._check_platform_bios = mock_check
+        game_detail_service._bios_checker.check_platform_bios = mock_check
 
         result = await game_detail_service.get_bios_status(42)
         bs = result["bios_status"]
@@ -545,7 +549,7 @@ class TestGetBiosStatusFound:
             "platform_slug": "gba",
             "platform_name": "GBA",
         }
-        game_detail_service._check_platform_bios = AsyncMock(return_value={"needs_bios": False})
+        game_detail_service._bios_checker.check_platform_bios = AsyncMock(return_value={"needs_bios": False})
 
         result = await game_detail_service.get_bios_status(42)
         assert result["bios_status"] is None
@@ -572,7 +576,7 @@ class TestGetBiosStatusFound:
             captured_args["rom_filename"] = rom_filename
             return {"needs_bios": False}
 
-        game_detail_service._check_platform_bios = capture_check
+        game_detail_service._bios_checker.check_platform_bios = capture_check
 
         await game_detail_service.get_bios_status(42)
         assert captured_args["rom_filename"] == "installed_file.gba"
@@ -822,7 +826,7 @@ class TestAchievementSummaryCachedAt:
             "cached_at": time.time(),
         }
 
-        result = await game_detail_service.get_cached_game_detail(99999)
+        result = game_detail_service.get_cached_game_detail(99999)
 
         assert result["achievement_summary"] is not None
         assert result["achievement_summary"]["earned"] == 5
@@ -856,7 +860,7 @@ class TestAchievementSummaryCachedAt:
             "cached_at": time.time(),
         }
 
-        result = await game_detail_service.get_cached_game_detail(99999)
+        result = game_detail_service.get_cached_game_detail(99999)
 
         # cached_at should be the storage time, not a fresh timestamp
         assert result["achievement_summary"]["cached_at"] == storage_time
@@ -873,7 +877,7 @@ class TestAchievementSummaryCachedAt:
             "ra_id": 555,
         }
 
-        result = await game_detail_service.get_cached_game_detail(99999)
+        result = game_detail_service.get_cached_game_detail(99999)
 
         assert result["achievement_summary"] is None
 
@@ -892,6 +896,6 @@ class TestAchievementSummaryCachedAt:
             "cached_at": time.time(),
         }
 
-        result = await game_detail_service.get_cached_game_detail(99999)
+        result = game_detail_service.get_cached_game_detail(99999)
 
         assert result["achievement_summary"] is None

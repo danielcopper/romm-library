@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # conftest.py patches decky before this import
 import decky
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
+from domain.sync_state import SyncState
 from services.artwork import ArtworkService
 
 
@@ -32,7 +34,7 @@ def artwork_service(state, steam_config):
         loop=asyncio.get_event_loop(),
         logger=decky.logger,
         emit=decky.emit,
-        sync_state_ref=lambda: None,
+        sync_state_ref=lambda: SyncState.IDLE,
     )
     return svc
 
@@ -45,7 +47,7 @@ async def _set_event_loop(artwork_service):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-async def _noop_emit_progress(*args, **kwargs):
+async def _noop_emit_progress(*_args, **_kwargs):
     pass
 
 
@@ -453,9 +455,8 @@ class TestPruneOrphanedStagingArtwork:
         steam_config.grid_dir = lambda: str(grid_dir)
         state["shortcut_registry"] = {}
 
-        with caplog.at_level(logging.WARNING):
-            with patch("os.remove", side_effect=OSError("permission denied")):
-                artwork_service.prune_orphaned_staging_artwork()
+        with caplog.at_level(logging.WARNING), patch("os.remove", side_effect=OSError("permission denied")):
+            artwork_service.prune_orphaned_staging_artwork()
 
         assert staging.exists()
         assert any("Failed to remove orphaned staging artwork" in r.message for r in caplog.records)

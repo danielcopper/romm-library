@@ -12,9 +12,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import asyncio
     import logging
-    from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol
+    from services.protocols import DebugLogger, RommApiProtocol
 
 
 class AchievementsService:
@@ -31,7 +30,7 @@ class AchievementsService:
         state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
-        log_debug: Callable,
+        log_debug: DebugLogger,
     ) -> None:
         self._romm_api = romm_api
         self._state = state

@@ -4,12 +4,13 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
-from services.library import LibraryService
-from services.steamgrid import SteamGridService
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.library import LibraryService
+from services.steamgrid import SteamGridService
 
 
 @pytest.fixture
@@ -51,7 +52,7 @@ def plugin():
         runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
         save_state=MagicMock(),
         save_settings_to_disk=MagicMock(),
-        pending_sync=p._sync_service._pending_sync,
+        get_pending_sync=lambda: p._sync_service._pending_sync,
     )
     return p
 
@@ -516,7 +517,7 @@ class TestAtomicSettingsWrite:
         plugin._save_settings_to_disk()
 
         settings_path = tmp_path / "settings.json"
-        with open(settings_path, "r") as f:
+        with open(settings_path) as f:
             data = json.load(f)
         assert data["romm_url"] == "http://example.com"
         assert data["romm_user"] == "user"
@@ -545,13 +546,12 @@ class TestAtomicSettingsWrite:
 
         # Now simulate a crash during json.dump
         plugin.settings = {"romm_url": "http://corrupted.com"}
-        with patch("json.dump", side_effect=OSError("disk full")):
-            with pytest.raises(OSError):
-                plugin._save_settings_to_disk()
+        with patch("json.dump", side_effect=OSError("disk full")), pytest.raises(OSError):
+            plugin._save_settings_to_disk()
 
         # Original file should still be intact
         settings_path = tmp_path / "settings.json"
-        with open(settings_path, "r") as f:
+        with open(settings_path) as f:
             data = json.load(f)
         assert data["romm_url"] == "http://original.com"
 

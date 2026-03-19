@@ -12,25 +12,26 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
-from enum import Enum
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from domain.shortcut_data import build_registry_entry, build_shortcuts_data
-
+from domain.sync_state import SyncState
 from lib.errors import classify_error
 
 if TYPE_CHECKING:
     import logging
-    from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol, SteamConfigAdapter
-
-
-class SyncState(Enum):
-    IDLE = "idle"
-    RUNNING = "running"
-    CANCELLING = "cancelling"
+    from services.protocols import (
+        ArtworkManager,
+        DebugLogger,
+        EventEmitter,
+        MetadataExtractor,
+        RommApiProtocol,
+        SettingsPersister,
+        StatePersister,
+        SteamConfigAdapter,
+    )
 
 
 _SYNC_CANCELLED = "Sync cancelled"
@@ -50,12 +51,12 @@ class LibraryService:
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         plugin_dir: str,
-        emit: Callable,
-        save_state: Callable,
-        save_settings_to_disk: Callable,
-        log_debug: Callable,
-        metadata_service: Any = None,
-        artwork: Any = None,
+        emit: EventEmitter,
+        save_state: StatePersister,
+        save_settings_to_disk: SettingsPersister,
+        log_debug: DebugLogger,
+        metadata_service: MetadataExtractor | None = None,
+        artwork: ArtworkManager | None = None,
     ) -> None:
         self._romm_api = romm_api
         self._steam_config = steam_config
@@ -571,11 +572,12 @@ class LibraryService:
         self._check_cancelling()
 
         # Cache metadata from sync response
-        for rom in all_roms:
-            rom_id_str = str(rom["id"])
-            self._metadata_cache[rom_id_str] = self._metadata_service.extract_metadata(rom)
-            self._metadata_service.mark_metadata_dirty()
-        self._metadata_service.flush_metadata_if_dirty()
+        if self._metadata_service is not None:
+            for rom in all_roms:
+                rom_id_str = str(rom["id"])
+                self._metadata_cache[rom_id_str] = self._metadata_service.extract_metadata(rom)
+                self._metadata_service.mark_metadata_dirty()
+            self._metadata_service.flush_metadata_if_dirty()
         self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
         return all_roms, shortcuts_data, platforms
@@ -679,7 +681,8 @@ class LibraryService:
             }
             self._loop.create_task(self._emit("sync_progress", self._sync_progress))
         finally:
-            self._metadata_service.flush_metadata_if_dirty()
+            if self._metadata_service is not None:
+                self._metadata_service.flush_metadata_if_dirty()
             self._sync_state = SyncState.IDLE
             if self._sync_progress.get("phase") != "error" and self._sync_progress.get("running"):
                 self._start_safety_timeout()
@@ -700,7 +703,7 @@ class LibraryService:
 
     def _finalize_cover_path(self, grid, cover_path, app_id, rom_id_str):
         """Delegate to ArtworkService callback if available, else use local impl."""
-        if self._artwork.finalize_cover_path is not None:
+        if self._artwork is not None:
             return self._artwork.finalize_cover_path(grid, cover_path, app_id, rom_id_str)
         # Fallback (no-op passthrough when callback not wired)
         return cover_path
@@ -731,7 +734,7 @@ class LibraryService:
             except Exception as e:
                 self._logger.error(f"Failed to set Steam Input config: {e}")
 
-        self._state["last_sync"] = datetime.now(timezone.utc).isoformat()
+        self._state["last_sync"] = datetime.now(UTC).isoformat()
         self._save_state()
         self._pending_sync = {}
 
@@ -792,7 +795,7 @@ class LibraryService:
 
     async def _download_artwork(self, all_roms, progress_step=4, progress_total_steps=6):
         """Delegate artwork download to ArtworkService callback."""
-        if self._artwork.download_artwork is not None:
+        if self._artwork is not None:
             return await self._artwork.download_artwork(
                 all_roms,
                 emit_progress=self._emit_progress,

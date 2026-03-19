@@ -1,15 +1,16 @@
 import asyncio
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from adapters.steam_config import SteamConfigAdapter
-from services.achievements import AchievementsService
-from services.game_detail import GameDetailService
-from services.library import LibraryService
 
 # conftest.py patches decky before this import
 from main import Plugin
+from services.achievements import AchievementsService
+from services.game_detail import GameDetailService
+from services.library import LibraryService
 
 
 @pytest.fixture
@@ -58,16 +59,17 @@ def plugin():
         logger=decky.logger,
         log_debug=p._log_debug,
     )
+    bios_checker = MagicMock()
+    bios_checker.check_platform_bios_cached.return_value = None
+    bios_checker.check_platform_bios = AsyncMock(return_value={"needs_bios": False})
     p._save_sync_state = {"settings": {}, "saves": {}}
     p._game_detail_service = GameDetailService(
         state=p._state,
         metadata_cache=p._metadata_cache,
         save_sync_state=p._save_sync_state,
         logger=decky.logger,
-        check_platform_bios_cached=MagicMock(return_value=None),
-        check_platform_bios=MagicMock(return_value={"needs_bios": False}),
-        get_ra_username=p._achievements_service.get_ra_username,
-        get_progress_cache_entry=p._achievements_service.get_progress_cache_entry,
+        bios_checker=bios_checker,
+        achievements=p._achievements_service,
     )
     return p
 
@@ -152,9 +154,7 @@ def _seed_ra_username_cache(svc, username="RetroPlayer"):
     }
 
 
-# ══════════════════════════════════════════════════════════════
-# get_ra_username (reads from achievements cache, not settings)
-# ══════════════════════════════════════════════════════════════
+# --- get_ra_username (reads from achievements cache, not settings) ---
 
 
 class TestGetRaUsername:
@@ -180,9 +180,7 @@ class TestGetRaUsername:
         assert svc.get_ra_username() == "JohnDoe"
 
 
-# ══════════════════════════════════════════════════════════════
-# _fetch_ra_username
-# ══════════════════════════════════════════════════════════════
+# --- _fetch_ra_username ---
 
 
 class TestFetchRaUsername:
@@ -234,9 +232,7 @@ class TestFetchRaUsername:
         assert result == ""
 
 
-# ══════════════════════════════════════════════════════════════
-# _extract_achievements_from_rom
-# ══════════════════════════════════════════════════════════════
+# --- _extract_achievements_from_rom ---
 
 
 class TestExtractAchievementsFromRom:
@@ -329,9 +325,7 @@ class TestExtractAchievementsFromRom:
         assert result == []
 
 
-# ══════════════════════════════════════════════════════════════
-# _get_achievements_cache_entry / get_progress_cache_entry
-# ══════════════════════════════════════════════════════════════
+# --- _get_achievements_cache_entry / get_progress_cache_entry ---
 
 
 class TestAchievementsCacheEntry:
@@ -439,9 +433,7 @@ class TestProgressCacheEntry:
         assert result["cached_at"] < time.time() - 1700
 
 
-# ══════════════════════════════════════════════════════════════
-# get_achievements
-# ══════════════════════════════════════════════════════════════
+# --- get_achievements ---
 
 
 class TestGetAchievements:
@@ -572,9 +564,7 @@ class TestGetAchievements:
         assert result["achievements"] == []
 
 
-# ══════════════════════════════════════════════════════════════
-# get_achievement_progress
-# ══════════════════════════════════════════════════════════════
+# --- get_achievement_progress ---
 
 
 class TestGetAchievementProgress:
@@ -856,9 +846,7 @@ class TestGetAchievementProgress:
         assert svc._achievements_cache["_ra_user"]["username"] == "NewUser"
 
 
-# ══════════════════════════════════════════════════════════════
-# sync_achievements_after_session
-# ══════════════════════════════════════════════════════════════
+# --- sync_achievements_after_session ---
 
 
 class TestSyncAchievementsAfterSession:
@@ -963,9 +951,7 @@ class TestSyncAchievementsAfterSession:
         assert svc._achievements_cache["42"]["ra_id"] == 9999
 
 
-# ══════════════════════════════════════════════════════════════
-# Integration: get_cached_game_detail with achievements
-# ══════════════════════════════════════════════════════════════
+# --- Integration: get_cached_game_detail with achievements ---
 
 
 class TestGetCachedGameDetailAchievements:
@@ -1002,6 +988,7 @@ class TestGetCachedGameDetailAchievements:
     @pytest.mark.asyncio
     async def test_no_ra_username_returns_none_summary(self, svc, plugin):
         """When ra_id exists but no RA username cached, achievement_summary is None."""
+        _ = svc
         plugin._state["shortcut_registry"]["42"] = {
             "ra_id": 9999,
             "app_id": 100,
@@ -1020,6 +1007,7 @@ class TestGetCachedGameDetailAchievements:
     @pytest.mark.asyncio
     async def test_no_ra_id_returns_none(self, svc, plugin):
         """When no ra_id in registry, ra_id is None and achievement_summary is None."""
+        _ = svc
         plugin._state["shortcut_registry"]["42"] = {
             "app_id": 100,
             "name": "Test Game",
@@ -1080,9 +1068,7 @@ class TestGetCachedGameDetailAchievements:
         assert result["achievement_summary"] is None
 
 
-# ══════════════════════════════════════════════════════════════
-# Integration: sync captures ra_id in shortcuts_data / registry
-# ══════════════════════════════════════════════════════════════
+# --- Integration: sync captures ra_id in shortcuts_data / registry ---
 
 
 class TestSyncCapturesRaId:
