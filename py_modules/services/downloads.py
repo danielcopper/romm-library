@@ -1,7 +1,7 @@
 """DownloadService — ROM download engine.
 
 Handles ROM downloads (single and multi-file), disk space checks,
-download queue management, ROM removal, and partial download cleanup.
+download queue management, and partial download cleanup.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from domain import retrodeck_config
+from domain.rom_files import build_m3u_content, detect_launch_file, needs_m3u
 
 from lib.errors import error_response
 
@@ -33,7 +34,7 @@ _TMP_EXT = ".tmp"
 
 
 class DownloadService:
-    """ROM download engine: downloads, queue management, ROM removal."""
+    """ROM download engine: downloads and queue management."""
 
     def __init__(
         self,
@@ -41,24 +42,20 @@ class DownloadService:
         romm_api: RommApiProtocol,
         resolve_system: Callable,
         state: dict,
-        save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
         logger: logging.Logger,
         runtime_dir: str,
         emit: Callable,
         save_state: Callable,
-        save_save_sync_state: Callable,
     ):
         self._romm_api = romm_api
         self._resolve_system = resolve_system
         self._state = state
-        self._save_sync_state = save_sync_state
         self._loop = loop
         self._logger = logger
         self._runtime_dir = runtime_dir
         self._emit = emit
         self._save_state = save_state
-        self._save_save_sync_state = save_save_sync_state
 
         # Owned state
         self._download_in_progress: set = set()
@@ -290,9 +287,9 @@ class DownloadService:
                     os.replace(old_path, new_path)
                     self._logger.info(f"Renamed URL-encoded dir: {dname} -> {decoded}")
         # Auto-generate M3U if missing and multiple disc files exist
-        self._maybe_generate_m3u(extract_dir, rom_detail)
+        self._maybe_generate_m3u_io(extract_dir, rom_detail)
         # Detect launch file: prefer M3U > CUE > largest file
-        launch_file = self._detect_launch_file(extract_dir)
+        launch_file = self._collect_and_detect_launch_file(extract_dir)
 
         # Register as installed
         installed_entry = {
@@ -325,11 +322,8 @@ class DownloadService:
         self._save_state()
         return target_path
 
-    async def _do_download(self, rom_id, rom_detail, target_path, system):
-        file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
-        rom_name = rom_detail.get("name", file_name)
-        platform_name = rom_detail.get("platform_name", rom_detail.get("platform_slug", ""))
-        has_multiple = rom_detail.get("has_multiple_files", False)
+    def _make_progress_callback(self, rom_id, rom_name, platform_name, file_name):
+        """Build a throttled progress callback for a download."""
         last_emit = [0.0]  # mutable container for closure
         last_log = [0.0]
 
@@ -368,6 +362,15 @@ class DownloadService:
                     },
                 ),
             )
+
+        return progress_callback
+
+    async def _do_download(self, rom_id, rom_detail, target_path, system):
+        file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
+        rom_name = rom_detail.get("name", file_name)
+        platform_name = rom_detail.get("platform_name", rom_detail.get("platform_slug", ""))
+        has_multiple = rom_detail.get("has_multiple_files", False)
+        progress_callback = self._make_progress_callback(rom_id, rom_name, platform_name, file_name)
 
         try:
             self._logger.info(f"Download starting: {rom_name} (rom_id={rom_id}, multi={has_multiple}) -> {target_path}")
@@ -420,10 +423,10 @@ class DownloadService:
             self._download_in_progress.discard(rom_id)
             self._prune_download_queue()
 
-    def _maybe_generate_m3u(self, extract_dir, rom_detail):
+    def _maybe_generate_m3u_io(self, extract_dir: str, rom_detail: dict) -> None:
         """Auto-generate an M3U playlist if none exists and multiple disc files are found."""
         # Check if an M3U already exists (search recursively)
-        for root, _dirs, files in os.walk(extract_dir):
+        for _root, _dirs, files in os.walk(extract_dir):
             for f in files:
                 if f.lower().endswith(".m3u"):
                     return
@@ -437,56 +440,24 @@ class DownloadService:
                     rel_path = os.path.relpath(os.path.join(root, f), extract_dir)
                     disc_files.append(rel_path)
 
-        if len(disc_files) < 2:
+        if not needs_m3u(disc_files):
             return
-
-        # Sort naturally (Disc 1, Disc 2, etc.)
-        disc_files.sort()
 
         rom_name = rom_detail.get("fs_name_no_ext", rom_detail.get("name", "playlist"))
         m3u_path = os.path.join(extract_dir, f"{rom_name}.m3u")
         with open(m3u_path, "w") as f:
-            f.write("\n".join(disc_files) + "\n")
+            f.write(build_m3u_content(disc_files))
         self._logger.info(f"Auto-generated M3U playlist: {m3u_path}")
 
-    def _detect_launch_file(self, extract_dir):
+    def _collect_and_detect_launch_file(self, extract_dir: str) -> str:
         """Find the best launch file in an extracted multi-file ROM directory."""
         all_files = []
         for root, _dirs, files in os.walk(extract_dir):
             for f in files:
                 all_files.append(os.path.join(root, f))
 
-        # Prefer M3U > CUE
-        for ext in (".m3u", ".cue"):
-            matches = [f for f in all_files if f.lower().endswith(ext)]
-            if matches:
-                return matches[0]
-
-        # WiiU: loadiine format has .rpx in code/ subdirectory
-        rpx_files = [f for f in all_files if f.lower().endswith(".rpx")]
-        if rpx_files:
-            return rpx_files[0]
-
-        # WiiU disc images
-        for ext in (".wud", ".wux", ".wua"):
-            matches = [f for f in all_files if f.lower().endswith(ext)]
-            if matches:
-                return matches[0]
-
-        # PS3: EBOOT.BIN in PS3_GAME/USRDIR/
-        eboot_files = [f for f in all_files if f.endswith("EBOOT.BIN")]
-        if eboot_files:
-            return eboot_files[0]
-
-        # 3DS: prefer .3ds > .cia > .cxi
-        for ext in (".3ds", ".cia", ".cxi"):
-            matches = [f for f in all_files if f.lower().endswith(ext)]
-            if matches:
-                return matches[0]
-
-        if all_files:
-            return max(all_files, key=os.path.getsize)
-        return extract_dir
+        result = detect_launch_file(all_files)
+        return result if result is not None else extract_dir
 
     def _cleanup_partial_download(self, target_path, has_multiple, file_name):
         """Clean up partial download files. Each step is independent so one failure doesn't block others."""
@@ -523,102 +494,3 @@ class DownloadService:
 
     def get_installed_rom(self, rom_id):
         return self._state["installed_roms"].get(str(int(rom_id)))
-
-    def _is_safe_rom_path(self, path):
-        """Check that a path is safely contained within the roms base directory."""
-        roms_base = retrodeck_config.get_roms_path()
-        resolved = os.path.realpath(path)
-        real_base = os.path.realpath(roms_base)
-        if not resolved.startswith(real_base + os.sep):
-            return False
-        # Must be at least 2 levels deep (e.g. roms/gb/file.zip, not roms/gb/)
-        rel = os.path.relpath(resolved, real_base)
-        parts = rel.split(os.sep)
-        if len(parts) < 2:
-            return False
-        return True
-
-    def _delete_rom_files(self, installed):
-        """Delete ROM files for an installed entry. Handles both single-file and multi-file ROMs."""
-        rom_dir = installed.get("rom_dir", "")
-        file_path = installed.get("file_path", "")
-
-        if rom_dir and os.path.isdir(rom_dir):
-            if not self._is_safe_rom_path(rom_dir):
-                self._logger.error(f"Refusing to delete path outside roms directory: {rom_dir}")
-                return
-            shutil.rmtree(rom_dir)
-        elif file_path:
-            if not self._is_safe_rom_path(file_path):
-                self._logger.error(f"Refusing to delete path outside roms directory: {file_path}")
-                return
-            if os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-            elif os.path.exists(file_path):
-                os.remove(file_path)
-
-    def _remove_rom_io(self, rom_id_str, installed):
-        """Sync helper for remove_rom — file deletion + state update in executor."""
-        self._delete_rom_files(installed)
-
-        del self._state["installed_roms"][rom_id_str]
-        # Clean save sync state for removed ROM
-        save_changed = False
-        if self._save_sync_state.get("saves", {}).pop(rom_id_str, None) is not None:
-            save_changed = True
-        if self._save_sync_state.get("playtime", {}).pop(rom_id_str, None) is not None:
-            save_changed = True
-        if save_changed:
-            self._save_save_sync_state()
-        self._save_state()
-
-    async def remove_rom(self, rom_id):
-        rom_id_str = str(int(rom_id))
-        installed = self._state["installed_roms"].get(rom_id_str)
-        if not installed:
-            return {"success": False, "message": "ROM not installed"}
-
-        try:
-            await self._loop.run_in_executor(None, self._remove_rom_io, rom_id_str, installed)
-        except Exception as e:
-            self._logger.error(f"Failed to delete ROM files: {e}")
-            return {"success": False, "message": "Failed to delete ROM files"}
-
-        self._download_queue.pop(int(rom_id), None)
-        return {"success": True, "message": "ROM removed"}
-
-    def _uninstall_all_roms_io(self):
-        """Sync helper for uninstall_all_roms — bulk file deletion + state update in executor."""
-        count = 0
-        errors = []
-        successfully_deleted = []
-        for rom_id_str, installed in self._state["installed_roms"].items():
-            try:
-                self._delete_rom_files(installed)
-                count += 1
-                successfully_deleted.append(rom_id_str)
-            except Exception as e:
-                errors.append(f"{rom_id_str}: {e}")
-                self._logger.error(f"Failed to delete ROM {rom_id_str}: {e}")
-
-        for rom_id_str in successfully_deleted:
-            self._state["installed_roms"].pop(rom_id_str, None)
-        # Clean save sync state for all removed ROMs
-        save_changed = False
-        for rom_id_str in successfully_deleted:
-            if self._save_sync_state.get("saves", {}).pop(rom_id_str, None) is not None:
-                save_changed = True
-            if self._save_sync_state.get("playtime", {}).pop(rom_id_str, None) is not None:
-                save_changed = True
-        if save_changed:
-            self._save_save_sync_state()
-        self._save_state()
-        return count, errors
-
-    async def uninstall_all_roms(self):
-        count, errors = await self._loop.run_in_executor(None, self._uninstall_all_roms_io)
-        self._download_queue.clear()
-        msg = f"Removed {count} ROMs"
-        if errors:
-            msg += f" ({len(errors)} errors)"
-        return {"success": True, "message": msg, "removed_count": count}

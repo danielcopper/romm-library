@@ -28,6 +28,7 @@ from services.migration import MigrationService
 from services.playtime import PlaytimeService
 from services.protocols import RommApiProtocol
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
+from services.rom_removal import RomRemovalService
 from services.saves import SaveService
 from services.steamgrid import SteamGridService
 
@@ -171,11 +172,18 @@ def wire_services(cfg: WiringConfig) -> dict:
         romm_api=cfg.romm_api,
         resolve_system=cfg.http_adapter.resolve_system,
         state=cfg.state,
-        save_sync_state=cfg.save_sync_state,
         loop=cfg.loop,
         logger=cfg.logger,
         runtime_dir=cfg.runtime_dir,
         emit=cfg.emit,
+        save_state=cfg.save_state,
+    )
+
+    rom_removal_service = RomRemovalService(
+        state=cfg.state,
+        save_sync_state=cfg.save_sync_state,
+        logger=cfg.logger,
+        loop=cfg.loop,
         save_state=cfg.save_state,
         save_save_sync_state=save_sync_service.save_state,
     )
@@ -237,6 +245,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         "playtime_service": playtime_service,
         "sync_service": sync_service,
         "download_service": download_service,
+        "rom_removal_service": rom_removal_service,
         "firmware_service": firmware_service,
         "sgdb_service": sgdb_service,
         "metadata_service": metadata_service,

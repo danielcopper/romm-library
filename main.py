@@ -155,6 +155,7 @@ class Plugin:
         self._playtime_service = services["playtime_service"]
         self._sync_service = services["sync_service"]
         self._download_service = services["download_service"]
+        self._rom_removal_service = services["rom_removal_service"]
         self._firmware_service = services["firmware_service"]
         self._sgdb_service = services["sgdb_service"]
         self._metadata_service = services["metadata_service"]
@@ -500,10 +501,16 @@ class Plugin:
         return self._download_service.get_installed_rom(rom_id)
 
     async def remove_rom(self, rom_id):
-        return await self._download_service.remove_rom(rom_id)
+        result = await self._rom_removal_service.remove_rom(rom_id)
+        if result.get("success"):
+            self._download_service._download_queue.pop(int(rom_id), None)
+        return result
 
     async def uninstall_all_roms(self):
-        return await self._download_service.uninstall_all_roms()
+        result = await self._rom_removal_service.uninstall_all_roms()
+        if result.get("success"):
+            self._download_service._download_queue.clear()
+        return result
 
     # ── Save Sync / Playtime delegation to services ──────────
 

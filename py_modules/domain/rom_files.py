@@ -1,0 +1,101 @@
+"""ROM file format logic — pure decision/content functions.
+
+These functions contain no I/O. File discovery and writing remain
+in the calling service. The functions operate on file lists passed
+as parameters.
+"""
+
+from __future__ import annotations
+
+_DISC_EXTENSIONS = (".cue", ".chd", ".iso")
+
+
+def needs_m3u(disc_files: list[str]) -> bool:
+    """Return True if an M3U playlist should be generated.
+
+    Decides based on the number of disc files found. An M3U is needed
+    when there are 2 or more disc files (multi-disc ROM).
+
+    Parameters
+    ----------
+    disc_files:
+        Relative paths of disc files (.cue, .chd, .iso) found in the
+        extraction directory. Must already exclude any existing .m3u files.
+    """
+    return len(disc_files) >= 2
+
+
+def build_m3u_content(disc_files: list[str]) -> str:
+    """Build M3U playlist content string for the given disc files.
+
+    Parameters
+    ----------
+    disc_files:
+        Relative paths to disc files, sorted in playlist order.
+
+    Returns
+    -------
+    str
+        M3U playlist content with newline-separated entries and a
+        trailing newline.
+    """
+    sorted_files = sorted(disc_files)
+    return "\n".join(sorted_files) + "\n"
+
+
+def detect_launch_file(files: list[str]) -> str | None:
+    """Pick the best launch file from a list of absolute file paths.
+
+    Priority order:
+    1. M3U playlist
+    2. CUE sheet
+    3. WiiU: .rpx (loadiine format in code/ subdirectory)
+    4. WiiU disc images: .wud, .wux, .wua
+    5. PS3: EBOOT.BIN
+    6. 3DS: .3ds > .cia > .cxi
+    7. Largest file by size
+
+    Parameters
+    ----------
+    files:
+        Absolute file paths to consider. If empty, returns None.
+
+    Returns
+    -------
+    str | None
+        Absolute path to the best launch file, or None if ``files`` is empty.
+    """
+    if not files:
+        return None
+
+    # Prefer M3U > CUE
+    for ext in (".m3u", ".cue"):
+        matches = [f for f in files if f.lower().endswith(ext)]
+        if matches:
+            return matches[0]
+
+    # WiiU: loadiine format has .rpx in code/ subdirectory
+    rpx_files = [f for f in files if f.lower().endswith(".rpx")]
+    if rpx_files:
+        return rpx_files[0]
+
+    # WiiU disc images
+    for ext in (".wud", ".wux", ".wua"):
+        matches = [f for f in files if f.lower().endswith(ext)]
+        if matches:
+            return matches[0]
+
+    # PS3: EBOOT.BIN in PS3_GAME/USRDIR/
+    eboot_files = [f for f in files if f.endswith("EBOOT.BIN")]
+    if eboot_files:
+        return eboot_files[0]
+
+    # 3DS: prefer .3ds > .cia > .cxi
+    for ext in (".3ds", ".cia", ".cxi"):
+        matches = [f for f in files if f.lower().endswith(ext)]
+        if matches:
+            return matches[0]
+
+    import os
+
+    return max(files, key=os.path.getsize)

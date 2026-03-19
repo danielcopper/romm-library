@@ -63,5 +63,6 @@ modules =
     services.metadata
     services.migration
     services.playtime
+    services.rom_removal
     services.saves
     services.steamgrid
