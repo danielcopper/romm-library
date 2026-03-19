@@ -164,17 +164,16 @@ export default definePlugin(() => {
       }
     }
 
-    // Create RomM Steam collections
-    if (data.romm_collection_app_ids && Object.keys(data.romm_collection_app_ids).length > 0) {
-      createOrUpdateRomMCollections(data.romm_collection_app_ids);
-    }
-
-    // Clean stale RomM collections
+    // Create RomM Steam collections + clean stale ones
     (async () => {
       try {
-        if (typeof collectionStore !== "undefined" && data.romm_collection_app_ids) {
+        if (data.romm_collection_app_ids && Object.keys(data.romm_collection_app_ids).length > 0) {
+          await createOrUpdateRomMCollections(data.romm_collection_app_ids);
+        }
+
+        if (typeof collectionStore !== "undefined") {
           const hostname = await getHostname();
-          const activeNames = new Set(Object.keys(data.romm_collection_app_ids));
+          const activeNames = new Set(Object.keys(data.romm_collection_app_ids ?? {}));
           const suffix = ` (${hostname})`;
           const staleRomm = collectionStore.userCollections.filter((c) => {
             if (!c.displayName.startsWith("RomM: [")) return false;
@@ -183,11 +182,12 @@ export default definePlugin(() => {
             return match ? !activeNames.has(match[1]) : false;
           });
           for (const c of staleRomm) {
+            logInfo(`Removing stale RomM collection "${c.displayName}"`);
             await c.Delete();
           }
         }
       } catch (e) {
-        logError(`Failed to clean stale RomM collections: ${e}`);
+        logError(`Failed to manage RomM collections: ${e}`);
       }
     })();
 
