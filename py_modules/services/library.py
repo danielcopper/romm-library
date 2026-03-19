@@ -315,8 +315,10 @@ class LibraryService:
                     "unchanged_count": len(unchanged_ids),
                     "remove_count": len(stale),
                     "disabled_platform_remove_count": disabled_count,
-                    "has_collection_updates": self._compute_collection_diff(collection_memberships)["has_changes"],
                     "collection_diff": self._compute_collection_diff(collection_memberships),
+                    "platform_collection_diff": self._compute_platform_collection_diff(
+                        shortcuts_data, platform_rom_ids, stale
+                    ),
                 },
                 "new_names": [s["name"] for s in new[:10]],
                 "changed_names": [s["name"] for s in changed[:10]],
@@ -519,12 +521,44 @@ class LibraryService:
         previous = set(self._state.get("last_synced_collections", []))
         added = sorted(current - previous)
         removed = sorted(previous - current)
-        unchanged = sorted(current & previous)
         return {
             "has_changes": bool(added or removed or current),
             "added": added,
             "removed": removed,
-            "unchanged_count": len(unchanged),
+        }
+
+    def _compute_platform_collection_diff(
+        self, shortcuts_data: list[dict], platform_rom_ids: set[int], stale: list[int]
+    ) -> dict:
+        """Compare future platform collections against current registry.
+
+        Respects the collection_create_platform_groups toggle — if OFF,
+        only platforms from platform-fetched ROMs get collections.
+        """
+        # Future: platforms that will have collections after sync
+        future_platforms: set[str] = set()
+        for sd in shortcuts_data:
+            rid = sd["rom_id"]
+            if self._should_include_in_platform_collection(rid, platform_rom_ids):
+                pname = sd.get("platform_name", "")
+                if pname:
+                    future_platforms.add(pname)
+
+        # Current: platforms that have collections now (from registry, excluding stale)
+        stale_set = set(stale)
+        current_platforms: set[str] = set()
+        for rid_str, entry in self._state["shortcut_registry"].items():
+            if int(rid_str) not in stale_set:
+                pname = entry.get("platform_name", "")
+                if pname:
+                    current_platforms.add(pname)
+
+        added = sorted(future_platforms - current_platforms)
+        removed = sorted(current_platforms - future_platforms)
+        return {
+            "has_changes": bool(added or removed),
+            "added_count": len(added),
+            "removed_count": len(removed),
         }
 
     def _should_include_in_platform_collection(self, rom_id: int, platform_rom_ids: set[int]) -> bool:

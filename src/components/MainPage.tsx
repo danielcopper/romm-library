@@ -128,7 +128,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
       const result = await syncPreview();
       stopPolling();
       if (result.success) {
-        const hasChanges = result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0 || !!result.summary.has_collection_updates;
+        const hasChanges = result.summary.new_count + result.summary.changed_count + result.summary.remove_count > 0 || !!result.summary.collection_diff?.has_changes || !!result.summary.platform_collection_diff?.has_changes;
         if (skipPreview && hasChanges) {
           // Auto-apply: skip preview UI
           setSyncProgress({ running: true, phase: "applying", message: "Applying changes..." });
@@ -354,7 +354,9 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                 description={(() => {
                   const s = preview.summary;
                   const hasRomChanges = s.new_count + s.changed_count + s.remove_count > 0;
-                  if (!hasRomChanges && !s.has_collection_updates) return "Everything is up to date.";
+                  const hasCollChanges = !!s.collection_diff?.has_changes;
+                  const hasPlatChanges = !!s.platform_collection_diff?.has_changes;
+                  if (!hasRomChanges && !hasCollChanges && !hasPlatChanges) return "Everything is up to date.";
                   const sections: string[] = [];
                   if (hasRomChanges) {
                     const r: string[] = [];
@@ -363,8 +365,15 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                     if (s.remove_count > 0) r.push(`${s.remove_count} removed`);
                     sections.push(`ROMs: ${r.join(", ")}`);
                   }
-                  if (s.collection_diff) {
-                    const d = s.collection_diff;
+                  if (hasPlatChanges) {
+                    const p = s.platform_collection_diff!;
+                    const pp: string[] = [];
+                    if (p.added_count > 0) pp.push(`${p.added_count} added`);
+                    if (p.removed_count > 0) pp.push(`${p.removed_count} removed`);
+                    if (pp.length > 0) sections.push(`Platforms: ${pp.join(", ")}`);
+                  }
+                  if (hasCollChanges) {
+                    const d = s.collection_diff!;
                     const c: string[] = [];
                     if (d.added.length > 0) c.push(`${d.added.length} added`);
                     if (d.removed.length > 0) c.push(`${d.removed.length} removed`);
@@ -374,7 +383,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                 })()}
               />
             </PanelSectionRow>
-            {preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count > 0 || preview.summary.has_collection_updates ? (
+            {preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count > 0 || preview.summary.collection_diff?.has_changes || preview.summary.platform_collection_diff?.has_changes ? (
               <>
                 <PanelSectionRow>
                   <ButtonItem layout="below" onClick={handleApply}>

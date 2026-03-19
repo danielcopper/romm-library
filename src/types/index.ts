@@ -130,12 +130,15 @@ export interface SyncPreviewSummary {
   unchanged_count: number;
   remove_count: number;
   disabled_platform_remove_count: number;
-  has_collection_updates?: boolean;
   collection_diff?: {
     has_changes: boolean;
     added: string[];
     removed: string[];
-    unchanged_count: number;
+  };
+  platform_collection_diff?: {
+    has_changes: boolean;
+    added_count: number;
+    removed_count: number;
   };
 }
 
