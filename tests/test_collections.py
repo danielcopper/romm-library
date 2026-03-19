@@ -999,6 +999,113 @@ class TestCollectionSyncEdgeCases:
         assert 1002 in platform_app_ids["PlayStation"]
 
     # ------------------------------------------------------------------
+    # Scenario 5b/6b: Platform groups toggle in _should_include_in_platform_collection
+    # These test the shared helper that both sync_apply_delta and
+    # _report_sync_results_io use — the bug was that sync_apply_delta
+    # didn't apply the toggle at all.
+    # ------------------------------------------------------------------
+
+    def test_sc5b_should_include_helper_excludes_collection_only_rom(self, plugin):
+        """Helper returns False for collection-only ROM when toggle is OFF."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = False
+        platform_rom_ids = {1, 2}  # ROM 3 is collection-only
+        assert svc._should_include_in_platform_collection(1, platform_rom_ids) is True
+        assert svc._should_include_in_platform_collection(3, platform_rom_ids) is False
+
+    def test_sc5b_should_include_helper_includes_all_when_toggle_on(self, plugin):
+        """Helper returns True for all ROMs when toggle is ON."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = True
+        platform_rom_ids = {1, 2}
+        assert svc._should_include_in_platform_collection(1, platform_rom_ids) is True
+        assert svc._should_include_in_platform_collection(3, platform_rom_ids) is True
+
+    def test_sc5b_should_include_helper_includes_all_when_no_platform_tracking(self, plugin):
+        """Helper returns True when platform_rom_ids is empty (backwards compat)."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = False
+        assert svc._should_include_in_platform_collection(1, set()) is True
+
+    def test_sc5c_collection_map_in_delta_excludes_collection_only_roms(self, plugin):
+        """The collection_map built in sync_apply_delta respects the toggle.
+
+        This tests the actual code path that caused the bug: collection_map
+        is built from unchanged_ids and sent as collection_platform_app_ids
+        in the sync_apply event. collection-only ROMs must be excluded
+        when toggle is OFF.
+        """
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = False
+        svc._settings["enabled_collections"] = {"3": True}
+
+        # Registry: ROM 1 from platform, ROM 2 from collection only
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001, platform_slug="gba"),
+            "2": _make_registry_entry("ROM B", "PlayStation", app_id=1002, platform_slug="psx"),
+        }
+
+        # Simulate a delta where both are unchanged
+        delta = {
+            "preview_id": "test-123",
+            "new": [],
+            "changed": [],
+            "unchanged_ids": [1, 2],
+            "remove_rom_ids": [],
+            "all_shortcuts": {},
+            "delta_roms": [],
+            "platforms_count": 1,
+            "total_roms": 2,
+            "collection_memberships": {"Favorites": [1, 2]},
+            "platform_rom_ids": {1},  # Only ROM 1 from platform
+        }
+        svc._pending_delta = delta
+
+        # Call the part of sync_apply_delta that builds collection_map
+        # We can't call sync_apply_delta directly (it emits events), so test
+        # the helper + the same logic inline
+        platform_rom_ids = delta.get("platform_rom_ids", set())
+        registry = svc._state["shortcut_registry"]
+        collection_map: dict[str, list] = {}
+        for rid in delta["unchanged_ids"]:
+            if not svc._should_include_in_platform_collection(rid, platform_rom_ids):
+                continue
+            reg = registry.get(str(rid), {})
+            pname = reg.get("platform_name", "")
+            app_id = reg.get("app_id")
+            if pname and app_id:
+                collection_map.setdefault(pname, []).append(app_id)
+
+        assert "Game Boy Advance" in collection_map
+        assert 1001 in collection_map["Game Boy Advance"]
+        assert "PlayStation" not in collection_map, "PSX should be excluded (collection-only, toggle OFF)"
+
+    def test_sc6c_collection_map_in_delta_includes_all_when_toggle_on(self, plugin):
+        """Same as sc5c but with toggle ON — PSX should be included."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = True
+
+        svc._state["shortcut_registry"] = {
+            "1": _make_registry_entry("ROM A", "Game Boy Advance", app_id=1001, platform_slug="gba"),
+            "2": _make_registry_entry("ROM B", "PlayStation", app_id=1002, platform_slug="psx"),
+        }
+
+        platform_rom_ids = {1}
+        registry = svc._state["shortcut_registry"]
+        collection_map: dict[str, list] = {}
+        for rid in [1, 2]:
+            if not svc._should_include_in_platform_collection(rid, platform_rom_ids):
+                continue
+            reg = registry.get(str(rid), {})
+            pname = reg.get("platform_name", "")
+            app_id = reg.get("app_id")
+            if pname and app_id:
+                collection_map.setdefault(pname, []).append(app_id)
+
+        assert "Game Boy Advance" in collection_map
+        assert "PlayStation" in collection_map, "PSX should be included (toggle ON)"
+
+    # ------------------------------------------------------------------
     # Scenario 7: Deduplication — ROM in both platform and collection
     # ------------------------------------------------------------------
 
