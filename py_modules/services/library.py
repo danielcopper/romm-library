@@ -85,6 +85,7 @@ class LibraryService:
         }
         self._pending_sync: dict = {}
         self._pending_delta: dict | None = None
+        self._pending_collection_memberships: dict = {}
 
     @property
     def sync_state(self) -> SyncState:
@@ -139,6 +140,85 @@ class LibraryService:
         self._save_settings_to_disk()
         return {"success": True}
 
+    async def get_collections(self):
+        try:
+            user_collections = await self._loop.run_in_executor(None, self._romm_api.list_collections)
+            try:
+                franchise_collections = await self._loop.run_in_executor(
+                    None, self._romm_api.list_virtual_collections, "franchise"
+                )
+            except Exception as e:
+                self._logger.warning(f"Failed to fetch franchise collections, continuing without them: {e}")
+                franchise_collections = []
+        except Exception as e:
+            self._logger.error(f"Failed to fetch collections: {e}")
+            _code, _msg = classify_error(e)
+            return {"success": False, "message": _msg, "error_code": _code}
+
+        enabled = self._settings.get("enabled_collections", {})
+        result = []
+        for c in user_collections:
+            cid = str(c["id"])
+            result.append(
+                {
+                    "id": cid,
+                    "name": c.get("name", ""),
+                    "rom_count": c.get("rom_count", len(c.get("rom_ids", []))),
+                    "sync_enabled": enabled.get(cid, False),
+                    "category": "favorites" if c.get("is_favorite") else "user",
+                }
+            )
+        for c in franchise_collections:
+            cid = str(c["id"])
+            result.append(
+                {
+                    "id": cid,
+                    "name": c.get("name", ""),
+                    "rom_count": c.get("rom_count", len(c.get("rom_ids", []))),
+                    "sync_enabled": enabled.get(cid, False),
+                    "category": "franchise",
+                }
+            )
+
+        _category_order = {"favorites": 0, "user": 1, "franchise": 2}
+        result.sort(key=lambda x: (_category_order.get(x["category"], 99), x["name"].lower()))
+        return {"success": True, "collections": result}
+
+    def save_collection_sync(self, collection_id, enabled):
+        self._settings.setdefault("enabled_collections", {})[str(collection_id)] = bool(enabled)
+        self._save_settings_to_disk()
+        return {"success": True}
+
+    async def set_all_collections_sync(self, enabled, category=None):
+        enabled = bool(enabled)
+        try:
+            user_collections = await self._loop.run_in_executor(None, self._romm_api.list_collections)
+            try:
+                franchise_collections = await self._loop.run_in_executor(
+                    None, self._romm_api.list_virtual_collections, "franchise"
+                )
+            except Exception as e:
+                self._logger.warning(f"Failed to fetch franchise collections, continuing without them: {e}")
+                franchise_collections = []
+        except Exception as e:
+            self._logger.error(f"Failed to fetch collections: {e}")
+            _code, _msg = classify_error(e)
+            return {"success": False, "message": _msg, "error_code": _code}
+
+        all_collections = []
+        for c in user_collections:
+            cat = "favorites" if c.get("is_favorite") else "user"
+            all_collections.append((str(c["id"]), cat))
+        for c in franchise_collections:
+            all_collections.append((str(c["id"]), "franchise"))
+
+        ec = self._settings.setdefault("enabled_collections", {})
+        for cid, cat in all_collections:
+            if category is None or cat == category:
+                ec[cid] = enabled
+        self._save_settings_to_disk()
+        return {"success": True}
+
     async def set_all_platforms_sync(self, enabled):
         enabled = bool(enabled)
         try:
@@ -187,7 +267,7 @@ class LibraryService:
         self._sync_state = SyncState.RUNNING
         self._sync_last_heartbeat = time.monotonic()
         try:
-            all_roms, shortcuts_data, platforms = await self._fetch_and_prepare()
+            all_roms, shortcuts_data, platforms, collection_memberships = await self._fetch_and_prepare()
             platform_names = {p.get("name") for p in platforms}
             new, changed, unchanged_ids, stale, disabled_count = self._classify_roms(shortcuts_data, platform_names)
 
@@ -207,6 +287,7 @@ class LibraryService:
                 "delta_roms": delta_roms,
                 "platforms_count": len(platforms),
                 "total_roms": len(all_roms),
+                "collection_memberships": collection_memberships,
             }
 
             await self._emit_progress("done", message="Preview ready", running=False)
@@ -290,6 +371,7 @@ class LibraryService:
 
         # Populate _pending_sync for report_sync_results and get_artwork_base64
         self._pending_sync = delta["all_shortcuts"]
+        self._pending_collection_memberships = delta.get("collection_memberships", {})
 
         # Update sync_stats
         self._state["sync_stats"] = {
@@ -318,6 +400,7 @@ class LibraryService:
                 "changed_shortcuts": delta["changed"],
                 "remove_rom_ids": delta["remove_rom_ids"],
                 "collection_platform_app_ids": collection_map,
+                "romm_collection_memberships": delta.get("collection_memberships", {}),
                 "next_step": next_step,
                 "total_steps": total_steps,
             },
@@ -534,7 +617,7 @@ class LibraryService:
 
     async def _fetch_and_prepare(self):
         """Fetch platforms + ROMs, prepare shortcut data.
-        Returns (all_roms, shortcuts_data, platforms) or raises on cancel/error.
+        Returns (all_roms, shortcuts_data, platforms, collection_memberships) or raises on cancel/error.
         Artwork download is deferred to the apply phase.
         Uses updated_after on subsequent syncs to skip unchanged platforms.
         Emits sync_progress events throughout."""
@@ -580,14 +663,37 @@ class LibraryService:
             self._metadata_service.flush_metadata_if_dirty()
         self._log_debug(f"Metadata cached for {len(all_roms)} ROMs")
 
-        return all_roms, shortcuts_data, platforms
+        # Phase 4: Fetch enabled collection memberships
+        collection_memberships: dict[str, list[int]] = {}
+        enabled_collections = self._settings.get("enabled_collections", {})
+        if any(enabled_collections.values()):
+            try:
+                user_collections = await self._loop.run_in_executor(None, self._romm_api.list_collections)
+                franchise_collections: list = []
+                try:
+                    franchise_collections = await self._loop.run_in_executor(
+                        None, self._romm_api.list_virtual_collections, "franchise"
+                    )
+                except Exception as e:
+                    self._logger.warning(f"Failed to fetch franchise collections: {e}")
+
+                for c in user_collections + franchise_collections:
+                    cid = str(c.get("id", ""))
+                    if enabled_collections.get(cid, False):
+                        rom_ids = c.get("rom_ids", [])
+                        if rom_ids:
+                            collection_memberships[c.get("name", cid)] = rom_ids
+            except Exception as e:
+                self._logger.warning(f"Failed to fetch collections for sync: {e}")
+
+        return all_roms, shortcuts_data, platforms, collection_memberships
 
     # ── Full sync ────────────────────────────────────────────
 
     async def _do_sync(self):
         try:
             try:
-                all_roms, shortcuts_data, platforms = await self._fetch_and_prepare()
+                all_roms, shortcuts_data, platforms, collection_memberships = await self._fetch_and_prepare()
             except asyncio.CancelledError:
                 await self._finish_sync(_SYNC_CANCELLED)
                 raise
@@ -655,12 +761,14 @@ class LibraryService:
 
             # Store pending data for report_sync_results to reference
             self._pending_sync = {sd["rom_id"]: sd for sd in shortcuts_data}
+            self._pending_collection_memberships = collection_memberships
 
             await self._emit(
                 "sync_apply",
                 {
                     "shortcuts": shortcuts_data,
                     "remove_rom_ids": stale_rom_ids,
+                    "romm_collection_memberships": collection_memberships,
                     "next_step": next_step,
                     "total_steps": full_total_steps,
                 },
@@ -736,19 +844,35 @@ class LibraryService:
 
         self._state["last_sync"] = datetime.now(UTC).isoformat()
         self._save_state()
+
+        # Capture pending collection memberships before clearing
+        pending_collection_memberships = self._pending_collection_memberships
+        self._pending_collection_memberships = {}
         self._pending_sync = {}
 
         # Rebuild platform_app_ids from registry
+        registry = self._state["shortcut_registry"]
         platform_app_ids = {}
-        for entry in self._state["shortcut_registry"].values():
+        for entry in registry.values():
             pname = entry.get("platform_name", "Unknown")
             platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
 
-        return platform_app_ids
+        # Build RomM collection app_ids from collection_memberships
+        romm_collection_app_ids: dict[str, list] = {}
+        for coll_name, rom_ids in pending_collection_memberships.items():
+            app_ids = []
+            for rid in rom_ids:
+                entry = registry.get(str(rid))
+                if entry and "app_id" in entry:
+                    app_ids.append(entry["app_id"])
+            if app_ids:
+                romm_collection_app_ids[coll_name] = app_ids
+
+        return platform_app_ids, romm_collection_app_ids
 
     async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
         """Called by frontend after applying shortcuts via SteamClient."""
-        platform_app_ids = await self._loop.run_in_executor(
+        platform_app_ids, romm_collection_app_ids = await self._loop.run_in_executor(
             None, self._report_sync_results_io, rom_id_to_app_id, removed_rom_ids
         )
 
@@ -760,6 +884,7 @@ class LibraryService:
                 "sync_complete",
                 {
                     "platform_app_ids": platform_app_ids,
+                    "romm_collection_app_ids": romm_collection_app_ids,
                     "total_games": processed,
                     "cancelled": True,
                 },
@@ -777,6 +902,7 @@ class LibraryService:
                 "sync_complete",
                 {
                     "platform_app_ids": platform_app_ids,
+                    "romm_collection_app_ids": romm_collection_app_ids,
                     "total_games": total,
                 },
             )

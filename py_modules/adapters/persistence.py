@@ -22,6 +22,7 @@ DEFAULT_SETTINGS: dict = {
     "romm_user": "",
     "romm_pass": "",
     "enabled_platforms": {},
+    "enabled_collections": {},
     "steam_input_mode": "default",
     "steamgriddb_api_key": "",
     "romm_allow_insecure_ssl": False,

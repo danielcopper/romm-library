@@ -30,7 +30,7 @@ import { requestSyncCancel } from "../utils/syncManager";
 import type { SyncProgress, SyncStats, SyncPreview, DownloadItem } from "../types";
 import type { MigrationStatus } from "../api/backend";
 
-type Page = "settings" | "platforms" | "data" | "downloads";
+type Page = "settings" | "library" | "data" | "downloads";
 
 interface MainPageProps {
   onNavigate: (page: Page) => void;
@@ -495,8 +495,8 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem layout="below" onClick={() => onNavigate("platforms")}>
-            Platforms
+          <ButtonItem layout="below" onClick={() => onNavigate("library")}>
+            Library
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>

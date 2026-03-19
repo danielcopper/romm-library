@@ -53,13 +53,19 @@ class ApiRouter:
         else:
             self._active = self._base
 
-    # -- Explicit delegation of all 18 RommApiProtocol methods --
+    # -- Explicit delegation of all 20 RommApiProtocol methods --
 
     def heartbeat(self) -> dict:
         return self._active.heartbeat()
 
     def list_platforms(self) -> list[dict]:
         return self._active.list_platforms()
+
+    def list_collections(self) -> list[dict]:
+        return self._active.list_collections()
+
+    def list_virtual_collections(self, collection_type: str) -> list[dict]:
+        return self._active.list_virtual_collections(collection_type)
 
     def get_current_user(self) -> dict:
         return self._active.get_current_user()

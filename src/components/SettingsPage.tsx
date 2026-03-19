@@ -104,11 +104,11 @@ const conflictModeOptions = [
   { data: "always_download" as ConflictMode, label: "Always Download" },
 ];
 
-interface ConnectionSettingsProps {
+interface SettingsPageProps {
   onBack: () => void;
 }
 
-export const ConnectionSettings: FC<ConnectionSettingsProps> = ({ onBack }) => {
+export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
   // Connection state
   const [url, setUrl] = useState("");
   const [username, setUsername] = useState("");

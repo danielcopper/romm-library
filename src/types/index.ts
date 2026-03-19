@@ -82,6 +82,14 @@ export interface PlatformSyncSetting {
   sync_enabled: boolean;
 }
 
+export interface CollectionSyncSetting {
+  id: string;
+  name: string;
+  rom_count: number;
+  sync_enabled: boolean;
+  category: "favorites" | "user" | "franchise";
+}
+
 export interface SyncProgress {
   running: boolean;
   phase?: string;
@@ -141,6 +149,7 @@ export interface SyncApplyData {
   changed_shortcuts?: SyncChangedItem[];
   remove_rom_ids: number[];
   collection_platform_app_ids?: Record<string, number[]>;
+  romm_collection_memberships?: Record<string, number[]>;
   next_step?: number;
   total_steps?: number;
 }

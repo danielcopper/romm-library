@@ -7,8 +7,8 @@ import {
 import { useState, FC } from "react";
 import { FaGamepad } from "react-icons/fa";
 import { MainPage } from "./components/MainPage";
-import { ConnectionSettings } from "./components/ConnectionSettings";
-import { PlatformSync } from "./components/PlatformSync";
+import { SettingsPage } from "./components/SettingsPage";
+import { LibraryPage } from "./components/LibraryPage";
 import { DangerZone } from "./components/DangerZone";
 import { DownloadQueue } from "./components/DownloadQueue";
 import { initSyncManager } from "./utils/syncManager";
@@ -22,7 +22,7 @@ import { setMigrationStatus } from "./utils/migrationStore";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
 
-type Page = "main" | "settings" | "platforms" | "data" | "downloads";
+type Page = "main" | "settings" | "library" | "data" | "downloads";
 
 // Module-level page state survives QAM remounts (e.g. after modal close)
 let currentPage: Page = "main";
@@ -33,9 +33,9 @@ const QAMPanel: FC = () => {
 
   switch (page) {
     case "settings":
-      return <ConnectionSettings onBack={() => setPage("main")} />;
-    case "platforms":
-      return <PlatformSync onBack={() => setPage("main")} />;
+      return <SettingsPage onBack={() => setPage("main")} />;
+    case "library":
+      return <LibraryPage onBack={() => setPage("main")} />;
     case "data":
       return <DangerZone onBack={() => setPage("main")} />;
     case "downloads":
@@ -144,6 +144,7 @@ export default definePlugin(() => {
 
   const onSyncComplete = (data: {
     platform_app_ids: Record<string, number[]>;
+    romm_collection_app_ids?: Record<string, number[]>;
     total_games: number;
     cancelled?: boolean;
   }) => {
@@ -177,7 +178,7 @@ export default definePlugin(() => {
   };
 
   const syncCompleteListener = addEventListener<
-    [{ platform_app_ids: Record<string, number[]>; total_games: number }]
+    [{ platform_app_ids: Record<string, number[]>; romm_collection_app_ids?: Record<string, number[]>; total_games: number }]
   >("sync_complete", onSyncComplete);
 
   const syncApplyListener = initSyncManager();

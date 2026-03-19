@@ -438,6 +438,15 @@ class Plugin:
     async def set_all_platforms_sync(self, enabled):
         return await self._sync_service.set_all_platforms_sync(enabled)
 
+    async def get_collections(self):
+        return await self._sync_service.get_collections()
+
+    async def save_collection_sync(self, collection_id, enabled):
+        return self._sync_service.save_collection_sync(collection_id, enabled)
+
+    async def set_all_collections_sync(self, enabled, category=None):
+        return await self._sync_service.set_all_collections_sync(enabled, category)
+
     async def start_sync(self):
         return self._sync_service.start_sync()
 

@@ -32,6 +32,14 @@ class RommApiBase:
     def list_platforms(self) -> list[dict]:
         return self._client.request("/api/platforms")
 
+    def list_collections(self) -> list[dict]:
+        result = self._client.request("/api/collections")
+        return result if isinstance(result, list) else []
+
+    def list_virtual_collections(self, collection_type: str) -> list[dict]:
+        result = self._client.request(f"/api/collections/virtual?type={collection_type}")
+        return result if isinstance(result, list) else []
+
     def get_current_user(self) -> dict:
         return self._client.request("/api/users/me")
 

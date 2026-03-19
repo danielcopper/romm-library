@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, CollectionSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress } from "../types";
 
 export interface BackendResult {
   success: boolean;
@@ -72,6 +72,9 @@ export const removeRom = callable<[number], BackendResult>("remove_rom");
 export const getPlatforms = callable<[], { success: boolean; platforms: PlatformSyncSetting[] }>("get_platforms");
 export const savePlatformSync = callable<[number, boolean], { success: boolean; message: string }>("save_platform_sync");
 export const setAllPlatformsSync = callable<[boolean], { success: boolean; message: string }>("set_all_platforms_sync");
+export const getCollections = callable<[], { success: boolean; collections: CollectionSyncSetting[]; message?: string; error_code?: RommErrorCode }>("get_collections");
+export const saveCollectionSync = callable<[string, boolean], { success: boolean }>("save_collection_sync");
+export const setAllCollectionsSync = callable<[boolean, string | null], { success: boolean }>("set_all_collections_sync");
 export const getRegistryPlatforms = callable<[], { platforms: RegistryPlatform[] }>("get_registry_platforms");
 export const removePlatformShortcuts = callable<[string], { success: boolean; app_ids: number[]; rom_ids: (string | number)[]; platform_name: string }>("remove_platform_shortcuts");
 export const removeAllShortcuts = callable<[], { success: boolean; message: string; removed_count: number; app_ids: number[]; rom_ids: (string | number)[] }>("remove_all_shortcuts");

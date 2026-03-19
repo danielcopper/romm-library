@@ -14,24 +14,33 @@ import {
   getPlatforms,
   savePlatformSync,
   setAllPlatformsSync,
+  getCollections,
+  saveCollectionSync,
+  setAllCollectionsSync,
   getFirmwareStatus,
   downloadAllFirmware,
   downloadRequiredFirmware,
   setSystemCore,
 } from "../api/backend";
-import type { PlatformSyncSetting, FirmwarePlatformExt } from "../types";
+import type { PlatformSyncSetting, CollectionSyncSetting, FirmwarePlatformExt } from "../types";
 
-interface PlatformSyncProps {
+interface LibraryPageProps {
   onBack: () => void;
 }
 
-export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<"sync" | "bios">("sync");
+export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
+  const [activeTab, setActiveTab] = useState<"platforms" | "collections" | "bios">("platforms");
 
-  // --- Sync tab state ---
+  // --- Platforms tab state ---
   const [syncPlatforms, setSyncPlatforms] = useState<PlatformSyncSetting[]>([]);
   const [syncLoading, setSyncLoading] = useState(true);
   const [syncError, setSyncError] = useState(false);
+
+  // --- Collections tab state ---
+  const [collections, setCollections] = useState<CollectionSyncSetting[]>([]);
+  const [collectionsLoading, setCollectionsLoading] = useState(true);
+  const [collectionsError, setCollectionsError] = useState(false);
+  const collectionsLoaded = useRef(false);
 
   // --- BIOS tab state ---
   const [biosPlatforms, setBiosPlatforms] = useState<FirmwarePlatformExt[]>([]);
@@ -56,6 +65,23 @@ export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
       .catch(() => setSyncError(true))
       .finally(() => setSyncLoading(false));
   }, []);
+
+  // Load collections data lazily on first switch to collections tab
+  useEffect(() => {
+    if (activeTab === "collections" && !collectionsLoaded.current) {
+      collectionsLoaded.current = true;
+      getCollections()
+        .then((result) => {
+          if (result.success) {
+            setCollections(result.collections);
+          } else {
+            setCollectionsError(true);
+          }
+        })
+        .catch(() => setCollectionsError(true))
+        .finally(() => setCollectionsLoading(false));
+    }
+  }, [activeTab]);
 
   // Load BIOS data lazily on first switch to BIOS tab
   useEffect(() => {
@@ -82,7 +108,7 @@ export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
     setBiosLoading(false);
   };
 
-  // --- Sync tab handlers ---
+  // --- Platforms tab handlers ---
   const handleToggle = async (id: number, enabled: boolean) => {
     setSyncPlatforms((prev) =>
       prev.map((p) => (p.id === id ? { ...p, sync_enabled: enabled } : p))
@@ -103,6 +129,30 @@ export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
       await setAllPlatformsSync(enabled);
     } catch {
       setSyncPlatforms(previous);
+    }
+  };
+
+  // --- Collections tab handlers ---
+  const handleCollectionToggle = async (id: string, enabled: boolean) => {
+    setCollections((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, sync_enabled: enabled } : c))
+    );
+    try {
+      await saveCollectionSync(id, enabled);
+    } catch {
+      setCollections((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, sync_enabled: !enabled } : c))
+      );
+    }
+  };
+
+  const handleSetAllCollections = async (enabled: boolean) => {
+    const previous = collections.map((c) => ({ ...c }));
+    setCollections((prev) => prev.map((c) => ({ ...c, sync_enabled: enabled })));
+    try {
+      await setAllCollectionsSync(enabled, null);
+    } catch {
+      setCollections(previous);
     }
   };
 
@@ -328,10 +378,16 @@ export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
         style={{ display: "flex", gap: "4px", padding: "0 16px 12px" }}
       >
         <DialogButton
-          style={{ flex: 1, minWidth: 0, padding: "10px 0", opacity: activeTab === "sync" ? 1 : 0.5, borderBottom: activeTab === "sync" ? "2px solid #1a9fff" : "2px solid transparent" }}
-          onClick={() => setActiveTab("sync")}
+          style={{ flex: 1, minWidth: 0, padding: "10px 0", opacity: activeTab === "platforms" ? 1 : 0.5, borderBottom: activeTab === "platforms" ? "2px solid #1a9fff" : "2px solid transparent" }}
+          onClick={() => setActiveTab("platforms")}
         >
-          Sync
+          Platforms
+        </DialogButton>
+        <DialogButton
+          style={{ flex: 1, minWidth: 0, padding: "10px 0", opacity: activeTab === "collections" ? 1 : 0.5, borderBottom: activeTab === "collections" ? "2px solid #1a9fff" : "2px solid transparent" }}
+          onClick={() => setActiveTab("collections")}
+        >
+          Collections
         </DialogButton>
         <DialogButton
           style={{ flex: 1, minWidth: 0, padding: "10px 0", opacity: activeTab === "bios" ? 1 : 0.5, borderBottom: activeTab === "bios" ? "2px solid #1a9fff" : "2px solid transparent" }}
@@ -341,7 +397,7 @@ export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
         </DialogButton>
       </Focusable>
 
-      {activeTab === "sync" && (
+      {activeTab === "platforms" && (
         <PanelSection title="Platforms">
           {syncLoading ? (
             <PanelSectionRow>
@@ -380,6 +436,88 @@ export const PlatformSync: FC<PlatformSyncProps> = ({ onBack }) => {
             </>
           )}
         </PanelSection>
+      )}
+
+      {activeTab === "collections" && (
+        <>
+          {collectionsLoading ? (
+            <PanelSection title="Collections">
+              <PanelSectionRow><Spinner /></PanelSectionRow>
+            </PanelSection>
+          ) : collectionsError ? (
+            <PanelSection title="Collections">
+              <PanelSectionRow>
+                <Field label="Failed to load collections" description="Check your connection and try again" />
+              </PanelSectionRow>
+            </PanelSection>
+          ) : collections.length === 0 ? (
+            <PanelSection title="Collections">
+              <PanelSectionRow>
+                <Field label="No collections found" description="Create collections in RomM to sync them here" />
+              </PanelSectionRow>
+            </PanelSection>
+          ) : (
+            <>
+              <PanelSection>
+                <PanelSectionRow>
+                  <ButtonItem layout="below" onClick={() => handleSetAllCollections(true)}>
+                    Enable All
+                  </ButtonItem>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ButtonItem layout="below" onClick={() => handleSetAllCollections(false)}>
+                    Disable All
+                  </ButtonItem>
+                </PanelSectionRow>
+              </PanelSection>
+              {/* Favorites section */}
+              {collections.some((c) => c.category === "favorites") && (
+                <PanelSection title="Favorites">
+                  {collections.filter((c) => c.category === "favorites").map((collection) => (
+                    <PanelSectionRow key={collection.id}>
+                      <ToggleField
+                        label={collection.name}
+                        description={`${collection.rom_count} ROMs`}
+                        checked={collection.sync_enabled}
+                        onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+                      />
+                    </PanelSectionRow>
+                  ))}
+                </PanelSection>
+              )}
+              {/* User collections section */}
+              {collections.some((c) => c.category === "user") && (
+                <PanelSection title="My Collections">
+                  {collections.filter((c) => c.category === "user").map((collection) => (
+                    <PanelSectionRow key={collection.id}>
+                      <ToggleField
+                        label={collection.name}
+                        description={`${collection.rom_count} ROMs`}
+                        checked={collection.sync_enabled}
+                        onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+                      />
+                    </PanelSectionRow>
+                  ))}
+                </PanelSection>
+              )}
+              {/* Franchise collections section */}
+              {collections.some((c) => c.category === "franchise") && (
+                <PanelSection title="Franchise">
+                  {collections.filter((c) => c.category === "franchise").map((collection) => (
+                    <PanelSectionRow key={collection.id}>
+                      <ToggleField
+                        label={collection.name}
+                        description={`${collection.rom_count} ROMs`}
+                        checked={collection.sync_enabled}
+                        onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+                      />
+                    </PanelSectionRow>
+                  ))}
+                </PanelSection>
+              )}
+            </>
+          )}
+        </>
       )}
 
       {activeTab === "bios" && (
