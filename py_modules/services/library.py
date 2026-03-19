@@ -1,20 +1,22 @@
 """LibraryService — library sync engine.
 
-Handles platform/ROM fetching, shortcut data preparation, artwork
-downloading, delta preview/apply, and shortcut registry management.
+Handles platform/ROM fetching, shortcut data preparation,
+delta preview/apply, and shortcut registry management.
+
+Artwork operations are delegated to ArtworkService via callbacks.
+Shortcut removal is delegated to ShortcutRemovalService.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
-import os
-import pathlib
 import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+
+from domain.shortcut_data import build_registry_entry, build_shortcuts_data
 
 from lib.errors import classify_error
 
@@ -35,7 +37,7 @@ _SYNC_CANCELLED = "Sync cancelled"
 
 
 class LibraryService:
-    """Sync engine: fetch ROMs, prepare shortcuts, manage artwork + registry."""
+    """Sync engine: fetch ROMs, prepare shortcuts, manage registry."""
 
     def __init__(
         self,
@@ -53,6 +55,7 @@ class LibraryService:
         save_settings_to_disk: Callable,
         log_debug: Callable,
         metadata_service: Any = None,
+        artwork: Any = None,
     ) -> None:
         self._romm_api = romm_api
         self._steam_config = steam_config
@@ -67,6 +70,7 @@ class LibraryService:
         self._save_settings_to_disk = save_settings_to_disk
         self._log_debug = log_debug
         self._metadata_service = metadata_service
+        self._artwork = artwork
 
         # Sync-specific state (owned by this service)
         self._sync_state = SyncState.IDLE
@@ -525,25 +529,7 @@ class LibraryService:
 
     def _build_shortcuts_data(self, all_roms):
         """Build shortcut data list from ROM list."""
-        exe = os.path.join(self._plugin_dir, "bin", "romm-launcher")
-        start_dir = os.path.join(self._plugin_dir, "bin")
-        return [
-            {
-                "rom_id": rom["id"],
-                "name": rom["name"],
-                "fs_name": rom.get("fs_name", ""),
-                "exe": exe,
-                "start_dir": start_dir,
-                "launch_options": f"romm:{rom['id']}",
-                "platform_name": rom.get("platform_name", "Unknown"),
-                "platform_slug": rom.get("platform_slug", ""),
-                "igdb_id": rom.get("igdb_id"),
-                "sgdb_id": rom.get("sgdb_id"),
-                "ra_id": rom.get("ra_id"),
-                "cover_path": "",
-            }
-            for rom in all_roms
-        ]
+        return build_shortcuts_data(all_roms, self._plugin_dir)
 
     async def _fetch_and_prepare(self):
         """Fetch platforms + ROMs, prepare shortcut data.
@@ -713,34 +699,15 @@ class LibraryService:
     # ── Sync results (called by frontend) ────────────────────
 
     def _finalize_cover_path(self, grid, cover_path, app_id, rom_id_str):
-        """Rename staged artwork to final Steam app_id filename, return final path."""
-        if not grid or not cover_path:
-            return cover_path
-        final_path = os.path.join(grid, f"{app_id}p.png")
-        if cover_path != final_path and os.path.exists(cover_path):
-            try:
-                os.replace(cover_path, final_path)
-                return final_path
-            except OSError as e:
-                self._logger.warning(f"Failed to rename artwork for rom {rom_id_str}: {e}")
-        elif os.path.exists(final_path):
-            return final_path
+        """Delegate to ArtworkService callback if available, else use local impl."""
+        if self._artwork.finalize_cover_path is not None:
+            return self._artwork.finalize_cover_path(grid, cover_path, app_id, rom_id_str)
+        # Fallback (no-op passthrough when callback not wired)
         return cover_path
 
     def _build_registry_entry(self, pending, app_id, cover_path):
         """Build a registry entry dict from pending sync data."""
-        entry = {
-            "app_id": app_id,
-            "name": pending.get("name", ""),
-            "fs_name": pending.get("fs_name", ""),
-            "platform_name": pending.get("platform_name", ""),
-            "platform_slug": pending.get("platform_slug", ""),
-            "cover_path": cover_path,
-        }
-        for meta_key in ("igdb_id", "sgdb_id", "ra_id"):
-            if pending.get(meta_key):
-                entry[meta_key] = pending[meta_key]
-        return entry
+        return build_registry_entry(pending, app_id, cover_path)
 
     def _report_sync_results_io(self, rom_id_to_app_id, removed_rom_ids):
         """Sync helper for report_sync_results — artwork renames, state save in executor."""
@@ -821,71 +788,19 @@ class LibraryService:
         self._sync_state = SyncState.IDLE
         return {"success": True}
 
-    # ── Artwork ──────────────────────────────────────────────
-
-    def _existing_cover_path(self, rom_id: int, grid: str) -> str | None:
-        """Return an existing cover path for *rom_id*, or ``None`` if a download is needed."""
-        staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
-
-        # If already synced and final artwork exists, reuse it
-        reg = self._state["shortcut_registry"].get(str(rom_id))
-        if reg and reg.get("app_id"):
-            final = os.path.join(grid, f"{reg['app_id']}p.png")
-            if os.path.exists(final):
-                return final
-
-        # If staging file already exists (e.g. retry), reuse it
-        if os.path.exists(staging):
-            return staging
-
-        return None
+    # ── Artwork delegation ───────────────────────────────────
 
     async def _download_artwork(self, all_roms, progress_step=4, progress_total_steps=6):
-        """Download cover artwork to staging filenames (romm_{rom_id}_cover.png).
-
-        Decouples download from the final Steam app_id, which isn't known until
-        after AddShortcut. report_sync_results() renames to {app_id}p.png.
-        Returns dict of rom_id -> local cover path.
-        """
-        cover_paths = {}
-        grid = self._steam_config.grid_dir()
-        if not grid:
-            self._logger.warning("Cannot find grid directory, skipping artwork")
-            return cover_paths
-
-        total = len(all_roms)
-
-        for i, rom in enumerate(all_roms):
-            if self._sync_state == SyncState.CANCELLING:
-                return cover_paths
-
-            await self._emit_progress(
-                "applying",
-                current=i + 1,
-                total=total,
-                message=f"Downloading artwork {i + 1}/{total}",
-                step=progress_step,
-                total_steps=progress_total_steps,
+        """Delegate artwork download to ArtworkService callback."""
+        if self._artwork.download_artwork is not None:
+            return await self._artwork.download_artwork(
+                all_roms,
+                emit_progress=self._emit_progress,
+                is_cancelling=lambda: self._sync_state == SyncState.CANCELLING,
+                progress_step=progress_step,
+                progress_total_steps=progress_total_steps,
             )
-
-            cover_url = rom.get("path_cover_large") or rom.get("path_cover_small")
-            if not cover_url:
-                continue
-
-            rom_id = rom["id"]
-            existing = self._existing_cover_path(rom_id, grid)
-            if existing:
-                cover_paths[rom_id] = existing
-                continue
-
-            staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
-            try:
-                await self._loop.run_in_executor(None, self._romm_api.download_cover, cover_url, staging)
-                cover_paths[rom_id] = staging
-            except Exception as e:
-                self._logger.warning(f"Failed to download artwork for {rom['name']}: {e}")
-
-        return cover_paths
+        return {}
 
     # ── Registry queries ─────────────────────────────────────
 
@@ -900,153 +815,6 @@ class LibraryService:
         return {
             "platforms": [{"name": k, "slug": v["slug"], "count": v["count"]} for k, v in sorted(platforms.items())],
         }
-
-    def _find_platform_name_in_registry(self, platform_slug):
-        """Look up platform name from the shortcut registry by slug."""
-        for entry in self._state["shortcut_registry"].values():
-            if entry.get("platform_slug") == platform_slug:
-                return entry.get("platform_name")
-        return None
-
-    async def _find_platform_name_from_api(self, platform_slug):
-        """Look up platform name from the RomM API by slug."""
-        platforms = await self._loop.run_in_executor(None, self._romm_api.list_platforms)
-        for p in platforms:
-            if p.get("slug") == platform_slug:
-                return p.get("name", "")
-        return None
-
-    async def remove_platform_shortcuts(self, platform_slug):
-        """Return app_ids and rom_ids for a platform for the frontend to remove via SteamClient."""
-        try:
-            platform_name = self._find_platform_name_in_registry(platform_slug)
-            if not platform_name:
-                platform_name = await self._find_platform_name_from_api(platform_slug)
-
-            if not platform_name:
-                return {
-                    "success": False,
-                    "message": f"Platform '{platform_slug}' not found",
-                    "app_ids": [],
-                    "rom_ids": [],
-                }
-
-            app_ids = [
-                entry["app_id"]
-                for entry in self._state["shortcut_registry"].values()
-                if entry.get("platform_name") == platform_name and "app_id" in entry
-            ]
-            rom_ids = [
-                rom_id
-                for rom_id, entry in self._state["shortcut_registry"].items()
-                if entry.get("platform_name") == platform_name
-            ]
-
-            return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids, "platform_name": platform_name}
-        except Exception as e:
-            self._logger.error(f"Failed to get platform shortcuts: {e}")
-            return {"success": False, "message": f"Failed: {e}", "app_ids": [], "rom_ids": []}
-
-    def remove_all_shortcuts(self):
-        """Return app_ids and rom_ids for the frontend to remove via SteamClient."""
-        registry = self._state.get("shortcut_registry", {})
-        app_ids = [entry["app_id"] for entry in registry.values() if "app_id" in entry]
-        rom_ids = list(registry.keys())
-        return {"success": True, "app_ids": app_ids, "rom_ids": rom_ids}
-
-    def _remove_artwork_files(self, grid, rom_id, entry):
-        """Remove all artwork files for a registry entry."""
-        removed = False
-        # Try cover_path first (stores the final renamed path)
-        cover_path = entry.get("cover_path", "")
-        if cover_path and os.path.exists(cover_path):
-            os.remove(cover_path)
-            removed = True
-        # Try {app_id}p.png (the standard Steam grid filename)
-        if not removed and entry.get("app_id"):
-            app_path = os.path.join(grid, f"{entry['app_id']}p.png")
-            if os.path.exists(app_path):
-                os.remove(app_path)
-                removed = True
-        # Fallback: legacy artwork_id format
-        if not removed:
-            artwork_id = entry.get("artwork_id")
-            if artwork_id:
-                art_path = os.path.join(grid, f"{artwork_id}p.png")
-                if os.path.exists(art_path):
-                    os.remove(art_path)
-        # Clean up any leftover staging file
-        staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
-        if os.path.exists(staging):
-            os.remove(staging)
-
-    def _report_removal_results_io(self, removed_rom_ids):
-        """Sync helper for report_removal_results — file deletions, state save in executor."""
-        # Clean up Steam Input config for removed shortcuts (always reset to default)
-        removed_app_ids = [
-            entry["app_id"]
-            for rom_id in removed_rom_ids
-            for entry in [self._state["shortcut_registry"].get(str(rom_id))]
-            if entry and entry.get("app_id")
-        ]
-        if removed_app_ids:
-            try:
-                self._steam_config.set_steam_input_config(removed_app_ids, mode="default")
-            except Exception as e:
-                self._logger.error(f"Failed to clean up Steam Input config: {e}")
-
-        grid = self._steam_config.grid_dir()
-        for rom_id in removed_rom_ids:
-            entry = self._state["shortcut_registry"].pop(str(rom_id), None)
-            if entry and grid:
-                self._remove_artwork_files(grid, rom_id, entry)
-
-        # Update sync_stats to reflect current registry
-        registry = self._state.get("shortcut_registry", {})
-        platforms = {e.get("platform_name", "") for e in registry.values()}
-        self._state["sync_stats"] = {
-            "platforms": len(platforms),
-            "roms": len(registry),
-        }
-        self._save_state()
-
-    async def report_removal_results(self, removed_rom_ids):
-        """Called by frontend after removing shortcuts via SteamClient."""
-        await self._loop.run_in_executor(None, self._report_removal_results_io, removed_rom_ids)
-        return {"success": True, "message": f"Removed {len(removed_rom_ids)} shortcuts"}
-
-    # ── Artwork queries ──────────────────────────────────────
-
-    async def get_artwork_base64(self, rom_id):
-        """Return base64-encoded cover artwork for a single ROM (callable from frontend)."""
-        rom_id = int(rom_id)
-        grid = self._steam_config.grid_dir()
-        if not grid:
-            return {"base64": None}
-
-        # Check pending sync data first (staging path)
-        pending = self._pending_sync.get(rom_id, {})
-        cover_path = pending.get("cover_path", "")
-
-        # Fall back to registry
-        if not cover_path:
-            reg = self._state["shortcut_registry"].get(str(rom_id), {})
-            cover_path = reg.get("cover_path", "")
-
-        # Try staging filename as last resort
-        if not cover_path:
-            staging = os.path.join(grid, f"romm_{rom_id}_cover.png")
-            if os.path.exists(staging):
-                cover_path = staging
-
-        if cover_path and os.path.exists(cover_path):
-            try:
-                data = await self._loop.run_in_executor(None, lambda: pathlib.Path(cover_path).read_bytes())
-                return {"base64": base64.b64encode(data).decode("ascii")}
-            except Exception as e:
-                self._logger.warning(f"Failed to read artwork for rom {rom_id}: {e}")
-
-        return {"base64": None}
 
     # ── Cache / stats ────────────────────────────────────────
 
@@ -1080,40 +848,3 @@ class LibraryService:
                     "installed": installed,
                 }
         return None
-
-    # ── Housekeeping ─────────────────────────────────────────
-
-    def _is_staging_file_orphaned(self, grid, registry, rom_id):
-        """Check if a staging artwork file is orphaned (not in registry or has final artwork)."""
-        if rom_id not in registry:
-            return True
-        app_id = registry[rom_id].get("app_id")
-        if app_id:
-            final = os.path.join(grid, f"{app_id}p.png")
-            return os.path.exists(final)
-        return False
-
-    def prune_orphaned_staging_artwork(self):
-        """Remove orphaned romm_{rom_id}_cover.png staging files from Steam grid dir."""
-        grid = self._steam_config.grid_dir()
-        if not grid or not os.path.isdir(grid):
-            return
-        registry = self._state.get("shortcut_registry", {})
-        pruned = []
-        for filename in os.listdir(grid):
-            if not filename.startswith("romm_") or not filename.endswith("_cover.png"):
-                continue
-            try:
-                rom_id = filename[len("romm_") : -len("_cover.png")]
-                int(rom_id)  # validate it's numeric
-            except (ValueError, IndexError):
-                continue
-            if not self._is_staging_file_orphaned(grid, registry, rom_id):
-                continue
-            try:
-                os.remove(os.path.join(grid, filename))
-                pruned.append(filename)
-            except OSError as e:
-                self._logger.warning(f"Failed to remove orphaned staging artwork {filename}: {e}")
-        if pruned:
-            self._logger.info(f"Pruned {len(pruned)} orphaned staging artwork file(s)")

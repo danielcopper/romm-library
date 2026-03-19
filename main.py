@@ -162,6 +162,8 @@ class Plugin:
         self._achievements_service = services["achievements_service"]
         self._migration_service = services["migration_service"]
         self._game_detail_service = services["game_detail_service"]
+        self._artwork_service = services["artwork_service"]
+        self._shortcut_removal_service = services["shortcut_removal_service"]
         self._firmware_service.load_bios_registry()
 
         # ── 5. Startup healing ──────────────────────────────────────────────
@@ -171,7 +173,7 @@ class Plugin:
         self._prune_stale_registry()
         self._save_sync_service.prune_orphaned_state()
         self._sgdb_service.prune_orphaned_artwork_cache()
-        self._sync_service.prune_orphaned_staging_artwork()
+        self._artwork_service.prune_orphaned_staging_artwork()
         self._download_service.cleanup_leftover_tmp_files()
 
         # ── 6. Background tasks ─────────────────────────────────────────────
@@ -463,16 +465,16 @@ class Plugin:
         return self._sync_service.get_registry_platforms()
 
     async def remove_platform_shortcuts(self, platform_slug):
-        return await self._sync_service.remove_platform_shortcuts(platform_slug)
+        return await self._shortcut_removal_service.remove_platform_shortcuts(platform_slug)
 
     async def remove_all_shortcuts(self):
-        return self._sync_service.remove_all_shortcuts()
+        return self._shortcut_removal_service.remove_all_shortcuts()
 
     async def report_removal_results(self, removed_rom_ids):
-        return await self._sync_service.report_removal_results(removed_rom_ids)
+        return await self._shortcut_removal_service.report_removal_results(removed_rom_ids)
 
     async def get_artwork_base64(self, rom_id):
-        return await self._sync_service.get_artwork_base64(rom_id)
+        return await self._artwork_service.get_artwork_base64(int(rom_id), self._sync_service.pending_sync)
 
     async def clear_sync_cache(self):
         return self._sync_service.clear_sync_cache()

@@ -4,8 +4,10 @@ from unittest.mock import MagicMock
 
 import pytest
 from adapters.steam_config import SteamConfigAdapter
+from services.artwork import ArtworkService
 from services.library import LibraryService, SyncState
 from services.metadata import MetadataService
+from services.shortcut_removal import ShortcutRemovalService
 
 # conftest.py patches decky before this import
 from main import Plugin
@@ -35,6 +37,17 @@ def plugin():
     )
     p._metadata_service = metadata_service
 
+    artwork_service = ArtworkService(
+        romm_api=p._romm_api,
+        steam_config=steam_config,
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        emit=decky.emit,
+        sync_state_ref=lambda: None,
+    )
+    p._artwork_service = artwork_service
+
     p._sync_service = LibraryService(
         romm_api=p._romm_api,
         steam_config=steam_config,
@@ -49,6 +62,20 @@ def plugin():
         save_settings_to_disk=p._save_settings_to_disk,
         log_debug=p._log_debug,
         metadata_service=metadata_service,
+        artwork=artwork_service,
+    )
+
+    artwork_service._sync_state_ref = lambda: p._sync_service.sync_state
+
+    p._shortcut_removal_service = ShortcutRemovalService(
+        romm_api=p._romm_api,
+        steam_config=steam_config,
+        state=p._state,
+        loop=asyncio.get_event_loop(),
+        logger=decky.logger,
+        emit=decky.emit,
+        save_state=p._save_state,
+        remove_artwork_files=artwork_service.remove_artwork_files,
     )
     return p
 
@@ -58,6 +85,8 @@ async def _set_event_loop(plugin):
     """Ensure plugin.loop matches the running event loop for async tests."""
     plugin.loop = asyncio.get_event_loop()
     plugin._sync_service._loop = asyncio.get_event_loop()
+    plugin._artwork_service._loop = asyncio.get_event_loop()
+    plugin._shortcut_removal_service._loop = asyncio.get_event_loop()
     plugin._metadata_service._loop = asyncio.get_event_loop()
 
 
@@ -354,7 +383,7 @@ class TestRemovePlatformShortcuts:
                 {"id": 2, "slug": "snes", "name": "Super Nintendo"},
             ]
         )
-        plugin._sync_service._loop = mock_loop
+        plugin._shortcut_removal_service._loop = mock_loop
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64"},
@@ -378,7 +407,7 @@ class TestRemovePlatformShortcuts:
                 {"id": 1, "slug": "n64", "name": "Nintendo 64"},
             ]
         )
-        plugin._sync_service._loop = mock_loop
+        plugin._shortcut_removal_service._loop = mock_loop
 
         result = await plugin.remove_platform_shortcuts("nonexistent")
         assert result["success"] is False
@@ -396,7 +425,7 @@ class TestRemovePlatformShortcuts:
                 {"id": 1, "slug": "n64", "name": "Nintendo 64"},
             ]
         )
-        plugin._sync_service._loop = mock_loop
+        plugin._shortcut_removal_service._loop = mock_loop
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64"},
@@ -413,7 +442,7 @@ class TestRemovePlatformShortcuts:
 
         mock_loop = MagicMock()
         mock_loop.run_in_executor = AsyncMock(side_effect=Exception("Server unreachable"))
-        plugin._sync_service._loop = mock_loop
+        plugin._shortcut_removal_service._loop = mock_loop
 
         plugin._state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Mario 64", "platform_name": "Nintendo 64", "platform_slug": "n64"},
@@ -424,75 +453,6 @@ class TestRemovePlatformShortcuts:
         assert result["success"] is True
         assert set(result["app_ids"]) == {1001, 1002}
         assert result["platform_name"] == "Nintendo 64"
-
-
-class TestArtworkStaging:
-    """Tests for the staging/rename artwork flow."""
-
-    @pytest.mark.asyncio
-    async def test_download_uses_staging_filename(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock
-
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = AsyncMock()
-        plugin._sync_service._loop = mock_loop
-
-        roms = [{"id": 42, "name": "Test Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._sync_service._download_artwork(roms)
-
-        assert 42 in result
-        assert result[42].endswith("romm_42_cover.png")
-        # Should have called _romm_download with staging path as dest arg
-        call_args = mock_loop.run_in_executor.call_args[0]
-        assert "romm_42_cover.png" in call_args[3]
-
-    @pytest.mark.asyncio
-    async def test_skips_download_if_final_exists(self, plugin, tmp_path):
-        """If {app_id}p.png exists from a prior sync, skip re-download."""
-        from unittest.mock import AsyncMock, MagicMock
-
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = AsyncMock()
-        plugin._sync_service._loop = mock_loop
-
-        # Simulate existing final artwork from previous sync
-        final_art = grid_dir / "99999p.png"
-        final_art.write_text("fake")
-
-        plugin._state["shortcut_registry"]["42"] = {"app_id": 99999, "name": "Test"}
-
-        roms = [{"id": 42, "name": "Test Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._sync_service._download_artwork(roms)
-
-        assert result[42] == str(final_art)
-        mock_loop.run_in_executor.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_skips_download_if_staging_exists(self, plugin, tmp_path):
-        """If staging file exists (e.g. retry), skip re-download."""
-        from unittest.mock import AsyncMock, MagicMock
-
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = AsyncMock()
-        plugin._sync_service._loop = mock_loop
-
-        staging = grid_dir / "romm_42_cover.png"
-        staging.write_text("fake")
-
-        roms = [{"id": 42, "name": "Test Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._sync_service._download_artwork(roms)
-
-        assert result[42] == str(staging)
-        mock_loop.run_in_executor.assert_not_called()
 
 
 class TestArtworkRenameOnSync:
@@ -748,100 +708,6 @@ class TestShortcutDataFormat:
         id_b = SteamConfigAdapter.generate_artwork_id(exe, "Game B")
 
         assert id_a != id_b, "Different games should have different artwork IDs"
-
-
-class TestPruneOrphanedStagingArtwork:
-    def test_removes_staging_not_in_registry(self, plugin, tmp_path):
-        """Staging file for a rom_id not in registry should be deleted."""
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        staging = grid_dir / "romm_42_cover.png"
-        staging.write_text("fake")
-
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        plugin._state["shortcut_registry"] = {}
-
-        plugin._sync_service.prune_orphaned_staging_artwork()
-        assert not staging.exists()
-
-    def test_removes_redundant_staging_with_final(self, plugin, tmp_path):
-        """Staging file should be removed when final {app_id}p.png exists."""
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        staging = grid_dir / "romm_42_cover.png"
-        staging.write_text("fake staging")
-        final = grid_dir / "1001p.png"
-        final.write_text("fake final")
-
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        plugin._state["shortcut_registry"] = {
-            "42": {"app_id": 1001, "name": "Game A"},
-        }
-
-        plugin._sync_service.prune_orphaned_staging_artwork()
-        assert not staging.exists()
-        assert final.exists()  # final artwork untouched
-
-    def test_keeps_staging_when_no_final(self, plugin, tmp_path):
-        """Staging file kept when rom is in registry but final artwork not yet created."""
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        staging = grid_dir / "romm_42_cover.png"
-        staging.write_text("fake staging")
-
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        plugin._state["shortcut_registry"] = {
-            "42": {"app_id": 1001, "name": "Game A"},
-        }
-
-        plugin._sync_service.prune_orphaned_staging_artwork()
-        assert staging.exists()
-
-    def test_ignores_non_staging_files(self, plugin, tmp_path):
-        """Non-staging files in grid dir should not be touched."""
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        final = grid_dir / "1001p.png"
-        final.write_text("final art")
-        other = grid_dir / "something_else.png"
-        other.write_text("other")
-
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        plugin._state["shortcut_registry"] = {}
-
-        plugin._sync_service.prune_orphaned_staging_artwork()
-        assert final.exists()
-        assert other.exists()
-
-    def test_no_grid_dir_no_crash(self, plugin):
-        """When _grid_dir() returns None, pruning should not crash."""
-        plugin._steam_config.grid_dir = lambda: None
-        plugin._state["shortcut_registry"] = {}
-
-        # Should not raise
-        plugin._sync_service.prune_orphaned_staging_artwork()
-
-    def test_handles_os_error(self, plugin, tmp_path, caplog):
-        """OSError during os.remove should log warning and not crash."""
-        import logging
-        from unittest.mock import patch
-
-        grid_dir = tmp_path / "grid"
-        grid_dir.mkdir()
-        staging = grid_dir / "romm_42_cover.png"
-        staging.write_text("fake")
-
-        plugin._steam_config.grid_dir = lambda: str(grid_dir)
-        plugin._state["shortcut_registry"] = {}
-
-        with caplog.at_level(logging.WARNING):
-            with patch("os.remove", side_effect=OSError("permission denied")):
-                plugin._sync_service.prune_orphaned_staging_artwork()
-
-        # File still exists (os.remove was mocked to fail)
-        assert staging.exists()
-        # Warning should have been logged
-        assert any("Failed to remove orphaned staging artwork" in r.message for r in caplog.records)
 
 
 class TestClassifyRoms:
@@ -1994,241 +1860,6 @@ class TestBuildRegistryEntry:
         assert result["platform_slug"] == ""
 
 
-class TestFindPlatformNameInRegistry:
-    """Tests for _find_platform_name_in_registry() — lines 888-893."""
-
-    def test_finds_by_slug(self, plugin):
-        plugin._state["shortcut_registry"] = {
-            "1": {"platform_name": "Nintendo 64", "platform_slug": "n64"},
-            "2": {"platform_name": "Super Nintendo", "platform_slug": "snes"},
-        }
-        result = plugin._sync_service._find_platform_name_in_registry("n64")
-        assert result == "Nintendo 64"
-
-    def test_returns_none_when_not_found(self, plugin):
-        plugin._state["shortcut_registry"] = {
-            "1": {"platform_name": "Nintendo 64", "platform_slug": "n64"},
-        }
-        result = plugin._sync_service._find_platform_name_in_registry("gba")
-        assert result is None
-
-    def test_empty_registry(self, plugin):
-        result = plugin._sync_service._find_platform_name_in_registry("n64")
-        assert result is None
-
-
-class TestFindPlatformNameFromApi:
-    """Tests for _find_platform_name_from_api() — lines 895-901."""
-
-    @pytest.mark.asyncio
-    async def test_finds_by_slug(self, plugin):
-        from unittest.mock import AsyncMock, MagicMock
-
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = AsyncMock(
-            return_value=[
-                {"slug": "n64", "name": "Nintendo 64"},
-                {"slug": "snes", "name": "Super Nintendo"},
-            ]
-        )
-        plugin._sync_service._loop = mock_loop
-
-        result = await plugin._sync_service._find_platform_name_from_api("snes")
-        assert result == "Super Nintendo"
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_not_found(self, plugin):
-        from unittest.mock import AsyncMock, MagicMock
-
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = AsyncMock(return_value=[{"slug": "n64", "name": "Nintendo 64"}])
-        plugin._sync_service._loop = mock_loop
-
-        result = await plugin._sync_service._find_platform_name_from_api("gba")
-        assert result is None
-
-
-class TestIsStagingFileOrphaned:
-    """Tests for _is_staging_file_orphaned() — lines 1070-1078."""
-
-    def test_orphaned_when_not_in_registry(self, plugin, tmp_path):
-        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), {}, "42")
-        assert result is True
-
-    def test_orphaned_when_final_exists(self, plugin, tmp_path):
-        final = tmp_path / "1001p.png"
-        final.write_text("final")
-        registry = {"42": {"app_id": 1001}}
-        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), registry, "42")
-        assert result is True
-
-    def test_not_orphaned_when_no_final(self, plugin, tmp_path):
-        registry = {"42": {"app_id": 1001}}
-        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), registry, "42")
-        assert result is False
-
-    def test_not_orphaned_when_no_app_id(self, plugin, tmp_path):
-        registry = {"42": {"name": "Game"}}
-        result = plugin._sync_service._is_staging_file_orphaned(str(tmp_path), registry, "42")
-        assert result is False
-
-
-class TestExistingCoverPath:
-    """Tests for _existing_cover_path() — lines 810-825."""
-
-    def test_returns_final_when_exists(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        final = tmp_path / "99999p.png"
-        final.write_text("final")
-        plugin._state["shortcut_registry"]["42"] = {"app_id": 99999}
-
-        result = plugin._sync_service._existing_cover_path(42, grid)
-        assert result == str(final)
-
-    def test_returns_staging_when_exists(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        staging = tmp_path / "romm_42_cover.png"
-        staging.write_text("staging")
-
-        result = plugin._sync_service._existing_cover_path(42, grid)
-        assert result == str(staging)
-
-    def test_returns_none_when_nothing_exists(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        result = plugin._sync_service._existing_cover_path(42, grid)
-        assert result is None
-
-    def test_returns_none_when_registry_no_app_id(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        plugin._state["shortcut_registry"]["42"] = {"name": "Game"}
-        result = plugin._sync_service._existing_cover_path(42, grid)
-        assert result is None
-
-
-class TestRemoveArtworkFiles:
-    """Tests for _remove_artwork_files() — lines 941-965."""
-
-    def test_removes_cover_path(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        cover = tmp_path / "100001p.png"
-        cover.write_text("cover data")
-        entry = {"cover_path": str(cover), "app_id": 100001}
-        plugin._sync_service._remove_artwork_files(grid, "42", entry)
-        assert not cover.exists()
-
-    def test_removes_app_id_fallback(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        art = tmp_path / "100001p.png"
-        art.write_text("data")
-        entry = {"cover_path": "", "app_id": 100001}
-        plugin._sync_service._remove_artwork_files(grid, "42", entry)
-        assert not art.exists()
-
-    def test_removes_legacy_artwork_id(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        art = tmp_path / "12345p.png"
-        art.write_text("data")
-        entry = {"cover_path": "", "artwork_id": 12345}
-        plugin._sync_service._remove_artwork_files(grid, "42", entry)
-        assert not art.exists()
-
-    def test_removes_staging_leftover(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        staging = tmp_path / "romm_42_cover.png"
-        staging.write_text("staging")
-        entry = {"cover_path": ""}
-        plugin._sync_service._remove_artwork_files(grid, "42", entry)
-        assert not staging.exists()
-
-    def test_removes_all_types(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        cover = tmp_path / "mycover.png"
-        cover.write_text("cover")
-        staging = tmp_path / "romm_42_cover.png"
-        staging.write_text("staging")
-        entry = {"cover_path": str(cover), "app_id": 100001}
-        plugin._sync_service._remove_artwork_files(grid, "42", entry)
-        assert not cover.exists()
-        assert not staging.exists()
-
-
-class TestRemovePlatformShortcutsException:
-    """Tests for exception handling in remove_platform_shortcuts — lines 930-932."""
-
-    @pytest.mark.asyncio
-    async def test_handles_exception(self, plugin):
-        from unittest.mock import AsyncMock, MagicMock
-
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("API Error"))
-        plugin._sync_service._loop = mock_loop
-
-        # No slug match in registry, forces API call which errors
-        result = await plugin._sync_service.remove_platform_shortcuts("broken")
-        assert result["success"] is False
-        assert result["app_ids"] == []
-        assert result["rom_ids"] == []
-
-
-class TestGetArtworkBase64:
-    """Tests for get_artwork_base64() — lines 1004-1033."""
-
-    @pytest.mark.asyncio
-    async def test_returns_base64_from_pending(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        plugin._steam_config.grid_dir = lambda: grid
-
-        cover = tmp_path / "romm_42_cover.png"
-        cover.write_bytes(b"fake png data")
-
-        plugin._sync_service._pending_sync = {42: {"cover_path": str(cover)}}
-
-        result = await plugin._sync_service.get_artwork_base64(42)
-        assert result["base64"] is not None
-        import base64
-
-        assert base64.b64decode(result["base64"]) == b"fake png data"
-
-    @pytest.mark.asyncio
-    async def test_returns_base64_from_registry(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        plugin._steam_config.grid_dir = lambda: grid
-
-        cover = tmp_path / "100001p.png"
-        cover.write_bytes(b"registry png")
-
-        plugin._state["shortcut_registry"]["42"] = {"cover_path": str(cover)}
-
-        result = await plugin._sync_service.get_artwork_base64(42)
-        assert result["base64"] is not None
-
-    @pytest.mark.asyncio
-    async def test_returns_base64_from_staging_fallback(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        plugin._steam_config.grid_dir = lambda: grid
-
-        staging = tmp_path / "romm_42_cover.png"
-        staging.write_bytes(b"staging png")
-
-        result = await plugin._sync_service.get_artwork_base64(42)
-        assert result["base64"] is not None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_no_grid(self, plugin):
-        plugin._steam_config.grid_dir = lambda: None
-
-        result = await plugin._sync_service.get_artwork_base64(42)
-        assert result["base64"] is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_file_missing(self, plugin, tmp_path):
-        grid = str(tmp_path)
-        plugin._steam_config.grid_dir = lambda: grid
-
-        result = await plugin._sync_service.get_artwork_base64(42)
-        assert result["base64"] is None
-
-
 class TestClearSyncCache:
     """Tests for clear_sync_cache() — lines 1037-1042."""
 
@@ -2278,57 +1909,6 @@ class TestReportSyncResultsCancelled:
         complete_calls = [c for c in decky.emit.call_args_list if c[0][0] == "sync_complete"]
         assert len(complete_calls) == 1
         assert complete_calls[0][0][1]["cancelled"] is True
-
-
-class TestDownloadArtworkEdgeCases:
-    """Tests for _download_artwork edge cases — lines 837-870."""
-
-    @pytest.mark.asyncio
-    async def test_no_grid_returns_empty(self, plugin):
-        plugin._steam_config.grid_dir = lambda: None
-        result = await plugin._sync_service._download_artwork([{"id": 1, "name": "G", "path_cover_large": "/c.png"}])
-        assert result == {}
-
-    @pytest.mark.asyncio
-    async def test_skips_rom_without_cover_url(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock
-
-        grid = str(tmp_path)
-        plugin._steam_config.grid_dir = lambda: grid
-        plugin._sync_service._emit_progress = AsyncMock()
-
-        roms = [{"id": 1, "name": "No Cover"}]
-        result = await plugin._sync_service._download_artwork(roms)
-        assert 1 not in result
-
-    @pytest.mark.asyncio
-    async def test_download_failure_logged(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock
-
-        grid = str(tmp_path)
-        plugin._steam_config.grid_dir = lambda: grid
-
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = AsyncMock(side_effect=Exception("Network error"))
-        plugin._sync_service._loop = mock_loop
-        plugin._sync_service._emit_progress = AsyncMock()
-
-        roms = [{"id": 1, "name": "Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._sync_service._download_artwork(roms)
-        assert 1 not in result
-
-    @pytest.mark.asyncio
-    async def test_cancelling_during_artwork(self, plugin, tmp_path):
-        from unittest.mock import AsyncMock
-
-        grid = str(tmp_path)
-        plugin._steam_config.grid_dir = lambda: grid
-        plugin._sync_service._sync_state = SyncState.CANCELLING
-        plugin._sync_service._emit_progress = AsyncMock()
-
-        roms = [{"id": 1, "name": "Game", "path_cover_large": "/cover.png"}]
-        result = await plugin._sync_service._download_artwork(roms)
-        assert result == {}
 
 
 class TestDoSyncErrorHandling:

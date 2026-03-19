@@ -56,6 +56,7 @@ name = Services must not import other services
 type = independence
 modules =
     services.achievements
+    services.artwork
     services.downloads
     services.firmware
     services.game_detail
@@ -65,4 +66,5 @@ modules =
     services.playtime
     services.rom_removal
     services.saves
+    services.shortcut_removal
     services.steamgrid

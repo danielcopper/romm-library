@@ -19,6 +19,7 @@ from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
 from services.achievements import AchievementsService
+from services.artwork import ArtworkService
 from services.downloads import DownloadService
 from services.firmware import FirmwareService
 from services.game_detail import GameDetailService
@@ -30,6 +31,7 @@ from services.protocols import RommApiProtocol
 from services.protocols import SteamConfigAdapter as SteamConfigProtocol
 from services.rom_removal import RomRemovalService
 from services.saves import SaveService
+from services.shortcut_removal import ShortcutRemovalService
 from services.steamgrid import SteamGridService
 
 
@@ -152,6 +154,27 @@ def wire_services(cfg: WiringConfig) -> dict:
         log_debug=cfg.log_debug,
     )
 
+    artwork_service = ArtworkService(
+        romm_api=cfg.romm_api,
+        steam_config=cfg.steam_config,
+        state=cfg.state,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        emit=cfg.emit,
+        sync_state_ref=lambda: None,  # placeholder; overwritten below after LibraryService is created
+    )
+
+    shortcut_removal_service = ShortcutRemovalService(
+        romm_api=cfg.romm_api,
+        steam_config=cfg.steam_config,
+        state=cfg.state,
+        loop=cfg.loop,
+        logger=cfg.logger,
+        emit=cfg.emit,
+        save_state=cfg.save_state,
+        remove_artwork_files=artwork_service.remove_artwork_files,
+    )
+
     sync_service = LibraryService(
         romm_api=cfg.romm_api,
         steam_config=cfg.steam_config,
@@ -166,7 +189,11 @@ def wire_services(cfg: WiringConfig) -> dict:
         save_settings_to_disk=cfg.save_settings_to_disk,
         log_debug=cfg.log_debug,
         metadata_service=metadata_service,
+        artwork=artwork_service,
     )
+
+    # Wire sync_state_ref after sync_service is created (breaks circular dependency)
+    artwork_service._sync_state_ref = lambda: sync_service.sync_state
 
     download_service = DownloadService(
         romm_api=cfg.romm_api,
@@ -252,4 +279,6 @@ def wire_services(cfg: WiringConfig) -> dict:
         "achievements_service": achievements_service,
         "migration_service": migration_service,
         "game_detail_service": game_detail_service,
+        "artwork_service": artwork_service,
+        "shortcut_removal_service": shortcut_removal_service,
     }
