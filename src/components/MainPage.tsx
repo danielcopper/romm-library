@@ -355,27 +355,22 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
                   const s = preview.summary;
                   const hasRomChanges = s.new_count + s.changed_count + s.remove_count > 0;
                   if (!hasRomChanges && !s.has_collection_updates) return "Everything is up to date.";
-                  const parts: string[] = [];
+                  const sections: string[] = [];
                   if (hasRomChanges) {
-                    let line = `${s.new_count} new, ${s.changed_count} updated, ${s.unchanged_count} unchanged`;
-                    if (s.remove_count > 0) {
-                      line += `\n${s.remove_count} to remove`;
-                      if (s.disabled_platform_remove_count > 0) line += ` (${s.disabled_platform_remove_count} from disabled platforms)`;
-                    }
-                    parts.push(line);
+                    const r: string[] = [];
+                    if (s.new_count > 0) r.push(`${s.new_count} added`);
+                    if (s.changed_count > 0) r.push(`${s.changed_count} updated`);
+                    if (s.remove_count > 0) r.push(`${s.remove_count} removed`);
+                    sections.push(`ROMs: ${r.join(", ")}`);
                   }
-                  if (s.collection_diff?.has_changes) {
+                  if (s.collection_diff) {
                     const d = s.collection_diff;
-                    const cParts: string[] = [];
-                    if (d.added.length > 0) cParts.push(`+${d.added.length} collection${d.added.length !== 1 ? "s" : ""}`);
-                    if (d.removed.length > 0) cParts.push(`-${d.removed.length} collection${d.removed.length !== 1 ? "s" : ""}`);
-                    if (cParts.length > 0) {
-                      parts.push(`Collections: ${cParts.join(", ")}`);
-                    } else if (d.unchanged_count > 0) {
-                      parts.push(`${d.unchanged_count} collection${d.unchanged_count !== 1 ? "s" : ""} synced`);
-                    }
+                    const c: string[] = [];
+                    if (d.added.length > 0) c.push(`${d.added.length} added`);
+                    if (d.removed.length > 0) c.push(`${d.removed.length} removed`);
+                    if (c.length > 0) sections.push(`Collections: ${c.join(", ")}`);
                   }
-                  return parts.join("\n");
+                  return sections.length > 0 ? sections.join("; ") : "Everything is up to date.";
                 })()}
               />
             </PanelSectionRow>
