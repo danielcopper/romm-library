@@ -87,6 +87,18 @@ class FakeSaveApi:
     def download_firmware(self, firmware_id: int, filename: str, dest: str) -> None:
         raise NotImplementedError
 
+    def list_collections(self) -> list[dict]:
+        raise NotImplementedError
+
+    def list_virtual_collections(self, collection_type: str) -> list[dict]:
+        raise NotImplementedError
+
+    def list_roms_by_collection(self, collection_id: int, limit: int = 50, offset: int = 0) -> dict:
+        raise NotImplementedError
+
+    def list_roms_by_virtual_collection(self, virtual_id: str, limit: int = 50, offset: int = 0) -> dict:
+        raise NotImplementedError
+
     # ------------------------------------------------------------------
     # Implemented save/note methods
     # ------------------------------------------------------------------
