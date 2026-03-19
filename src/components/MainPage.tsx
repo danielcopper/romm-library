@@ -351,18 +351,22 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
             <PanelSectionRow>
               <Field
                 label="Preview"
-                description={
-                  preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count === 0 && !preview.summary.has_collection_updates
-                    ? "Everything is up to date."
-                    : `${preview.summary.new_count} new, ${preview.summary.changed_count} updated, ${preview.summary.unchanged_count} unchanged` +
-                      (preview.summary.remove_count > 0
-                        ? `\n${preview.summary.remove_count} to remove` +
-                          (preview.summary.disabled_platform_remove_count > 0
-                            ? ` (${preview.summary.disabled_platform_remove_count} from disabled platforms)`
-                            : "")
-                        : "") +
-                      (preview.summary.has_collection_updates ? "\nCollections will be updated" : "")
-                }
+                description={(() => {
+                  const s = preview.summary;
+                  const hasRomChanges = s.new_count + s.changed_count + s.remove_count > 0;
+                  if (!hasRomChanges && !s.has_collection_updates) return "Everything is up to date.";
+                  const parts: string[] = [];
+                  if (hasRomChanges) {
+                    let line = `${s.new_count} new, ${s.changed_count} updated, ${s.unchanged_count} unchanged`;
+                    if (s.remove_count > 0) {
+                      line += `\n${s.remove_count} to remove`;
+                      if (s.disabled_platform_remove_count > 0) line += ` (${s.disabled_platform_remove_count} from disabled platforms)`;
+                    }
+                    parts.push(line);
+                  }
+                  if (s.has_collection_updates) parts.push("Collections will be updated");
+                  return parts.join("\n");
+                })()}
               />
             </PanelSectionRow>
             {preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count > 0 || preview.summary.has_collection_updates ? (
