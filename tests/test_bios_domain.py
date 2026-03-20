@@ -7,6 +7,8 @@ from domain.bios import (
     build_file_entry,
     classify_firmware_file,
     collect_firmware_status,
+    compute_bios_label,
+    compute_bios_level,
     format_bios_status,
     is_used_by_active_core,
 )
@@ -362,3 +364,60 @@ class TestCollectFirmwareStatus:
         result = collect_firmware_status(items, registry_platform, "mgba_libretro.so")
         assert result[0].required is False
         assert result[0].classification == "optional"
+
+
+def _make_bios(**overrides) -> BiosStatus:
+    defaults = {
+        "platform_slug": "gba",
+        "server_count": 3,
+        "local_count": 2,
+        "all_downloaded": False,
+        "required_count": None,
+        "required_downloaded": None,
+        "files": (),
+        "active_core": None,
+        "active_core_label": None,
+        "available_cores": (),
+    }
+    defaults.update(overrides)
+    return BiosStatus(**defaults)
+
+
+class TestComputeBiosLevel:
+    def test_required_all_downloaded(self):
+        assert compute_bios_level(_make_bios(required_count=2, required_downloaded=2)) == "ok"
+
+    def test_required_partial(self):
+        assert compute_bios_level(_make_bios(required_count=3, required_downloaded=1)) == "partial"
+
+    def test_required_none_downloaded(self):
+        assert compute_bios_level(_make_bios(required_count=2, required_downloaded=0)) == "missing"
+
+    def test_no_required_all_downloaded(self):
+        assert compute_bios_level(_make_bios(all_downloaded=True)) == "ok"
+
+    def test_no_required_some_downloaded(self):
+        assert compute_bios_level(_make_bios(local_count=1, all_downloaded=False)) == "partial"
+
+    def test_no_required_none_downloaded(self):
+        assert compute_bios_level(_make_bios(local_count=0, all_downloaded=False)) == "missing"
+
+
+class TestComputeBiosLabel:
+    def test_required_all_downloaded(self):
+        assert compute_bios_label(_make_bios(required_count=2, required_downloaded=2)) == "OK"
+
+    def test_required_partial(self):
+        assert compute_bios_label(_make_bios(required_count=3, required_downloaded=1)) == "1/3 required"
+
+    def test_required_none_downloaded(self):
+        assert compute_bios_label(_make_bios(required_count=2, required_downloaded=0)) == "Missing"
+
+    def test_no_required_all_downloaded(self):
+        assert compute_bios_label(_make_bios(all_downloaded=True)) == "OK"
+
+    def test_no_required_some_downloaded(self):
+        assert compute_bios_label(_make_bios(server_count=5, local_count=3, all_downloaded=False)) == "3/5"
+
+    def test_no_required_none_downloaded(self):
+        assert compute_bios_label(_make_bios(local_count=0, all_downloaded=False)) == "Missing"
