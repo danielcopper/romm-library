@@ -24,6 +24,9 @@ export interface CachedGameDetail {
   rom_file?: string;
   ra_id?: number | null;
   achievement_summary?: AchievementSummary | null;
+  bios_level?: "ok" | "partial" | "missing" | null;
+  bios_label?: string | null;
+  save_sync_display?: { status: "synced" | "conflict" | "none"; label: string } | null;
 }
 
 const _cachedGameDetailRaw = callable<[number], CachedGameDetail>("get_cached_game_detail");

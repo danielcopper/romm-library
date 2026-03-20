@@ -5,7 +5,7 @@ from __future__ import annotations
 from models.bios import AvailableCore, BiosFileEntry, BiosStatus
 
 
-def format_bios_status(bios: dict, platform_slug: str) -> BiosStatus:
+def format_bios_status(bios: dict, platform_slug: str, *, cached_at: float = 0.0) -> BiosStatus:
     """Build a frontend-ready BiosStatus dataclass from raw firmware check result."""
     raw_files = bios.get("files", [])
     if raw_files and isinstance(raw_files[0], dict):
@@ -46,6 +46,7 @@ def format_bios_status(bios: dict, platform_slug: str) -> BiosStatus:
         active_core=bios.get("active_core"),
         active_core_label=bios.get("active_core_label"),
         available_cores=available_cores,
+        cached_at=cached_at,
     )
 
 
@@ -132,3 +133,37 @@ def collect_firmware_status(
         )
         for item in items
     )
+
+
+def compute_bios_level(status: BiosStatus) -> str:
+    """Compute BIOS status level: 'ok', 'partial', or 'missing'."""
+    req_count = status.required_count
+    req_done = status.required_downloaded
+    if req_count is not None and req_done is not None:
+        if req_done >= req_count:
+            return "ok"
+        if req_done > 0:
+            return "partial"
+        return "missing"
+    if status.all_downloaded:
+        return "ok"
+    if (status.local_count or 0) > 0:
+        return "partial"
+    return "missing"
+
+
+def compute_bios_label(status: BiosStatus) -> str:
+    """Compute human-readable BIOS status label."""
+    req_count = status.required_count
+    req_done = status.required_downloaded
+    if req_count is not None and req_done is not None:
+        if req_done >= req_count:
+            return "OK"
+        if req_done > 0:
+            return f"{req_done}/{req_count} required"
+        return "Missing"
+    if status.all_downloaded:
+        return "OK"
+    if (status.local_count or 0) > 0:
+        return f"{status.local_count}/{status.server_count}"
+    return "Missing"
