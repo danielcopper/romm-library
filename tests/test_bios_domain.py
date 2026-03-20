@@ -32,8 +32,8 @@ class TestFormatBiosStatusFullDict:
 
         assert isinstance(result, BiosStatus)
         assert result.platform_slug == "gba"
-        assert result.total == 3
-        assert result.downloaded == 2
+        assert result.server_count == 3
+        assert result.local_count == 2
         assert result.all_downloaded is False
         assert result.required_count == 2
         assert result.required_downloaded == 1
@@ -65,8 +65,8 @@ class TestFormatBiosStatusMinimalDict:
 
         assert isinstance(result, BiosStatus)
         assert result.platform_slug == "n64"
-        assert result.total == 0
-        assert result.downloaded == 0
+        assert result.server_count == 0
+        assert result.local_count == 0
         assert result.all_downloaded is False
         assert result.required_count is None
         assert result.required_downloaded is None
@@ -80,8 +80,8 @@ class TestFormatBiosStatusMinimalDict:
         bios = {"server_count": 5, "local_count": 3}
         result = format_bios_status(bios, "gba")
 
-        assert result.total == 5
-        assert result.downloaded == 3
+        assert result.server_count == 5
+        assert result.local_count == 3
         assert result.required_count is None
         assert result.files == ()
 
@@ -106,7 +106,7 @@ class TestFormatBiosStatusNeedsBiosContext:
         result = format_bios_status(bios, "gb")
         # Result is still returned — caller is responsible for the needs_bios guard
         assert result.platform_slug == "gb"
-        assert result.total == 0
+        assert result.server_count == 0
 
     def test_needs_bios_key_not_in_output(self):
         """needs_bios is not included in the returned BiosStatus."""

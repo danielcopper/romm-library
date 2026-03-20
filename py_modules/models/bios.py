@@ -33,8 +33,8 @@ class BiosStatus:
     """Aggregated BIOS status for a platform, ready for frontend display."""
 
     platform_slug: str
-    total: int
-    downloaded: int
+    server_count: int
+    local_count: int
     all_downloaded: bool
     required_count: int | None
     required_downloaded: int | None

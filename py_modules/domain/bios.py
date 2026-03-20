@@ -37,8 +37,8 @@ def format_bios_status(bios: dict, platform_slug: str) -> BiosStatus:
 
     return BiosStatus(
         platform_slug=platform_slug,
-        total=bios.get("server_count", 0),
-        downloaded=bios.get("local_count", 0),
+        server_count=bios.get("server_count", 0),
+        local_count=bios.get("local_count", 0),
         all_downloaded=bios.get("all_downloaded", False),
         required_count=bios.get("required_count"),
         required_downloaded=bios.get("required_downloaded"),

@@ -63,8 +63,8 @@ class TestBiosStatus:
     def _make_status(self, **overrides):
         defaults = {
             "platform_slug": "gba",
-            "total": 3,
-            "downloaded": 2,
+            "server_count": 3,
+            "local_count": 2,
             "all_downloaded": False,
             "required_count": 2,
             "required_downloaded": 1,
@@ -79,7 +79,7 @@ class TestBiosStatus:
     def test_construction(self):
         status = self._make_status()
         assert status.platform_slug == "gba"
-        assert status.total == 3
+        assert status.server_count == 3
         assert status.cached_at == 0.0
 
     def test_cached_at_override(self):
