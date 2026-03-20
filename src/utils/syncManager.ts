@@ -222,7 +222,12 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
           platformAppIds[pname] = [...appIds];
         }
       }
+      // Add new/changed shortcuts to platform collections (only if eligible)
+      const eligibleSet = data.platform_eligible_rom_ids
+        ? new Set(data.platform_eligible_rom_ids)
+        : null; // null = no filtering (full sync or legacy)
       for (const item of data.shortcuts) {
+        if (eligibleSet && !eligibleSet.has(item.rom_id)) continue;
         const appId = romIdToAppId[String(item.rom_id)];
         if (appId) {
           if (!platformAppIds[item.platform_name]) {
@@ -233,6 +238,7 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
       }
       if (data.changed_shortcuts) {
         for (const item of data.changed_shortcuts) {
+          if (eligibleSet && !eligibleSet.has(item.rom_id)) continue;
           const appId = romIdToAppId[String(item.rom_id)];
           if (appId) {
             if (!platformAppIds[item.platform_name]) {
