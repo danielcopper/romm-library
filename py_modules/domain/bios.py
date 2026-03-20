@@ -5,7 +5,7 @@ from __future__ import annotations
 from models.bios import AvailableCore, BiosFileEntry, BiosStatus
 
 
-def format_bios_status(bios: dict, platform_slug: str) -> BiosStatus:
+def format_bios_status(bios: dict, platform_slug: str, *, cached_at: float = 0.0) -> BiosStatus:
     """Build a frontend-ready BiosStatus dataclass from raw firmware check result."""
     raw_files = bios.get("files", [])
     if raw_files and isinstance(raw_files[0], dict):
@@ -46,6 +46,7 @@ def format_bios_status(bios: dict, platform_slug: str) -> BiosStatus:
         active_core=bios.get("active_core"),
         active_core_label=bios.get("active_core_label"),
         available_cores=available_cores,
+        cached_at=cached_at,
     )
 
 
