@@ -4,6 +4,7 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
+from models.bios import BiosFileEntry
 
 from adapters.steam_config import SteamConfigAdapter
 
@@ -182,7 +183,7 @@ class TestGetFirmwareStatus:
 
         dc_plat = next(p for p in result["platforms"] if p["platform_slug"] == "dc")
         assert len(dc_plat["files"]) == 2
-        assert all(not f["downloaded"] for f in dc_plat["files"])
+        assert all(not f["downloaded"] for f in dc_plat["files"])  # get_firmware_status files are dicts
 
     @pytest.mark.asyncio
     async def test_detects_downloaded_files(self, fw, tmp_path):
@@ -355,7 +356,18 @@ class TestDeletePlatformBios:
                 "server_count": 1,
                 "local_count": 1,
                 "all_downloaded": True,
-                "files": [{"file_name": "scph5501.bin", "downloaded": True, "local_path": str(bios_file)}],
+                "files": (
+                    BiosFileEntry(
+                        file_name="scph5501.bin",
+                        downloaded=True,
+                        local_path=str(bios_file),
+                        required=True,
+                        description="PS1 BIOS",
+                        classification="required",
+                        cores={},
+                        used_by_active=True,
+                    ),
+                ),
             }
 
         fw.check_platform_bios = mock_check
@@ -390,10 +402,28 @@ class TestDeletePlatformBios:
                 "server_count": 2,
                 "local_count": 0,
                 "all_downloaded": False,
-                "files": [
-                    {"file_name": "bios1.bin", "downloaded": False, "local_path": "/fake/path1"},
-                    {"file_name": "bios2.bin", "downloaded": False, "local_path": "/fake/path2"},
-                ],
+                "files": (
+                    BiosFileEntry(
+                        file_name="bios1.bin",
+                        downloaded=False,
+                        local_path="/fake/path1",
+                        required=False,
+                        description="bios1.bin",
+                        classification="unknown",
+                        cores={},
+                        used_by_active=True,
+                    ),
+                    BiosFileEntry(
+                        file_name="bios2.bin",
+                        downloaded=False,
+                        local_path="/fake/path2",
+                        required=False,
+                        description="bios2.bin",
+                        classification="unknown",
+                        cores={},
+                        used_by_active=True,
+                    ),
+                ),
             }
 
         fw.check_platform_bios = mock_check
@@ -739,8 +769,8 @@ class TestCheckPlatformBiosRequired:
         fw._loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
         result = await fw.check_platform_bios("dc")
-        assert result["files"][0]["required"] is True
-        assert result["files"][0]["description"] == "Dreamcast BIOS"
+        assert result["files"][0].required is True
+        assert result["files"][0].description == "Dreamcast BIOS"
 
     @pytest.mark.asyncio
     async def test_check_platform_bios_unknown_count(self, fw, tmp_path):
@@ -790,7 +820,7 @@ class TestCheckPlatformBiosRequired:
         assert result["needs_bios"] is True
         assert result["unknown_count"] == 2
         # Per-file classification
-        classifications = {f["file_name"]: f["classification"] for f in result["files"]}
+        classifications = {f.file_name: f.classification for f in result["files"]}
         assert classifications["known.bin"] == "required"
         assert classifications["mystery.bin"] == "unknown"
         assert classifications["alien.bin"] == "unknown"
@@ -1177,7 +1207,7 @@ class TestPerCoreFiltering:
             result = await fw.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
-        file_names = [f["file_name"] for f in result["files"]]
+        file_names = [f.file_name for f in result["files"]]
         assert "gba_bios.bin" in file_names
         assert "gb_bios.bin" in file_names  # present but not used by active
         assert "sgb_bios.bin" in file_names  # present but not used by active
@@ -1185,14 +1215,14 @@ class TestPerCoreFiltering:
         assert result["active_core"] == "gpsp_libretro"
         assert result["active_core_label"] == "gpSP"
         # gpSP requires gba_bios.bin
-        gba_file = next(f for f in result["files"] if f["file_name"] == "gba_bios.bin")
-        assert gba_file["required"] is True
-        assert gba_file["classification"] == "required"
-        assert gba_file["used_by_active"] is True
+        gba_file = next(f for f in result["files"] if f.file_name == "gba_bios.bin")
+        assert gba_file.required is True
+        assert gba_file.classification == "required"
+        assert gba_file.used_by_active is True
         # gb_bios not used by gpSP
-        gb_file = next(f for f in result["files"] if f["file_name"] == "gb_bios.bin")
-        assert gb_file["used_by_active"] is False
-        assert gb_file["cores"] == {"gambatte_libretro": {"required": False}, "mgba_libretro": {"required": False}}
+        gb_file = next(f for f in result["files"] if f.file_name == "gb_bios.bin")
+        assert gb_file.used_by_active is False
+        assert gb_file.cores == {"gambatte_libretro": {"required": False}, "mgba_libretro": {"required": False}}
         # required_count should only count files used by active core
         assert result["required_count"] == 1
         assert result["required_downloaded"] == 0
@@ -1273,8 +1303,8 @@ class TestPerCoreFiltering:
         assert result["server_count"] == 3
         assert result["required_count"] == 0  # all optional for mGBA
         for f in result["files"]:
-            assert f["classification"] == "optional"
-            assert f["used_by_active"] is True
+            assert f.classification == "optional"
+            assert f.used_by_active is True
 
     @pytest.mark.asyncio
     async def test_check_platform_bios_no_core_shows_all(self, fw, tmp_path):
@@ -1322,7 +1352,7 @@ class TestPerCoreFiltering:
         assert result["server_count"] == 1
         assert result["active_core"] is None
         # Falls back to OR-logic: required=True
-        assert result["files"][0]["required"] is True
+        assert result["files"][0].required is True
 
     @pytest.mark.asyncio
     async def test_offline_fallback_includes_all_with_used_by_active(self, plugin, fw, tmp_path):
@@ -1366,14 +1396,14 @@ class TestPerCoreFiltering:
             result = await fw.check_platform_bios("gba")
 
         assert result["needs_bios"] is True
-        file_names = [f["file_name"] for f in result["files"]]
+        file_names = [f.file_name for f in result["files"]]
         assert "gba_bios.bin" in file_names
         assert "gb_bios.bin" in file_names  # present but not used by active
         # Check used_by_active flags
-        gba_file = next(f for f in result["files"] if f["file_name"] == "gba_bios.bin")
-        assert gba_file["used_by_active"] is True
-        gb_file = next(f for f in result["files"] if f["file_name"] == "gb_bios.bin")
-        assert gb_file["used_by_active"] is False
+        gba_file = next(f for f in result["files"] if f.file_name == "gba_bios.bin")
+        assert gba_file.used_by_active is True
+        gb_file = next(f for f in result["files"] if f.file_name == "gb_bios.bin")
+        assert gb_file.used_by_active is False
 
 
 class TestLoadBiosRegistryErrors:
@@ -1705,7 +1735,7 @@ class TestCheckPlatformBiosCached:
         assert result["active_core"] == "mgba_libretro.so"
         assert result["active_core_label"] == "mGBA"
         assert len(result["files"]) == 1
-        assert result["files"][0]["file_name"] == "gba_bios.bin"
+        assert result["files"][0].file_name == "gba_bios.bin"
 
     def test_does_not_call_http(self):
         """Cache-only method must not invoke any HTTP calls."""

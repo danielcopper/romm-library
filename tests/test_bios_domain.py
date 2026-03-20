@@ -1,5 +1,7 @@
 """Tests for domain.bios pure functions."""
 
+from models.bios import BiosFileEntry, BiosStatus
+
 from domain.bios import (
     build_cores_info,
     build_file_entry,
@@ -28,29 +30,30 @@ class TestFormatBiosStatusFullDict:
         }
         result = format_bios_status(bios, "gba")
 
-        assert result["platform_slug"] == "gba"
-        assert result["total"] == 3
-        assert result["downloaded"] == 2
-        assert result["all_downloaded"] is False
-        assert result["required_count"] == 2
-        assert result["required_downloaded"] == 1
-        assert len(result["files"]) == 1
-        assert result["files"][0]["file_name"] == "gba_bios.bin"
-        assert result["active_core"] == "mgba_libretro.so"
-        assert result["active_core_label"] == "mGBA"
-        assert len(result["available_cores"]) == 1
+        assert isinstance(result, BiosStatus)
+        assert result.platform_slug == "gba"
+        assert result.total == 3
+        assert result.downloaded == 2
+        assert result.all_downloaded is False
+        assert result.required_count == 2
+        assert result.required_downloaded == 1
+        assert len(result.files) == 1
+        assert result.files[0].file_name == "gba_bios.bin"
+        assert result.active_core == "mgba_libretro.so"
+        assert result.active_core_label == "mGBA"
+        assert len(result.available_cores) == 1
 
     def test_platform_slug_passed_through(self):
         """platform_slug comes from the argument, not the bios dict."""
         bios = {"server_count": 1, "local_count": 1, "all_downloaded": True}
         result = format_bios_status(bios, "snes")
-        assert result["platform_slug"] == "snes"
+        assert result.platform_slug == "snes"
 
     def test_all_downloaded_true(self):
         """all_downloaded=True is preserved."""
         bios = {"all_downloaded": True, "server_count": 2, "local_count": 2}
         result = format_bios_status(bios, "psx")
-        assert result["all_downloaded"] is True
+        assert result.all_downloaded is True
 
 
 class TestFormatBiosStatusMinimalDict:
@@ -60,33 +63,34 @@ class TestFormatBiosStatusMinimalDict:
         """Missing optional fields fall back to defaults."""
         result = format_bios_status({}, "n64")
 
-        assert result["platform_slug"] == "n64"
-        assert result["total"] == 0
-        assert result["downloaded"] == 0
-        assert result["all_downloaded"] is False
-        assert result["required_count"] is None
-        assert result["required_downloaded"] is None
-        assert result["files"] == []
-        assert result["active_core"] is None
-        assert result["active_core_label"] is None
-        assert result["available_cores"] == []
+        assert isinstance(result, BiosStatus)
+        assert result.platform_slug == "n64"
+        assert result.total == 0
+        assert result.downloaded == 0
+        assert result.all_downloaded is False
+        assert result.required_count is None
+        assert result.required_downloaded is None
+        assert result.files == ()
+        assert result.active_core is None
+        assert result.active_core_label is None
+        assert result.available_cores == ()
 
     def test_partial_dict_uses_provided_values(self):
         """Only provided keys are used; missing ones use defaults."""
         bios = {"server_count": 5, "local_count": 3}
         result = format_bios_status(bios, "gba")
 
-        assert result["total"] == 5
-        assert result["downloaded"] == 3
-        assert result["required_count"] is None
-        assert result["files"] == []
+        assert result.total == 5
+        assert result.downloaded == 3
+        assert result.required_count is None
+        assert result.files == ()
 
     def test_none_values_not_substituted(self):
         """Explicit None values in bios dict are returned as-is for optional fields."""
         bios = {"required_count": None, "required_downloaded": None}
         result = format_bios_status(bios, "gba")
-        assert result["required_count"] is None
-        assert result["required_downloaded"] is None
+        assert result.required_count is None
+        assert result.required_downloaded is None
 
 
 class TestFormatBiosStatusNeedsBiosContext:
@@ -101,14 +105,15 @@ class TestFormatBiosStatusNeedsBiosContext:
         }
         result = format_bios_status(bios, "gb")
         # Result is still returned — caller is responsible for the needs_bios guard
-        assert result["platform_slug"] == "gb"
-        assert result["total"] == 0
+        assert result.platform_slug == "gb"
+        assert result.total == 0
 
     def test_needs_bios_key_not_in_output(self):
-        """needs_bios is not included in the returned dict."""
+        """needs_bios is not included in the returned BiosStatus."""
         bios = {"needs_bios": True, "server_count": 1}
         result = format_bios_status(bios, "gba")
-        assert "needs_bios" not in result
+        assert isinstance(result, BiosStatus)
+        assert not hasattr(result, "needs_bios")
 
 
 class TestClassifyFirmwareFile:
@@ -257,37 +262,39 @@ class TestBuildFileEntry:
             "cores": {"dc_libretro.so": {"required": True}},
         }
         result = build_file_entry("dc_boot.bin", True, "/bios/dc/dc_boot.bin", reg_entry, None)
-        assert result["file_name"] == "dc_boot.bin"
-        assert result["downloaded"] is True
-        assert result["local_path"] == "/bios/dc/dc_boot.bin"
-        assert result["required"] is True
-        assert result["description"] == "Dreamcast BIOS"
-        assert result["classification"] == "required"
-        assert result["cores"] == {"dc_libretro.so": {"required": True}}
-        assert result["used_by_active"] is True
+        assert isinstance(result, BiosFileEntry)
+        assert result.file_name == "dc_boot.bin"
+        assert result.downloaded is True
+        assert result.local_path == "/bios/dc/dc_boot.bin"
+        assert result.required is True
+        assert result.description == "Dreamcast BIOS"
+        assert result.classification == "required"
+        assert result.cores == {"dc_libretro.so": {"required": True}}
+        assert result.used_by_active is True
 
     def test_no_reg_entry_yields_unknown(self):
         """Without reg_entry, classification is unknown and required is False."""
         result = build_file_entry("mystery.bin", False, "/bios/mystery.bin", None, None)
-        assert result["file_name"] == "mystery.bin"
-        assert result["downloaded"] is False
-        assert result["required"] is False
-        assert result["classification"] == "unknown"
-        assert result["description"] == "mystery.bin"
-        assert result["cores"] == {}
-        assert result["used_by_active"] is True
+        assert isinstance(result, BiosFileEntry)
+        assert result.file_name == "mystery.bin"
+        assert result.downloaded is False
+        assert result.required is False
+        assert result.classification == "unknown"
+        assert result.description == "mystery.bin"
+        assert result.cores == {}
+        assert result.used_by_active is True
 
     def test_downloaded_false_reflected(self):
         """downloaded=False is reflected in the entry."""
         reg_entry = {"description": "BIOS", "required": True}
         result = build_file_entry("bios.bin", False, "/bios/bios.bin", reg_entry, None)
-        assert result["downloaded"] is False
+        assert result.downloaded is False
 
     def test_downloaded_true_reflected(self):
         """downloaded=True is reflected in the entry."""
         reg_entry = {"description": "BIOS", "required": True}
         result = build_file_entry("bios.bin", True, "/bios/bios.bin", reg_entry, None)
-        assert result["downloaded"] is True
+        assert result.downloaded is True
 
     def test_active_core_not_in_cores_marks_not_used(self):
         """File with cores dict where active_core is absent has used_by_active=False."""
@@ -297,9 +304,9 @@ class TestBuildFileEntry:
             "cores": {"gpsp_libretro.so": {"required": True}},
         }
         result = build_file_entry("gba_bios.bin", False, "/bios/gba_bios.bin", reg_entry, "mgba_libretro.so")
-        assert result["used_by_active"] is False
-        assert result["required"] is False
-        assert result["classification"] == "optional"
+        assert result.used_by_active is False
+        assert result.required is False
+        assert result.classification == "optional"
 
 
 class TestCollectFirmwareStatus:
@@ -316,19 +323,21 @@ class TestCollectFirmwareStatus:
         ]
         result = collect_firmware_status(items, registry_platform, None)
         assert len(result) == 2
+        assert isinstance(result, tuple)
+        assert all(isinstance(f, BiosFileEntry) for f in result)
 
-        known = next(f for f in result if f["file_name"] == "known.bin")
-        unknown = next(f for f in result if f["file_name"] == "unknown.bin")
+        known = next(f for f in result if f.file_name == "known.bin")
+        unknown = next(f for f in result if f.file_name == "unknown.bin")
 
-        assert known["classification"] == "required"
-        assert known["downloaded"] is True
-        assert unknown["classification"] == "unknown"
-        assert unknown["downloaded"] is False
+        assert known.classification == "required"
+        assert known.downloaded is True
+        assert unknown.classification == "unknown"
+        assert unknown.downloaded is False
 
-    def test_empty_items_returns_empty_list(self):
+    def test_empty_items_returns_empty_tuple(self):
         """No items produces empty result."""
         result = collect_firmware_status([], {"some.bin": {"required": True}}, None)
-        assert result == []
+        assert result == ()
 
     def test_registry_platform_lookup_by_file_name(self):
         """reg_entry is looked up from registry_platform by file_name."""
@@ -337,8 +346,8 @@ class TestCollectFirmwareStatus:
         }
         items = [{"file_name": "bios.bin", "downloaded": False, "dest": "/bios/bios.bin"}]
         result = collect_firmware_status(items, registry_platform, None)
-        assert result[0]["classification"] == "optional"
-        assert result[0]["description"] == "My BIOS"
+        assert result[0].classification == "optional"
+        assert result[0].description == "My BIOS"
 
     def test_active_core_forwarded_to_classify(self):
         """active_core_so is passed through to per-core classification."""
@@ -351,5 +360,5 @@ class TestCollectFirmwareStatus:
         }
         items = [{"file_name": "gba_bios.bin", "downloaded": False, "dest": "/bios/gba_bios.bin"}]
         result = collect_firmware_status(items, registry_platform, "mgba_libretro.so")
-        assert result[0]["required"] is False
-        assert result[0]["classification"] == "optional"
+        assert result[0].required is False
+        assert result[0].classification == "optional"

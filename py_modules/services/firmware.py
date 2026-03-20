@@ -234,9 +234,9 @@ class FirmwareService:
             return {"needs_bios": False, "cached_at": self._firmware_cache_epoch}
 
         server_count = len(files)
-        local_count = sum(1 for f in files if f["downloaded"])
-        active_files = [f for f in files if f.get("used_by_active", True)]
-        required_files = [f for f in active_files if f["classification"] == "required"]
+        local_count = sum(1 for f in files if f.downloaded)
+        active_files = [f for f in files if f.used_by_active]
+        required_files = [f for f in active_files if f.classification == "required"]
 
         return {
             "needs_bios": True,
@@ -244,8 +244,8 @@ class FirmwareService:
             "local_count": local_count,
             "all_downloaded": local_count >= server_count,
             "required_count": len(required_files),
-            "required_downloaded": sum(1 for f in required_files if f["downloaded"]),
-            "unknown_count": sum(1 for f in files if f["classification"] == "unknown"),
+            "required_downloaded": sum(1 for f in required_files if f.downloaded),
+            "unknown_count": sum(1 for f in files if f.classification == "unknown"),
             "files": files,
             "active_core": active_core_so,
             "active_core_label": active_core_label,
@@ -530,11 +530,11 @@ class FirmwareService:
             return {"needs_bios": False}
 
         server_count = len(files)
-        local_count = sum(1 for f in files if f["downloaded"])
+        local_count = sum(1 for f in files if f.downloaded)
 
         # required_count/required_downloaded: only files used by the active core (for badge)
-        active_files = [f for f in files if f.get("used_by_active", True)]
-        required_files = [f for f in active_files if f["classification"] == "required"]
+        active_files = [f for f in files if f.used_by_active]
+        required_files = [f for f in active_files if f.classification == "required"]
 
         return {
             "needs_bios": True,
@@ -542,8 +542,8 @@ class FirmwareService:
             "local_count": local_count,
             "all_downloaded": local_count >= server_count,
             "required_count": len(required_files),
-            "required_downloaded": sum(1 for f in required_files if f["downloaded"]),
-            "unknown_count": sum(1 for f in files if f["classification"] == "unknown"),
+            "required_downloaded": sum(1 for f in required_files if f.downloaded),
+            "unknown_count": sum(1 for f in files if f.classification == "unknown"),
             "files": files,
             "active_core": active_core_so,
             "active_core_label": active_core_label,
@@ -555,15 +555,15 @@ class FirmwareService:
         deleted = 0
         errors = []
         for f in files:
-            if not f.get("downloaded"):
+            if not f.downloaded:
                 continue
             try:
-                os.remove(f["local_path"])
+                os.remove(f.local_path)
                 deleted += 1
                 # Remove from state tracking
-                self._state["downloaded_bios"].pop(f["file_name"], None)
+                self._state["downloaded_bios"].pop(f.file_name, None)
             except Exception as e:
-                errors.append(f"{f['file_name']}: {e}")
+                errors.append(f"{f.file_name}: {e}")
 
         if deleted:
             self._save_state()
