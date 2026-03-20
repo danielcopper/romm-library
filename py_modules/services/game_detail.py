@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from typing import TYPE_CHECKING
 
+from models.bios import BiosStatus
 from models.metadata import AchievementSummary
 
 from domain.bios import compute_bios_label, compute_bios_level, format_bios_status
@@ -140,7 +141,7 @@ class GameDetailService:
             cached_bios = self._bios_checker.check_platform_bios_cached(platform_slug, rom_filename=rom_file or None)
             if cached_bios and cached_bios.get("needs_bios"):
                 bios_obj = format_bios_status(cached_bios, platform_slug)
-                bios_obj = replace(bios_obj, cached_at=cached_bios.get("cached_at", 0.0))
+                bios_obj: BiosStatus = replace(bios_obj, cached_at=cached_bios.get("cached_at", 0.0))
                 bios_status = asdict(bios_obj)
                 bios_level = compute_bios_level(bios_obj)
                 bios_label = compute_bios_label(bios_obj)

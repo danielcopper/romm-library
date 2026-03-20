@@ -203,7 +203,7 @@ function extractBiosInfo(b: BiosStatus): Partial<InfoState> {
   const activeCoreLabel = b.active_core_label ?? null;
   const availableCores = b.available_cores ?? [];
   const defaultCore = availableCores.find((c) => c.is_default);
-  const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+  const activeCoreIsDefault = !activeCoreLabel || activeCoreLabel === defaultCore?.label;
   return {
     biosNeeded: true,
     biosStatus: getBiosLevel(b),
@@ -342,7 +342,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           const activeCoreLabel = cachedBios.active_core_label ?? null;
           const availableCores = cachedBios.available_cores ?? [];
           const defaultCore = availableCores.find((c) => c.is_default);
-          const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+          const activeCoreIsDefault = !activeCoreLabel || activeCoreLabel === defaultCore?.label;
           setInfo((prev) => ({
             ...prev,
             biosNeeded: true,
@@ -399,7 +399,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           const activeCoreLabel = b.active_core_label ?? null;
           const availableCores = b.available_cores ?? [];
           const defaultCore = availableCores.find((c) => c.is_default);
-          const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+          const activeCoreIsDefault = !activeCoreLabel || activeCoreLabel === defaultCore?.label;
           setInfo((prev) => ({
             ...prev,
             activeCoreLabel,
