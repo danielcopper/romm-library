@@ -57,6 +57,30 @@ function hashIndicator(hv: boolean | null): string {
   return " \u2014";
 }
 
+function renderCollectionSections(
+  collections: CollectionSyncSetting[],
+  onToggle: (id: string, enabled: boolean) => void,
+) {
+  return (["favorites", "user", "franchise"] as const).map((cat) => {
+    const items = collections.filter((c) => c.category === cat);
+    if (items.length === 0) return null;
+    return (
+      <PanelSection key={cat} title={CATEGORY_TITLES[cat]}>
+        {items.map((collection) => (
+          <PanelSectionRow key={collection.id}>
+            <ToggleField
+              label={collection.name}
+              description={`${collection.rom_count} ROMs`}
+              checked={collection.sync_enabled}
+              onChange={(value: boolean) => onToggle(collection.id, value)}
+            />
+          </PanelSectionRow>
+        ))}
+      </PanelSection>
+    );
+  });
+}
+
 interface LibraryPageProps {
   onBack: () => void;
 }
@@ -273,26 +297,6 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
     );
   };
 
-  const renderCollectionSections = () =>
-    (["favorites", "user", "franchise"] as const).map((cat) => {
-      const items = collections.filter((c) => c.category === cat);
-      if (items.length === 0) return null;
-      return (
-        <PanelSection key={cat} title={CATEGORY_TITLES[cat]}>
-          {items.map((collection) => (
-            <PanelSectionRow key={collection.id}>
-              <ToggleField
-                label={collection.name}
-                description={`${collection.rom_count} ROMs`}
-                checked={collection.sync_enabled}
-                onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-              />
-            </PanelSectionRow>
-          ))}
-        </PanelSection>
-      );
-    });
-
   // --- Collections tab content ---
   const renderCollectionsContent = () => {
     if (collectionsLoading) {
@@ -346,7 +350,7 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
           </PanelSectionRow>
         </PanelSection>
         {/* Collection sections by category */}
-        {renderCollectionSections()}
+        {renderCollectionSections(collections, handleCollectionToggle)}
       </>
     );
   };
