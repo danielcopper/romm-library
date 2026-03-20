@@ -78,6 +78,7 @@ class GameDetailService:
         return {
             "files": files_list,
             "last_sync_check_at": raw_save.get("last_sync_check_at"),
+            "conflicts": [],  # lightweight — full conflicts via get_save_status()
         }
 
     def _build_achievement_summary(self, rom_id_str: str, ra_id) -> dict | None:

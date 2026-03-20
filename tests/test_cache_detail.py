@@ -457,8 +457,8 @@ class TestGetCachedGameDetailBiosFromCache:
         assert bs is not None
         assert bs["platform_slug"] == "gba"
         assert bs["cached_at"] == pytest.approx(99.0)
-        assert bs["total"] == 1
-        assert bs["downloaded"] == 0
+        assert bs["server_count"] == 1
+        assert bs["local_count"] == 0
 
     @pytest.mark.asyncio
     async def test_bios_status_none_when_no_platform_slug(self, plugin, game_detail_service):
@@ -533,8 +533,8 @@ class TestGetBiosStatusFound:
         bs = result["bios_status"]
         assert bs is not None
         assert bs["platform_slug"] == "gba"
-        assert bs["total"] == 3
-        assert bs["downloaded"] == 1
+        assert bs["server_count"] == 3
+        assert bs["local_count"] == 1
         assert bs["all_downloaded"] is False
         assert bs["required_count"] == 2
         assert bs["required_downloaded"] == 1
@@ -613,6 +613,27 @@ class TestGetBiosStatusNotFound:
 
         result = await game_detail_service.get_bios_status(42)
         assert result["bios_status"] is None
+
+
+class TestGetCachedGameDetailSaveStatusConflicts:
+    @pytest.mark.asyncio
+    async def test_save_status_includes_empty_conflicts(self, plugin, game_detail_service):
+        """Lightweight save_status should include an empty conflicts list."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = True
+        plugin._save_sync_state["saves"]["42"] = {
+            "files": {"test.srm": {"last_sync_hash": "abc", "last_sync_at": "2026-01-01T00:00:00Z"}},
+            "last_sync_check_at": "2026-01-01T00:00:00Z",
+        }
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert result["save_status"] is not None
+        assert "conflicts" in result["save_status"]
+        assert result["save_status"]["conflicts"] == []
 
 
 class TestLightweightSaveStatusNoSaves:
