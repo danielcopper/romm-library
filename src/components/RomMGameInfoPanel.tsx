@@ -138,15 +138,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         if (cached.bios_status) {
           biosStatus = {
             needs_bios: true,
-            server_count: cached.bios_status.total,
-            local_count: cached.bios_status.downloaded,
-            all_downloaded: cached.bios_status.all_downloaded,
-            required_count: cached.bios_status.required_count,
-            required_downloaded: cached.bios_status.required_downloaded,
-            files: cached.bios_status.files as BiosStatus["files"],
-            active_core: cached.bios_status.active_core,
-            active_core_label: cached.bios_status.active_core_label,
-            available_cores: cached.bios_status.available_cores,
+            ...cached.bios_status,
           };
         }
 
@@ -173,22 +165,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           };
         }
 
-        // Derive conflicts from save status
-        const cachedSaveStatus = saveStatus;
-        const conflicts: PendingConflict[] = (cachedSaveStatus?.files ?? [])
-          .filter((f: any) => f.status === "conflict")
-          .map((f: any) => ({
-            rom_id: romId,
-            filename: f.filename,
-            local_path: f.local_path ?? null,
-            local_hash: null,
-            local_mtime: f.local_mtime ?? null,
-            local_size: f.local_size ?? null,
-            server_save_id: f.server_save_id ?? 0,
-            server_updated_at: f.server_updated_at ?? "",
-            server_size: f.server_size ?? null,
-            created_at: new Date().toISOString(),
-          }));
+        // Use pre-computed conflicts from backend
+        const conflicts: PendingConflict[] = cached.save_status?.conflicts ?? [];
 
         // Store ra_id for tab visibility
         const raId = (cached as any).ra_id ?? null;
@@ -281,20 +259,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         const enabled = detail.save_sync_enabled as boolean;
         if (enabled) {
           const updatedStatus = await getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null);
-          const conflicts: PendingConflict[] = (updatedStatus?.files ?? [])
-            .filter((f: any) => f.status === "conflict")
-            .map((f: any) => ({
-              rom_id: romIdRef.current!,
-              filename: f.filename,
-              local_path: f.local_path ?? null,
-              local_hash: null,
-              local_mtime: f.local_mtime ?? null,
-              local_size: f.local_size ?? null,
-              server_save_id: f.server_save_id ?? 0,
-              server_updated_at: f.server_updated_at ?? "",
-              server_size: f.server_size ?? null,
-              created_at: new Date().toISOString(),
-            }));
+          const conflicts: PendingConflict[] = updatedStatus?.conflicts ?? [];
           setState((prev) => ({
             ...prev,
             saveSyncEnabled: true,
@@ -309,20 +274,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
       if (detail?.type === "save_sync" && (!detail.rom_id || detail.rom_id === romIdRef.current)) {
         const updatedStatus = await getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null);
-        const conflicts: PendingConflict[] = (updatedStatus?.files ?? [])
-          .filter((f: any) => f.status === "conflict")
-          .map((f: any) => ({
-            rom_id: romIdRef.current!,
-            filename: f.filename,
-            local_path: f.local_path ?? null,
-            local_hash: null,
-            local_mtime: f.local_mtime ?? null,
-            local_size: f.local_size ?? null,
-            server_save_id: f.server_save_id ?? 0,
-            server_updated_at: f.server_updated_at ?? "",
-            server_size: f.server_size ?? null,
-            created_at: new Date().toISOString(),
-          }));
+        const conflicts: PendingConflict[] = updatedStatus?.conflicts ?? [];
         setState((prev) => ({
           ...prev,
           saveStatus: updatedStatus,
@@ -340,15 +292,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         if (cached.bios_status) {
           biosStatus = {
             needs_bios: true,
-            server_count: cached.bios_status.total,
-            local_count: cached.bios_status.downloaded,
-            all_downloaded: cached.bios_status.all_downloaded,
-            required_count: cached.bios_status.required_count,
-            required_downloaded: cached.bios_status.required_downloaded,
-            files: cached.bios_status.files as BiosStatus["files"],
-            active_core: cached.bios_status.active_core,
-            active_core_label: cached.bios_status.active_core_label,
-            available_cores: cached.bios_status.available_cores,
+            ...cached.bios_status,
           };
         }
         setState((prev) => ({ ...prev, biosStatus }));

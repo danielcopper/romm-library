@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, CollectionSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, CollectionSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, BiosFileStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress } from "../types";
 
 export interface BackendResult {
   success: boolean;
@@ -17,10 +17,10 @@ export interface CachedGameDetail {
   platform_name?: string;
   installed?: boolean;
   save_sync_enabled?: boolean;
-  save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string } | null;
+  save_status?: { files: Array<{ filename: string; status: string; last_sync_at?: string }>; last_sync_check_at?: string; conflicts?: PendingConflict[] } | null;
 
   metadata?: Record<string, unknown> | null;
-  bios_status?: { needs_bios?: boolean; platform_slug: string; total: number; downloaded: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; cached_at?: number; files?: Array<{ file_name: string; downloaded: boolean; local_path: string; required: boolean; description: string; classification: string; cores?: Record<string, { required: boolean }>; used_by_active?: boolean }> } | null;
+  bios_status?: { needs_bios?: boolean; platform_slug: string; server_count: number; local_count: number; all_downloaded: boolean; required_count?: number; required_downloaded?: number; active_core?: string; active_core_label?: string; available_cores?: AvailableCore[]; cached_at?: number; files?: BiosFileStatus[] } | null;
   rom_file?: string;
   ra_id?: number | null;
   achievement_summary?: AchievementSummary | null;
