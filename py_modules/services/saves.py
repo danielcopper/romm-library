@@ -15,8 +15,11 @@ import socket
 import tempfile
 import time
 import uuid
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+from models.saves import SaveConflict
 
 from domain.save_conflicts import (
     build_conflict_dict,
@@ -453,7 +456,7 @@ class SaveService:
         server: dict | None,
         local_hash: str,
         errors: list[str],
-        conflicts: list[dict],
+        conflicts: list[SaveConflict],
     ) -> None:
         """Handle a RommConflictError by recording a conflict or error entry."""
         if local and server:
@@ -493,7 +496,7 @@ class SaveService:
         saves_dir: str,
         system: str,
         errors: list[str],
-        conflicts: list[dict],
+        conflicts: list[SaveConflict],
     ) -> bool:
         """Execute a resolved sync action (download/upload). Returns True if synced."""
         try:
@@ -523,7 +526,7 @@ class SaveService:
         saves_dir: str,
         system: str,
         errors: list[str],
-        conflicts: list[dict],
+        conflicts: list[SaveConflict],
     ) -> bool:
         """Process sync for one save file. Returns True if a file was synced."""
         t_file = time.time()
@@ -564,7 +567,7 @@ class SaveService:
         self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time() - t_action:.3f}s")
         return result
 
-    def _sync_rom_saves(self, rom_id: int) -> tuple[int, list[str], list[dict]]:
+    def _sync_rom_saves(self, rom_id: int) -> tuple[int, list[str], list[SaveConflict]]:
         """Sync saves for a single ROM (always bidirectional).
 
         Returns ``(synced_count, errors_list, conflicts_list)``.
@@ -607,7 +610,7 @@ class SaveService:
         all_filenames = set(local_by_name.keys()) | set(server_by_name.keys())
         synced = 0
         errors: list[str] = []
-        conflicts: list[dict] = []
+        conflicts: list[SaveConflict] = []
 
         for filename in sorted(all_filenames):
             if self._process_single_file_sync(
@@ -902,7 +905,7 @@ class SaveService:
             "message": msg,
             "synced": synced,
             "errors": errors,
-            "conflicts": conflicts,
+            "conflicts": [asdict(c) for c in conflicts],
         }
 
     async def post_exit_sync(self, rom_id: int) -> dict:
@@ -942,7 +945,7 @@ class SaveService:
             "message": msg,
             "synced": synced,
             "errors": errors,
-            "conflicts": conflicts,
+            "conflicts": [asdict(c) for c in conflicts],
         }
 
     async def sync_rom_saves(self, rom_id: int) -> dict:
@@ -966,7 +969,7 @@ class SaveService:
             "message": msg,
             "synced": synced,
             "errors": errors,
-            "conflicts": conflicts,
+            "conflicts": [asdict(c) for c in conflicts],
         }
 
     async def sync_all_saves(self) -> dict:
@@ -981,7 +984,7 @@ class SaveService:
 
         total_synced = 0
         total_errors: list[str] = []
-        all_conflicts: list[dict] = []
+        all_conflicts: list[SaveConflict] = []
         rom_count = 0
 
         # Only iterate installed ROMs — non-installed ROMs have no save files
@@ -1008,7 +1011,7 @@ class SaveService:
             "message": msg,
             "synced": total_synced,
             "conflicts": conflicts_count,
-            "conflicts_list": all_conflicts,
+            "conflicts_list": [asdict(c) for c in all_conflicts],
             "roms_checked": rom_count,
             "errors": total_errors,
         }

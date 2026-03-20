@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from models.saves import SaveConflict
+
 
 def check_local_changes(local_hash: str | None, last_sync_hash: str) -> bool:
     """Return True if the local file has changed since the last sync.
@@ -175,7 +177,7 @@ def build_conflict_dict(
     local_info: dict | None,
     local_hash: str | None,
     server_save: dict,
-) -> dict:
+) -> SaveConflict:
     """Build a conflict descriptor for the frontend.
 
     Parameters
@@ -195,21 +197,21 @@ def build_conflict_dict(
 
     Returns
     -------
-    dict
+    SaveConflict
         Conflict descriptor ready for the frontend.
     """
     local_mtime_val: float | None = local_info.get("mtime") if local_info else None
-    return {
-        "rom_id": rom_id,
-        "filename": filename,
-        "local_path": local_info["path"] if local_info else None,
-        "local_hash": local_hash,
-        "local_mtime": (
+    return SaveConflict(
+        rom_id=rom_id,
+        filename=filename,
+        local_path=local_info["path"] if local_info else None,
+        local_hash=local_hash,
+        local_mtime=(
             datetime.fromtimestamp(local_mtime_val, tz=UTC).isoformat() if local_mtime_val is not None else None
         ),
-        "local_size": local_info.get("size") if local_info else None,
-        "server_save_id": server_save.get("id"),
-        "server_updated_at": server_save.get("updated_at", ""),
-        "server_size": server_save.get("file_size_bytes"),
-        "created_at": datetime.now(UTC).isoformat(),
-    }
+        local_size=local_info.get("size") if local_info else None,
+        server_save_id=server_save.get("id"),
+        server_updated_at=server_save.get("updated_at", ""),
+        server_size=server_save.get("file_size_bytes"),
+        created_at=datetime.now(UTC).isoformat(),
+    )

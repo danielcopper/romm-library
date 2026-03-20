@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from models.saves import SaveConflict
+
 from domain.save_conflicts import (
     build_conflict_dict,
     check_local_changes,
@@ -281,45 +283,51 @@ class TestBuildConflictDict:
         local_info = {"path": "/saves/pokemon.srm", "mtime": local_mtime, "size": 1024}
         result = build_conflict_dict(42, "pokemon.srm", local_info, "abc123", self._server_save())
 
-        assert result["rom_id"] == 42
-        assert result["filename"] == "pokemon.srm"
-        assert result["local_path"] == "/saves/pokemon.srm"
-        assert result["local_hash"] == "abc123"
-        assert result["local_mtime"] == "2026-02-17T05:00:00+00:00"
-        assert result["local_size"] == 1024
-        assert result["server_save_id"] == 100
-        assert result["server_updated_at"] == "2026-02-17T06:00:00Z"
-        assert result["server_size"] == 1024
-        assert "created_at" in result
+        assert isinstance(result, SaveConflict)
+        assert result.rom_id == 42
+        assert result.filename == "pokemon.srm"
+        assert result.local_path == "/saves/pokemon.srm"
+        assert result.local_hash == "abc123"
+        assert result.local_mtime == "2026-02-17T05:00:00+00:00"
+        assert result.local_size == 1024
+        assert result.server_save_id == 100
+        assert result.server_updated_at == "2026-02-17T06:00:00Z"
+        assert result.server_size == 1024
+        assert result.created_at is not None
 
     def test_no_local_info(self):
         result = build_conflict_dict(42, "pokemon.srm", None, None, self._server_save())
-        assert result["local_path"] is None
-        assert result["local_hash"] is None
-        assert result["local_mtime"] is None
-        assert result["local_size"] is None
+        assert isinstance(result, SaveConflict)
+        assert result.local_path is None
+        assert result.local_hash is None
+        assert result.local_mtime is None
+        assert result.local_size is None
 
     def test_local_mtime_none(self):
         local_info = {"path": "/saves/pokemon.srm", "mtime": None, "size": 1024}
         result = build_conflict_dict(42, "pokemon.srm", local_info, "abc123", self._server_save())
-        assert result["local_mtime"] is None
+        assert isinstance(result, SaveConflict)
+        assert result.local_mtime is None
 
     def test_missing_local_mtime_key(self):
         """local_info without mtime key — treated as None."""
         local_info = {"path": "/saves/pokemon.srm", "size": 1024}
         result = build_conflict_dict(42, "pokemon.srm", local_info, "abc123", self._server_save())
-        assert result["local_mtime"] is None
+        assert isinstance(result, SaveConflict)
+        assert result.local_mtime is None
 
     def test_server_missing_optional_fields(self):
         server = {"id": 99}
         local_info = {"path": "/saves/pokemon.srm", "mtime": None, "size": 0}
         result = build_conflict_dict(42, "pokemon.srm", local_info, "hash", server)
-        assert result["server_save_id"] == 99
-        assert result["server_updated_at"] == ""
-        assert result["server_size"] is None
+        assert isinstance(result, SaveConflict)
+        assert result.server_save_id == 99
+        assert result.server_updated_at == ""
+        assert result.server_size is None
 
     def test_created_at_is_utc_iso(self):
         local_info = {"path": "/saves/pokemon.srm", "mtime": None, "size": 0}
         result = build_conflict_dict(1, "f.srm", local_info, None, self._server_save())
+        assert isinstance(result, SaveConflict)
         # Should parse without error
-        datetime.fromisoformat(result["created_at"])
+        datetime.fromisoformat(result.created_at)
