@@ -317,7 +317,7 @@ class LibraryService:
                     "disabled_platform_remove_count": disabled_count,
                     "collection_diff": self._compute_collection_diff(collection_memberships),
                     "platform_collection_diff": self._compute_platform_collection_diff(
-                        shortcuts_data, platform_rom_ids, stale
+                        shortcuts_data, platform_rom_ids
                     ),
                 },
                 "new_names": [s["name"] for s in new[:10]],
@@ -527,9 +527,7 @@ class LibraryService:
             "removed": removed,
         }
 
-    def _compute_platform_collection_diff(
-        self, shortcuts_data: list[dict], platform_rom_ids: set[int], stale: list[int]
-    ) -> dict:
+    def _compute_platform_collection_diff(self, shortcuts_data: list[dict], platform_rom_ids: set[int]) -> dict:
         """Compare future platform collections against current registry.
 
         Respects the collection_create_platform_groups toggle — if OFF,
@@ -544,14 +542,8 @@ class LibraryService:
                 if pname:
                     future_platforms.add(pname)
 
-        # Current: platforms that have collections now (from registry, excluding stale)
-        stale_set = set(stale)
-        current_platforms: set[str] = set()
-        for rid_str, entry in self._state["shortcut_registry"].items():
-            if int(rid_str) not in stale_set:
-                pname = entry.get("platform_name", "")
-                if pname:
-                    current_platforms.add(pname)
+        # Current: platforms that had collections at last sync
+        current_platforms = set(self._state.get("last_synced_platforms", []))
 
         added = sorted(future_platforms - current_platforms)
         removed = sorted(current_platforms - future_platforms)
@@ -1032,22 +1024,27 @@ class LibraryService:
             except Exception as e:
                 self._logger.error(f"Failed to set Steam Input config: {e}")
 
-        self._state["last_sync"] = datetime.now(UTC).isoformat()
-        self._state["last_synced_collections"] = list(self._pending_collection_memberships.keys())
-        self._save_state()
-
-        # Capture pending collection memberships and platform rom ids before clearing
+        # Capture pending state before clearing
         pending_collection_memberships = self._pending_collection_memberships
         pending_platform_rom_ids = self._pending_platform_rom_ids
         self._pending_collection_memberships = {}
         self._pending_platform_rom_ids = set()
         self._pending_sync = {}
 
-        return self._build_collection_app_ids(
+        # Build final collection mappings
+        platform_app_ids, romm_collection_app_ids = self._build_collection_app_ids(
             self._state["shortcut_registry"],
             pending_platform_rom_ids,
             pending_collection_memberships,
         )
+
+        # Save state with the actual synced platforms/collections
+        self._state["last_sync"] = datetime.now(UTC).isoformat()
+        self._state["last_synced_collections"] = list(pending_collection_memberships.keys())
+        self._state["last_synced_platforms"] = list(platform_app_ids.keys())
+        self._save_state()
+
+        return platform_app_ids, romm_collection_app_ids
 
     async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
         """Called by frontend after applying shortcuts via SteamClient."""
@@ -1082,7 +1079,7 @@ class LibraryService:
                 {
                     "platform_app_ids": platform_app_ids,
                     "romm_collection_app_ids": romm_collection_app_ids,
-                    "total_games": total,
+                    "total_games": processed,
                 },
             )
             await self._emit_progress(
