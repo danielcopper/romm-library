@@ -26,6 +26,31 @@ import {
 } from "../api/backend";
 import type { PlatformSyncSetting, CollectionSyncSetting, FirmwarePlatformExt } from "../types";
 
+function getBiosSummary(requiredCount: number, requiredDone: number, allRequiredDone: boolean, optionalMissing: number, done: number, total: number, allDone: boolean) {
+  if (requiredCount > 0 && allRequiredDone) {
+    return {
+      summaryLabel: `${requiredDone} / ${requiredCount} required`,
+      summaryDescription: optionalMissing > 0 ? `All required ready (${optionalMissing} optional missing)` : "All required ready",
+    };
+  }
+  if (requiredCount > 0) {
+    return {
+      summaryLabel: `${requiredDone} / ${requiredCount} required`,
+      summaryDescription: `${requiredCount - requiredDone} required missing — games may not launch`,
+    };
+  }
+  return {
+    summaryLabel: `${done} / ${total} files`,
+    summaryDescription: allDone ? "All downloaded" : `${total - done} missing`,
+  };
+}
+
+function hashIndicator(hv: boolean | null): string {
+  if (hv === true) return " \u2713";
+  if (hv === false) return " \u26A0";
+  return " \u2014";
+}
+
 interface LibraryPageProps {
   onBack: () => void;
 }
@@ -294,51 +319,26 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
             />
           </PanelSectionRow>
         </PanelSection>
-        {/* Favorites section */}
-        {collections.some((c) => c.category === "favorites") && (
-          <PanelSection title="Favorites">
-            {collections.filter((c) => c.category === "favorites").map((collection) => (
-              <PanelSectionRow key={collection.id}>
-                <ToggleField
-                  label={collection.name}
-                  description={`${collection.rom_count} ROMs`}
-                  checked={collection.sync_enabled}
-                  onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-                />
-              </PanelSectionRow>
-            ))}
-          </PanelSection>
-        )}
-        {/* User collections section */}
-        {collections.some((c) => c.category === "user") && (
-          <PanelSection title="My Collections">
-            {collections.filter((c) => c.category === "user").map((collection) => (
-              <PanelSectionRow key={collection.id}>
-                <ToggleField
-                  label={collection.name}
-                  description={`${collection.rom_count} ROMs`}
-                  checked={collection.sync_enabled}
-                  onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-                />
-              </PanelSectionRow>
-            ))}
-          </PanelSection>
-        )}
-        {/* Franchise collections section */}
-        {collections.some((c) => c.category === "franchise") && (
-          <PanelSection title="Franchise">
-            {collections.filter((c) => c.category === "franchise").map((collection) => (
-              <PanelSectionRow key={collection.id}>
-                <ToggleField
-                  label={collection.name}
-                  description={`${collection.rom_count} ROMs`}
-                  checked={collection.sync_enabled}
-                  onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-                />
-              </PanelSectionRow>
-            ))}
-          </PanelSection>
-        )}
+        {/* Collection sections by category */}
+        {(["favorites", "user", "franchise"] as const).map((cat) => {
+          const title = cat === "favorites" ? "Favorites" : cat === "user" ? "My Collections" : "Franchise";
+          const items = collections.filter((c) => c.category === cat);
+          if (items.length === 0) return null;
+          return (
+            <PanelSection key={cat} title={title}>
+              {items.map((collection) => (
+                <PanelSectionRow key={collection.id}>
+                  <ToggleField
+                    label={collection.name}
+                    description={`${collection.rom_count} ROMs`}
+                    checked={collection.sync_enabled}
+                    onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+                  />
+                </PanelSectionRow>
+              ))}
+            </PanelSection>
+          );
+        })}
       </>
     );
   };
@@ -355,39 +355,14 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
     const isExpanded = expanded[platform.platform_slug] ?? false;
 
     const requiredFiles = platform.files.filter((f) => f.classification === "required");
-    const optionalFiles = platform.files.filter((f) => f.classification === "optional");
     const unknownFiles = platform.files.filter((f) => f.classification === "unknown");
     const requiredCount = requiredFiles.length;
     const requiredDone = requiredFiles.filter((f) => f.downloaded).length;
     const allRequiredDone = requiredDone === requiredCount;
-    const optionalDone = optionalFiles.filter((f) => f.downloaded).length;
-    const optionalMissing = optionalFiles.length - optionalDone;
+    const optionalMissing = platform.files.filter((f) => f.classification === "optional" && !f.downloaded).length;
 
     const needsAttention = platform.has_games && !allRequiredDone;
-
-    let summaryLabel: string;
-    let summaryDescription: string;
-    if (requiredCount > 0) {
-      if (allRequiredDone) {
-        summaryLabel = `${requiredDone} / ${requiredCount} required`;
-        summaryDescription = optionalMissing > 0
-          ? `All required ready (${optionalMissing} optional missing)`
-          : "All required ready";
-      } else {
-        summaryLabel = `${requiredDone} / ${requiredCount} required`;
-        summaryDescription = `${requiredCount - requiredDone} required missing — games may not launch`;
-      }
-    } else {
-      summaryLabel = `${done} / ${total} files`;
-      summaryDescription = allDone ? "All downloaded" : `${total - done} missing`;
-    }
-
-    const hashIndicator = (hv: boolean | null) => {
-      if (hv === true) return " \u2713";
-      if (hv === false) return " \u26A0";
-      return " \u2014";
-    };
-
+    const { summaryLabel, summaryDescription } = getBiosSummary(requiredCount, requiredDone, allRequiredDone, optionalMissing, done, total, allDone);
     const hasRequiredMissing = requiredCount > 0 && !allRequiredDone;
     const hasOptionalMissing = optionalMissing > 0;
 
@@ -419,7 +394,7 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
                 const result = await setSystemCore(platform.platform_slug, label);
                 if (result.success) {
                   await refreshBios();
-                  window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "core_changed", platform_slug: platform.platform_slug } }));
+                  globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "core_changed", platform_slug: platform.platform_slug } }));
                 }
               }}
             />

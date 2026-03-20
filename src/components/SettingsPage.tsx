@@ -270,7 +270,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
   };
 
   const handleToggleSaveSync = (value: boolean) => {
-    if (value) { handleEnableSaveSync(); } else { handleDisableSaveSync(); }
+    if (value) { handleEnableSaveSync(); } else { handleDisableSaveSync(); } // NOSONAR — enable shows confirmation modal
   };
 
   const saveSyncEnabled = saveSyncSettings?.save_sync_enabled ?? false;

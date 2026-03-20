@@ -43,32 +43,23 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+function formatChanges(pairs: [number, string][]): string {
+  return pairs.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`).join(", ");
+}
+
 function formatPreviewDescription(s: SyncPreviewSummary): string {
-  const hasRomChanges = s.new_count + s.changed_count + s.remove_count > 0;
-  const hasCollChanges = !!s.collection_diff?.has_changes;
-  const hasPlatChanges = !!s.platform_collection_diff?.has_changes;
-  if (!hasRomChanges && !hasCollChanges && !hasPlatChanges) return "Everything is up to date.";
   const sections: string[] = [];
-  if (hasRomChanges) {
-    const r: string[] = [];
-    if (s.new_count > 0) r.push(`${s.new_count} added`);
-    if (s.changed_count > 0) r.push(`${s.changed_count} updated`);
-    if (s.remove_count > 0) r.push(`${s.remove_count} removed`);
-    sections.push(`ROMs: ${r.join(", ")}`);
+  const romChanges = formatChanges([[s.new_count, "added"], [s.changed_count, "updated"], [s.remove_count, "removed"]]);
+  if (romChanges) sections.push(`ROMs: ${romChanges}`);
+  const p = s.platform_collection_diff;
+  if (p?.has_changes) {
+    const platChanges = formatChanges([[p.added_count, "added"], [p.removed_count, "removed"]]);
+    if (platChanges) sections.push(`Platforms: ${platChanges}`);
   }
-  if (hasPlatChanges) {
-    const p = s.platform_collection_diff!;
-    const pp: string[] = [];
-    if (p.added_count > 0) pp.push(`${p.added_count} added`);
-    if (p.removed_count > 0) pp.push(`${p.removed_count} removed`);
-    if (pp.length > 0) sections.push(`Platforms: ${pp.join(", ")}`);
-  }
-  if (hasCollChanges) {
-    const d = s.collection_diff!;
-    const c: string[] = [];
-    if (d.added.length > 0) c.push(`${d.added.length} added`);
-    if (d.removed.length > 0) c.push(`${d.removed.length} removed`);
-    if (c.length > 0) sections.push(`Collections: ${c.join(", ")}`);
+  const d = s.collection_diff;
+  if (d?.has_changes) {
+    const collChanges = formatChanges([[d.added.length, "added"], [d.removed.length, "removed"]]);
+    if (collChanges) sections.push(`Collections: ${collChanges}`);
   }
   return sections.length > 0 ? sections.join("; ") : "Everything is up to date.";
 }
