@@ -8,6 +8,7 @@ independent of other service modules.
 
 from __future__ import annotations
 
+import time
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,10 @@ if TYPE_CHECKING:
     import logging
 
     from services.protocols import AchievementsReader, BiosChecker
+
+METADATA_TTL_SEC = 7 * 24 * 3600  # 7 days
+BIOS_TTL_SEC = 3600  # 1 hour
+ACHIEVEMENT_TTL_SEC = 3600  # 1 hour
 
 
 class GameDetailService:
@@ -98,6 +103,38 @@ class GameDetailService:
             )
         )
 
+    @staticmethod
+    def _compute_stale_fields(
+        *,
+        metadata: dict | None,
+        bios_status: dict | None,
+        platform_slug: str,
+        ra_id: int | None,
+        achievement_summary: dict | None,
+    ) -> list[str]:
+        """Return list of cache keys that are stale and need background refresh."""
+        now = time.time()
+        stale: list[str] = []
+
+        meta_cached_at = metadata.get("cached_at", 0) if metadata else 0
+        if not metadata or (now - meta_cached_at) > METADATA_TTL_SEC:
+            stale.append("metadata")
+
+        if bios_status is not None:
+            if (now - bios_status.get("cached_at", 0)) > BIOS_TTL_SEC:
+                stale.append("bios")
+        elif platform_slug:
+            stale.append("bios")
+
+        if ra_id:
+            if achievement_summary:
+                if (now - achievement_summary.get("cached_at", 0)) > ACHIEVEMENT_TTL_SEC:
+                    stale.append("achievements")
+            else:
+                stale.append("achievements")
+
+        return stale
+
     def get_cached_game_detail(self, app_id) -> dict:
         """Return cached + lightweight data for a game."""
         app_id = int(app_id)
@@ -148,6 +185,14 @@ class GameDetailService:
         ra_id = entry.get("ra_id")
         achievement_summary = self._build_achievement_summary(rom_id_str, ra_id)
 
+        stale_fields = self._compute_stale_fields(
+            metadata=metadata,
+            bios_status=bios_status,
+            platform_slug=platform_slug,
+            ra_id=ra_id,
+            achievement_summary=achievement_summary,
+        )
+
         return {
             "found": True,
             "rom_id": rom_id,
@@ -165,6 +210,7 @@ class GameDetailService:
             "rom_file": rom_file,
             "ra_id": ra_id,
             "achievement_summary": achievement_summary,
+            "stale_fields": stale_fields,
         }
 
     async def get_bios_status(self, rom_id) -> dict:

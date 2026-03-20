@@ -305,22 +305,14 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
             .catch((e) => debugLog(`Auto-artwork error: ${e}`));
         }
 
-        // Staleness helper: true if cached_at is missing or older than ttlSec
-        const nowSec = Date.now() / 1000;
-        const isStale = (cachedAt: number | undefined, ttlSec: number) =>
-          !cachedAt || (nowSec - cachedAt) > ttlSec;
+        const staleFields = cached.stale_fields ?? [];
 
-        const METADATA_TTL_SEC = 7 * 24 * 3600;
-        const BIOS_TTL_SEC = 3600;
-        const ACHIEVEMENT_TTL_SEC = 3600;
-
-        // Background: fetch metadata if missing or stale (>7 days)
-        const metaCachedAt = (cached.metadata as Record<string, unknown> | null)?.cached_at as number | undefined;
-        if (romId && (!cached.metadata || isStale(metaCachedAt, METADATA_TTL_SEC))) {
+        // Background: fetch metadata if stale
+        if (romId && staleFields.includes("metadata")) {
           getRomMetadata(romId).catch((e) => debugLog(`Background metadata fetch error: ${e}`));
         }
 
-        // Achievements: render from cache, background refresh if stale or missing
+        // Achievements: render from cache, background refresh if stale
         const refreshAchievements = (result: { success: boolean; earned: number; total: number }) => {
           if (!cancelled && result.success) {
             setInfo((prev) => ({
@@ -330,13 +322,12 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
             }));
           }
         };
-        const achCachedAt = cached.achievement_summary?.cached_at;
-        if (cached.ra_id && (!cached.achievement_summary || isStale(achCachedAt, ACHIEVEMENT_TTL_SEC))) {
+        if (cached.ra_id && staleFields.includes("achievements")) {
           getAchievementProgress(romId).then(refreshAchievements)
             .catch((e) => debugLog(`Background achievement progress fetch error: ${e}`));
         }
 
-        // BIOS: render from cache first, background refresh if stale or missing
+        // BIOS: render from cache first, background refresh if stale
         const cachedBios = cached.bios_status;
         if (cachedBios) {
           const activeCoreLabel = cachedBios.active_core_label ?? null;
@@ -354,8 +345,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           }));
         }
 
-        const biosCachedAt = cachedBios?.cached_at;
-        if (!cachedBios || isStale(biosCachedAt, BIOS_TTL_SEC)) {
+        if (staleFields.includes("bios")) {
           refreshBiosInBackground(romId, cancelled, setInfo);
         }
       } catch (e) {

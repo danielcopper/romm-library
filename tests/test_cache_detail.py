@@ -1049,3 +1049,80 @@ class TestAchievementSummaryCachedAt:
         result = game_detail_service.get_cached_game_detail(99999)
 
         assert result["achievement_summary"] is None
+
+
+class TestStaleFields:
+    """Test stale_fields computation in get_cached_game_detail."""
+
+    @pytest.mark.asyncio
+    async def test_stale_fields_empty_when_all_fresh(self, plugin, game_detail_service):
+        """No stale fields when all caches are fresh."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        plugin._metadata_cache["42"] = {"cached_at": time.time(), "genres": []}
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert "stale_fields" in result
+        assert "metadata" not in result["stale_fields"]
+
+    @pytest.mark.asyncio
+    async def test_metadata_stale_when_old(self, plugin, game_detail_service):
+        """Metadata older than 7 days should appear in stale_fields."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        plugin._metadata_cache["42"] = {"cached_at": time.time() - 8 * 24 * 3600, "genres": []}
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert "metadata" in result["stale_fields"]
+
+    @pytest.mark.asyncio
+    async def test_metadata_stale_when_missing(self, plugin, game_detail_service):
+        """Missing metadata should appear in stale_fields."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert "metadata" in result["stale_fields"]
+
+    @pytest.mark.asyncio
+    async def test_bios_stale_when_old(self, plugin, game_detail_service):
+        """BIOS older than 1 hour should appear in stale_fields."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        # Set up firmware cache with old cached_at
+        # The bios_status dict in the response will have cached_at if present
+        result = game_detail_service.get_cached_game_detail(99999)
+        # With no BIOS cache, bios_status is None → bios should be stale
+        assert "bios" in result["stale_fields"]
+
+    @pytest.mark.asyncio
+    async def test_achievements_stale_when_missing(self, plugin, game_detail_service):
+        """Missing achievement progress should appear in stale_fields when ra_id is set."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+            "ra_id": 123,
+        }
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert "achievements" in result["stale_fields"]
+
+    @pytest.mark.asyncio
+    async def test_not_found_has_no_stale_fields(self, plugin, game_detail_service):
+        """When ROM not found, response has no stale_fields."""
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert "stale_fields" not in result
