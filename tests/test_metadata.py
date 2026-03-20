@@ -81,11 +81,11 @@ class TestExtractMetadata:
         }
         result = plugin._metadata_service.extract_metadata(rom)
         assert result["summary"] == "An adventure game"
-        assert result["genres"] == ["RPG", "Adventure"]
-        assert result["companies"] == ["Nintendo", "HAL Laboratory"]
+        assert result["genres"] == ("RPG", "Adventure")
+        assert result["companies"] == ("Nintendo", "HAL Laboratory")
         assert result["first_release_date"] == 1082592000
         assert result["average_rating"] == 79.665
-        assert result["game_modes"] == ["Single player", "Multiplayer"]
+        assert result["game_modes"] == ("Single player", "Multiplayer")
         assert result["player_count"] == "1-4"
         assert result["cached_at"] > 0
 
@@ -100,18 +100,18 @@ class TestExtractMetadata:
         rom = {"summary": "A game", "id": 1}
         result = plugin._metadata_service.extract_metadata(rom)
         assert result["summary"] == "A game"
-        assert result["genres"] == []
-        assert result["companies"] == []
+        assert result["genres"] == ()
+        assert result["companies"] == ()
         assert result["first_release_date"] is None
         assert result["average_rating"] is None
-        assert result["game_modes"] == []
+        assert result["game_modes"] == ()
         assert result["player_count"] == ""
 
     def test_none_metadatum(self, plugin):
         """ROM with metadatum=None returns empty defaults."""
         rom = {"summary": "A game", "metadatum": None}
         result = plugin._metadata_service.extract_metadata(rom)
-        assert result["genres"] == []
+        assert result["genres"] == ()
         assert result["first_release_date"] is None
 
     def test_empty_summary(self, plugin):
@@ -134,9 +134,9 @@ class TestExtractMetadata:
             },
         }
         result = plugin._metadata_service.extract_metadata(rom)
-        assert result["genres"] == []
-        assert result["companies"] == []
-        assert result["game_modes"] == []
+        assert result["genres"] == ()
+        assert result["companies"] == ()
+        assert result["game_modes"] == ()
         assert result["player_count"] == ""
 
 
@@ -171,11 +171,11 @@ class TestGetRomMetadata:
         result = await plugin.get_rom_metadata(42)
 
         assert result["summary"] == ""
-        assert result["genres"] == []
-        assert result["companies"] == []
+        assert result["genres"] == ()
+        assert result["companies"] == ()
         assert result["first_release_date"] is None
         assert result["average_rating"] is None
-        assert result["game_modes"] == []
+        assert result["game_modes"] == ()
         assert result["player_count"] == ""
         assert result["cached_at"] == 0
 
@@ -372,19 +372,19 @@ class TestSyncMetadataCapture:
 
         # Verify in-memory cache
         assert plugin._metadata_cache["1"]["summary"] == "Game one description"
-        assert plugin._metadata_cache["1"]["genres"] == ["RPG"]
+        assert plugin._metadata_cache["1"]["genres"] == ("RPG",)
         assert plugin._metadata_cache["1"]["first_release_date"] == 946684800
 
         # ROM with None metadatum gets defaults
         assert plugin._metadata_cache["2"]["summary"] == ""
-        assert plugin._metadata_cache["2"]["genres"] == []
+        assert plugin._metadata_cache["2"]["genres"] == ()
         assert plugin._metadata_cache["2"]["first_release_date"] is None
 
         # ROM without metadatum key gets defaults
         assert plugin._metadata_cache["3"]["summary"] == "Game three"
-        assert plugin._metadata_cache["3"]["genres"] == []
+        assert plugin._metadata_cache["3"]["genres"] == ()
 
-        # Verify disk cache
+        # Verify disk cache (JSON serialization converts tuples to lists)
         cache_path = os.path.join(str(tmp_path), "metadata_cache.json")
         assert os.path.exists(cache_path)
         with open(cache_path) as f:
@@ -439,11 +439,11 @@ class TestSyncMetadataCapture:
         rom = {"id": 5, "summary": "No metadata here"}
         result = plugin._metadata_service.extract_metadata(rom)
         assert result["summary"] == "No metadata here"
-        assert result["genres"] == []
-        assert result["companies"] == []
+        assert result["genres"] == ()
+        assert result["companies"] == ()
         assert result["first_release_date"] is None
         assert result["average_rating"] is None
-        assert result["game_modes"] == []
+        assert result["game_modes"] == ()
         assert result["player_count"] == ""
         assert result["cached_at"] > 0
 
@@ -471,7 +471,7 @@ class TestGetRomMetadata404:
             result = await plugin.get_rom_metadata(999)
 
         assert result["summary"] == ""
-        assert result["genres"] == []
+        assert result["genres"] == ()
         assert result["first_release_date"] is None
         assert result["average_rating"] is None
         assert result["cached_at"] == 0

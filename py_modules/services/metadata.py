@@ -8,7 +8,10 @@ the list API and served from cache on demand (no detail API calls).
 from __future__ import annotations
 
 import time
+from dataclasses import asdict
 from typing import TYPE_CHECKING
+
+from models.metadata import RomMetadata
 
 if TYPE_CHECKING:
     import asyncio
@@ -51,16 +54,18 @@ class MetadataService:
         average_rating = metadatum.get("average_rating")
         if average_rating is not None:
             average_rating = float(average_rating)
-        return {
-            "summary": rom.get("summary", "") or "",
-            "genres": metadatum.get("genres") or [],
-            "companies": metadatum.get("companies") or [],
-            "first_release_date": first_release_date,
-            "average_rating": average_rating,
-            "game_modes": metadatum.get("game_modes") or [],
-            "player_count": metadatum.get("player_count", "") or "",
-            "cached_at": time.time(),
-        }
+        return asdict(
+            RomMetadata(
+                summary=rom.get("summary", "") or "",
+                genres=tuple(metadatum.get("genres") or []),
+                companies=tuple(metadatum.get("companies") or []),
+                first_release_date=first_release_date,
+                average_rating=average_rating,
+                game_modes=tuple(metadatum.get("game_modes") or []),
+                player_count=metadatum.get("player_count", "") or "",
+                cached_at=time.time(),
+            )
+        )
 
     def mark_metadata_dirty(self):
         """Track metadata cache changes and flush to disk periodically."""
@@ -91,16 +96,18 @@ class MetadataService:
             return cached
 
         self._log_debug(f"Metadata cache miss for rom_id={rom_id_str}, will refresh on next sync")
-        return {
-            "summary": "",
-            "genres": [],
-            "companies": [],
-            "first_release_date": None,
-            "average_rating": None,
-            "game_modes": [],
-            "player_count": "",
-            "cached_at": 0,
-        }
+        return asdict(
+            RomMetadata(
+                summary="",
+                genres=(),
+                companies=(),
+                first_release_date=None,
+                average_rating=None,
+                game_modes=(),
+                player_count="",
+                cached_at=0.0,
+            )
+        )
 
     def get_all_metadata_cache(self):
         """Return the full metadata cache dict for frontend to load on plugin start."""
