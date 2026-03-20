@@ -970,7 +970,7 @@ class LibraryService:
     def _build_collection_app_ids(
         self,
         registry: dict,
-        pending_platform_rom_ids: set[int],
+        pending_platform_rom_ids: set[int] | None,
         pending_collection_memberships: dict[str, list[int]],
     ) -> tuple[dict, dict[str, list]]:
         """Build platform_app_ids and romm_collection_app_ids from the shortcut registry."""
