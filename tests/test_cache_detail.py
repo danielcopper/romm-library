@@ -816,6 +816,135 @@ class TestLightweightSaveStatusAPIError:
         assert result["files"][0]["server_save_id"] is None
 
 
+class TestComputedFields:
+    """Test bios_level, bios_label, save_sync_display in response."""
+
+    @pytest.mark.asyncio
+    async def test_bios_level_and_label_when_bios_present(self, plugin, game_detail_service, tmp_path):
+        """When BIOS data is cached, bios_level and bios_label should be set."""
+        from unittest.mock import patch
+
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        # Populate firmware cache with a GBA BIOS file (not locally present)
+        plugin._firmware_service._firmware_cache = [
+            {
+                "file_path": "bios/gba/gba_bios.bin",
+                "file_name": "gba_bios.bin",
+                "file_size_bytes": 16384,
+                "md5_hash": "abc123",
+                "id": 1,
+            },
+            {
+                "file_path": "bios/gba/gba_bios2.bin",
+                "file_name": "gba_bios2.bin",
+                "file_size_bytes": 16384,
+                "md5_hash": "def456",
+                "id": 2,
+            },
+        ]
+        plugin._firmware_service._firmware_cache_epoch = 100.0
+
+        with (
+            patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
+            patch("domain.es_de_config.get_available_cores", return_value=[]),
+            patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path / "nonexistent")),
+        ):
+            result = game_detail_service.get_cached_game_detail(99999)
+
+        assert result["bios_level"] is not None
+        assert result["bios_label"] is not None
+        # Files not downloaded → missing or partial
+        assert result["bios_level"] in ("missing", "partial", "ok")
+        assert isinstance(result["bios_label"], str)
+
+    @pytest.mark.asyncio
+    async def test_bios_level_none_when_no_bios(self, plugin, game_detail_service):
+        """When no BIOS data (cache empty), bios_level and bios_label should be None."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        # _firmware_cache is None by default
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert result["bios_level"] is None
+        assert result["bios_label"] is None
+
+    @pytest.mark.asyncio
+    async def test_bios_level_ok_when_all_downloaded(self, plugin, game_detail_service, tmp_path):
+        """When all required BIOS files are present, bios_level should be 'ok'."""
+        from unittest.mock import patch
+
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        bios_dir = tmp_path / "bios"
+        bios_dir.mkdir(parents=True, exist_ok=True)
+        bios_file = bios_dir / "gba_bios.bin"
+        bios_file.write_bytes(b"\x00" * 16384)
+
+        plugin._firmware_service._firmware_cache = [
+            {
+                "file_path": "bios/gba/gba_bios.bin",
+                "file_name": "gba_bios.bin",
+                "file_size_bytes": 16384,
+                "md5_hash": "abc123",
+                "id": 1,
+            },
+        ]
+        plugin._firmware_service._firmware_cache_epoch = 100.0
+
+        with (
+            patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
+            patch("domain.es_de_config.get_available_cores", return_value=[]),
+            patch("domain.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+        ):
+            result = game_detail_service.get_cached_game_detail(99999)
+
+        assert result["bios_level"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_save_sync_display_with_saves(self, plugin, game_detail_service):
+        """When save data exists, save_sync_display should be computed."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        plugin._save_sync_state["settings"]["save_sync_enabled"] = True
+        plugin._save_sync_state["saves"]["42"] = {
+            "files": {"test.srm": {"last_sync_hash": "abc", "last_sync_at": "2026-01-01T00:00:00Z"}},
+            "last_sync_check_at": "2026-01-01T00:00:00Z",
+        }
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert result["save_sync_display"] is not None
+        assert result["save_sync_display"]["status"] == "synced"
+        label = result["save_sync_display"]["label"]
+        assert "ago" in label or label in ("Just now", "Not synced")
+
+    @pytest.mark.asyncio
+    async def test_save_sync_display_none_when_no_saves(self, plugin, game_detail_service):
+        """When no save data, save_sync_display should be None."""
+        plugin._state["shortcut_registry"]["42"] = {
+            "app_id": 99999,
+            "name": "Test",
+            "platform_slug": "gba",
+            "platform_name": "GBA",
+        }
+        result = game_detail_service.get_cached_game_detail(99999)
+        assert result["save_sync_display"] is None
+
+
 class TestAchievementSummaryCachedAt:
     """Test that achievement_summary includes cached_at from progress cache."""
 

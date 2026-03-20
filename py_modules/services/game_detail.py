@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING
 
 from models.metadata import AchievementSummary
 
-from domain.bios import format_bios_status
+from domain.bios import compute_bios_label, compute_bios_level, format_bios_status
+from domain.save_status import compute_save_sync_display
 
 if TYPE_CHECKING:
     import logging
@@ -115,6 +116,12 @@ class GameDetailService:
         # Save sync
         save_sync_enabled = self._save_sync_state.get("settings", {}).get("save_sync_enabled", False)
         save_status = self._build_save_status(rom_id_str)
+        save_sync_display = None
+        if save_status is not None:
+            save_sync_display = compute_save_sync_display(
+                save_status["files"],
+                save_status.get("last_sync_check_at"),
+            )
 
         # Metadata from cache
         metadata = self._metadata_cache.get(rom_id_str)
@@ -127,12 +134,16 @@ class GameDetailService:
 
         # BIOS status from firmware cache (no HTTP — cache-only read)
         bios_status = None
+        bios_level = None
+        bios_label = None
         if platform_slug:
             cached_bios = self._bios_checker.check_platform_bios_cached(platform_slug, rom_filename=rom_file or None)
             if cached_bios and cached_bios.get("needs_bios"):
                 bios_obj = format_bios_status(cached_bios, platform_slug)
                 bios_obj = replace(bios_obj, cached_at=cached_bios.get("cached_at", 0.0))
                 bios_status = asdict(bios_obj)
+                bios_level = compute_bios_level(bios_obj)
+                bios_label = compute_bios_label(bios_obj)
 
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
@@ -147,8 +158,11 @@ class GameDetailService:
             "installed": installed,
             "save_sync_enabled": save_sync_enabled,
             "save_status": save_status,
+            "save_sync_display": save_sync_display,
             "metadata": metadata,
             "bios_status": bios_status,
+            "bios_level": bios_level,
+            "bios_label": bios_label,
             "rom_file": rom_file,
             "ra_id": ra_id,
             "achievement_summary": achievement_summary,
