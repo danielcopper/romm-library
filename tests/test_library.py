@@ -286,9 +286,12 @@ class TestGetSyncStats:
             "30": {"app_id": 1003, "name": "Game C", "platform_name": "SNES"},
         }
         plugin._state["last_sync"] = "2025-01-01T00:00:00"
+        plugin.settings["enabled_platforms"] = {"1": True, "2": True}
+        plugin.settings["enabled_collections"] = {"3": True}
 
         stats = await plugin.get_sync_stats()
         assert stats["platforms"] == 2
+        assert stats["collections"] == 1
         assert stats["roms"] == 3
         assert stats["total_shortcuts"] == 3
         assert stats["last_sync"] == "2025-01-01T00:00:00"
@@ -311,6 +314,7 @@ class TestGetSyncStats:
             "10": {"app_id": 1001, "name": "Game A", "platform_name": "N64", "cover_path": ""},
             "20": {"app_id": 1002, "name": "Game B", "platform_name": "SNES", "cover_path": ""},
         }
+        plugin.settings["enabled_platforms"] = {"1": True}  # 1 platform enabled
 
         await plugin.report_removal_results([10])
         stats = await plugin.get_sync_stats()

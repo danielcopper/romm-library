@@ -104,6 +104,7 @@ export interface SyncProgress {
 export interface SyncStats {
   last_sync: string | null;
   platforms: number;
+  collections?: number;
   roms: number;
   total_shortcuts: number;
 }

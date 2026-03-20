@@ -310,7 +310,11 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
             {stats.roms > 0 && (
               <PanelSectionRow>
                 <Field label="Library">
-                  <span style={{ fontSize: "12px" }}>{stats.roms} ROMs · {stats.platforms} platforms</span>
+                  <span style={{ fontSize: "12px" }}>
+                    {stats.roms} ROMs
+                    {stats.platforms > 0 ? ` · ${stats.platforms} platforms` : ""}
+                    {(stats.collections ?? 0) > 0 ? ` · ${stats.collections} collections` : ""}
+                  </span>
                 </Field>
               </PanelSectionRow>
             )}

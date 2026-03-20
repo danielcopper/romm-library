@@ -1119,10 +1119,14 @@ class LibraryService:
 
     def get_sync_stats(self):
         registry = self._state.get("shortcut_registry", {})
-        platforms = {e.get("platform_name", "") for e in registry.values()}
+        enabled_platforms = self._settings.get("enabled_platforms", {})
+        enabled_platform_count = sum(1 for v in enabled_platforms.values() if v)
+        enabled_collections = self._settings.get("enabled_collections", {})
+        enabled_collection_count = sum(1 for v in enabled_collections.values() if v)
         return {
             "last_sync": self._state.get("last_sync"),
-            "platforms": len(platforms),
+            "platforms": enabled_platform_count,
+            "collections": enabled_collection_count,
             "roms": len(registry),
             "total_shortcuts": len(registry),
         }
