@@ -2,7 +2,6 @@ import { addEventListener } from "@decky/api";
 import type { SyncApplyData, SyncChangedItem } from "../types";
 import { getArtworkBase64, reportSyncResults, syncHeartbeat, logInfo, logError } from "../api/backend";
 import { getExistingRomMShortcuts, addShortcut, removeShortcut } from "./steamShortcuts";
-import { createOrUpdateCollections, clearPlatformCollection } from "./collections";
 import { updateSyncProgress } from "./syncProgress";
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -213,76 +212,6 @@ export function initSyncManager(): ReturnType<typeof addEventListener> {
         }
   
         currentStep++;
-      }
-  
-      // Build platform app IDs for collections
-      const platformAppIds: Record<string, number[]> = {};
-      if (data.collection_platform_app_ids) {
-        for (const [pname, appIds] of Object.entries(data.collection_platform_app_ids)) {
-          platformAppIds[pname] = [...appIds];
-        }
-      }
-      // Add new/changed shortcuts to platform collections (only if eligible)
-      const eligibleSet = data.platform_eligible_rom_ids
-        ? new Set(data.platform_eligible_rom_ids)
-        : null; // null = no filtering (full sync or legacy)
-      for (const item of data.shortcuts) {
-        if (eligibleSet && !eligibleSet.has(item.rom_id)) continue;
-        const appId = romIdToAppId[String(item.rom_id)];
-        if (appId) {
-          if (!platformAppIds[item.platform_name]) {
-            platformAppIds[item.platform_name] = [];
-          }
-          platformAppIds[item.platform_name].push(appId);
-        }
-      }
-      if (data.changed_shortcuts) {
-        for (const item of data.changed_shortcuts) {
-          if (eligibleSet && !eligibleSet.has(item.rom_id)) continue;
-          const appId = romIdToAppId[String(item.rom_id)];
-          if (appId) {
-            if (!platformAppIds[item.platform_name]) {
-              platformAppIds[item.platform_name] = [];
-            }
-            platformAppIds[item.platform_name].push(appId);
-          }
-        }
-      }
-  
-      // --- Step: Update collections ---
-      if (!cancelled && Object.keys(platformAppIds).length > 0) {
-        const numCollections = Object.keys(platformAppIds).length;
-        updateSyncProgress({
-          phase: "applying", current: 0, total: numCollections,
-          message: `Updating collections 0/${numCollections}`,
-          step: currentStep, totalSteps,
-        });
-        await createOrUpdateCollections(platformAppIds, (cur, colTotal, _name) => {
-          updateSyncProgress({
-            current: cur, total: colTotal,
-            message: `Updating collections ${cur}/${colTotal}`,
-          });
-        });
-      }
-
-      // Clean up stale platform collections
-      if (!cancelled && typeof collectionStore !== "undefined") {
-        // Remove stale platform collections: "RomM: PlatformName (hostname)"
-        const activePlatforms = new Set(Object.keys(platformAppIds));
-        const staleCollections = collectionStore.userCollections.filter((c) => {
-          if (!c.displayName.startsWith("RomM: ")) return false;
-          const afterPrefix = c.displayName.slice(6);
-          // Skip RomM collection-based collections (bracket format) — handled by sync_complete
-          if (afterPrefix.startsWith("[")) return false;
-          const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
-          return !activePlatforms.has(platformName);
-        });
-        for (const c of staleCollections) {
-          const afterPrefix = c.displayName.slice(6);
-          const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
-          logInfo(`Removing stale platform collection "${c.displayName}"`);
-          await clearPlatformCollection(platformName);
-        }
       }
   
       // Report results to backend

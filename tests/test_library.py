@@ -1172,7 +1172,7 @@ class TestSyncApplyDelta:
         assert plugin._sync_service._pending_delta is None
 
     @pytest.mark.asyncio
-    async def test_builds_collection_map_from_unchanged(self, plugin, tmp_path):
+    async def test_sync_apply_does_not_include_collection_data(self, plugin, tmp_path):
         from unittest.mock import AsyncMock
 
         import decky
@@ -1207,9 +1207,10 @@ class TestSyncApplyDelta:
 
         emit_calls = [c for c in decky.emit.call_args_list if c[0][0] == "sync_apply"]
         assert len(emit_calls) == 1
-        collection_map = emit_calls[0][0][1]["collection_platform_app_ids"]
-        assert 1001 in collection_map.get("N64", [])
-        assert 1005 in collection_map.get("SNES", [])
+        # Platform collection data is no longer in sync_apply — it's built in report_sync_results
+        # and sent via sync_complete instead.
+        assert "collection_platform_app_ids" not in emit_calls[0][0][1]
+        assert "platform_eligible_rom_ids" not in emit_calls[0][0][1]
 
 
 class TestSyncCancelPreview:

@@ -18,7 +18,7 @@ import { registerGameDetailPatch, unregisterGameDetailPatch, registerRomMAppId }
 import { registerMetadataPatches, unregisterMetadataPatches, applyAllPlaytime } from "./patches/metadataPatches";
 import { registerLaunchInterceptor, unregisterLaunchInterceptor } from "./utils/launchInterceptor";
 import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveSyncSettings, getAllPlaytime, getMigrationStatus, logError, logInfo } from "./api/backend";
-import { createOrUpdateRomMCollections, getHostname } from "./utils/collections";
+import { createOrUpdateCollections, createOrUpdateRomMCollections, clearPlatformCollection, getHostname } from "./utils/collections";
 import { setMigrationStatus } from "./utils/migrationStore";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
 import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
@@ -164,17 +164,41 @@ export default definePlugin(() => {
       }
     }
 
-    // Create RomM Steam collections + clean stale ones
+    // Create/update platform and RomM Steam collections + clean stale ones
     (async () => {
       try {
+        // Create/update platform collections
+        if (data.platform_app_ids && Object.keys(data.platform_app_ids).length > 0) {
+          await createOrUpdateCollections(data.platform_app_ids);
+        }
+
         if (data.romm_collection_app_ids && Object.keys(data.romm_collection_app_ids).length > 0) {
           await createOrUpdateRomMCollections(data.romm_collection_app_ids);
         }
 
         if (typeof collectionStore !== "undefined") {
           const hostname = await getHostname();
-          const activeNames = new Set(Object.keys(data.romm_collection_app_ids ?? {}));
           const suffix = ` (${hostname})`;
+
+          // Clean stale platform collections
+          const activePlatforms = new Set(Object.keys(data.platform_app_ids ?? {}));
+          const stalePlatform = collectionStore.userCollections.filter((c) => {
+            if (!c.displayName.startsWith("RomM: ")) return false;
+            const afterPrefix = c.displayName.slice(6);
+            if (afterPrefix.startsWith("[")) return false; // Skip RomM collections
+            if (!c.displayName.endsWith(suffix)) return false; // Only this machine
+            const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
+            return !activePlatforms.has(platformName);
+          });
+          for (const c of stalePlatform) {
+            const afterPrefix = c.displayName.slice(6);
+            const platformName = afterPrefix.replace(/\s\([^)]+\)$/, "");
+            logInfo(`Removing stale platform collection "${c.displayName}"`);
+            await clearPlatformCollection(platformName);
+          }
+
+          // Clean stale RomM collection-based collections
+          const activeNames = new Set(Object.keys(data.romm_collection_app_ids ?? {}));
           const rommCollectionPattern = /^RomM: \[([^\]]+)\]/;
           const staleRomm = collectionStore.userCollections.filter((c) => {
             if (!c.displayName.startsWith("RomM: [")) return false;

@@ -345,19 +345,6 @@ class LibraryService:
         self._sync_state = SyncState.RUNNING
         self._sync_last_heartbeat = time.monotonic()
 
-        # Build collection_platform_app_ids from registry (unchanged)
-        registry = self._state["shortcut_registry"]
-        platform_rom_ids = delta.get("platform_rom_ids", set())
-        collection_map = {}
-        for rid in delta["unchanged_ids"]:
-            if not self._should_include_in_platform_collection(rid, platform_rom_ids):
-                continue
-            reg = registry.get(str(rid), {})
-            pname = reg.get("platform_name", "")
-            app_id = reg.get("app_id")
-            if pname and app_id:
-                collection_map.setdefault(pname, []).append(app_id)
-
         # Calculate apply step plan
         delta_roms = delta.get("delta_roms", [])
         has_artwork = len(delta_roms) > 0
@@ -371,7 +358,6 @@ class LibraryService:
             apply_steps.append("shortcuts")
         if has_removals:
             apply_steps.append("removals")
-        apply_steps.append("collections")
         total_steps = len(apply_steps)
         current_step = 0
 
@@ -415,14 +401,6 @@ class LibraryService:
             total_steps=total_steps,
         )
 
-        # Build set of rom_ids eligible for platform collections
-        platform_rom_ids = delta.get("platform_rom_ids", set())
-        platform_eligible_rom_ids = [
-            sd["rom_id"]
-            for sd in delta["new"] + delta["changed"]
-            if self._should_include_in_platform_collection(sd["rom_id"], platform_rom_ids)
-        ]
-
         # Emit delta with step plan for frontend
         await self._emit(
             "sync_apply",
@@ -430,8 +408,6 @@ class LibraryService:
                 "shortcuts": delta["new"],
                 "changed_shortcuts": delta["changed"],
                 "remove_rom_ids": delta["remove_rom_ids"],
-                "collection_platform_app_ids": collection_map,
-                "platform_eligible_rom_ids": platform_eligible_rom_ids,
                 "next_step": next_step,
                 "total_steps": total_steps,
             },
@@ -881,7 +857,6 @@ class LibraryService:
                 full_steps.append("artwork")
             if has_shortcuts:
                 full_steps.append("shortcuts")
-            full_steps.append("collections")
             full_total_steps = len(full_steps)
             full_current_step = 0
 
@@ -933,19 +908,11 @@ class LibraryService:
             self._pending_collection_memberships = collection_memberships
             self._pending_platform_rom_ids = platform_rom_ids
 
-            # Build platform eligibility list for frontend
-            platform_eligible_rom_ids = [
-                sd["rom_id"]
-                for sd in shortcuts_data
-                if self._should_include_in_platform_collection(sd["rom_id"], platform_rom_ids)
-            ]
-
             await self._emit(
                 "sync_apply",
                 {
                     "shortcuts": shortcuts_data,
                     "remove_rom_ids": stale_rom_ids,
-                    "platform_eligible_rom_ids": platform_eligible_rom_ids,
                     "next_step": next_step,
                     "total_steps": full_total_steps,
                 },
