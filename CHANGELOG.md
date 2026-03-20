@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.13.1...decky-romm-sync-v0.14.0) (2026-03-20)
+
+
+### Features
+
+* **collections:** sync RomM collections to Steam collections ([#106](https://github.com/danielcopper/decky-romm-sync/issues/106)) ([#173](https://github.com/danielcopper/decky-romm-sync/issues/173)) ([16e68d2](https://github.com/danielcopper/decky-romm-sync/commit/16e68d222a5c6896c8cc28b5138c805b26cde345))
+* improve default whitelisting for non-Steam game removal ([#137](https://github.com/danielcopper/decky-romm-sync/issues/137)) ([11c02f1](https://github.com/danielcopper/decky-romm-sync/commit/11c02f1fbeddbe193b0f4aeed3e509afc2f07a1f))
+
+
+### Bug Fixes
+
+* firmware cache + async BIOS on game detail page ([#148](https://github.com/danielcopper/decky-romm-sync/issues/148)) ([7a7f408](https://github.com/danielcopper/decky-romm-sync/commit/7a7f40868931022c2a1dbae8141c7ac5e271ee13))
+* **persistence:** add file locking + schema versioning ([#120](https://github.com/danielcopper/decky-romm-sync/issues/120), [#121](https://github.com/danielcopper/decky-romm-sync/issues/121)) ([#153](https://github.com/danielcopper/decky-romm-sync/issues/153)) ([5f13e99](https://github.com/danielcopper/decky-romm-sync/commit/5f13e999c11c3da27c5d4563a6591fec91fd7aa1))
+* progressive read timeout for large file downloads ([#139](https://github.com/danielcopper/decky-romm-sync/issues/139)) ([0988e49](https://github.com/danielcopper/decky-romm-sync/commit/0988e4909cef685798cad978956d431a85e3e2fa))
+
 ## [0.13.1](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.13.0...decky-romm-sync-v0.13.1) (2026-03-16)
 
 
