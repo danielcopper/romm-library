@@ -4,6 +4,7 @@ root_packages =
     adapters
     lib
     domain
+    models
 
 # Services must not import concrete adapters (protocols are OK).
 [importlinter:contract:no-adapter-impl-in-services]
@@ -48,6 +49,18 @@ source_modules =
 forbidden_modules =
     services
     adapters
+    lib
+
+# Models must not import services, adapters, domain, or lib
+[importlinter:contract:models-independence]
+name = Models must not import services, adapters, domain, or lib
+type = forbidden
+source_modules =
+    models
+forbidden_modules =
+    services
+    adapters
+    domain
     lib
 
 # Services must be independent of each other
