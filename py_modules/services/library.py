@@ -86,7 +86,7 @@ class LibraryService:
         self._pending_sync: dict = {}
         self._pending_delta: dict | None = None
         self._pending_collection_memberships: dict = {}
-        self._pending_platform_rom_ids: set[int] = set()
+        self._pending_platform_rom_ids: set[int] | None = None
 
     @property
     def sync_state(self) -> SyncState:
@@ -538,17 +538,20 @@ class LibraryService:
             "removed_count": len(removed),
         }
 
-    def _should_include_in_platform_collection(self, rom_id: int, platform_rom_ids: set[int]) -> bool:
+    def _should_include_in_platform_collection(self, rom_id: int, platform_rom_ids: set[int] | None) -> bool:
         """Check if a ROM should appear in platform collections.
 
         If collection_create_platform_groups is False (default), only ROMs
         fetched via enabled platforms are included. Collection-only ROMs
         are excluded from platform collections but still synced.
+
+        platform_rom_ids=None means no tracking data (legacy sync) → include all.
+        platform_rom_ids=set() means no platforms enabled → exclude all (unless toggle ON).
         """
         if self._settings.get("collection_create_platform_groups", False):
             return True
-        if not platform_rom_ids:
-            return True  # No platform tracking → include all (backwards compat)
+        if platform_rom_ids is None:
+            return True  # Legacy sync without platform tracking
         return rom_id in platform_rom_ids
 
     # ── Fetch & prepare ──────────────────────────────────────
@@ -1012,7 +1015,7 @@ class LibraryService:
         pending_collection_memberships = self._pending_collection_memberships
         pending_platform_rom_ids = self._pending_platform_rom_ids
         self._pending_collection_memberships = {}
-        self._pending_platform_rom_ids = set()
+        self._pending_platform_rom_ids = None
         self._pending_sync = {}
 
         # Build final collection mappings

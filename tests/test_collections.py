@@ -1021,10 +1021,22 @@ class TestCollectionSyncEdgeCases:
         assert svc._should_include_in_platform_collection(1, platform_rom_ids) is True
         assert svc._should_include_in_platform_collection(3, platform_rom_ids) is True
 
-    def test_sc5b_should_include_helper_includes_all_when_no_platform_tracking(self, plugin):
-        """Helper returns True when platform_rom_ids is empty (backwards compat)."""
+    def test_sc5b_should_include_helper_excludes_all_when_no_platforms_enabled(self, plugin):
+        """Empty set = no platforms enabled → exclude all (toggle OFF)."""
         svc = plugin._sync_service
         svc._settings["collection_create_platform_groups"] = False
+        assert svc._should_include_in_platform_collection(1, set()) is False
+
+    def test_sc5b_should_include_helper_includes_all_when_no_tracking_data(self, plugin):
+        """None = legacy sync without platform tracking → include all."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = False
+        assert svc._should_include_in_platform_collection(1, None) is True
+
+    def test_sc5b_should_include_helper_includes_all_empty_set_when_toggle_on(self, plugin):
+        """Empty set + toggle ON → include all."""
+        svc = plugin._sync_service
+        svc._settings["collection_create_platform_groups"] = True
         assert svc._should_include_in_platform_collection(1, set()) is True
 
     def test_sc5c_build_collection_app_ids_excludes_collection_only_roms(self, plugin):
@@ -1277,7 +1289,7 @@ class TestCollectionSyncEdgeCases:
 
         assert svc._pending_sync == {}
         assert svc._pending_collection_memberships == {}
-        assert svc._pending_platform_rom_ids == set()
+        assert svc._pending_platform_rom_ids is None
 
     def test_report_sync_collection_app_ids_empty_when_no_memberships(self, plugin):
         """romm_collection_app_ids is empty when no collection memberships are set."""
