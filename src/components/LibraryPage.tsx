@@ -26,6 +26,12 @@ import {
 } from "../api/backend";
 import type { PlatformSyncSetting, CollectionSyncSetting, FirmwarePlatformExt } from "../types";
 
+const CATEGORY_TITLES: Record<string, string> = {
+  favorites: "Favorites",
+  user: "My Collections",
+  franchise: "Franchise",
+};
+
 function getBiosSummary(requiredCount: number, requiredDone: number, allRequiredDone: boolean, optionalMissing: number, done: number, total: number, allDone: boolean) {
   if (requiredCount > 0 && allRequiredDone) {
     return {
@@ -267,6 +273,26 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
     );
   };
 
+  const renderCollectionSections = () =>
+    (["favorites", "user", "franchise"] as const).map((cat) => {
+      const items = collections.filter((c) => c.category === cat);
+      if (items.length === 0) return null;
+      return (
+        <PanelSection key={cat} title={CATEGORY_TITLES[cat]}>
+          {items.map((collection) => (
+            <PanelSectionRow key={collection.id}>
+              <ToggleField
+                label={collection.name}
+                description={`${collection.rom_count} ROMs`}
+                checked={collection.sync_enabled}
+                onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+              />
+            </PanelSectionRow>
+          ))}
+        </PanelSection>
+      );
+    });
+
   // --- Collections tab content ---
   const renderCollectionsContent = () => {
     if (collectionsLoading) {
@@ -320,25 +346,7 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
           </PanelSectionRow>
         </PanelSection>
         {/* Collection sections by category */}
-        {(["favorites", "user", "franchise"] as const).map((cat) => {
-          const title = cat === "favorites" ? "Favorites" : cat === "user" ? "My Collections" : "Franchise";
-          const items = collections.filter((c) => c.category === cat);
-          if (items.length === 0) return null;
-          return (
-            <PanelSection key={cat} title={title}>
-              {items.map((collection) => (
-                <PanelSectionRow key={collection.id}>
-                  <ToggleField
-                    label={collection.name}
-                    description={`${collection.rom_count} ROMs`}
-                    checked={collection.sync_enabled}
-                    onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-                  />
-                </PanelSectionRow>
-              ))}
-            </PanelSection>
-          );
-        })}
+        {renderCollectionSections()}
       </>
     );
   };
