@@ -274,32 +274,12 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         const romId = cached.rom_id!;
         romIdRef.current = romId;
 
-        // Process save sync from cached data
+        // Process save sync from backend-computed display fields
         let saveSyncStatus: "synced" | "conflict" | "none" | null = null;
         let saveSyncLabel = "";
-        if (cached.save_sync_enabled && cached.save_status) {
-          // Build a minimal SaveStatus-compatible object for computeSaveSyncDisplay
-          const pseudoStatus: SaveStatus = {
-            rom_id: romId,
-            files: cached.save_status.files.map((f) => ({
-              filename: f.filename,
-              status: f.status as "skip" | "download" | "upload" | "conflict",
-              local_path: null,
-              local_hash: null,
-              local_mtime: null,
-              local_size: null,
-              server_save_id: null,
-              server_updated_at: null,
-              server_size: null,
-              last_sync_at: f.last_sync_at ?? null,
-            })),
-            playtime: { total_seconds: 0, session_count: 0, last_session_start: null, last_session_duration_sec: null },
-            device_id: "",
-            last_sync_check_at: cached.save_status.last_sync_check_at ?? null,
-          };
-          const display = computeSaveSyncDisplay(pseudoStatus);
-          saveSyncStatus = display.status;
-          saveSyncLabel = display.label;
+        if (cached.save_sync_enabled && cached.save_sync_display) {
+          saveSyncStatus = cached.save_sync_display.status;
+          saveSyncLabel = cached.save_sync_display.label;
         }
 
         if (cancelled) return;
@@ -359,7 +339,19 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         // BIOS: render from cache first, background refresh if stale or missing
         const cachedBios = cached.bios_status;
         if (cachedBios) {
-          setInfo((prev) => ({ ...prev, ...extractBiosInfo(cachedBios as BiosStatus) }));
+          const activeCoreLabel = cachedBios.active_core_label ?? null;
+          const availableCores = cachedBios.available_cores ?? [];
+          const defaultCore = availableCores.find((c) => c.is_default);
+          const activeCoreIsDefault = !activeCoreLabel || (defaultCore != null && activeCoreLabel === defaultCore.label);
+          setInfo((prev) => ({
+            ...prev,
+            biosNeeded: true,
+            biosStatus: cached.bios_level ?? null,
+            biosLabel: cached.bios_label ?? "",
+            activeCoreLabel,
+            activeCoreIsDefault,
+            availableCores,
+          }));
         }
 
         const biosCachedAt = cachedBios?.cached_at;
