@@ -103,6 +103,38 @@ class GameDetailService:
             )
         )
 
+    @staticmethod
+    def _compute_stale_fields(
+        *,
+        metadata: dict | None,
+        bios_status: dict | None,
+        platform_slug: str,
+        ra_id: int | None,
+        achievement_summary: dict | None,
+    ) -> list[str]:
+        """Return list of cache keys that are stale and need background refresh."""
+        now = time.time()
+        stale: list[str] = []
+
+        meta_cached_at = metadata.get("cached_at", 0) if metadata else 0
+        if not metadata or (now - meta_cached_at) > METADATA_TTL_SEC:
+            stale.append("metadata")
+
+        if bios_status is not None:
+            if (now - bios_status.get("cached_at", 0)) > BIOS_TTL_SEC:
+                stale.append("bios")
+        elif platform_slug:
+            stale.append("bios")
+
+        if ra_id:
+            if achievement_summary:
+                if (now - achievement_summary.get("cached_at", 0)) > ACHIEVEMENT_TTL_SEC:
+                    stale.append("achievements")
+            else:
+                stale.append("achievements")
+
+        return stale
+
     def get_cached_game_detail(self, app_id) -> dict:
         """Return cached + lightweight data for a game."""
         app_id = int(app_id)
@@ -153,32 +185,13 @@ class GameDetailService:
         ra_id = entry.get("ra_id")
         achievement_summary = self._build_achievement_summary(rom_id_str, ra_id)
 
-        # Compute stale_fields for TTL-based cache invalidation
-        now = time.time()
-        stale_fields: list[str] = []
-
-        # Metadata: stale if missing or cached_at too old
-        meta_cached_at = metadata.get("cached_at", 0) if metadata else 0
-        if not metadata or (now - meta_cached_at) > METADATA_TTL_SEC:
-            stale_fields.append("metadata")
-
-        # BIOS: stale if missing (and platform needs bios check) or cached_at too old
-        if bios_status is not None:
-            bios_cached_at = bios_status.get("cached_at", 0)
-            if (now - bios_cached_at) > BIOS_TTL_SEC:
-                stale_fields.append("bios")
-        elif platform_slug:
-            # No cached BIOS data — might need fetching
-            stale_fields.append("bios")
-
-        # Achievements: stale if ra_id set but no summary or summary too old
-        if ra_id:
-            if achievement_summary:
-                ach_cached_at = achievement_summary.get("cached_at", 0)
-                if (now - ach_cached_at) > ACHIEVEMENT_TTL_SEC:
-                    stale_fields.append("achievements")
-            else:
-                stale_fields.append("achievements")
+        stale_fields = self._compute_stale_fields(
+            metadata=metadata,
+            bios_status=bios_status,
+            platform_slug=platform_slug,
+            ra_id=ra_id,
+            achievement_summary=achievement_summary,
+        )
 
         return {
             "found": True,
