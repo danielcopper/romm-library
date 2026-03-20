@@ -8,7 +8,10 @@ independent of other service modules.
 
 from __future__ import annotations
 
+from dataclasses import asdict, replace
 from typing import TYPE_CHECKING
+
+from models.metadata import AchievementSummary
 
 from domain.bios import format_bios_status
 
@@ -84,12 +87,14 @@ class GameDetailService:
         cached_progress = self._achievements.get_progress_cache_entry(rom_id_str)
         if not cached_progress:
             return None
-        return {
-            "earned": cached_progress.get("earned", 0),
-            "total": cached_progress.get("total", 0),
-            "earned_hardcore": cached_progress.get("earned_hardcore", 0),
-            "cached_at": cached_progress.get("cached_at"),
-        }
+        return asdict(
+            AchievementSummary(
+                earned=cached_progress.get("earned", 0),
+                total=cached_progress.get("total", 0),
+                earned_hardcore=cached_progress.get("earned_hardcore", 0),
+                cached_at=cached_progress.get("cached_at", 0.0),
+            )
+        )
 
     def get_cached_game_detail(self, app_id) -> dict:
         """Return cached + lightweight data for a game."""
@@ -124,8 +129,9 @@ class GameDetailService:
         if platform_slug:
             cached_bios = self._bios_checker.check_platform_bios_cached(platform_slug, rom_filename=rom_file or None)
             if cached_bios and cached_bios.get("needs_bios"):
-                bios_status = format_bios_status(cached_bios, platform_slug)
-                bios_status["cached_at"] = cached_bios.get("cached_at")
+                bios_obj = format_bios_status(cached_bios, platform_slug)
+                bios_obj = replace(bios_obj, cached_at=cached_bios.get("cached_at", 0.0))
+                bios_status = asdict(bios_obj)
 
         # Achievement summary (for badge rendering)
         ra_id = entry.get("ra_id")
@@ -164,7 +170,7 @@ class GameDetailService:
         try:
             bios = await self._bios_checker.check_platform_bios(platform_slug, rom_filename=rom_file or None)
             if bios.get("needs_bios"):
-                return {"bios_status": format_bios_status(bios, platform_slug)}
+                return {"bios_status": asdict(format_bios_status(bios, platform_slug))}
         except Exception as e:
             self._logger.warning(f"BIOS status check failed for {platform_slug}: {e}")
 
