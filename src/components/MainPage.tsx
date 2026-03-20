@@ -27,7 +27,7 @@ import { getSyncProgress } from "../utils/syncProgress";
 import { getDownloadState } from "../utils/downloadStore";
 import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 import { requestSyncCancel } from "../utils/syncManager";
-import type { SyncProgress, SyncStats, SyncPreview, DownloadItem } from "../types";
+import type { SyncProgress, SyncStats, SyncPreview, SyncPreviewSummary, DownloadItem } from "../types";
 import type { MigrationStatus } from "../api/backend";
 
 type Page = "settings" | "library" | "data" | "downloads";
@@ -41,6 +41,36 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatPreviewDescription(s: SyncPreviewSummary): string {
+  const hasRomChanges = s.new_count + s.changed_count + s.remove_count > 0;
+  const hasCollChanges = !!s.collection_diff?.has_changes;
+  const hasPlatChanges = !!s.platform_collection_diff?.has_changes;
+  if (!hasRomChanges && !hasCollChanges && !hasPlatChanges) return "Everything is up to date.";
+  const sections: string[] = [];
+  if (hasRomChanges) {
+    const r: string[] = [];
+    if (s.new_count > 0) r.push(`${s.new_count} added`);
+    if (s.changed_count > 0) r.push(`${s.changed_count} updated`);
+    if (s.remove_count > 0) r.push(`${s.remove_count} removed`);
+    sections.push(`ROMs: ${r.join(", ")}`);
+  }
+  if (hasPlatChanges) {
+    const p = s.platform_collection_diff!;
+    const pp: string[] = [];
+    if (p.added_count > 0) pp.push(`${p.added_count} added`);
+    if (p.removed_count > 0) pp.push(`${p.removed_count} removed`);
+    if (pp.length > 0) sections.push(`Platforms: ${pp.join(", ")}`);
+  }
+  if (hasCollChanges) {
+    const d = s.collection_diff!;
+    const c: string[] = [];
+    if (d.added.length > 0) c.push(`${d.added.length} added`);
+    if (d.removed.length > 0) c.push(`${d.removed.length} removed`);
+    if (c.length > 0) sections.push(`Collections: ${c.join(", ")}`);
+  }
+  return sections.length > 0 ? sections.join("; ") : "Everything is up to date.";
 }
 
 export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
@@ -351,36 +381,7 @@ export const MainPage: FC<MainPageProps> = ({ onNavigate }) => {
             <PanelSectionRow>
               <Field
                 label="Preview"
-                description={(() => {
-                  const s = preview.summary;
-                  const hasRomChanges = s.new_count + s.changed_count + s.remove_count > 0;
-                  const hasCollChanges = !!s.collection_diff?.has_changes;
-                  const hasPlatChanges = !!s.platform_collection_diff?.has_changes;
-                  if (!hasRomChanges && !hasCollChanges && !hasPlatChanges) return "Everything is up to date.";
-                  const sections: string[] = [];
-                  if (hasRomChanges) {
-                    const r: string[] = [];
-                    if (s.new_count > 0) r.push(`${s.new_count} added`);
-                    if (s.changed_count > 0) r.push(`${s.changed_count} updated`);
-                    if (s.remove_count > 0) r.push(`${s.remove_count} removed`);
-                    sections.push(`ROMs: ${r.join(", ")}`);
-                  }
-                  if (hasPlatChanges) {
-                    const p = s.platform_collection_diff!;
-                    const pp: string[] = [];
-                    if (p.added_count > 0) pp.push(`${p.added_count} added`);
-                    if (p.removed_count > 0) pp.push(`${p.removed_count} removed`);
-                    if (pp.length > 0) sections.push(`Platforms: ${pp.join(", ")}`);
-                  }
-                  if (hasCollChanges) {
-                    const d = s.collection_diff!;
-                    const c: string[] = [];
-                    if (d.added.length > 0) c.push(`${d.added.length} added`);
-                    if (d.removed.length > 0) c.push(`${d.removed.length} removed`);
-                    if (c.length > 0) sections.push(`Collections: ${c.join(", ")}`);
-                  }
-                  return sections.length > 0 ? sections.join("; ") : "Everything is up to date.";
-                })()}
+                description={formatPreviewDescription(preview.summary)}
               />
             </PanelSectionRow>
             {preview.summary.new_count + preview.summary.changed_count + preview.summary.remove_count > 0 || preview.summary.collection_diff?.has_changes || preview.summary.platform_collection_diff?.has_changes ? (

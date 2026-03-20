@@ -64,10 +64,10 @@ const MigrationConflictModal: FC<{
   </ModalRoot>
 );
 
-const SHARED_ACCOUNT_NAMES = ["admin", "romm", "user", "guest", "root"];
+const SHARED_ACCOUNT_NAMES = new Set(["admin", "romm", "user", "guest", "root"]);
 
 function isSharedAccount(username: string): boolean {
-  return SHARED_ACCOUNT_NAMES.includes(username.trim().toLowerCase());
+  return SHARED_ACCOUNT_NAMES.has(username.trim().toLowerCase());
 }
 
 const TextInputModal: FC<{
@@ -82,7 +82,7 @@ const TextInputModal: FC<{
   return (
     <ConfirmModal
       closeModal={closeModal}
-      onOK={() => { if (field) pendingEdits[field] = value; onSubmit(value); }}
+      onOK={() => { if (field) { pendingEdits[field] = value; } onSubmit(value); }}
       strTitle={label}
       bDisableBackgroundDismiss={true}
     >
@@ -214,7 +214,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
     try {
       await updateSaveSyncSettings(updated);
       if ("save_sync_enabled" in partial) {
-        window.dispatchEvent(new CustomEvent("romm_data_changed", {
+        globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
           detail: { type: "save_sync_settings", save_sync_enabled: updated.save_sync_enabled },
         }));
       }
@@ -229,7 +229,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
     try {
       const result = await syncAllSaves();
       setSyncStatus(result.message);
-      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
+      globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync" } }));
 
 
     } catch {
@@ -238,35 +238,39 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
     setSyncing(false);
   };
 
+  const handleEnableSaveSync = () => {
+    showModal(
+      <ConfirmModal
+        strTitle="Enable Save Sync?"
+        strDescription={
+          "This will sync RetroArch save files (.srm) between this device and your RomM server.\n\n" +
+          "Before enabling, please back up your local save files. " +
+          "They are stored in your RetroArch/RetroDECK saves directory.\n\n" +
+          "IMPORTANT: Save sync requires RetroArch's save sorting to be set to " +
+          "\"Sort Saves into Folders by Content Directory = ON\" and " +
+          "\"Sort Saves into Folders by Core Name = OFF\" (RetroDECK default). " +
+          "If you changed these settings, save sync will not find your save files.\n\n" +
+          "Also make sure you are not using this on a shared RomM account " +
+          "(e.g. admin, romm, guest) - unless you know what you are doing. " +
+          "Save sync is intended for single user accounts.\n\n" +
+          "Are you sure you want to proceed?"
+        }
+        strOKButtonText="I am sure"
+        strCancelButtonText="Cancel"
+        onOK={() => handleSaveSyncSettingChange({ save_sync_enabled: true })}
+        onCancel={() => {
+          setSaveSyncToggleKey((k) => k + 1);
+        }}
+      />,
+    );
+  };
+
+  const handleDisableSaveSync = () => {
+    handleSaveSyncSettingChange({ save_sync_enabled: false });
+  };
+
   const handleToggleSaveSync = (value: boolean) => {
-    if (value) {
-      showModal(
-        <ConfirmModal
-          strTitle="Enable Save Sync?"
-          strDescription={
-            "This will sync RetroArch save files (.srm) between this device and your RomM server.\n\n" +
-            "Before enabling, please back up your local save files. " +
-            "They are stored in your RetroArch/RetroDECK saves directory.\n\n" +
-            "IMPORTANT: Save sync requires RetroArch's save sorting to be set to " +
-            "\"Sort Saves into Folders by Content Directory = ON\" and " +
-            "\"Sort Saves into Folders by Core Name = OFF\" (RetroDECK default). " +
-            "If you changed these settings, save sync will not find your save files.\n\n" +
-            "Also make sure you are not using this on a shared RomM account " +
-            "(e.g. admin, romm, guest) - unless you know what you are doing. " +
-            "Save sync is intended for single user accounts.\n\n" +
-            "Are you sure you want to proceed?"
-          }
-          strOKButtonText="I am sure"
-          strCancelButtonText="Cancel"
-          onOK={() => handleSaveSyncSettingChange({ save_sync_enabled: true })}
-          onCancel={() => {
-            setSaveSyncToggleKey((k) => k + 1);
-          }}
-        />,
-      );
-    } else {
-      handleSaveSyncSettingChange({ save_sync_enabled: false });
-    }
+    if (value) { handleEnableSaveSync(); } else { handleDisableSaveSync(); }
   };
 
   const saveSyncEnabled = saveSyncSettings?.save_sync_enabled ?? false;
@@ -590,11 +594,11 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
             <Field label={steamInputStatus} />
           </PanelSectionRow>
         )}
-        {retroarchWarning && retroarchWarning.warning && (
+        {retroarchWarning?.warning && (
           <>
             <PanelSectionRow>
               <Field
-                label={`RetroArch input_driver: "${retroarchWarning.current}"`}
+                label={`RetroArch input_driver: "${retroarchWarning?.current}"`}
                 description="Controller navigation in RetroArch menus may not work with this setting."
               />
             </PanelSectionRow>

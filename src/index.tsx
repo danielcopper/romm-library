@@ -175,10 +175,11 @@ export default definePlugin(() => {
           const hostname = await getHostname();
           const activeNames = new Set(Object.keys(data.romm_collection_app_ids ?? {}));
           const suffix = ` (${hostname})`;
+          const rommCollectionPattern = /^RomM: \[([^\]]+)\]/;
           const staleRomm = collectionStore.userCollections.filter((c) => {
             if (!c.displayName.startsWith("RomM: [")) return false;
             if (!c.displayName.endsWith(suffix)) return false;
-            const match = c.displayName.match(/^RomM: \[([^\]]+)\]/);
+            const match = rommCollectionPattern.exec(c.displayName);
             return match ? !activeNames.has(match[1]) : false;
           });
           for (const c of staleRomm) {

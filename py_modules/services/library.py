@@ -696,6 +696,48 @@ class LibraryService:
         """Build shortcut data list from ROM list."""
         return build_shortcuts_data(all_roms, self._plugin_dir)
 
+    async def _fetch_single_collection_roms(
+        self, collection: dict, all_seen: set[int], collection_only_roms: list[dict]
+    ) -> list[int]:
+        """Fetch ROMs for a single collection, deduplicating against all_seen.
+
+        Mutates all_seen and collection_only_roms in place.
+        Returns the list of all rom_ids belonging to this collection.
+        """
+        cid = str(collection.get("id", ""))
+        is_virtual = collection.get("is_virtual", False)
+        coll_rom_ids: list[int] = []
+
+        offset = 0
+        limit = 50
+        while True:
+            self._check_cancelling()
+            if is_virtual:
+                page = await self._loop.run_in_executor(
+                    None, self._romm_api.list_roms_by_virtual_collection, cid, limit, offset
+                )
+            else:
+                page = await self._loop.run_in_executor(
+                    None, self._romm_api.list_roms_by_collection, collection["id"], limit, offset
+                )
+
+            items = page.get("items", [])
+            for rom in items:
+                rid = rom["id"]
+                coll_rom_ids.append(rid)
+                if rid not in all_seen:
+                    all_seen.add(rid)
+                    rom["platform_name"] = rom.get("platform_name", rom.get("platform_display_name", "Unknown"))
+                    rom["platform_slug"] = rom.get("platform_slug", rom.get("platform_fs_slug", ""))
+                    rom.pop("files", None)
+                    collection_only_roms.append(rom)
+
+            if len(items) < limit:
+                break
+            offset += limit
+
+        return coll_rom_ids
+
     async def _fetch_collection_roms(self, seen_rom_ids: set[int]) -> tuple[list[dict], dict[str, list[int]]]:
         """Fetch ROMs from enabled collections, deduplicating against seen_rom_ids.
 
@@ -735,37 +777,9 @@ class LibraryService:
 
                 coll_name = c.get("name", cid)
                 is_virtual = c.get("is_virtual", False)
-                coll_rom_ids: list[int] = []
                 self._log_debug(f"  Fetching collection '{coll_name}' (id={cid}, virtual={is_virtual})")
 
-                # Paginated fetch of ROMs in this collection
-                offset = 0
-                limit = 50
-                while True:
-                    self._check_cancelling()
-                    if is_virtual:
-                        page = await self._loop.run_in_executor(
-                            None, self._romm_api.list_roms_by_virtual_collection, cid, limit, offset
-                        )
-                    else:
-                        page = await self._loop.run_in_executor(
-                            None, self._romm_api.list_roms_by_collection, c["id"], limit, offset
-                        )
-
-                    items = page.get("items", [])
-                    for rom in items:
-                        rid = rom["id"]
-                        coll_rom_ids.append(rid)
-                        if rid not in all_seen:
-                            all_seen.add(rid)
-                            rom["platform_name"] = rom.get("platform_name", rom.get("platform_display_name", "Unknown"))
-                            rom["platform_slug"] = rom.get("platform_slug", rom.get("platform_fs_slug", ""))
-                            rom.pop("files", None)
-                            collection_only_roms.append(rom)
-
-                    if len(items) < limit:
-                        break
-                    offset += limit
+                coll_rom_ids = await self._fetch_single_collection_roms(c, all_seen, collection_only_roms)
 
                 if coll_rom_ids:
                     collection_memberships[coll_name] = coll_rom_ids
@@ -974,6 +988,28 @@ class LibraryService:
         """Build a registry entry dict from pending sync data."""
         return build_registry_entry(pending, app_id, cover_path)
 
+    def _build_collection_app_ids(
+        self,
+        registry: dict,
+        pending_platform_rom_ids: set[int],
+        pending_collection_memberships: dict[str, list[int]],
+    ) -> tuple[dict, dict[str, list]]:
+        """Build platform_app_ids and romm_collection_app_ids from the shortcut registry."""
+        platform_app_ids: dict = {}
+        for rid_str, entry in registry.items():
+            if not self._should_include_in_platform_collection(int(rid_str), pending_platform_rom_ids):
+                continue
+            pname = entry.get("platform_name", "Unknown")
+            platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
+
+        romm_collection_app_ids: dict[str, list] = {}
+        for coll_name, rom_ids in pending_collection_memberships.items():
+            app_ids = [entry["app_id"] for rid in rom_ids if (entry := registry.get(str(rid))) and "app_id" in entry]
+            if app_ids:
+                romm_collection_app_ids[coll_name] = app_ids
+
+        return platform_app_ids, romm_collection_app_ids
+
     def _report_sync_results_io(self, rom_id_to_app_id, removed_rom_ids):
         """Sync helper for report_sync_results — artwork renames, state save in executor."""
         grid = self._steam_config.grid_dir()
@@ -1007,27 +1043,11 @@ class LibraryService:
         self._pending_platform_rom_ids = set()
         self._pending_sync = {}
 
-        # Rebuild platform_app_ids from registry
-        registry = self._state["shortcut_registry"]
-        platform_app_ids = {}
-        for rid_str, entry in registry.items():
-            if not self._should_include_in_platform_collection(int(rid_str), pending_platform_rom_ids):
-                continue
-            pname = entry.get("platform_name", "Unknown")
-            platform_app_ids.setdefault(pname, []).append(entry.get("app_id"))
-
-        # Build RomM collection app_ids from collection_memberships
-        romm_collection_app_ids: dict[str, list] = {}
-        for coll_name, rom_ids in pending_collection_memberships.items():
-            app_ids = []
-            for rid in rom_ids:
-                entry = registry.get(str(rid))
-                if entry and "app_id" in entry:
-                    app_ids.append(entry["app_id"])
-            if app_ids:
-                romm_collection_app_ids[coll_name] = app_ids
-
-        return platform_app_ids, romm_collection_app_ids
+        return self._build_collection_app_ids(
+            self._state["shortcut_registry"],
+            pending_platform_rom_ids,
+            pending_collection_memberships,
+        )
 
     async def report_sync_results(self, rom_id_to_app_id, removed_rom_ids, cancelled=False):
         """Called by frontend after applying shortcuts via SteamClient."""

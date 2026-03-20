@@ -196,6 +196,153 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
     setDownloading(null);
   };
 
+  // --- Platforms tab content ---
+  const renderPlatformsContent = () => {
+    if (syncLoading) {
+      return (
+        <PanelSectionRow>
+          <Spinner />
+        </PanelSectionRow>
+      );
+    }
+    if (syncError) {
+      return (
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onBack}>
+            Failed to load platforms
+          </ButtonItem>
+        </PanelSectionRow>
+      );
+    }
+    return (
+      <>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={() => handleSetAll(true)}>
+            Enable All
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={() => handleSetAll(false)}>
+            Disable All
+          </ButtonItem>
+        </PanelSectionRow>
+        {syncPlatforms.map((platform) => (
+          <PanelSectionRow key={platform.id}>
+            <ToggleField
+              label={platform.name}
+              description={`${platform.rom_count} ROMs`}
+              checked={platform.sync_enabled}
+              onChange={(value: boolean) =>
+                handleToggle(platform.id, value)
+              }
+            />
+          </PanelSectionRow>
+        ))}
+      </>
+    );
+  };
+
+  // --- Collections tab content ---
+  const renderCollectionsContent = () => {
+    if (collectionsLoading) {
+      return (
+        <PanelSection title="Collections">
+          <PanelSectionRow><Spinner /></PanelSectionRow>
+        </PanelSection>
+      );
+    }
+    if (collectionsError) {
+      return (
+        <PanelSection title="Collections">
+          <PanelSectionRow>
+            <Field label="Failed to load collections" description="Check your connection and try again" />
+          </PanelSectionRow>
+        </PanelSection>
+      );
+    }
+    if (collections.length === 0) {
+      return (
+        <PanelSection title="Collections">
+          <PanelSectionRow>
+            <Field label="No collections found" description="Create collections in RomM to sync them here" />
+          </PanelSectionRow>
+        </PanelSection>
+      );
+    }
+    return (
+      <>
+        <PanelSection>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => handleSetAllCollections(true)}>
+              Enable All
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => handleSetAllCollections(false)}>
+              Disable All
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ToggleField
+              label="Add to platform collections"
+              description="Include collection games in platform collections"
+              checked={platformGroups}
+              onChange={async (value: boolean) => {
+                setPlatformGroups(value);
+                try { await saveCollectionPlatformGroups(value); } catch { setPlatformGroups(!value); }
+              }}
+            />
+          </PanelSectionRow>
+        </PanelSection>
+        {/* Favorites section */}
+        {collections.some((c) => c.category === "favorites") && (
+          <PanelSection title="Favorites">
+            {collections.filter((c) => c.category === "favorites").map((collection) => (
+              <PanelSectionRow key={collection.id}>
+                <ToggleField
+                  label={collection.name}
+                  description={`${collection.rom_count} ROMs`}
+                  checked={collection.sync_enabled}
+                  onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+                />
+              </PanelSectionRow>
+            ))}
+          </PanelSection>
+        )}
+        {/* User collections section */}
+        {collections.some((c) => c.category === "user") && (
+          <PanelSection title="My Collections">
+            {collections.filter((c) => c.category === "user").map((collection) => (
+              <PanelSectionRow key={collection.id}>
+                <ToggleField
+                  label={collection.name}
+                  description={`${collection.rom_count} ROMs`}
+                  checked={collection.sync_enabled}
+                  onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+                />
+              </PanelSectionRow>
+            ))}
+          </PanelSection>
+        )}
+        {/* Franchise collections section */}
+        {collections.some((c) => c.category === "franchise") && (
+          <PanelSection title="Franchise">
+            {collections.filter((c) => c.category === "franchise").map((collection) => (
+              <PanelSectionRow key={collection.id}>
+                <ToggleField
+                  label={collection.name}
+                  description={`${collection.rom_count} ROMs`}
+                  checked={collection.sync_enabled}
+                  onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
+                />
+              </PanelSectionRow>
+            ))}
+          </PanelSection>
+        )}
+      </>
+    );
+  };
+
   // --- BIOS tab: platform rendering ---
   const withGames = biosPlatforms.filter((p) => p.has_games);
   const withoutGames = biosPlatforms.filter((p) => !p.has_games);
@@ -235,8 +382,11 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
       summaryDescription = allDone ? "All downloaded" : `${total - done} missing`;
     }
 
-    const hashIndicator = (hv: boolean | null) =>
-      hv === true ? " \u2713" : hv === false ? " \u26A0" : " \u2014";
+    const hashIndicator = (hv: boolean | null) => {
+      if (hv === true) return " \u2713";
+      if (hv === false) return " \u26A0";
+      return " \u2014";
+    };
 
     const hasRequiredMissing = requiredCount > 0 && !allRequiredDone;
     const hasOptionalMissing = optionalMissing > 0;
@@ -265,7 +415,7 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
               selectedOption={platform.active_core_label || platform.available_cores.find((c) => c.is_default)?.label || ""}
               onChange={async (option: { data: string }) => {
                 const defaultCore = platform.available_cores?.find((c) => c.is_default);
-                const label = defaultCore && option.data === defaultCore.label ? "" : option.data;
+                const label = option.data === defaultCore?.label ? "" : option.data;
                 const result = await setSystemCore(platform.platform_slug, label);
                 if (result.success) {
                   await refreshBios();
@@ -404,135 +554,13 @@ export const LibraryPage: FC<LibraryPageProps> = ({ onBack }) => {
 
       {activeTab === "platforms" && (
         <PanelSection title="Platforms">
-          {syncLoading ? (
-            <PanelSectionRow>
-              <Spinner />
-            </PanelSectionRow>
-          ) : syncError ? (
-            <PanelSectionRow>
-              <ButtonItem layout="below" onClick={onBack}>
-                Failed to load platforms
-              </ButtonItem>
-            </PanelSectionRow>
-          ) : (
-            <>
-              <PanelSectionRow>
-                <ButtonItem layout="below" onClick={() => handleSetAll(true)}>
-                  Enable All
-                </ButtonItem>
-              </PanelSectionRow>
-              <PanelSectionRow>
-                <ButtonItem layout="below" onClick={() => handleSetAll(false)}>
-                  Disable All
-                </ButtonItem>
-              </PanelSectionRow>
-              {syncPlatforms.map((platform) => (
-                <PanelSectionRow key={platform.id}>
-                  <ToggleField
-                    label={platform.name}
-                    description={`${platform.rom_count} ROMs`}
-                    checked={platform.sync_enabled}
-                    onChange={(value: boolean) =>
-                      handleToggle(platform.id, value)
-                    }
-                  />
-                </PanelSectionRow>
-              ))}
-            </>
-          )}
+          {renderPlatformsContent()}
         </PanelSection>
       )}
 
       {activeTab === "collections" && (
         <>
-          {collectionsLoading ? (
-            <PanelSection title="Collections">
-              <PanelSectionRow><Spinner /></PanelSectionRow>
-            </PanelSection>
-          ) : collectionsError ? (
-            <PanelSection title="Collections">
-              <PanelSectionRow>
-                <Field label="Failed to load collections" description="Check your connection and try again" />
-              </PanelSectionRow>
-            </PanelSection>
-          ) : collections.length === 0 ? (
-            <PanelSection title="Collections">
-              <PanelSectionRow>
-                <Field label="No collections found" description="Create collections in RomM to sync them here" />
-              </PanelSectionRow>
-            </PanelSection>
-          ) : (
-            <>
-              <PanelSection>
-                <PanelSectionRow>
-                  <ButtonItem layout="below" onClick={() => handleSetAllCollections(true)}>
-                    Enable All
-                  </ButtonItem>
-                </PanelSectionRow>
-                <PanelSectionRow>
-                  <ButtonItem layout="below" onClick={() => handleSetAllCollections(false)}>
-                    Disable All
-                  </ButtonItem>
-                </PanelSectionRow>
-                <PanelSectionRow>
-                  <ToggleField
-                    label="Add to platform collections"
-                    description="Include collection games in platform collections"
-                    checked={platformGroups}
-                    onChange={async (value: boolean) => {
-                      setPlatformGroups(value);
-                      try { await saveCollectionPlatformGroups(value); } catch { setPlatformGroups(!value); }
-                    }}
-                  />
-                </PanelSectionRow>
-              </PanelSection>
-              {/* Favorites section */}
-              {collections.some((c) => c.category === "favorites") && (
-                <PanelSection title="Favorites">
-                  {collections.filter((c) => c.category === "favorites").map((collection) => (
-                    <PanelSectionRow key={collection.id}>
-                      <ToggleField
-                        label={collection.name}
-                        description={`${collection.rom_count} ROMs`}
-                        checked={collection.sync_enabled}
-                        onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-                      />
-                    </PanelSectionRow>
-                  ))}
-                </PanelSection>
-              )}
-              {/* User collections section */}
-              {collections.some((c) => c.category === "user") && (
-                <PanelSection title="My Collections">
-                  {collections.filter((c) => c.category === "user").map((collection) => (
-                    <PanelSectionRow key={collection.id}>
-                      <ToggleField
-                        label={collection.name}
-                        description={`${collection.rom_count} ROMs`}
-                        checked={collection.sync_enabled}
-                        onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-                      />
-                    </PanelSectionRow>
-                  ))}
-                </PanelSection>
-              )}
-              {/* Franchise collections section */}
-              {collections.some((c) => c.category === "franchise") && (
-                <PanelSection title="Franchise">
-                  {collections.filter((c) => c.category === "franchise").map((collection) => (
-                    <PanelSectionRow key={collection.id}>
-                      <ToggleField
-                        label={collection.name}
-                        description={`${collection.rom_count} ROMs`}
-                        checked={collection.sync_enabled}
-                        onChange={(value: boolean) => handleCollectionToggle(collection.id, value)}
-                      />
-                    </PanelSectionRow>
-                  ))}
-                </PanelSection>
-              )}
-            </>
-          )}
+          {renderCollectionsContent()}
         </>
       )}
 
