@@ -726,12 +726,31 @@ class SaveService:
 
         playtime = self._save_sync_state.get("playtime", {}).get(rom_id_str, {})
         save_entry = self._save_sync_state.get("saves", {}).get(rom_id_str, {})
+
+        conflicts = [
+            {
+                "rom_id": rom_id,
+                "filename": fs["filename"],
+                "local_path": fs["local_path"],
+                "local_hash": fs.get("local_hash"),
+                "local_mtime": fs.get("local_mtime"),
+                "local_size": fs.get("local_size"),
+                "server_save_id": fs.get("server_save_id") or 0,
+                "server_updated_at": fs.get("server_updated_at") or "",
+                "server_size": fs.get("server_size"),
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+            for fs in file_statuses
+            if fs["status"] == "conflict"
+        ]
+
         return {
             "rom_id": rom_id,
             "files": file_statuses,
             "playtime": playtime,
             "device_id": self._save_sync_state.get("device_id", ""),
             "last_sync_check_at": save_entry.get("last_sync_check_at"),
+            "conflicts": conflicts,
         }
 
     def _resolve_conflict_io(

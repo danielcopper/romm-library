@@ -892,6 +892,53 @@ class TestSaveStatus:
         for f in result["files"]:
             assert f["local_hash"] is None
 
+    @pytest.mark.asyncio
+    async def test_get_save_status_includes_empty_conflicts_when_no_conflict(self, tmp_path):
+        """get_save_status response includes conflicts key (empty when no conflicts)."""
+        svc, _ = make_service(tmp_path)
+        _install_rom(svc, tmp_path)
+
+        result = await svc.get_save_status(42)
+        assert "conflicts" in result
+        assert result["conflicts"] == []
+
+    @pytest.mark.asyncio
+    async def test_get_save_status_conflicts_populated_when_conflict_detected(self, tmp_path):
+        """When local and server both exist but never synced, conflicts list is populated."""
+        svc, fake = make_service(tmp_path)
+        _install_rom(svc, tmp_path)
+        # Create local file with content different from server (server writes zeros)
+        _create_save(tmp_path, content=b"different content")
+
+        ss = _server_save()
+        fake.saves[100] = ss
+
+        result = await svc.get_save_status(42)
+        assert "conflicts" in result
+        assert len(result["conflicts"]) == 1
+        assert result["conflicts"][0]["filename"] == "pokemon.srm"
+        assert result["conflicts"][0]["rom_id"] == 42
+
+    @pytest.mark.asyncio
+    async def test_get_save_status_conflicts_has_required_fields(self, tmp_path):
+        """Conflict entries include all fields needed for resolution."""
+        svc, fake = make_service(tmp_path)
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"different content")
+
+        ss = _server_save()
+        fake.saves[100] = ss
+
+        result = await svc.get_save_status(42)
+        assert len(result["conflicts"]) == 1
+        conflict = result["conflicts"][0]
+        assert conflict["rom_id"] == 42
+        assert conflict["filename"] == "pokemon.srm"
+        assert conflict["local_path"] is not None
+        assert conflict["server_save_id"] == 100
+        assert conflict["server_updated_at"] == "2026-02-17T06:00:00Z"
+        assert "created_at" in conflict
+
 
 # ---------------------------------------------------------------------------
 # TestSettings
