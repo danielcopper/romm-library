@@ -532,20 +532,6 @@ class TestPendingConflicts:
     """Tests for conflict queue management."""
 
     @pytest.mark.asyncio
-    async def test_get_pending_conflicts_deprecated_stub(self, plugin):
-        """Deprecated stub always returns empty list."""
-        result = await plugin.get_pending_conflicts()
-
-        assert result["conflicts"] == []
-
-    @pytest.mark.asyncio
-    async def test_get_empty_conflicts(self, plugin):
-        """Returns empty list (deprecated stub)."""
-        result = await plugin.get_pending_conflicts()
-
-        assert result["conflicts"] == []
-
-    @pytest.mark.asyncio
     async def test_resolve_invalid_resolution(self, plugin):
         """Invalid resolution string is rejected."""
         result = await plugin.resolve_conflict(42, "pokemon.srm", "invalid")
