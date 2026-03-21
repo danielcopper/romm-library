@@ -9,16 +9,13 @@
 import { toaster } from "@decky/api";
 import {
   postExitSync,
-  testConnection,
   recordSessionStart,
   recordSessionEnd,
   getAppIdRomIdMap,
-  getSaveSyncSettings,
   syncAchievementsAfterSession,
   logInfo,
   logError,
 } from "../api/backend";
-import { getRommConnectionState, setRommConnectionState } from "./connectionState";
 import { updatePlaytimeDisplay } from "../patches/metadataPatches";
 
 declare var Router: {
@@ -112,45 +109,24 @@ async function handleGameStop(): Promise<void> {
     .then(() => logInfo(`Achievement sync complete for romId=${romId}`))
     .catch((e) => logError(`Achievement sync failed for romId=${romId}: ${e}`));
 
-  // Post-exit save sync (if enabled) — quick healthcheck first to avoid wasting retries
+  // Post-exit save sync — backend handles settings check + connectivity
   try {
-    const settings = await getSaveSyncSettings();
-    if (settings.save_sync_enabled && settings.sync_after_exit) {
-      // Quick connection check before attempting sync
-      let serverOnline = getRommConnectionState() === "connected";
-      if (!serverOnline) {
-        try {
-          const conn = await Promise.race([
-            testConnection(),
-            new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
-          ]);
-          serverOnline = conn.success;
-        } catch {
-          serverOnline = false;
-        }
-        setRommConnectionState(serverOnline ? "connected" : "offline");
+    const result = await postExitSync(romId);
+    if (result.offline) {
+      toaster.toast({ title: "RomM Save Sync", body: "Server offline — saves will sync next time" });
+      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+      return;
+    }
+    if (result.success) {
+      if (result.synced && result.synced > 0) {
+        toaster.toast({ title: "RomM Save Sync", body: "Saves uploaded to RomM" });
       }
-
-      if (!serverOnline) {
-        toaster.toast({ title: "RomM Save Sync", body: "Server offline — saves will sync next time" });
-        window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
-        return;
-      }
-
-      const result = await postExitSync(romId);
-      if (result.success) {
-        if (result.synced && result.synced > 0) {
-          toaster.toast({ title: "RomM Save Sync", body: "Saves uploaded to RomM" });
-        }
-        window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
-      } else {
-        toaster.toast({ title: "RomM Save Sync", body: "Failed to sync saves after exit" });
-      }
-
-      // Check for conflicts returned from post-exit sync
-      if (result.conflicts && result.conflicts.length > 0) {
-        notifyConflicts(result.conflicts.length);
-      }
+      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+    } else {
+      toaster.toast({ title: "RomM Save Sync", body: "Failed to sync saves after exit" });
+    }
+    if (result.conflicts && result.conflicts.length > 0) {
+      notifyConflicts(result.conflicts.length);
     }
   } catch (e) {
     logError(`Post-exit sync failed: ${e}`);
