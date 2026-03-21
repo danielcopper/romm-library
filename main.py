@@ -556,9 +556,6 @@ class Plugin:
     async def resolve_conflict(self, rom_id, filename, resolution, server_save_id=None, local_path=None):
         return await self._save_sync_service.resolve_conflict(rom_id, filename, resolution, server_save_id, local_path)
 
-    async def get_pending_conflicts(self):
-        return self._save_sync_service.get_pending_conflicts()
-
     async def get_save_sync_settings(self):
         return self._save_sync_service.get_save_sync_settings()
 

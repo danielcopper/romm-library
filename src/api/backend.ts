@@ -124,8 +124,6 @@ export const postExitSync = callable<[number], { success: boolean; message: stri
 export const syncRomSaves = callable<[number], { success: boolean; message: string; synced: number; errors?: string[] }>("sync_rom_saves");
 export const syncAllSaves = callable<[], { success: boolean; message: string; synced: number; conflicts: number }>("sync_all_saves");
 export const resolveConflict = callable<[number, string, string, number, string], { success: boolean; message: string }>("resolve_conflict");
-/** @deprecated Conflicts are now returned inline from sync operations. Always returns empty. */
-export const getPendingConflicts = callable<[], { conflicts: PendingConflict[] }>("get_pending_conflicts");
 export const recordSessionStart = callable<[number], { success: boolean }>("record_session_start");
 export const recordSessionEnd = callable<[number], { success: boolean; duration_sec?: number; total_seconds?: number; session_count?: number; message?: string }>("record_session_end");
 export const getSaveSyncSettings = callable<[], SaveSyncSettings>("get_save_sync_settings");

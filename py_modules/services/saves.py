@@ -1092,10 +1092,6 @@ class SaveService:
             self._logger.error(f"Conflict resolution failed: {e}")
             return {"success": False, "message": "Conflict resolution failed"}
 
-    def get_pending_conflicts(self) -> dict:
-        """Deprecated — conflicts are now returned inline from sync operations."""
-        return {"conflicts": []}
-
     def get_save_sync_settings(self) -> dict:
         """Return current save sync settings."""
         return self._save_sync_state.get(
