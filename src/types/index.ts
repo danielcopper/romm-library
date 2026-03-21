@@ -244,6 +244,7 @@ export interface RomMetadata {
   game_modes: string[];
   player_count: string;
   cached_at: number;
+  steam_categories?: number[];
 }
 
 export type ConflictMode = "newest_wins" | "always_upload" | "always_download" | "ask_me";
