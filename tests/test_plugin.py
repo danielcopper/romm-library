@@ -43,6 +43,7 @@ def plugin():
     )
 
     p._sgdb_service = SteamGridService(
+        sgdb_api=MagicMock(),
         romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,

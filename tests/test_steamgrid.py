@@ -41,7 +41,11 @@ def plugin():
         log_debug=p._log_debug,
     )
 
+    sgdb_api = MagicMock()
+    p._sgdb_api = sgdb_api
+
     p._sgdb_service = SteamGridService(
+        sgdb_api=sgdb_api,
         romm_api=p._romm_api,
         steam_config=steam_config,
         state=p._state,
@@ -62,84 +66,28 @@ async def _set_event_loop(plugin):
     plugin.loop = asyncio.get_event_loop()
 
 
-class TestSgdbSslVerification:
-    def test_sgdb_request_verifies_ssl(self, plugin):
-        """SGDB requests should always verify SSL certificates."""
-        import json as _json
-        import ssl
-        from unittest.mock import MagicMock, patch
-
-        plugin.settings["steamgriddb_api_key"] = "test-key"
-
-        fake_resp = MagicMock()
-        fake_resp.read.return_value = _json.dumps({"success": True}).encode()
-        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
-        fake_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            plugin._sgdb_service._sgdb_request("/test")
-
-        args = mock_open.call_args
-        ctx = args[1].get("context") or args[0][1] if len(args[0]) > 1 else args[1]["context"]
-        assert ctx.check_hostname is True
-        assert ctx.verify_mode == ssl.CERT_REQUIRED
-
-    def test_sgdb_ignores_romm_insecure_setting(self, plugin):
-        """SGDB should verify SSL even when romm_allow_insecure_ssl is True."""
-        import json as _json
-        import ssl
-        from unittest.mock import MagicMock, patch
-
-        plugin.settings["steamgriddb_api_key"] = "test-key"
-        plugin.settings["romm_allow_insecure_ssl"] = True
-
-        fake_resp = MagicMock()
-        fake_resp.read.return_value = _json.dumps({"success": True}).encode()
-        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
-        fake_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            plugin._sgdb_service._sgdb_request("/test")
-
-        args = mock_open.call_args
-        ctx = args[1].get("context") or args[0][1] if len(args[0]) > 1 else args[1]["context"]
-        assert ctx.check_hostname is True
-        assert ctx.verify_mode == ssl.CERT_REQUIRED
-
-
 class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_valid_api_key(self, plugin):
-        import json as _json
-        from unittest.mock import MagicMock, patch
-
         plugin._sgdb_service._loop = asyncio.get_event_loop()
+        plugin._sgdb_api.verify_api_key.return_value = {"success": True}
 
-        fake_resp = MagicMock()
-        fake_resp.read.return_value = _json.dumps({"success": True}).encode()
-        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
-        fake_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=fake_resp):
-            result = await plugin.verify_sgdb_api_key("valid-key-123")
+        result = await plugin.verify_sgdb_api_key("valid-key-123")
 
         assert result["success"] is True
         assert "valid" in result["message"].lower()
+        plugin._sgdb_api.verify_api_key.assert_called_once_with("valid-key-123")
 
     @pytest.mark.asyncio
     async def test_invalid_api_key_401(self, plugin):
         import urllib.error
-        from unittest.mock import patch
 
         plugin._sgdb_service._loop = asyncio.get_event_loop()
+        plugin._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
+            "https://steamgriddb.com", 401, "Unauthorized", http.client.HTTPMessage(), None
+        )
 
-        with patch(
-            "urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError(
-                "https://steamgriddb.com", 401, "Unauthorized", http.client.HTTPMessage(), None
-            ),
-        ):
-            result = await plugin.verify_sgdb_api_key("bad-key")
+        result = await plugin.verify_sgdb_api_key("bad-key")
 
         assert result["success"] is False
         assert "Invalid API key" in result["message"]
@@ -147,61 +95,39 @@ class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_invalid_api_key_403(self, plugin):
         import urllib.error
-        from unittest.mock import patch
 
         plugin._sgdb_service._loop = asyncio.get_event_loop()
+        plugin._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
+            "https://steamgriddb.com", 403, "Forbidden", http.client.HTTPMessage(), None
+        )
 
-        with patch(
-            "urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError(
-                "https://steamgriddb.com", 403, "Forbidden", http.client.HTTPMessage(), None
-            ),
-        ):
-            result = await plugin.verify_sgdb_api_key("bad-key")
+        result = await plugin.verify_sgdb_api_key("bad-key")
 
         assert result["success"] is False
         assert "Invalid API key" in result["message"]
 
     @pytest.mark.asyncio
     async def test_empty_string_falls_back_to_saved_key(self, plugin):
-        import json as _json
-        from unittest.mock import MagicMock, patch
-
         plugin._sgdb_service._loop = asyncio.get_event_loop()
         plugin.settings["steamgriddb_api_key"] = "saved-key-456"
+        plugin._sgdb_api.verify_api_key.return_value = {"success": True}
 
-        fake_resp = MagicMock()
-        fake_resp.read.return_value = _json.dumps({"success": True}).encode()
-        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
-        fake_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            result = await plugin.verify_sgdb_api_key("")
+        result = await plugin.verify_sgdb_api_key("")
 
         assert result["success"] is True
-        # Verify it used the saved key (in the Authorization header)
-        req_obj = mock_open.call_args[0][0]
-        assert "saved-key-456" in req_obj.get_header("Authorization")
+        # Verify it used the saved key
+        plugin._sgdb_api.verify_api_key.assert_called_once_with("saved-key-456")
 
     @pytest.mark.asyncio
     async def test_masked_value_falls_back_to_saved_key(self, plugin):
-        import json as _json
-        from unittest.mock import MagicMock, patch
-
         plugin._sgdb_service._loop = asyncio.get_event_loop()
         plugin.settings["steamgriddb_api_key"] = "saved-key-789"
+        plugin._sgdb_api.verify_api_key.return_value = {"success": True}
 
-        fake_resp = MagicMock()
-        fake_resp.read.return_value = _json.dumps({"success": True}).encode()
-        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
-        fake_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=fake_resp) as mock_open:
-            result = await plugin.verify_sgdb_api_key("••••")
+        result = await plugin.verify_sgdb_api_key("••••")
 
         assert result["success"] is True
-        req_obj = mock_open.call_args[0][0]
-        assert "saved-key-789" in req_obj.get_header("Authorization")
+        plugin._sgdb_api.verify_api_key.assert_called_once_with("saved-key-789")
 
     @pytest.mark.asyncio
     async def test_no_key_configured(self, plugin):
@@ -220,30 +146,20 @@ class TestVerifySgdbApiKey:
 
     @pytest.mark.asyncio
     async def test_network_error(self, plugin):
-        from unittest.mock import patch
-
         plugin._sgdb_service._loop = asyncio.get_event_loop()
+        plugin._sgdb_api.verify_api_key.side_effect = ConnectionError("DNS resolution failed")
 
-        with patch("urllib.request.urlopen", side_effect=ConnectionError("DNS resolution failed")):
-            result = await plugin.verify_sgdb_api_key("some-key")
+        result = await plugin.verify_sgdb_api_key("some-key")
 
         assert result["success"] is False
         assert "Connection failed" in result["message"]
 
     @pytest.mark.asyncio
     async def test_sgdb_rejects_key(self, plugin):
-        import json as _json
-        from unittest.mock import MagicMock, patch
-
         plugin._sgdb_service._loop = asyncio.get_event_loop()
+        plugin._sgdb_api.verify_api_key.return_value = {"success": False}
 
-        fake_resp = MagicMock()
-        fake_resp.read.return_value = _json.dumps({"success": False}).encode()
-        fake_resp.__enter__ = MagicMock(return_value=fake_resp)
-        fake_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch("urllib.request.urlopen", return_value=fake_resp):
-            result = await plugin.verify_sgdb_api_key("rejected-key")
+        result = await plugin.verify_sgdb_api_key("rejected-key")
 
         assert result["success"] is False
         assert "rejected" in result["message"].lower()
@@ -251,17 +167,13 @@ class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_http_500_error(self, plugin):
         import urllib.error
-        from unittest.mock import patch
 
         plugin._sgdb_service._loop = asyncio.get_event_loop()
+        plugin._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
+            "https://steamgriddb.com", 500, "Internal Server Error", http.client.HTTPMessage(), None
+        )
 
-        with patch(
-            "urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError(
-                "https://steamgriddb.com", 500, "Internal Server Error", http.client.HTTPMessage(), None
-            ),
-        ):
-            result = await plugin.verify_sgdb_api_key("some-key")
+        result = await plugin.verify_sgdb_api_key("some-key")
 
         assert result["success"] is False
         assert "HTTP 500" in result["message"]
@@ -579,8 +491,6 @@ class TestIconSupport:
 
     def test_download_sgdb_artwork_icon_endpoint(self, plugin, tmp_path):
         """_download_sgdb_artwork should use /icons/ endpoint for icon type."""
-        from unittest.mock import MagicMock, patch
-
         plugin._sgdb_service._runtime_dir = str(tmp_path)
 
         art_dir = tmp_path / "artwork"
@@ -589,23 +499,15 @@ class TestIconSupport:
         # Track which SGDB path was requested
         requested_paths = []
 
-        def fake_sgdb_request(path):
+        def fake_request(path):
             requested_paths.append(path)
             return {"success": True, "data": [{"url": "https://example.com/icon.png"}]}
 
-        def fake_urlopen(*args, **kwargs):
-            mock_resp = MagicMock()
-            mock_resp.read.side_effect = [b"icon bytes", b""]
-            mock_resp.__enter__ = lambda s: s
-            mock_resp.__exit__ = MagicMock(return_value=False)
-            return mock_resp
+        plugin._sgdb_api.request.side_effect = fake_request
+        plugin._sgdb_api.download_image.return_value = True
 
         svc = plugin._sgdb_service
-        with (
-            patch.object(svc, "_sgdb_request", side_effect=fake_sgdb_request),
-            patch("urllib.request.urlopen", side_effect=fake_urlopen),
-        ):
-            svc._download_sgdb_artwork(9999, 42, "icon")
+        svc._download_sgdb_artwork(9999, 42, "icon")
 
         assert len(requested_paths) == 1
         assert "/icons/game/9999" in requested_paths[0]

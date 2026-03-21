@@ -111,6 +111,7 @@ class Plugin:
         self._http_adapter = adapters["http_adapter"]
         self._romm_api = adapters["romm_api"]
         self._steam_config = adapters["steam_config"]
+        self._sgdb_adapter = adapters["sgdb_adapter"]
 
         # ── 3. Load state ───────────────────────────────────────────────────
         self._state = {
@@ -136,6 +137,7 @@ class Plugin:
                 http_adapter=self._http_adapter,
                 romm_api=self._romm_api,
                 steam_config=self._steam_config,
+                sgdb_adapter=self._sgdb_adapter,
                 state=self._state,
                 settings=self.settings,
                 metadata_cache=self._metadata_cache,

@@ -8,26 +8,23 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import json
 import os
 import pathlib
-import ssl
 import struct
-import urllib.error
-import urllib.request
 from typing import TYPE_CHECKING, ClassVar
-
-from lib.certifi_bundle import ca_bundle as _ca_bundle
 
 if TYPE_CHECKING:
     import asyncio
     import logging
     from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol, SettingsPersister, StatePersister, SteamConfigAdapter
-
-
-_USER_AGENT = "decky-romm-sync/0.1"
+    from services.protocols import (
+        RommApiProtocol,
+        SettingsPersister,
+        StatePersister,
+        SteamConfigAdapter,
+        SteamGridDbApi,
+    )
 
 
 class SteamGridService:
@@ -36,6 +33,7 @@ class SteamGridService:
     def __init__(
         self,
         *,
+        sgdb_api: SteamGridDbApi,
         romm_api: RommApiProtocol,
         steam_config: SteamConfigAdapter,
         state: dict,
@@ -47,6 +45,7 @@ class SteamGridService:
         save_settings_to_disk: SettingsPersister,
         get_pending_sync: Callable[[], dict],
     ) -> None:
+        self._sgdb_api = sgdb_api
         self._romm_api = romm_api
         self._steam_config = steam_config
         self._state = state
@@ -74,24 +73,11 @@ class SteamGridService:
         os.makedirs(art_dir, exist_ok=True)
         return art_dir
 
-    # -- SGDB HTTP ---------------------------------------------------------
-
-    def _sgdb_request(self, path):
-        api_key = self._settings.get("steamgriddb_api_key", "")
-        if not api_key:
-            return None
-        url = "https://www.steamgriddb.com/api/v2" + path
-        req = urllib.request.Request(url, method="GET")
-        req.add_header("Authorization", f"Bearer {api_key}")
-        req.add_header("User-Agent", _USER_AGENT)
-        # S4423: false positive — Python 3.10+ defaults are TLS 1.2+ secure
-        ctx = ssl.create_default_context(cafile=_ca_bundle())
-        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-            return json.loads(resp.read().decode())
+    # -- SGDB lookup -------------------------------------------------------
 
     def _get_sgdb_game_id(self, igdb_id):
         try:
-            result = self._sgdb_request(f"/games/igdb/{igdb_id}")
+            result = self._sgdb_api.request(f"/games/igdb/{igdb_id}")
             if result and result.get("success") and result.get("data"):
                 return result["data"]["id"]
         except Exception as e:
@@ -121,28 +107,14 @@ class SteamGridService:
             path += "?dimensions=460x215,920x430"
 
         try:
-            result = self._sgdb_request(path)
+            result = self._sgdb_api.request(path)
             if not result or not result.get("success") or not result.get("data"):
                 return None
             image_url = result["data"][0]["url"]
-            req = urllib.request.Request(image_url, method="GET")
-            req.add_header("User-Agent", _USER_AGENT)
-            # S4423: false positive — Python 3.10+ defaults are TLS 1.2+ secure
-            ctx = ssl.create_default_context(cafile=_ca_bundle())
-            tmp_path = cached + ".tmp"
-            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp, open(tmp_path, "wb") as f:
-                while True:
-                    chunk = resp.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            os.replace(tmp_path, cached)
-            return cached
+            success = self._sgdb_api.download_image(image_url, cached)
+            return cached if success else None
         except Exception as e:
             self._logger.warning(f"SGDB {asset_type} download failed for game {sgdb_game_id}: {e}")
-            if os.path.exists(cached + ".tmp"):
-                with contextlib.suppress(OSError):
-                    os.remove(cached + ".tmp")
             return None
 
     # -- artwork base64 (callable) -----------------------------------------
@@ -242,25 +214,16 @@ class SteamGridService:
 
     # -- API key management ------------------------------------------------
 
-    def _verify_sgdb_api_key_io(self, api_key):
-        """Sync helper for verify_sgdb_api_key — full HTTP round-trip in executor."""
-        url = "https://www.steamgriddb.com/api/v2/search/autocomplete/test"
-        req = urllib.request.Request(url, method="GET")
-        req.add_header("Authorization", f"Bearer {api_key}")
-        req.add_header("User-Agent", _USER_AGENT)
-        # S4423: false positive — Python 3.10+ defaults are TLS 1.2+ secure
-        ctx = ssl.create_default_context(cafile=_ca_bundle())
-        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-
     async def verify_sgdb_api_key(self, api_key=None):
+        import urllib.error
+
         # Use saved key if no valid key provided (modal pattern doesn't hold the real key)
         if not api_key or api_key == "••••":
             api_key = self._settings.get("steamgriddb_api_key", "")
         if not api_key:
             return {"success": False, "message": "No API key configured"}
         try:
-            data = await self._loop.run_in_executor(None, self._verify_sgdb_api_key_io, api_key)
+            data = await self._loop.run_in_executor(None, self._sgdb_api.verify_api_key, api_key)
             if data.get("success"):
                 return {"success": True, "message": "API key is valid"}
             return {"success": False, "message": "API key rejected by SteamGridDB"}
