@@ -42,7 +42,6 @@ def plugin():
     )
 
     sgdb_api = MagicMock()
-    p._sgdb_api = sgdb_api
 
     p._sgdb_service = SteamGridService(
         sgdb_api=sgdb_api,
@@ -70,20 +69,20 @@ class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_valid_api_key(self, plugin):
         plugin._sgdb_service._loop = asyncio.get_event_loop()
-        plugin._sgdb_api.verify_api_key.return_value = {"success": True}
+        plugin._sgdb_service._sgdb_api.verify_api_key.return_value = {"success": True}
 
         result = await plugin.verify_sgdb_api_key("valid-key-123")
 
         assert result["success"] is True
         assert "valid" in result["message"].lower()
-        plugin._sgdb_api.verify_api_key.assert_called_once_with("valid-key-123")
+        plugin._sgdb_service._sgdb_api.verify_api_key.assert_called_once_with("valid-key-123")
 
     @pytest.mark.asyncio
     async def test_invalid_api_key_401(self, plugin):
         import urllib.error
 
         plugin._sgdb_service._loop = asyncio.get_event_loop()
-        plugin._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
+        plugin._sgdb_service._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
             "https://steamgriddb.com", 401, "Unauthorized", http.client.HTTPMessage(), None
         )
 
@@ -97,7 +96,7 @@ class TestVerifySgdbApiKey:
         import urllib.error
 
         plugin._sgdb_service._loop = asyncio.get_event_loop()
-        plugin._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
+        plugin._sgdb_service._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
             "https://steamgriddb.com", 403, "Forbidden", http.client.HTTPMessage(), None
         )
 
@@ -110,24 +109,24 @@ class TestVerifySgdbApiKey:
     async def test_empty_string_falls_back_to_saved_key(self, plugin):
         plugin._sgdb_service._loop = asyncio.get_event_loop()
         plugin.settings["steamgriddb_api_key"] = "saved-key-456"
-        plugin._sgdb_api.verify_api_key.return_value = {"success": True}
+        plugin._sgdb_service._sgdb_api.verify_api_key.return_value = {"success": True}
 
         result = await plugin.verify_sgdb_api_key("")
 
         assert result["success"] is True
         # Verify it used the saved key
-        plugin._sgdb_api.verify_api_key.assert_called_once_with("saved-key-456")
+        plugin._sgdb_service._sgdb_api.verify_api_key.assert_called_once_with("saved-key-456")
 
     @pytest.mark.asyncio
     async def test_masked_value_falls_back_to_saved_key(self, plugin):
         plugin._sgdb_service._loop = asyncio.get_event_loop()
         plugin.settings["steamgriddb_api_key"] = "saved-key-789"
-        plugin._sgdb_api.verify_api_key.return_value = {"success": True}
+        plugin._sgdb_service._sgdb_api.verify_api_key.return_value = {"success": True}
 
         result = await plugin.verify_sgdb_api_key("••••")
 
         assert result["success"] is True
-        plugin._sgdb_api.verify_api_key.assert_called_once_with("saved-key-789")
+        plugin._sgdb_service._sgdb_api.verify_api_key.assert_called_once_with("saved-key-789")
 
     @pytest.mark.asyncio
     async def test_no_key_configured(self, plugin):
@@ -147,7 +146,7 @@ class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_network_error(self, plugin):
         plugin._sgdb_service._loop = asyncio.get_event_loop()
-        plugin._sgdb_api.verify_api_key.side_effect = ConnectionError("DNS resolution failed")
+        plugin._sgdb_service._sgdb_api.verify_api_key.side_effect = ConnectionError("DNS resolution failed")
 
         result = await plugin.verify_sgdb_api_key("some-key")
 
@@ -157,7 +156,7 @@ class TestVerifySgdbApiKey:
     @pytest.mark.asyncio
     async def test_sgdb_rejects_key(self, plugin):
         plugin._sgdb_service._loop = asyncio.get_event_loop()
-        plugin._sgdb_api.verify_api_key.return_value = {"success": False}
+        plugin._sgdb_service._sgdb_api.verify_api_key.return_value = {"success": False}
 
         result = await plugin.verify_sgdb_api_key("rejected-key")
 
@@ -169,7 +168,7 @@ class TestVerifySgdbApiKey:
         import urllib.error
 
         plugin._sgdb_service._loop = asyncio.get_event_loop()
-        plugin._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
+        plugin._sgdb_service._sgdb_api.verify_api_key.side_effect = urllib.error.HTTPError(
             "https://steamgriddb.com", 500, "Internal Server Error", http.client.HTTPMessage(), None
         )
 
@@ -503,8 +502,8 @@ class TestIconSupport:
             requested_paths.append(path)
             return {"success": True, "data": [{"url": "https://example.com/icon.png"}]}
 
-        plugin._sgdb_api.request.side_effect = fake_request
-        plugin._sgdb_api.download_image.return_value = True
+        plugin._sgdb_service._sgdb_api.request.side_effect = fake_request
+        plugin._sgdb_service._sgdb_api.download_image.return_value = True
 
         svc = plugin._sgdb_service
         svc._download_sgdb_artwork(9999, 42, "icon")
