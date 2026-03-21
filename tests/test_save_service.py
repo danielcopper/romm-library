@@ -790,6 +790,57 @@ class TestPostExitSync:
 
 
 # ---------------------------------------------------------------------------
+# TestPostExitSyncConnectivity
+# ---------------------------------------------------------------------------
+
+
+class TestPostExitSyncConnectivity:
+    @pytest.mark.asyncio
+    async def test_returns_offline_when_heartbeat_fails(self, tmp_path):
+        """post_exit_sync returns offline=True when server is unreachable."""
+        fake = FakeSaveApi()
+        fake.heartbeat_raises = ConnectionError("unreachable")
+        svc, _ = make_service(tmp_path, fake_api=fake)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "test-device"
+
+        result = await svc.post_exit_sync(42)
+
+        assert result["success"] is False
+        assert result.get("offline") is True
+        assert result["synced"] == 0
+
+    @pytest.mark.asyncio
+    async def test_proceeds_when_heartbeat_succeeds(self, tmp_path):
+        """post_exit_sync proceeds normally when server is reachable."""
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "test-device"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"save data")
+
+        result = await svc.post_exit_sync(42)
+
+        assert result.get("offline") is not True
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_offline_skips_before_device_registration(self, tmp_path):
+        """post_exit_sync returns offline without attempting device registration."""
+        fake = FakeSaveApi()
+        fake.heartbeat_raises = OSError("connection refused")
+        svc, _ = make_service(tmp_path, fake_api=fake)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        # No device_id — would trigger registration if heartbeat passed
+
+        result = await svc.post_exit_sync(42)
+
+        assert result.get("offline") is True
+        # Device should not have been registered
+        assert not svc._save_sync_state.get("device_id")
+
+
+# ---------------------------------------------------------------------------
 # TestResolveConflict
 # ---------------------------------------------------------------------------
 

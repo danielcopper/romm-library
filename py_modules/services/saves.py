@@ -940,6 +940,12 @@ class SaveService:
             self._logger.info("post_exit_sync skipped: sync_after_exit disabled")
             return {"success": True, "message": "Post-exit sync disabled", "synced": 0}
 
+        try:
+            await self._loop.run_in_executor(None, self._romm_api.heartbeat)
+        except Exception:
+            self._logger.info("post_exit_sync skipped: server offline")
+            return {"success": False, "message": "Server offline", "synced": 0, "offline": True}
+
         if not self._save_sync_state.get("device_id"):
             reg = self.ensure_device_registered()
             if not reg.get("success"):

@@ -24,6 +24,7 @@ class FakeSaveApi:
         self._next_save_id = 1000
         self._next_note_id = 2000
         self._fail_on_next: Exception | None = None
+        self.heartbeat_raises: Exception | None = None
 
     def fail_on_next(self, exc: Exception) -> None:
         """Make the next call raise the given exception."""
@@ -43,7 +44,9 @@ class FakeSaveApi:
         raise NotImplementedError
 
     def heartbeat(self) -> dict:
-        raise NotImplementedError
+        if self.heartbeat_raises is not None:
+            raise self.heartbeat_raises
+        return {"status": "ok"}
 
     def list_platforms(self) -> list[dict]:
         raise NotImplementedError
