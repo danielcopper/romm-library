@@ -139,6 +139,22 @@ class TestExtractMetadata:
         assert result["game_modes"] == ()
         assert result["player_count"] == ""
 
+    def test_extract_metadata_includes_steam_categories(self, plugin):
+        """extract_metadata should compute steam_categories from genres and game_modes."""
+        rom = {
+            "summary": "Test",
+            "metadatum": {
+                "genres": ["Action", "Puzzle"],
+                "game_modes": ["Single player"],
+            },
+        }
+        result = plugin._metadata_service.extract_metadata(rom)
+        assert "steam_categories" in result
+        assert 28 in result["steam_categories"]  # full controller support
+        assert 21 in result["steam_categories"]  # Action
+        assert 4 in result["steam_categories"]  # Puzzle
+        assert 2 in result["steam_categories"]  # Single player
+
 
 class TestGetRomMetadata:
     """Tests for the get_rom_metadata callable."""

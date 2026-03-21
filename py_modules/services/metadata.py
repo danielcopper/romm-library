@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from models.metadata import RomMetadata
 
+from domain.steam_categories import build_steam_categories
+
 if TYPE_CHECKING:
     import asyncio
     import logging
@@ -54,16 +56,20 @@ class MetadataService:
         average_rating = metadatum.get("average_rating")
         if average_rating is not None:
             average_rating = float(average_rating)
+        genres_list = metadatum.get("genres") or []
+        game_modes_list = metadatum.get("game_modes") or []
+        steam_cats = build_steam_categories(genres_list, game_modes_list)
         return asdict(
             RomMetadata(
                 summary=rom.get("summary", "") or "",
-                genres=tuple(metadatum.get("genres") or []),
+                genres=tuple(genres_list),
                 companies=tuple(metadatum.get("companies") or []),
                 first_release_date=first_release_date,
                 average_rating=average_rating,
-                game_modes=tuple(metadatum.get("game_modes") or []),
+                game_modes=tuple(game_modes_list),
                 player_count=metadatum.get("player_count", "") or "",
                 cached_at=time.time(),
+                steam_categories=tuple(steam_cats),
             )
         )
 
@@ -106,6 +112,7 @@ class MetadataService:
                 game_modes=(),
                 player_count="",
                 cached_at=0.0,
+                steam_categories=(),
             )
         )
 

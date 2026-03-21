@@ -17,6 +17,7 @@ class RomMetadata:
     game_modes: tuple[str, ...]
     player_count: str
     cached_at: float
+    steam_categories: tuple[int, ...] = ()  # pre-computed Steam StoreCategory IDs
 
 
 @dataclass(frozen=True)
