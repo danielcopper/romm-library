@@ -6,30 +6,6 @@ let metadataCache: Record<string, RomMetadata> = {};
 let appIdToRomId: Record<number, number> = {};
 let registeredAppIds: Set<number> = new Set();
 
-// Genre string → Steam StoreCategory ID mapping
-const GENRE_CATEGORY_MAP: Record<string, number> = {
-  "Action": 21,
-  "Adventure": 25,
-  "RPG": 21,
-  "Role-playing (RPG)": 21,
-  "Role-playing": 21,
-  "Strategy": 2,
-  "Simulation": 28,
-  "Sport": 18,
-  "Sports": 18,
-  "Racing": 9,
-  "Puzzle": 4,
-};
-
-// Game mode string → Steam StoreCategory ID mapping
-const MODE_CATEGORY_MAP: Record<string, number> = {
-  "Single player": 2,
-  "Multiplayer": 1,
-  "Co-operative": 9,
-  "Split screen": 24,
-  "MMO": 20,
-};
-
 /**
  * Wrap MobX state mutations so Steam's observable stores allow changes.
  */
@@ -55,26 +31,6 @@ function getMetadataForAppId(appId: number): RomMetadata | null {
 }
 
 /**
- * Build the set of Steam category IDs from a ROM's genres and game modes.
- * Always includes category 28 (full controller support) for our games.
- */
-function buildCategorySet(metadata: RomMetadata): Set<number> {
-  const categories = new Set<number>();
-  // Full controller support for all RomM games
-  categories.add(28);
-
-  for (const genre of metadata.genres) {
-    const cat = GENRE_CATEGORY_MAP[genre];
-    if (cat != null) categories.add(cat);
-  }
-  for (const mode of metadata.game_modes) {
-    const cat = MODE_CATEGORY_MAP[mode];
-    if (cat != null) categories.add(cat);
-  }
-  return categories;
-}
-
-/**
  * Apply direct property mutations to a SteamAppOverview for a RomM app.
  */
 function applyDirectMutations(appId: number, metadata: RomMetadata) {
@@ -82,18 +38,14 @@ function applyDirectMutations(appId: number, metadata: RomMetadata) {
   if (!overview) return;
 
   stateTransaction(() => {
-    // Full controller support
     overview.controller_support = 2;
 
-    // Metacritic score from average_rating (0-100 scale, rounded)
     if (metadata.average_rating != null) {
       overview.metacritic_score = Math.round(metadata.average_rating);
     }
 
-    // Add store categories
-    if (overview.m_setStoreCategories) {
-      const cats = buildCategorySet(metadata);
-      for (const cat of cats) {
+    if (overview.m_setStoreCategories && metadata.steam_categories) {
+      for (const cat of metadata.steam_categories) {
         overview.m_setStoreCategories.add(cat);
       }
     }
