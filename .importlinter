@@ -18,6 +18,7 @@ forbidden_modules =
     adapters.romm.api_v47
     adapters.romm.api_router
     adapters.steam_config
+    adapters.steamgriddb
     adapters.persistence
 
 # Adapters must not import services

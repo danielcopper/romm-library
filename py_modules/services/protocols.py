@@ -317,3 +317,22 @@ class ArtworkManager(Protocol):
     def finalize_cover_path(self, grid: str | None, cover_path: str, app_id: int, rom_id_str: str) -> str: ...
 
     def remove_artwork_files(self, grid: str, rom_id: str | int, entry: dict) -> None: ...
+
+
+class SteamGridDbApi(Protocol):
+    """SteamGridDB HTTP API — search, artwork fetch, key verification."""
+
+    def request(self, path: str) -> dict | None:
+        """Authenticated GET to SGDB API v2. Returns parsed JSON or None if no API key."""
+        ...
+
+    def download_image(self, url: str, dest_path: str) -> bool:
+        """Download image from URL to dest_path with atomic write. Returns True on success."""
+        ...
+
+    def verify_api_key(self, api_key: str) -> dict:
+        """Verify an API key against SGDB. Returns parsed JSON response.
+
+        Raises urllib.error.HTTPError on auth failures (401/403).
+        """
+        ...

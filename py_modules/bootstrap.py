@@ -18,6 +18,7 @@ from adapters.persistence import PersistenceAdapter
 from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
+from adapters.steamgriddb import SteamGridDbAdapter
 from domain import es_de_config as _es_de_config
 from domain import retrodeck_config as _retrodeck_config
 from services.achievements import AchievementsService
@@ -53,6 +54,7 @@ class WiringConfig:
     http_adapter: RommHttpAdapter
     romm_api: RommApiProtocol
     steam_config: SteamConfigProtocol
+    sgdb_adapter: SteamGridDbAdapter
 
     # State (live dict refs)
     state: dict
@@ -114,12 +116,14 @@ def bootstrap(
     http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
     romm_api = cast(RommApiProtocol, ApiRouter(http_adapter))
     steam_config = SteamConfigAdapter(user_home=user_home, logger=logger)
+    sgdb_adapter = SteamGridDbAdapter(settings=settings, logger=logger)
 
     return {
         "persistence": persistence,
         "http_adapter": http_adapter,
         "romm_api": romm_api,
         "steam_config": steam_config,
+        "sgdb_adapter": sgdb_adapter,
     }
 
 
@@ -245,6 +249,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     )
 
     sgdb_service = SteamGridService(
+        sgdb_api=cfg.sgdb_adapter,
         romm_api=cfg.romm_api,
         steam_config=cfg.steam_config,
         state=cfg.state,

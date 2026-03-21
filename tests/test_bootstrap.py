@@ -116,6 +116,7 @@ class TestWireServices:
             "http_adapter": http_adapter,
             "romm_api": romm_api,
             "steam_config": steam_config,
+            "sgdb_adapter": MagicMock(),
             "state": state,
             "settings": settings,
             "metadata_cache": {},
