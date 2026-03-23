@@ -139,10 +139,17 @@ class RommApiProtocol(Protocol):
         """
         ...
 
-    def list_saves(self, rom_id: int) -> list[dict]:
-        """List all saves for a ROM.
+    def list_saves(
+        self,
+        rom_id: int,
+        *,
+        device_id: str | None = None,
+        slot: str | None = None,
+    ) -> list[dict]:
+        """List saves for a ROM.
 
-        Returns a list of save dicts from /api/saves?rom_id={rom_id}.
+        On v4.7+, pass device_id to populate device_syncs in response,
+        and slot to filter by save slot.
         """
         ...
 

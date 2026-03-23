@@ -58,6 +58,39 @@ class TestRegisterDevice:
         assert result == expected
 
 
+class TestListSavesV47:
+    def test_base_call_unchanged(self):
+        """Calling with just rom_id behaves like v46."""
+        api, client = _make_api()
+        client.request.return_value = [{"id": 1}]
+        result = api.list_saves(42)
+        client.request.assert_called_once_with("/api/saves?rom_id=42")
+        assert result == [{"id": 1}]
+
+    def test_with_device_id(self):
+        api, client = _make_api()
+        client.request.return_value = [{"id": 1, "device_syncs": []}]
+        api.list_saves(42, device_id="abc-123")
+        client.request.assert_called_once_with("/api/saves?rom_id=42&device_id=abc-123")
+
+    def test_with_slot(self):
+        api, client = _make_api()
+        client.request.return_value = []
+        api.list_saves(42, slot="default")
+        client.request.assert_called_once_with("/api/saves?rom_id=42&slot=default")
+
+    def test_with_device_id_and_slot(self):
+        api, client = _make_api()
+        client.request.return_value = []
+        api.list_saves(42, device_id="abc", slot="default")
+        client.request.assert_called_once_with("/api/saves?rom_id=42&device_id=abc&slot=default")
+
+    def test_non_list_returns_empty(self):
+        api, client = _make_api()
+        client.request.return_value = {"error": "bad"}
+        assert api.list_saves(42, device_id="abc") == []
+
+
 class TestInheritsBaseMethods:
     def test_get_rom(self):
         api, client = _make_api()

@@ -38,6 +38,22 @@ class RommApiV47(RommApiV46):
         encoded_id = urllib.parse.quote(str(virtual_id), safe="")
         return self._client.request(f"/api/roms?virtual_collection_id={encoded_id}&limit={limit}&offset={offset}")
 
+    def list_saves(
+        self,
+        rom_id: int,
+        *,
+        device_id: str | None = None,
+        slot: str | None = None,
+    ) -> list[dict]:
+        """List saves with optional device sync info and slot filtering."""
+        query = f"/api/saves?rom_id={rom_id}"
+        if device_id is not None:
+            query += f"&device_id={device_id}"
+        if slot is not None:
+            query += f"&slot={slot}"
+        result = self._client.request(query)
+        return result if isinstance(result, list) else []
+
     def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
         """Register this client as a device via POST /api/devices."""
         return self._client.post_json(
