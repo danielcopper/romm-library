@@ -238,6 +238,31 @@ class TestConfirmDownload:
         assert result == expected
 
 
+class TestGetSaveSummary:
+    def test_fetches_summary_with_device_id(self):
+        api, client = _make_api()
+        client.request.return_value = {
+            "slots": [{"slot": "default", "saves": [{"id": 1}]}],
+        }
+        result = api.get_save_summary(42, "abc")
+        client.request.assert_called_once_with("/api/saves/summary?rom_id=42&device_id=abc")
+        assert "slots" in result
+
+    def test_without_device_id(self):
+        api, client = _make_api()
+        client.request.return_value = {"slots": []}
+        result = api.get_save_summary(42)
+        client.request.assert_called_once_with("/api/saves/summary?rom_id=42")
+        assert result == {"slots": []}
+
+    def test_returns_full_response(self):
+        api, client = _make_api()
+        expected = {"slots": [{"slot": "default", "saves": [{"id": 1}]}], "total": 1}
+        client.request.return_value = expected
+        result = api.get_save_summary(42, "abc")
+        assert result == expected
+
+
 class TestInheritsBaseMethods:
     def test_get_rom(self):
         api, client = _make_api()

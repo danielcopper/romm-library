@@ -107,6 +107,18 @@ class RommApiV47(RommApiV46):
             {"device_id": device_id},
         )
 
+    def get_save_summary(self, rom_id: int, device_id: str | None = None) -> dict:
+        """Fetch grouped save summary for a ROM with slot breakdown.
+
+        Uses the dedicated /api/saves/summary endpoint which returns
+        a structured response grouped by slot, unlike the flat list
+        from list_saves.
+        """
+        query = f"/api/saves/summary?rom_id={rom_id}"
+        if device_id is not None:
+            query += f"&device_id={device_id}"
+        return self._client.request(query)
+
     def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
         """Register this client as a device via POST /api/devices."""
         return self._client.post_json(

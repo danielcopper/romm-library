@@ -196,6 +196,15 @@ class RommApiProtocol(Protocol):
         """
         ...
 
+    def get_save_summary(self, rom_id: int, device_id: str | None = None) -> dict:
+        """Fetch grouped save summary for a ROM with slot breakdown.
+
+        Only available on RomM >= 4.7.0.
+        Uses /api/saves/summary — returns structured response grouped by slot.
+        Pass device_id to include device sync status per save.
+        """
+        ...
+
     def download_save(self, save_id: int, dest_path: str) -> None:
         """Download a save file to a local path.
 
