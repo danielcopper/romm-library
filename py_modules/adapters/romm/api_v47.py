@@ -100,6 +100,13 @@ class RommApiV47(RommApiV46):
             path += f"?device_id={device_id}&optimistic={opt}"
         self._client.download(path, dest_path)
 
+    def confirm_download(self, save_id: int, device_id: str) -> dict:
+        """Confirm a save download for manual sync (when optimistic=false)."""
+        return self._client.post_json(
+            f"/api/saves/{save_id}/downloaded",
+            {"device_id": device_id},
+        )
+
     def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
         """Register this client as a device via POST /api/devices."""
         return self._client.post_json(

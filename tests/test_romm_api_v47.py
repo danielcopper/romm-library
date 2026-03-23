@@ -219,6 +219,25 @@ class TestDownloadSaveContent:
         client.download.assert_called_once_with("/api/saves/42/content", "/tmp/save.srm")
 
 
+class TestConfirmDownload:
+    def test_posts_to_downloaded_endpoint(self):
+        api, client = _make_api()
+        client.post_json.return_value = {"status": "ok"}
+        result = api.confirm_download(99, "abc-123")
+        client.post_json.assert_called_once_with(
+            "/api/saves/99/downloaded",
+            {"device_id": "abc-123"},
+        )
+        assert result == {"status": "ok"}
+
+    def test_returns_response(self):
+        api, client = _make_api()
+        expected = {"save_id": 99, "device_id": "abc", "synced": True}
+        client.post_json.return_value = expected
+        result = api.confirm_download(99, "abc")
+        assert result == expected
+
+
 class TestInheritsBaseMethods:
     def test_get_rom(self):
         api, client = _make_api()

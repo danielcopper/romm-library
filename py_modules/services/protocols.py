@@ -188,6 +188,14 @@ class RommApiProtocol(Protocol):
         """
         ...
 
+    def confirm_download(self, save_id: int, device_id: str) -> dict:
+        """Manually confirm a save download for device sync tracking.
+
+        Only needed when download_save_content() was called with optimistic=False.
+        Only available on RomM >= 4.7.0.
+        """
+        ...
+
     def download_save(self, save_id: int, dest_path: str) -> None:
         """Download a save file to a local path.
 
