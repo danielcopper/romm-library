@@ -1,0 +1,83 @@
+"""Save file path resolution for RetroArch save directory layouts.
+
+Handles the various save directory structures created by RetroArch's
+sort_savefiles_by_content_enable and sort_savefiles_enable settings.
+
+No I/O, no service/adapter/lib imports. Pure functions only.
+"""
+
+from __future__ import annotations
+
+import os
+
+
+def resolve_save_dir(
+    rom_path: str,
+    saves_base: str,
+    system: str,
+    *,
+    sort_by_content: bool = True,
+    sort_by_core: bool = False,
+    core_name: str | None = None,
+) -> str:
+    """Resolve the save directory for a ROM.
+
+    Parameters
+    ----------
+    rom_path:
+        Relative ROM file path as stored in RomM (e.g. "gba/Game.gba" or
+        "psx/Game (USA)/Game.m3u").
+    saves_base:
+        Absolute path to the RetroArch saves root directory.
+    system:
+        Platform/system slug (e.g. "gba", "psx"). Used as fallback subdir.
+    sort_by_content:
+        If True, save subdir = last folder component of rom_path.
+        RetroDECK default: True.
+    sort_by_core:
+        If True, adds a core name subfolder inside the content dir.
+        RetroDECK default: False. Requires core_name.
+    core_name:
+        RetroArch core name (e.g. "mgba_libretro"). Required when sort_by_core=True.
+
+    Returns
+    -------
+    str
+        Absolute path to the directory where save files should be found/placed.
+    """
+    parts: list[str] = [saves_base]
+
+    if sort_by_content:
+        # Last folder component of the rom_path (i.e. the directory containing the ROM file)
+        rom_dir = os.path.dirname(rom_path)
+        content_dir = os.path.basename(rom_dir) if rom_dir else system
+        parts.append(content_dir)
+
+    if sort_by_core and core_name:
+        parts.append(core_name)
+
+    return os.path.join(*parts)
+
+
+def resolve_save_filename(rom_path: str, ext: str = ".srm") -> str:
+    """Derive the save filename from a ROM path.
+
+    Takes the ROM's basename, strips extension, appends save extension.
+    E.g. "gba/Pokemon.gba" -> "Pokemon.srm"
+    """
+    basename = os.path.basename(rom_path)
+    name, _ = os.path.splitext(basename)
+    return name + ext
+
+
+def detect_path_change(stored_path: str | None, resolved_path: str) -> bool:
+    """Detect if the save path has changed since last sync.
+
+    Useful for warning users when RetroArch settings change (e.g.
+    sort_by_content toggled) which would move where saves are expected.
+
+    Returns True if paths differ (or stored_path is None -- first sync).
+    """
+    if stored_path is None:
+        return True
+    return stored_path != resolved_path
