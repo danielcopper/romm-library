@@ -182,6 +182,43 @@ class TestUploadSaveV47:
         assert "emulator=retro%20arch/core" in path
 
 
+class TestDownloadSaveContent:
+    def test_basic_download(self):
+        api, client = _make_api()
+        api.download_save_content(99, "/tmp/save.srm")
+        client.download.assert_called_once_with("/api/saves/99/content", "/tmp/save.srm")
+
+    def test_with_device_id_optimistic_true(self):
+        """Default optimistic=True — server auto-marks device as synced."""
+        api, client = _make_api()
+        api.download_save_content(99, "/tmp/save.srm", device_id="abc-123")
+        client.download.assert_called_once_with(
+            "/api/saves/99/content?device_id=abc-123&optimistic=true",
+            "/tmp/save.srm",
+        )
+
+    def test_with_device_id_optimistic_false(self):
+        """optimistic=False — client must call confirm_download after."""
+        api, client = _make_api()
+        api.download_save_content(99, "/tmp/save.srm", device_id="abc-123", optimistic=False)
+        client.download.assert_called_once_with(
+            "/api/saves/99/content?device_id=abc-123&optimistic=false",
+            "/tmp/save.srm",
+        )
+
+    def test_without_device_id_no_query_params(self):
+        """No device_id → plain content endpoint (same as download_save)."""
+        api, client = _make_api()
+        api.download_save_content(42, "/tmp/save.srm")
+        client.download.assert_called_once_with("/api/saves/42/content", "/tmp/save.srm")
+
+    def test_optimistic_ignored_without_device_id(self):
+        """optimistic param only relevant with device_id."""
+        api, client = _make_api()
+        api.download_save_content(42, "/tmp/save.srm", optimistic=False)
+        client.download.assert_called_once_with("/api/saves/42/content", "/tmp/save.srm")
+
+
 class TestInheritsBaseMethods:
     def test_get_rom(self):
         api, client = _make_api()

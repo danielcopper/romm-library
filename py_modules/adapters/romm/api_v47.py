@@ -80,6 +80,26 @@ class RommApiV47(RommApiV46):
             return self._client.upload_multipart(f"/api/saves/{save_id}?{params}", file_path, method="PUT")
         return self._client.upload_multipart(f"/api/saves?{params}", file_path, method="POST")
 
+    def download_save_content(
+        self,
+        save_id: int,
+        dest_path: str,
+        *,
+        device_id: str | None = None,
+        optimistic: bool = True,
+    ) -> None:
+        """Download save content with optional device sync tracking.
+
+        When device_id is provided, the server records the download.
+        optimistic=True (default) auto-marks device as synced.
+        optimistic=False requires a manual confirm_download() call after.
+        """
+        path = f"/api/saves/{save_id}/content"
+        if device_id is not None:
+            opt = "true" if optimistic else "false"
+            path += f"?device_id={device_id}&optimistic={opt}"
+        self._client.download(path, dest_path)
+
     def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
         """Register this client as a device via POST /api/devices."""
         return self._client.post_json(

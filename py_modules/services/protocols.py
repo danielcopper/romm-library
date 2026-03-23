@@ -172,6 +172,22 @@ class RommApiProtocol(Protocol):
         """
         ...
 
+    def download_save_content(
+        self,
+        save_id: int,
+        dest_path: str,
+        *,
+        device_id: str | None = None,
+        optimistic: bool = True,
+    ) -> None:
+        """Download save content with optional device sync tracking.
+
+        Only available on RomM >= 4.7.0.
+        When device_id is set, optimistic=True auto-marks device as synced;
+        optimistic=False requires a manual confirm_download() call.
+        """
+        ...
+
     def download_save(self, save_id: int, dest_path: str) -> None:
         """Download a save file to a local path.
 
