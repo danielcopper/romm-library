@@ -689,12 +689,12 @@ class TestSyncAllSaves:
 
         call_count = 0
 
-        def flaky_list(rom_id):
+        def flaky_list(rom_id, *, device_id=None, slot=None):
             nonlocal call_count
             call_count += 1
             if call_count == 2:
                 raise RommApiError("Server error")
-            return original_list(rom_id)
+            return original_list(rom_id, device_id=device_id, slot=slot)
 
         fake.list_saves = flaky_list
 
