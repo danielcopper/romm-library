@@ -102,12 +102,40 @@ class FakeSaveApi:
     def list_roms_by_virtual_collection(self, virtual_id: str, limit: int = 50, offset: int = 0) -> dict:
         raise NotImplementedError
 
+    def supports_device_sync(self) -> bool:
+        return False
+
+    def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
+        raise NotImplementedError
+
+    def download_save_content(
+        self,
+        save_id: int,
+        dest_path: str,
+        *,
+        device_id: str | None = None,
+        optimistic: bool = True,
+    ) -> None:
+        raise NotImplementedError
+
+    def confirm_download(self, save_id: int, device_id: str) -> dict:
+        raise NotImplementedError
+
+    def get_save_summary(self, rom_id: int, device_id: str | None = None) -> dict:
+        raise NotImplementedError
+
     # ------------------------------------------------------------------
     # Implemented save/note methods
     # ------------------------------------------------------------------
 
-    def list_saves(self, rom_id: int) -> list[dict]:
-        self.call_log.append(("list_saves", (rom_id,), {}))
+    def list_saves(
+        self,
+        rom_id: int,
+        *,
+        device_id: str | None = None,
+        slot: str | None = None,
+    ) -> list[dict]:
+        self.call_log.append(("list_saves", (rom_id,), {"device_id": device_id, "slot": slot}))
         self._check_fail()
         return [s for s in self.saves.values() if s.get("rom_id") == rom_id]
 
@@ -117,8 +145,23 @@ class FakeSaveApi:
         file_path: str,
         emulator: str,
         save_id: int | None = None,
+        *,
+        device_id: str | None = None,
+        slot: str | None = None,
+        overwrite: bool = False,
     ) -> dict:
-        self.call_log.append(("upload_save", (rom_id, file_path, emulator), {"save_id": save_id}))
+        self.call_log.append(
+            (
+                "upload_save",
+                (rom_id, file_path, emulator),
+                {
+                    "save_id": save_id,
+                    "device_id": device_id,
+                    "slot": slot,
+                    "overwrite": overwrite,
+                },
+            )
+        )
         self._check_fail()
 
         import os

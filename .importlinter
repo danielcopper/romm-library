@@ -15,6 +15,7 @@ source_modules =
 forbidden_modules =
     adapters.romm.http
     adapters.romm.api_base
+    adapters.romm.api_v46
     adapters.romm.api_v47
     adapters.romm.api_router
     adapters.steam_config
