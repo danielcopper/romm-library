@@ -54,6 +54,32 @@ class RommApiV47(RommApiV46):
         result = self._client.request(query)
         return result if isinstance(result, list) else []
 
+    def upload_save(
+        self,
+        rom_id: int,
+        file_path: str,
+        emulator: str,
+        save_id: int | None = None,
+        *,
+        device_id: str | None = None,
+        slot: str | None = None,
+        overwrite: bool = False,
+    ) -> dict:
+        """Upload a save with optional device tracking and slot assignment.
+
+        Raises RommConflictError on 409 (another device uploaded since last sync).
+        """
+        params = f"rom_id={rom_id}&emulator={urllib.parse.quote(emulator)}"
+        if device_id is not None:
+            params += f"&device_id={device_id}"
+        if slot is not None:
+            params += f"&slot={slot}"
+        if overwrite:
+            params += "&overwrite=true"
+        if save_id is not None:
+            return self._client.upload_multipart(f"/api/saves/{save_id}?{params}", file_path, method="PUT")
+        return self._client.upload_multipart(f"/api/saves?{params}", file_path, method="POST")
+
     def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
         """Register this client as a device via POST /api/devices."""
         return self._client.post_json(

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from adapters.romm.api_v47 import RommApiV47
 
 
@@ -89,6 +91,95 @@ class TestListSavesV47:
         api, client = _make_api()
         client.request.return_value = {"error": "bad"}
         assert api.list_saves(42, device_id="abc") == []
+
+
+class TestUploadSaveV47:
+    def test_base_call_unchanged(self):
+        """Calling with just base params behaves like v46."""
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 1}
+        result = api.upload_save(42, "/tmp/save.srm", "retroarch-mgba")
+        client.upload_multipart.assert_called_once_with(
+            "/api/saves?rom_id=42&emulator=retroarch-mgba",
+            "/tmp/save.srm",
+            method="POST",
+        )
+        assert result == {"id": 1}
+
+    def test_put_with_save_id(self):
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 5}
+        api.upload_save(42, "/tmp/save.srm", "retroarch-mgba", save_id=5)
+        client.upload_multipart.assert_called_once_with(
+            "/api/saves/5?rom_id=42&emulator=retroarch-mgba",
+            "/tmp/save.srm",
+            method="PUT",
+        )
+
+    def test_with_device_id(self):
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 1}
+        api.upload_save(42, "/tmp/save.srm", "retroarch-mgba", device_id="abc-123")
+        path = client.upload_multipart.call_args[0][0]
+        assert "device_id=abc-123" in path
+
+    def test_with_slot(self):
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 1}
+        api.upload_save(42, "/tmp/save.srm", "retroarch-mgba", slot="default")
+        path = client.upload_multipart.call_args[0][0]
+        assert "slot=default" in path
+
+    def test_with_overwrite_true(self):
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 1}
+        api.upload_save(42, "/tmp/save.srm", "retroarch-mgba", overwrite=True)
+        path = client.upload_multipart.call_args[0][0]
+        assert "overwrite=true" in path
+
+    def test_overwrite_false_not_in_query(self):
+        """overwrite=false is the default — don't clutter the query string."""
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 1}
+        api.upload_save(42, "/tmp/save.srm", "retroarch-mgba", overwrite=False)
+        path = client.upload_multipart.call_args[0][0]
+        assert "overwrite" not in path
+
+    def test_all_params_combined(self):
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 1}
+        api.upload_save(
+            42,
+            "/tmp/save.srm",
+            "retroarch-mgba",
+            save_id=5,
+            device_id="abc",
+            slot="default",
+            overwrite=True,
+        )
+        path = client.upload_multipart.call_args[0][0]
+        assert path.startswith("/api/saves/5?")
+        assert "rom_id=42" in path
+        assert "emulator=retroarch-mgba" in path
+        assert "device_id=abc" in path
+        assert "slot=default" in path
+        assert "overwrite=true" in path
+
+    def test_409_raises_conflict_error(self):
+        """409 from server propagates as RommConflictError (handled by RommHttpAdapter)."""
+        from lib.errors import RommConflictError
+
+        api, client = _make_api()
+        client.upload_multipart.side_effect = RommConflictError("HTTP 409: Conflict", url="/api/saves", method="POST")
+        with pytest.raises(RommConflictError):
+            api.upload_save(42, "/tmp/save.srm", "retroarch-mgba", device_id="abc")
+
+    def test_encodes_emulator(self):
+        api, client = _make_api()
+        client.upload_multipart.return_value = {"id": 1}
+        api.upload_save(42, "/tmp/save.srm", "retro arch/core")
+        path = client.upload_multipart.call_args[0][0]
+        assert "emulator=retro%20arch/core" in path
 
 
 class TestInheritsBaseMethods:

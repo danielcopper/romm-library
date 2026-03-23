@@ -159,11 +159,16 @@ class RommApiProtocol(Protocol):
         file_path: str,
         emulator: str,
         save_id: int | None = None,
+        *,
+        device_id: str | None = None,
+        slot: str | None = None,
+        overwrite: bool = False,
     ) -> dict:
         """Upload or update a save file.
 
-        Creates via POST /api/saves or updates via PUT /api/saves/{save_id}.
-        Upserts by filename. Returns the save dict.
+        On v4.7+, pass device_id for sync tracking, slot for slot assignment,
+        and overwrite=True to force-upload over conflicts.
+        Raises RommConflictError on 409 when overwrite=False and conflict detected.
         """
         ...
 
