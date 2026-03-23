@@ -205,6 +205,10 @@ class TestGetattr:
             _ = router.nonexistent
         assert exc_info.value.min_version == "unknown"
 
+    def test_register_device_raises_on_v46(self, router):
+        with pytest.raises(RommUnsupportedError):
+            router.register_device("deck", "linux", "decky", "1.0")
+
 
 # -- supports_device_sync --
 

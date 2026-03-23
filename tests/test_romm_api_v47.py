@@ -30,6 +30,34 @@ class TestDownloadSave:
         client.request.assert_not_called()
 
 
+class TestRegisterDevice:
+    def test_posts_to_devices_endpoint(self):
+        api, client = _make_api()
+        client.post_json.return_value = {
+            "id": "abc-123",
+            "name": "steamdeck",
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        result = api.register_device("steamdeck", "linux", "decky-romm-sync", "0.13.0")
+        client.post_json.assert_called_once_with(
+            "/api/devices",
+            {
+                "name": "steamdeck",
+                "platform": "linux",
+                "client": "decky-romm-sync",
+                "version": "0.13.0",
+            },
+        )
+        assert result["id"] == "abc-123"
+
+    def test_returns_full_response(self):
+        api, client = _make_api()
+        expected = {"id": "xyz", "name": "deck", "created_at": "2026-03-23T12:00:00Z"}
+        client.post_json.return_value = expected
+        result = api.register_device("deck", "linux", "decky", "1.0")
+        assert result == expected
+
+
 class TestInheritsBaseMethods:
     def test_get_rom(self):
         api, client = _make_api()

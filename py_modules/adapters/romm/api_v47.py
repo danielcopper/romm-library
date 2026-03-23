@@ -37,3 +37,15 @@ class RommApiV47(RommApiV46):
     def list_roms_by_virtual_collection(self, virtual_id: str, limit: int = 50, offset: int = 0) -> dict:
         encoded_id = urllib.parse.quote(str(virtual_id), safe="")
         return self._client.request(f"/api/roms?virtual_collection_id={encoded_id}&limit={limit}&offset={offset}")
+
+    def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
+        """Register this client as a device via POST /api/devices."""
+        return self._client.post_json(
+            "/api/devices",
+            {
+                "name": name,
+                "platform": platform,
+                "client": client,
+                "version": version,
+            },
+        )

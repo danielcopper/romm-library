@@ -223,6 +223,14 @@ class RommApiProtocol(Protocol):
         """
         ...
 
+    def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
+        """Register this client as a sync device on the RomM server.
+
+        Only available on RomM >= 4.7.0 (check supports_device_sync() first).
+        Returns device dict with id, name, created_at.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Infrastructure callback Protocols
