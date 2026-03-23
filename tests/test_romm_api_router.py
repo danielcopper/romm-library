@@ -186,6 +186,46 @@ class TestDelegation:
         assert result == {"id": 1}
         mock_client.put_json.assert_called_with("/api/roms/42/notes/1", {"body": "updated"})
 
+    def test_register_device_v47(self, router, mock_client):
+        router.set_version("4.7.0")
+        mock_client.post_json.return_value = {"id": "abc"}
+        result = router.register_device("deck", "linux", "decky", "1.0")
+        assert result == {"id": "abc"}
+
+    def test_list_saves_with_device_id_v47(self, router, mock_client):
+        router.set_version("4.7.0")
+        mock_client.request.return_value = [{"id": 1}]
+        result = router.list_saves(42, device_id="abc")
+        assert result == [{"id": 1}]
+        assert "device_id=abc" in mock_client.request.call_args[0][0]
+
+    def test_upload_save_with_device_params_v47(self, router, mock_client):
+        router.set_version("4.7.0")
+        mock_client.upload_multipart.return_value = {"id": 1}
+        router.upload_save(42, "/tmp/s.srm", "retroarch-mgba", device_id="abc", slot="default")
+        path = mock_client.upload_multipart.call_args[0][0]
+        assert "device_id=abc" in path
+        assert "slot=default" in path
+
+    def test_download_save_content_v47(self, router, mock_client):
+        router.set_version("4.7.0")
+        router.download_save_content(99, "/tmp/s.srm", device_id="abc")
+        path = mock_client.download.call_args[0][0]
+        assert "/api/saves/99/content" in path
+        assert "device_id=abc" in path
+
+    def test_confirm_download_v47(self, router, mock_client):
+        router.set_version("4.7.0")
+        mock_client.post_json.return_value = {"status": "ok"}
+        result = router.confirm_download(99, "abc")
+        assert result == {"status": "ok"}
+
+    def test_get_save_summary_v47(self, router, mock_client):
+        router.set_version("4.7.0")
+        mock_client.request.return_value = {"slots": []}
+        result = router.get_save_summary(42, "abc")
+        assert result == {"slots": []}
+
 
 # -- __getattr__ safety net --
 
@@ -208,6 +248,18 @@ class TestGetattr:
     def test_register_device_raises_on_v46(self, router):
         with pytest.raises(RommUnsupportedError):
             router.register_device("deck", "linux", "decky", "1.0")
+
+    def test_download_save_content_raises_on_v46(self, router):
+        with pytest.raises(RommUnsupportedError):
+            router.download_save_content(99, "/tmp/s.srm")
+
+    def test_confirm_download_raises_on_v46(self, router):
+        with pytest.raises(RommUnsupportedError):
+            router.confirm_download(99, "abc")
+
+    def test_get_save_summary_raises_on_v46(self, router):
+        with pytest.raises(RommUnsupportedError):
+            router.get_save_summary(42)
 
 
 # -- supports_device_sync --
