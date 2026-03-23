@@ -215,6 +215,14 @@ class RommApiProtocol(Protocol):
         """
         ...
 
+    def supports_device_sync(self) -> bool:
+        """Check if the connected RomM server supports device sync (v4.7+).
+
+        Returns True if device registration, slot-based saves, and
+        server-side conflict detection are available.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Infrastructure callback Protocols

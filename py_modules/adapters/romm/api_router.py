@@ -47,5 +47,9 @@ class ApiRouter:
         else:
             self._active = self._v46
 
+    def supports_device_sync(self) -> bool:
+        """Check if the active RomM version supports device sync features."""
+        return isinstance(self._active, RommApiV47)
+
     def __getattr__(self, name: str):
         return getattr(self._active, name)

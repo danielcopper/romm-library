@@ -206,6 +206,32 @@ class TestGetattr:
         assert exc_info.value.min_version == "unknown"
 
 
+# -- supports_device_sync --
+
+
+class TestSupportsDeviceSync:
+    def test_false_by_default(self, router):
+        assert router.supports_device_sync() is False
+
+    def test_false_on_v46(self, router):
+        router.set_version("4.6.1")
+        assert router.supports_device_sync() is False
+
+    def test_true_on_v47(self, router):
+        router.set_version("4.7.0")
+        assert router.supports_device_sync() is True
+
+    def test_true_on_development(self, router):
+        router.set_version("development")
+        assert router.supports_device_sync() is True
+
+    def test_switches_back_to_false(self, router):
+        router.set_version("4.7.0")
+        assert router.supports_device_sync() is True
+        router.set_version("4.6.1")
+        assert router.supports_device_sync() is False
+
+
 # -- Delegation works on both versions --
 
 
