@@ -131,7 +131,23 @@ class FakeSaveApi:
         raise NotImplementedError
 
     def get_save_summary(self, rom_id: int, device_id: str | None = None) -> dict:
-        raise NotImplementedError
+        self.call_log.append(("get_save_summary", (rom_id,), {"device_id": device_id}))
+        self._check_fail()
+        slots: dict[str | None, list[dict]] = {}
+        for s in self.saves.values():
+            if s.get("rom_id") == rom_id:
+                slot = s.get("slot")
+                slots.setdefault(slot, []).append(s)
+        return {
+            "slots": [
+                {
+                    "slot": slot_name or "default",
+                    "count": len(saves),
+                    "latest_updated_at": max((s.get("updated_at", "") for s in saves), default=None),
+                }
+                for slot_name, saves in slots.items()
+            ],
+        }
 
     # ------------------------------------------------------------------
     # Implemented save/note methods

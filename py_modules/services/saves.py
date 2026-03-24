@@ -1158,6 +1158,50 @@ class SaveService:
             "conflicts": [asdict(c) for c in conflicts],
         }
 
+    async def get_save_slots(self, rom_id: int) -> dict:
+        """List available save slots for a ROM from the server."""
+        rom_id = int(rom_id)
+        if not self._is_save_sync_enabled():
+            return {"success": False, "slots": [], "active_slot": "default"}
+
+        device_id = self._get_server_device_id()
+        rom_state = self._save_sync_state.get("saves", {}).get(str(rom_id), {})
+        active_slot = rom_state.get(
+            "active_slot",
+            self._save_sync_state.get("settings", {}).get("default_slot", "default"),
+        )
+
+        try:
+            summary = await self._loop.run_in_executor(
+                None,
+                lambda: self._retry.with_retry(
+                    lambda: self._romm_api.get_save_summary(rom_id, device_id=device_id),
+                ),
+            )
+            slots = summary.get("slots", [])
+        except Exception as e:
+            self._log_debug(f"Failed to fetch save slots for rom {rom_id}: {e}")
+            slots = []
+
+        return {"success": True, "slots": slots, "active_slot": active_slot}
+
+    def set_game_slot(self, rom_id: int, slot: str) -> dict:
+        """Set the active save slot for a specific game."""
+        rom_id = int(rom_id)
+        slot = str(slot).strip()
+        if not slot:
+            return {"success": False, "message": "Slot name cannot be empty"}
+
+        rom_id_str = str(rom_id)
+        saves = self._save_sync_state.setdefault("saves", {})
+        if rom_id_str not in saves:
+            saves[rom_id_str] = {"files": {}, "active_slot": slot}
+        else:
+            saves[rom_id_str]["active_slot"] = slot
+
+        self.save_state()
+        return {"success": True, "active_slot": slot}
+
     async def sync_all_saves(self) -> dict:
         """Manual full sync of all ROMs with shortcuts (both directions)."""
         if not self._is_save_sync_enabled():

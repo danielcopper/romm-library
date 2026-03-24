@@ -553,6 +553,12 @@ class Plugin:
     async def sync_rom_saves(self, rom_id):
         return await self._save_sync_service.sync_rom_saves(rom_id)
 
+    async def get_save_slots(self, rom_id):
+        return await self._save_sync_service.get_save_slots(rom_id)
+
+    async def set_game_slot(self, rom_id, slot):
+        return self._save_sync_service.set_game_slot(rom_id, slot)
+
     async def sync_all_saves(self):
         return await self._save_sync_service.sync_all_saves()
 

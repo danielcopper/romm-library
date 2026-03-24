@@ -1927,3 +1927,62 @@ class TestSaveSyncSettingsSlotAndCleanup:
         result = svc.get_save_sync_settings()
         assert result["default_slot"] == "default"
         assert result["autocleanup_limit"] == 10
+
+
+class TestSaveSlots:
+    """Tests for get_save_slots and set_game_slot."""
+
+    @pytest.mark.asyncio
+    async def test_get_save_slots(self, tmp_path):
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        svc._save_sync_state["server_device_id"] = "server-dev-1"
+
+        fake.saves[1] = {
+            "id": 1,
+            "rom_id": 123,
+            "file_name": "a.srm",
+            "updated_at": "2026-03-24T10:00:00",
+            "slot": "default",
+        }
+        fake.saves[2] = {
+            "id": 2,
+            "rom_id": 123,
+            "file_name": "b.srm",
+            "updated_at": "2026-03-24T08:00:00",
+            "slot": "desktop",
+        }
+
+        result = await svc.get_save_slots(123)
+        assert result["success"] is True
+        assert len(result["slots"]) == 2
+        assert result["active_slot"] == "default"
+
+    @pytest.mark.asyncio
+    async def test_get_save_slots_disabled(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        result = await svc.get_save_slots(123)
+        assert result["success"] is False
+
+    def test_set_game_slot(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["saves"] = {
+            "123": {"system": "gba", "active_slot": "default", "files": {}},
+        }
+        result = svc.set_game_slot(123, "desktop")
+        assert result["success"] is True
+        assert svc._save_sync_state["saves"]["123"]["active_slot"] == "desktop"
+
+    def test_set_game_slot_creates_entry(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        result = svc.set_game_slot(456, "my-slot")
+        assert result["success"] is True
+        assert svc._save_sync_state["saves"]["456"]["active_slot"] == "my-slot"
+
+    def test_set_game_slot_empty_rejected(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        result = svc.set_game_slot(123, "")
+        assert result["success"] is False
