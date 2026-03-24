@@ -99,6 +99,15 @@ function displaySlot(slot: string | null): string {
   return slot;
 }
 
+type SlotEntry = { slot: string; count: number; latest_updated_at: string | null };
+
+/** Merge server slots with locally-created slots (count=0) that don't exist on the server yet. */
+function mergeSlots(serverSlots: SlotEntry[], localSlots: SlotEntry[]): SlotEntry[] {
+  const serverNames = new Set(serverSlots.map((s) => s.slot));
+  const localOnly = localSlots.filter((s) => !serverNames.has(s.slot) && s.count === 0);
+  return [...serverSlots, ...localOnly];
+}
+
 export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
   const [state, setState] = useState<PanelState>({
     loading: true,
@@ -321,17 +330,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         }).catch(() => {});
         // Also refresh slot data so the saves tab reflects changes
         getSaveSlots(romIdRef.current).then((slotResult) => {
-          setState((prev) => {
-            const serverSlots = slotResult.slots || [];
-            // Preserve locally-created slots (count=0) that don't exist on server yet
-            const serverSlotNames = new Set(serverSlots.map((s: { slot: string }) => s.slot));
-            const localOnly = prev.availableSlots.filter((s) => !serverSlotNames.has(s.slot) && s.count === 0);
-            return {
-              ...prev,
-              availableSlots: [...serverSlots, ...localOnly],
-              activeSlot: slotResult.active_slot || prev.activeSlot,
-            };
-          });
+          setState((prev) => ({
+            ...prev,
+            availableSlots: mergeSlots(slotResult.slots || [], prev.availableSlots),
+            activeSlot: slotResult.active_slot || prev.activeSlot,
+          }));
         }).catch(() => {});
       } else if (detail?.type === "bios" && detail.platform_slug) {
         const updated = await checkPlatformBios(detail.platform_slug).catch((): BiosStatus => ({ needs_bios: false }));
@@ -423,12 +426,17 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       try {
         const result = await getSaveSlots(state.romId!);
         if (cancelled) return;
-        setState((prev) => ({
-          ...prev,
-          activeSlot: result.active_slot || "default",
-          availableSlots: result.slots || [],
-          slotsLoading: false,
-        }));
+        setState((prev) => {
+          const serverSlots = result.slots || [];
+          const serverSlotNames = new Set(serverSlots.map((s: { slot: string }) => s.slot));
+          const localOnly = prev.availableSlots.filter((s) => !serverSlotNames.has(s.slot) && s.count === 0);
+          return {
+            ...prev,
+            activeSlot: result.active_slot || "default",
+            availableSlots: [...serverSlots, ...localOnly],
+            slotsLoading: false,
+          };
+        });
       } catch (e) {
         debugLog(`Failed to load save slots: ${e}`);
         if (!cancelled) {
@@ -908,24 +916,22 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       for (const s of state.availableSlots) {
         const isActive = state.activeSlot === s.slot;
         rightColumnChildren.push(
-          createElement("div", { key: `slot-${s.slot}`, className: "romm-panel-file-row" },
+          createElement("div", {
+            key: `slot-${s.slot}`,
+            style: { display: "flex", alignItems: "center", gap: "6px", padding: "4px 0" },
+          },
             createElement("span", {
               className: "romm-status-dot",
               style: { backgroundColor: isActive ? "#5ba32b" : "#8f98a0" },
             }),
-            createElement("span", { className: "romm-panel-file-name" },
+            createElement("span", { style: { fontSize: "13px", color: "#fff", flex: 1 } },
               `${displaySlot(s.slot)} (${s.count})`,
             ),
-            s.latest_updated_at
-              ? createElement("span", { key: "slot-time", className: "romm-panel-file-detail" },
-                  `Last: ${formatSyncDateTime(s.latest_updated_at)}`,
-                )
-              : null,
             isActive
               ? createElement("span", { key: "active-label", style: { fontSize: "11px", color: "#5ba32b" } }, "active")
               : createElement(DialogButton as any, {
                   key: "switch-btn",
-                  style: { padding: "2px 8px", minWidth: "auto", fontSize: "11px" },
+                  style: { padding: "2px 8px", minWidth: "auto", fontSize: "11px", width: "auto" },
                   onClick: async () => {
                     try {
                       const result = await setGameSlot(state.romId!, s.slot);
