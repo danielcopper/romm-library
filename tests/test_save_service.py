@@ -1057,6 +1057,39 @@ class TestSaveStatus:
         assert conflict["server_updated_at"] == "2026-02-17T06:00:00Z"
         assert "created_at" in conflict
 
+    @pytest.mark.asyncio
+    async def test_get_save_status_includes_device_syncs(self, tmp_path):
+        """get_save_status includes device_syncs and is_current per file."""
+        svc, fake = make_service(tmp_path)
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+        svc._save_sync_state["server_device_id"] = "server-dev-1"
+        svc._save_sync_state["device_id"] = "server-dev-1"
+
+        ss = _server_save()
+        ss["device_syncs"] = [
+            {
+                "device_id": "server-dev-1",
+                "device_name": "my-deck",
+                "is_current": True,
+                "last_synced_at": "2026-03-24T10:00:00",
+            },
+            {
+                "device_id": "server-dev-2",
+                "device_name": "desktop",
+                "is_current": False,
+                "last_synced_at": "2026-03-24T08:00:00",
+            },
+        ]
+        fake.saves[100] = ss
+
+        result = await svc.get_save_status(42)
+        file_status = result["files"][0]
+        assert "device_syncs" in file_status
+        assert len(file_status["device_syncs"]) == 2
+        assert file_status["device_syncs"][0]["device_name"] == "my-deck"
+        assert file_status["is_current"] is True
+
 
 # ---------------------------------------------------------------------------
 # TestSettings

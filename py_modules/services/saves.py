@@ -756,8 +756,29 @@ class SaveService:
         server: dict | None,
         last_sync_at: str | None,
         status: str,
+        server_device_id: str | None = None,
     ) -> dict:
         """Build a file status dict for the frontend."""
+        server_device_syncs = server.get("device_syncs", []) if server else []
+        device_syncs = [
+            {
+                "device_id": ds.get("device_id", ""),
+                "device_name": ds.get("device_name", ""),
+                "is_current": ds.get("is_current", False),
+                "last_synced_at": ds.get("last_synced_at"),
+            }
+            for ds in server_device_syncs
+        ]
+        own_sync = (
+            next(
+                (ds for ds in server_device_syncs if ds.get("device_id") == server_device_id),
+                None,
+            )
+            if server_device_id
+            else None
+        )
+        is_current = own_sync.get("is_current", True) if own_sync else True
+
         return {
             "filename": filename,
             "local_path": local_path,
@@ -769,6 +790,8 @@ class SaveService:
             "server_size": server.get("file_size_bytes") if server else None,
             "last_sync_at": last_sync_at,
             "status": status,
+            "device_syncs": device_syncs,
+            "is_current": is_current,
         }
 
     def _get_save_status_io(self, rom_id: int, server_saves: list[dict]) -> dict:
@@ -810,6 +833,7 @@ class SaveService:
                     server=server,
                     last_sync_at=files_state.get(fn, {}).get("last_sync_at"),
                     status=action,
+                    server_device_id=self._get_server_device_id(),
                 )
             )
 
@@ -826,6 +850,7 @@ class SaveService:
                         server=ss,
                         last_sync_at=None,
                         status="download",
+                        server_device_id=self._get_server_device_id(),
                     )
                 )
 
