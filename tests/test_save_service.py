@@ -2693,3 +2693,147 @@ class TestTrackedSaveIdMatching:
         filenames = [f["filename"] for f in result["files"]]
         assert "pokemon.srm" in filenames
         assert "pokemon [2026-03-24_15-19-26].srm" not in filenames
+
+
+class TestOlderVersionSkipping:
+    """Older stacked versions in the same slot must not be downloaded."""
+
+    def test_older_versions_skipped_during_sync(self, tmp_path):
+        """After uploading to tracked id=18, older id=16/17 in same slot must not download."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"current save")
+
+        # Server has 3 versions, all in slot=default
+        for sid, ts, upd in [
+            (16, "15-18-50", "2026-03-24T15:18:50"),
+            (17, "15-19-15", "2026-03-24T15:19:15"),
+            (18, "15-19-26", "2026-03-24T15:19:26"),
+        ]:
+            fake.saves[sid] = _server_save(
+                save_id=sid,
+                filename=f"pokemon [2026-03-24_{ts}].srm",
+                updated_at=upd,
+                slot="default",
+            )
+
+        local_hash = _file_md5(tmp_path / "saves" / "gba" / "pokemon.srm")
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {
+                "pokemon.srm": {
+                    "tracked_save_id": 18,
+                    "last_sync_hash": local_hash,
+                    "last_sync_at": "2026-03-24T15:19:26",
+                    "last_sync_server_updated_at": "2026-03-24T15:19:26",
+                    "last_sync_server_save_id": 18,
+                    "last_sync_server_size": 1024,
+                    "local_mtime_at_last_sync": "2026-03-24T15:19:26",
+                },
+            },
+        }
+
+        synced, errors, _conflicts = svc._sync_rom_saves(42)
+        assert len(errors) == 0
+        # Nothing should sync — local matches server (id=18), older versions ignored
+        assert synced == 0
+        download_calls = [c for c in fake.call_log if c[0] == "download_save"]
+        assert len(download_calls) == 0
+
+    def test_newer_unmatched_save_not_skipped(self, tmp_path):
+        """If an unmatched server save is NEWER than the matched one, don't skip it."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"old save")
+
+        # Matched save is old (id=10)
+        fake.saves[10] = _server_save(
+            save_id=10,
+            filename="pokemon.srm",
+            updated_at="2026-03-20T10:00:00",
+            slot="default",
+        )
+        # Unmatched save is NEWER (id=20) — different extension, should not be skipped
+        fake.saves[20] = _server_save(
+            save_id=20,
+            filename="pokemon.rtc",
+            updated_at="2026-03-25T10:00:00",
+            slot="default",
+        )
+
+        local_hash = _file_md5(tmp_path / "saves" / "gba" / "pokemon.srm")
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {
+                "pokemon.srm": {
+                    "tracked_save_id": 10,
+                    "last_sync_hash": local_hash,
+                    "last_sync_at": "2026-03-20T10:00:00",
+                    "last_sync_server_updated_at": "2026-03-20T10:00:00",
+                    "last_sync_server_save_id": 10,
+                    "last_sync_server_size": 1024,
+                    "local_mtime_at_last_sync": "2026-03-20T10:00:00",
+                },
+            },
+        }
+
+        _synced, _errors, _conflicts = svc._sync_rom_saves(42)
+        # pokemon.rtc should be downloaded (newer, different file, not an older version)
+        download_calls = [c for c in fake.call_log if c[0] == "download_save"]
+        assert len(download_calls) == 1
+        assert download_calls[0][1][0] == 20  # save_id=20
+
+    def test_different_slot_not_skipped(self, tmp_path):
+        """Saves in a different slot should never be skipped."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"local save")
+
+        # Matched in slot=default
+        fake.saves[10] = _server_save(
+            save_id=10,
+            filename="pokemon.srm",
+            updated_at="2026-03-24T15:00:00",
+            slot="default",
+        )
+        # Unmatched in slot=portable — older timestamp but different slot
+        fake.saves[20] = _server_save(
+            save_id=20,
+            filename="pokemon [old].srm",
+            updated_at="2026-03-20T10:00:00",
+            slot="portable",
+        )
+
+        local_hash = _file_md5(tmp_path / "saves" / "gba" / "pokemon.srm")
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {
+                "pokemon.srm": {
+                    "tracked_save_id": 10,
+                    "last_sync_hash": local_hash,
+                    "last_sync_at": "2026-03-24T15:00:00",
+                    "last_sync_server_updated_at": "2026-03-24T15:00:00",
+                    "last_sync_server_save_id": 10,
+                    "last_sync_server_size": 1024,
+                    "local_mtime_at_last_sync": "2026-03-24T15:00:00",
+                },
+            },
+        }
+
+        _synced, _errors, _conflicts = svc._sync_rom_saves(42)
+        # pokemon [old].srm in slot=portable should NOT be skipped
+        download_calls = [c for c in fake.call_log if c[0] == "download_save"]
+        assert len(download_calls) == 1
+        assert download_calls[0][1][0] == 20

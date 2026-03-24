@@ -771,12 +771,27 @@ class SaveService:
                 synced += 1
 
         # Process server-only saves (not matched by any local file).
-        # Group unmatched server saves by base name (strip timestamp tags),
-        # pick only the newest per group, and use the correct local filename.
+        # Skip saves that are older versions of an already-matched save:
+        # if a matched save in the same slot has a newer updated_at, the
+        # unmatched one is a stacked version we already superseded.
+        matched_latest_by_slot: dict[str | None, str] = {}
+        for sid in matched_server_ids:
+            ms = server_by_id.get(sid)
+            if ms:
+                slot = ms.get("slot")
+                ts = ms.get("updated_at", "")
+                if ts > matched_latest_by_slot.get(slot, ""):
+                    matched_latest_by_slot[slot] = ts
+
         unmatched_server = [
             ss
             for ss in server_saves
-            if ss.get("id") not in matched_server_ids and ss.get("file_name", "") not in local_by_name
+            if ss.get("id") not in matched_server_ids
+            and ss.get("file_name", "") not in local_by_name
+            and not (
+                ss.get("slot") in matched_latest_by_slot
+                and ss.get("updated_at", "") <= matched_latest_by_slot[ss.get("slot")]
+            )
         ]
         if unmatched_server:
             # Derive the expected local filename from ROM info
@@ -936,13 +951,28 @@ class SaveService:
             )
 
         # Server-only saves: group by base name, show only the newest per group
-        # with the correct local filename (not the timestamped server name)
+        # with the correct local filename (not the timestamped server name).
+        # Skip saves older than our matched save in the same slot.
+        status_matched_latest: dict[str | None, str] = {}
+        for sid in matched_server_ids:
+            ms = server_by_id.get(sid)
+            if ms:
+                slot = ms.get("slot")
+                ts = ms.get("updated_at", "")
+                if ts > status_matched_latest.get(slot, ""):
+                    status_matched_latest[slot] = ts
+
         info = self._get_rom_save_info(rom_id)
         local_basename = info["rom_name"] + ".srm" if info else None
         unmatched = [
             ss
             for ss in server_saves
-            if ss.get("id") not in matched_server_ids and ss.get("file_name", "") not in seen_filenames
+            if ss.get("id") not in matched_server_ids
+            and ss.get("file_name", "") not in seen_filenames
+            and not (
+                ss.get("slot") in status_matched_latest
+                and ss.get("updated_at", "") <= status_matched_latest[ss.get("slot")]
+            )
         ]
         if unmatched:
             groups: dict[str, list[dict]] = {}
