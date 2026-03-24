@@ -770,17 +770,37 @@ class SaveService:
             if self._process_single_file_sync(rom_id, rom_id_str, fn, lf, server, saves_dir, system, errors, conflicts):
                 synced += 1
 
-        # Process server-only saves (not matched by any local file)
-        for fn, ss in sorted(server_by_name.items()):
-            sid = ss.get("id")
-            if (
-                fn not in local_by_name
-                and sid not in matched_server_ids
-                and self._process_single_file_sync(
-                    rom_id, rom_id_str, fn, None, ss, saves_dir, system, errors, conflicts
+        # Process server-only saves (not matched by any local file).
+        # Group unmatched server saves by base name (strip timestamp tags),
+        # pick only the newest per group, and use the correct local filename.
+        unmatched_server = [
+            ss
+            for ss in server_saves
+            if ss.get("id") not in matched_server_ids and ss.get("file_name", "") not in local_by_name
+        ]
+        if unmatched_server:
+            # Derive the expected local filename from ROM info
+            local_basename = rom_name + ".srm" if rom_name else None
+
+            # Group by file_name_no_tags (base name without timestamp) or use the first
+            groups: dict[str, list[dict]] = {}
+            for ss in unmatched_server:
+                base = ss.get("file_name_no_tags") or ss.get("file_name", "unknown")
+                groups.setdefault(base, []).append(ss)
+
+            for _base, group in groups.items():
+                # Pick the newest save in this group
+                newest = max(group, key=lambda s: s.get("updated_at", ""))
+                # Use local filename if available, otherwise strip timestamp from server name
+                dl_filename = local_basename or _base + "." + newest.get("file_extension", "srm")
+                self._log_debug(
+                    f"Server-only download: {newest.get('file_name')} -> local {dl_filename} "
+                    f"(picked from {len(group)} versions)"
                 )
-            ):
-                synced += 1
+                if self._process_single_file_sync(
+                    rom_id, rom_id_str, dl_filename, None, newest, saves_dir, system, errors, conflicts
+                ):
+                    synced += 1
 
         # Record when this sync check ran (regardless of whether files transferred)
         save_entry = self._save_sync_state["saves"].setdefault(rom_id_str, {})
@@ -915,18 +935,31 @@ class SaveService:
                 )
             )
 
-        # Server-only saves (not present locally and not matched by tracked_save_id)
-        for fn, ss in server_by_name.items():
-            sid = ss.get("id")
-            if fn not in seen_filenames and sid not in matched_server_ids:
+        # Server-only saves: group by base name, show only the newest per group
+        # with the correct local filename (not the timestamped server name)
+        info = self._get_rom_save_info(rom_id)
+        local_basename = info["rom_name"] + ".srm" if info else None
+        unmatched = [
+            ss
+            for ss in server_saves
+            if ss.get("id") not in matched_server_ids and ss.get("file_name", "") not in seen_filenames
+        ]
+        if unmatched:
+            groups: dict[str, list[dict]] = {}
+            for ss in unmatched:
+                base = ss.get("file_name_no_tags") or ss.get("file_name", "unknown")
+                groups.setdefault(base, []).append(ss)
+            for _base, group in groups.items():
+                newest = max(group, key=lambda s: s.get("updated_at", ""))
+                display_fn = local_basename or _base + "." + newest.get("file_extension", "srm")
                 file_statuses.append(
                     self._build_file_status(
-                        fn,
+                        display_fn,
                         local_path=None,
                         local_hash=None,
                         local_mtime=None,
                         local_size=None,
-                        server=ss,
+                        server=newest,
                         last_sync_at=None,
                         status="download",
                         server_device_id=self._get_server_device_id(),

@@ -2614,3 +2614,82 @@ class TestTrackedSaveIdMatching:
         save_ids = {c[2].get("save_id") for c in upload_calls}
         assert 10 in save_ids  # rtc matched by filename
         assert 20 in save_ids  # srm matched by fallback
+
+    def test_server_only_downloads_newest_with_local_filename(self, tmp_path):
+        """Case 2: no local file, server has multiple timestamped saves.
+        Should download only the newest, saved as the correct local filename."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        # NO local save created — Case 2
+
+        # Server has 3 timestamped versions of the same save
+        for sid, ts in [(16, "15-18-50"), (17, "15-19-15"), (18, "15-19-26")]:
+            fake.saves[sid] = {
+                "id": sid,
+                "rom_id": 42,
+                "file_name": f"pokemon [2026-03-24_{ts}].srm",
+                "file_name_no_tags": "pokemon",
+                "file_extension": "srm",
+                "updated_at": f"2026-03-24T{ts.replace('-', ':')}",
+                "file_size_bytes": 1024,
+                "emulator": "retroarch-mgba",
+                "slot": "default",
+                "download_path": f"/saves/pokemon [2026-03-24_{ts}].srm",
+            }
+
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {},
+        }
+
+        synced, errors, _conflicts = svc._sync_rom_saves(42)
+        assert len(errors) == 0
+        assert synced == 1  # only ONE download
+
+        # Should download only once (the newest, id=18)
+        download_calls = [c for c in fake.call_log if c[0] == "download_save"]
+        assert len(download_calls) == 1
+        assert download_calls[0][1][0] == 18  # save_id=18 (newest)
+
+        # File should be saved as pokemon.srm (local name), NOT timestamp name
+        saves_dir = tmp_path / "saves" / "gba"
+        assert (saves_dir / "pokemon.srm").exists()
+        assert not (saves_dir / "pokemon [2026-03-24_15-19-26].srm").exists()
+
+    @pytest.mark.asyncio
+    async def test_status_server_only_shows_local_filename(self, tmp_path):
+        """Status display should show local filename for server-only saves, not timestamp."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        # NO local save
+
+        fake.saves[18] = {
+            "id": 18,
+            "rom_id": 42,
+            "file_name": "pokemon [2026-03-24_15-19-26].srm",
+            "file_name_no_tags": "pokemon",
+            "file_extension": "srm",
+            "updated_at": "2026-03-24T15:19:26",
+            "file_size_bytes": 1024,
+            "emulator": "retroarch-mgba",
+            "slot": "default",
+            "download_path": "/saves/pokemon [2026-03-24_15-19-26].srm",
+        }
+
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {},
+        }
+
+        result = await svc.get_save_status(42)
+        filenames = [f["filename"] for f in result["files"]]
+        assert "pokemon.srm" in filenames
+        assert "pokemon [2026-03-24_15-19-26].srm" not in filenames
