@@ -148,6 +148,7 @@ class Plugin:
                 runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
                 emit=decky.emit,
                 get_saves_path=retrodeck_config.get_saves_path,
+                get_roms_path=retrodeck_config.get_roms_path,
                 save_state=self._save_state,
                 save_settings_to_disk=self._save_settings_to_disk,
                 save_metadata_cache=self._save_metadata_cache,

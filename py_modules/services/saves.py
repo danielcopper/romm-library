@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from models.saves import SaveConflict
 
+from domain.emulator_tag import build_emulator_tag
 from domain.save_conflicts import (
     build_conflict_dict,
     check_local_changes,
@@ -29,8 +30,11 @@ from domain.save_conflicts import (
     determine_action,
     resolve_conflict_by_mode,
 )
+from domain.save_extensions import get_save_extensions
+from domain.save_path import resolve_save_dir
+from domain.save_sync import determine_sync_action
 from lib.errors import RommApiError, RommConflictError, classify_error
-from services.protocols import RetryStrategy, RommApiProtocol, SavesPathProvider
+from services.protocols import CoreResolverFn, RetryStrategy, RommApiProtocol, RomsPathProvider, SavesPathProvider
 
 _DEVICE_NOT_REGISTERED = "Device not registered"
 
@@ -63,6 +67,11 @@ class SaveService:
         ``save_sync_state.json`` persistence).
     get_saves_path:
         Callable returning the current RetroDECK saves directory.
+    get_roms_path:
+        Callable returning the current RetroDECK roms directory.
+    get_active_core:
+        Callable resolving the active RetroArch core for a system/game.
+        Returns ``(core_so, label)`` tuple; either may be None if unresolved.
     """
 
     def __init__(
@@ -76,6 +85,9 @@ class SaveService:
         logger: logging.Logger,
         runtime_dir: str,
         get_saves_path: SavesPathProvider,
+        get_roms_path: RomsPathProvider,
+        get_active_core: CoreResolverFn,
+        plugin_version: str = "0.0.0",
     ) -> None:
         self._romm_api = romm_api
         self._retry = retry
@@ -85,6 +97,9 @@ class SaveService:
         self._logger = logger
         self._runtime_dir = runtime_dir
         self._get_saves_path = get_saves_path
+        self._get_roms_path = get_roms_path
+        self._get_active_core = get_active_core
+        self._plugin_version = plugin_version
 
     # ------------------------------------------------------------------
     # Debug logging helper
@@ -92,6 +107,10 @@ class SaveService:
 
     def _log_debug(self, msg: str) -> None:
         self._logger.debug(msg)
+
+    def _get_server_device_id(self) -> str | None:
+        """Return the server device ID if registered, else None."""
+        return self._save_sync_state.get("server_device_id")
 
     # ------------------------------------------------------------------
     # State Management
@@ -104,6 +123,7 @@ class SaveService:
             "version": 1,
             "device_id": None,
             "device_name": None,
+            "server_device_id": None,
             "saves": {},
             "playtime": {},
             "settings": {
@@ -133,7 +153,7 @@ class SaveService:
             for key in ("saves", "playtime"):
                 if key in saved:
                     self._save_sync_state[key] = saved[key]
-            for key in ("version", "device_id", "device_name"):
+            for key in ("version", "device_id", "device_name", "server_device_id"):
                 if key in saved:
                     self._save_sync_state[key] = saved[key]
             if "settings" in saved:
@@ -177,10 +197,11 @@ class SaveService:
     # ROM / path helpers
     # ------------------------------------------------------------------
 
-    def _get_rom_save_info(self, rom_id: int) -> tuple[str, str, str] | None:
+    def _get_rom_save_info(self, rom_id: int) -> dict | None:
         """Get save-related info for an installed ROM.
 
-        Returns ``(system, rom_name, saves_dir)`` or ``None`` if not installed.
+        Returns dict with keys: system, rom_name, saves_dir, platform_slug, file_path
+        or None if not installed.
         """
         rom_id_str = str(int(rom_id))
         installed = self._state["installed_roms"].get(rom_id_str)
@@ -188,12 +209,32 @@ class SaveService:
             return None
         system = installed.get("system", "")
         file_path = installed.get("file_path", "")
+        platform_slug = installed.get("platform_slug", "")
         if not system or not file_path:
             return None
         rom_name = os.path.splitext(os.path.basename(file_path))[0]
+
+        # Use domain save path resolution.
+        # RetroDECK defaults: sort_by_content=True, sort_by_core=False
+        # TODO(#186): Read sort_savefiles_by_content_enable / sort_savefiles_enable from retroarch.cfg
         saves_base = self._get_saves_path()
-        saves_dir = os.path.join(saves_base, system)
-        return system, rom_name, saves_dir
+        roms_base = self._get_roms_path()
+        saves_dir = resolve_save_dir(
+            file_path,
+            saves_base,
+            system,
+            roms_base=roms_base,
+            sort_by_content=True,
+            sort_by_core=False,
+        )
+
+        return {
+            "system": system,
+            "rom_name": rom_name,
+            "saves_dir": saves_dir,
+            "platform_slug": platform_slug,
+            "file_path": file_path,
+        }
 
     # ------------------------------------------------------------------
     # File Helpers
@@ -209,18 +250,20 @@ class SaveService:
         return h.hexdigest()
 
     def _find_save_files(self, rom_id: int) -> list[dict]:
-        """Find local save files (.srm, .rtc) for a ROM.
+        """Find local save files for a ROM.
 
         Returns list of ``{"path": str, "filename": str}``.
         """
         info = self._get_rom_save_info(rom_id)
         if not info:
             return []
-        _system, rom_name, saves_dir = info
+        rom_name = info["rom_name"]
+        saves_dir = info["saves_dir"]
+        platform_slug = info["platform_slug"]
         if not os.path.isdir(saves_dir):
             return []
         results = []
-        for ext in (".srm", ".rtc"):
+        for ext in get_save_extensions(platform_slug):
             save_path = os.path.join(saves_dir, rom_name + ext)
             if os.path.isfile(save_path):
                 results.append({"path": save_path, "filename": rom_name + ext})
@@ -287,6 +330,20 @@ class SaveService:
                 file_state["last_sync_server_size"] = server_size
         return False
 
+    def _extract_device_sync_info(self, server_save: dict) -> dict | None:
+        """Extract this device's sync info from server save response.
+
+        Returns the device_syncs entry for our server_device_id, or None.
+        """
+        server_device_id = self._get_server_device_id()
+        if not server_device_id:
+            return None
+        device_syncs = server_save.get("device_syncs", [])
+        for sync in device_syncs:
+            if str(sync.get("device_id")) == server_device_id:
+                return sync
+        return None
+
     def _detect_conflict(self, rom_id: int, filename: str, local_hash: str | None, server_save: dict) -> str:
         """Hybrid conflict detection (no content_hash on RomM 4.6.1).
 
@@ -310,11 +367,24 @@ class SaveService:
             return "download"
 
         local_changed = check_local_changes(local_hash, last_sync_hash)
+
+        # v4.7: try device_syncs from server response
+        device_sync_info = self._extract_device_sync_info(server_save)
+        if device_sync_info is not None:
+            # Use v4.7 path — avoids expensive server hash download
+            result = determine_sync_action(local_changed, server_save, device_sync_info, file_state)
+            self._log_debug(
+                f"_detect_conflict({rom_id}, {filename}): v4.7 path "
+                f"local_changed={local_changed} is_current={device_sync_info.get('is_current')} → {result}"
+            )
+            return result
+
+        # v4.6 fallback: existing slow-path logic
         server_changed = self._check_server_changes(file_state, server_save, last_sync_hash)
         result = determine_action(local_changed, server_changed)
 
         self._log_debug(
-            f"_detect_conflict({rom_id}, {filename}): "
+            f"_detect_conflict({rom_id}, {filename}): v4.6 path "
             f"local_hash={local_hash[:8] if local_hash else None}… "
             f"baseline={last_sync_hash[:8] if last_sync_hash else None}… "
             f"local_changed={local_changed} server_changed={server_changed} → {result}"
@@ -339,17 +409,31 @@ class SaveService:
         return detect_conflict_lightweight(local_mtime, local_size, server_save, file_state)
 
     def _update_file_sync_state(
-        self, rom_id_str: str, filename: str, server_response: dict, local_path: str, system: str
+        self,
+        rom_id_str: str,
+        filename: str,
+        server_response: dict,
+        local_path: str,
+        system: str,
+        *,
+        emulator_tag: str | None = None,
+        core_so: str | None = None,
     ) -> None:
         """Update per-file sync tracking after a successful sync operation."""
         if rom_id_str not in self._save_sync_state["saves"]:
             self._save_sync_state["saves"][rom_id_str] = {
                 "files": {},
-                "emulator": "retroarch",
+                "emulator": emulator_tag or "retroarch",
                 "system": system,
+                "active_core": core_so,
+                "active_slot": "default",
             }
         save_entry = self._save_sync_state["saves"][rom_id_str]
         save_entry.setdefault("files", {})
+        if emulator_tag is not None:
+            save_entry["emulator"] = emulator_tag
+        if core_so is not None:
+            save_entry["active_core"] = core_so
 
         now = datetime.now(UTC).isoformat()
         local_hash = self._file_md5(local_path) if os.path.isfile(local_path) else ""
@@ -366,6 +450,7 @@ class SaveService:
             "last_sync_server_save_id": server_response.get("id"),
             "last_sync_server_size": server_response.get("file_size_bytes"),
             "local_mtime_at_last_sync": local_mtime,
+            "tracked_save_id": server_response.get("id"),
         }
 
     # ------------------------------------------------------------------
@@ -404,12 +489,27 @@ class SaveService:
         """Upload a local save file to server."""
         save_id = server_save.get("id") if server_save else None
 
+        # Resolve active core for emulator tag
+        installed = self._state["installed_roms"].get(rom_id_str, {})
+        rom_filename = os.path.basename(installed.get("file_path", "")) or None
+        core_so, _label = self._get_active_core(system, rom_filename)
+        emulator = build_emulator_tag(core_so)
+
+        # v4.7: pass device_id and slot
+        device_id = self._get_server_device_id()
+        game_state = self._save_sync_state.get("saves", {}).get(rom_id_str, {})
+        slot = game_state.get("active_slot", "default") if device_id else None
+
         result = self._retry.with_retry(
-            lambda: self._romm_api.upload_save(int(rom_id), file_path, "retroarch", save_id)
+            lambda: self._romm_api.upload_save(
+                int(rom_id), file_path, emulator, save_id, device_id=device_id, slot=slot
+            )
         )
 
-        self._update_file_sync_state(rom_id_str, filename, result, file_path, system)
-        self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str}")
+        self._update_file_sync_state(
+            rom_id_str, filename, result, file_path, system, emulator_tag=emulator, core_so=core_so
+        )
+        self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str} (emulator={emulator})")
         return result
 
     def _sync_single_save_file(
@@ -580,12 +680,15 @@ class SaveService:
         if not info:
             self._log_debug(f"_sync_rom_saves({rom_id}): no save info, skipping")
             return 0, [], []
-        system, rom_name, saves_dir = info
+        system = info["system"]
+        rom_name = info["rom_name"]
+        saves_dir = info["saves_dir"]
 
         # Fetch server saves (with retry)
         t0 = time.time()
         try:
-            server_saves = self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id))
+            device_id = self._get_server_device_id()
+            server_saves = self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id, device_id=device_id))
         except Exception as e:
             self._logger.error(f"_sync_rom_saves({rom_id}): failed to list saves: {e}")
             _code, _msg = classify_error(e)
@@ -789,25 +892,54 @@ class SaveService:
     def ensure_device_registered(self) -> dict:
         """Ensure this device has a unique ID for save sync tracking.
 
-        Generates a local UUID on first use — no server registration needed.
+        v4.7+: Register with RomM server via register_device() API.
+        v4.6: Generate local UUID (no server registration).
         """
         if not self._is_save_sync_enabled():
             return {"success": False, "device_id": "", "device_name": "", "disabled": True}
 
+        # Already registered (either local or server)
         if self._save_sync_state.get("device_id"):
             return {
                 "success": True,
                 "device_id": self._save_sync_state["device_id"],
                 "device_name": self._save_sync_state.get("device_name", ""),
+                "server_device_id": self._save_sync_state.get("server_device_id"),
             }
 
         hostname = socket.gethostname()
-        device_id = str(uuid.uuid4())
 
+        # Try v4.7 server registration
+        if self._romm_api.supports_device_sync():
+            try:
+                result = self._romm_api.register_device(
+                    name=hostname,
+                    platform="linux",
+                    client="decky-romm-sync",
+                    version=self._plugin_version,
+                )
+                server_device_id = result.get("id") or result.get("device_id")
+                if server_device_id:
+                    self._save_sync_state["device_id"] = str(server_device_id)
+                    self._save_sync_state["device_name"] = hostname
+                    self._save_sync_state["server_device_id"] = str(server_device_id)
+                    self.save_state()
+                    self._logger.info(f"Device registered with server: {server_device_id} ({hostname})")
+                    return {
+                        "success": True,
+                        "device_id": str(server_device_id),
+                        "device_name": hostname,
+                        "server_device_id": str(server_device_id),
+                    }
+            except Exception as e:
+                self._logger.warning(f"Server device registration failed, falling back to local: {e}")
+
+        # v4.6 fallback or server registration failed
+        device_id = str(uuid.uuid4())
         self._save_sync_state["device_id"] = device_id
         self._save_sync_state["device_name"] = hostname
         self.save_state()
-        self._logger.info(f"Device ID generated: {device_id} ({hostname})")
+        self._logger.info(f"Device ID generated (local): {device_id} ({hostname})")
         return {"success": True, "device_id": device_id, "device_name": hostname}
 
     async def get_save_status(self, rom_id: int) -> dict:
@@ -816,9 +948,10 @@ class SaveService:
 
         server_saves: list[dict] = []
         try:
+            device_id = self._get_server_device_id()
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id)),
+                lambda: self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id, device_id=device_id)),
             )
         except Exception as e:
             self._log_debug(f"Failed to fetch saves for rom {rom_id}: {e}")
@@ -833,9 +966,10 @@ class SaveService:
 
         server_saves: list[dict] = []
         try:
+            device_id = self._get_server_device_id()
             server_saves = await self._loop.run_in_executor(
                 None,
-                lambda: self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id)),
+                lambda: self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id, device_id=device_id)),
             )
         except Exception as e:
             self._log_debug(f"Lightweight save check failed for rom {rom_id}: {e}")
@@ -1069,7 +1203,8 @@ class SaveService:
         info = self._get_rom_save_info(rom_id)
         if not info:
             return {"success": False, "message": "ROM not installed"}
-        system, _rom_name, saves_dir = info
+        system = info["system"]
+        saves_dir = info["saves_dir"]
 
         try:
             result = await self._loop.run_in_executor(

@@ -104,6 +104,51 @@ class TestResolveSaveDir:
         )
         assert result == "/saves/mgba_libretro"
 
+    def test_resolve_save_dir_absolute_path_with_roms_base(self) -> None:
+        """Absolute ROM path + roms_base strips prefix → saves/gba"""
+        result = resolve_save_dir(
+            rom_path="/home/deck/retrodeck/roms/gba/pokemon.gba",
+            saves_base=self.SAVES_BASE,
+            system="gba",
+            roms_base="/home/deck/retrodeck/roms",
+            sort_by_content=True,
+        )
+        assert result == "/saves/gba"
+
+    def test_resolve_save_dir_absolute_path_subfolder_with_roms_base(self) -> None:
+        """Multi-disc ROM in subfolder with absolute path → saves/Game (USA)"""
+        result = resolve_save_dir(
+            rom_path="/home/deck/retrodeck/roms/psx/Game (USA)/Game.m3u",
+            saves_base=self.SAVES_BASE,
+            system="psx",
+            roms_base="/home/deck/retrodeck/roms",
+            sort_by_content=True,
+        )
+        assert result == "/saves/Game (USA)"
+
+    def test_resolve_save_dir_roms_base_none_uses_path_as_is(self) -> None:
+        """When roms_base=None, rom_path is used as-is (old behaviour preserved)."""
+        result = resolve_save_dir(
+            rom_path="gba/Game.gba",
+            saves_base=self.SAVES_BASE,
+            system="gba",
+            roms_base=None,
+            sort_by_content=True,
+        )
+        assert result == "/saves/gba"
+
+    def test_resolve_save_dir_roms_base_no_match(self) -> None:
+        """When roms_base doesn't match the rom_path prefix, full path is used as-is."""
+        result = resolve_save_dir(
+            rom_path="/other/location/roms/gba/Game.gba",
+            saves_base=self.SAVES_BASE,
+            system="gba",
+            roms_base="/home/deck/retrodeck/roms",
+            sort_by_content=True,
+        )
+        # dirname of the full path is /other/location/roms/gba → basename is gba
+        assert result == "/saves/gba"
+
 
 # ---------------------------------------------------------------------------
 # resolve_save_filename

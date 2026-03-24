@@ -43,6 +43,9 @@ def make_service(tmp_path, fake_api=None, **overrides) -> tuple["SaveService", "
         logger=logging.getLogger("test"),
         runtime_dir=str(tmp_path),
         get_saves_path=lambda: str(tmp_path / "saves"),
+        get_roms_path=lambda: str(tmp_path / "retrodeck" / "roms"),
+        get_active_core=lambda system_name, rom_filename=None: (None, None),
+        plugin_version="0.14.0",
     )
     defaults.update(overrides)
     svc = SaveService(**defaults)
@@ -188,6 +191,70 @@ class TestDeviceRegistration:
         result = svc.ensure_device_registered()
         assert result["success"] is False
         assert result.get("disabled") is True
+
+
+# ---------------------------------------------------------------------------
+# TestDeviceRegistrationV47
+# ---------------------------------------------------------------------------
+
+
+class TestDeviceRegistrationV47:
+    def test_registers_with_server_on_v47(self, tmp_path):
+        """v4.7: calls register_device and stores server_device_id."""
+        fake = FakeSaveApi()
+        fake._supports_device_sync = True
+        svc, _ = make_service(tmp_path, fake_api=fake)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+
+        result = svc.ensure_device_registered()
+        assert result["success"] is True
+        assert result.get("server_device_id") is not None
+        assert svc._save_sync_state["server_device_id"] == result["server_device_id"]
+        # Verify register_device was called
+        reg_calls = [c for c in fake.call_log if c[0] == "register_device"]
+        assert len(reg_calls) == 1
+        assert reg_calls[0][1][0]  # name (hostname)
+        assert reg_calls[0][1][1] == "linux"  # platform
+        assert reg_calls[0][1][2] == "decky-romm-sync"  # client
+
+    def test_falls_back_to_local_on_server_failure(self, tmp_path):
+        """v4.7: if register_device fails, falls back to local UUID."""
+        fake = FakeSaveApi()
+        fake._supports_device_sync = True
+        fake.fail_on_next(Exception("server error"))
+        svc, _ = make_service(tmp_path, fake_api=fake)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+
+        result = svc.ensure_device_registered()
+        assert result["success"] is True
+        assert result["device_id"]  # got a local UUID
+        assert result.get("server_device_id") is None  # no server registration
+        assert svc._save_sync_state.get("server_device_id") is None
+
+    def test_v46_uses_local_uuid(self, tmp_path):
+        """v4.6: generates local UUID without server contact."""
+        svc, fake = make_service(tmp_path)  # default: supports_device_sync=False
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+
+        result = svc.ensure_device_registered()
+        assert result["success"] is True
+        assert result["device_id"]
+        assert result.get("server_device_id") is None
+        # No register_device call
+        reg_calls = [c for c in fake.call_log if c[0] == "register_device"]
+        assert len(reg_calls) == 0
+
+    def test_returns_existing_with_server_device_id(self, tmp_path):
+        """If already registered, returns existing IDs including server_device_id."""
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "existing-id"
+        svc._save_sync_state["device_name"] = "deck"
+        svc._save_sync_state["server_device_id"] = "server-id-123"
+
+        result = svc.ensure_device_registered()
+        assert result["device_id"] == "existing-id"
+        assert result.get("server_device_id") == "server-id-123"
 
 
 # ---------------------------------------------------------------------------
@@ -1069,6 +1136,44 @@ class TestDeleteSaves:
         assert result["success"] is True
         assert result["deleted_count"] == 0
 
+
+# ---------------------------------------------------------------------------
+# TestEmulatorTag
+# ---------------------------------------------------------------------------
+
+
+class TestEmulatorTag:
+    def test_upload_uses_emulator_tag_from_core(self, tmp_path):
+        """When core resolver returns a core, upload uses retroarch-{core} tag."""
+        svc, fake = make_service(
+            tmp_path,
+            get_active_core=lambda system_name, rom_filename=None: ("mgba_libretro", "mGBA"),
+        )
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        svc._do_upload_save(42, str(tmp_path / "saves" / "gba" / "pokemon.srm"), "pokemon.srm", "42", "gba")
+
+        upload_calls = [c for c in fake.call_log if c[0] == "upload_save"]
+        assert len(upload_calls) == 1
+        _name, args, _kwargs = upload_calls[0]
+        assert args[2] == "retroarch-mgba"  # emulator argument
+
+    def test_upload_uses_fallback_when_no_core(self, tmp_path):
+        """When core resolver returns None, upload falls back to 'retroarch'."""
+        svc, fake = make_service(tmp_path)  # default: get_active_core returns (None, None)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        svc._do_upload_save(42, str(tmp_path / "saves" / "gba" / "pokemon.srm"), "pokemon.srm", "42", "gba")
+
+        upload_calls = [c for c in fake.call_log if c[0] == "upload_save"]
+        assert len(upload_calls) == 1
+        _name, args, _kwargs = upload_calls[0]
+        assert args[2] == "retroarch"
+
     @pytest.mark.asyncio
     async def test_delete_platform_saves(self, tmp_path):
         svc, _ = make_service(tmp_path)
@@ -1134,7 +1239,11 @@ class TestFindSaveFiles:
             "rom_dir": str(tmp_path / "retrodeck" / "roms" / "psx" / "FF7"),
             "installed_at": "2026-01-01T00:00:00",
         }
-        _create_save(tmp_path, system="psx", rom_name="Final Fantasy VII")
+        # With sort_by_content=True, saves land in saves_base/{content_dir} where
+        # content_dir = last folder component of the ROM's directory = "FF7"
+        saves_dir = tmp_path / "saves" / "FF7"
+        saves_dir.mkdir(parents=True, exist_ok=True)
+        (saves_dir / "Final Fantasy VII.srm").write_bytes(b"\x00" * 1024)
 
         result = svc._find_save_files(55)
 
@@ -1352,10 +1461,9 @@ class TestGetRomSaveInfo:
         result = svc._get_rom_save_info(42)
 
         assert result is not None
-        system, rom_name, saves_dir = result
-        assert system == "gba"
-        assert rom_name == "pokemon"
-        assert saves_dir.endswith("saves/gba")
+        assert result["system"] == "gba"
+        assert result["rom_name"] == "pokemon"
+        assert result["saves_dir"].endswith("saves/gba")
 
     def test_returns_none_for_missing_rom(self, tmp_path):
         svc, _ = make_service(tmp_path)
@@ -1421,6 +1529,83 @@ class TestUpdateFileSyncState:
         assert entry["last_sync_at"] is not None
         assert entry["last_sync_server_save_id"] == 200
 
+    def test_creates_entry_with_new_fields(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        save_file = _create_save(tmp_path)
+        server_resp = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
+
+        svc._update_file_sync_state(
+            "42",
+            "pokemon.srm",
+            server_resp,
+            str(save_file),
+            "gba",
+            emulator_tag="retroarch-mgba",
+            core_so="mgba_libretro",
+        )
+
+        game_state = svc._save_sync_state["saves"]["42"]
+        assert game_state["emulator"] == "retroarch-mgba"
+        assert game_state["active_core"] == "mgba_libretro"
+        assert game_state["active_slot"] == "default"
+
+        file_state = game_state["files"]["pokemon.srm"]
+        assert file_state["tracked_save_id"] == 200
+        assert file_state["last_sync_server_save_id"] == 200
+
+    def test_updates_emulator_on_existing_entry(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        save_file = _create_save(tmp_path)
+        # Pre-populate with old emulator tag
+        svc._save_sync_state["saves"]["42"] = {
+            "files": {},
+            "emulator": "retroarch",
+            "system": "gba",
+            "active_core": None,
+            "active_slot": "default",
+        }
+        server_resp = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
+
+        svc._update_file_sync_state(
+            "42",
+            "pokemon.srm",
+            server_resp,
+            str(save_file),
+            "gba",
+            emulator_tag="retroarch-mgba",
+            core_so="mgba_libretro",
+        )
+
+        game_state = svc._save_sync_state["saves"]["42"]
+        assert game_state["emulator"] == "retroarch-mgba"
+        assert game_state["active_core"] == "mgba_libretro"
+
+    def test_core_so_none_does_not_overwrite(self, tmp_path):
+        """core_so=None should not reset an already-set active_core."""
+        svc, _ = make_service(tmp_path)
+        save_file = _create_save(tmp_path)
+        svc._save_sync_state["saves"]["42"] = {
+            "files": {},
+            "emulator": "retroarch-mgba",
+            "system": "gba",
+            "active_core": "mgba_libretro",
+            "active_slot": "default",
+        }
+        server_resp = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
+
+        svc._update_file_sync_state(
+            "42",
+            "pokemon.srm",
+            server_resp,
+            str(save_file),
+            "gba",
+            emulator_tag="retroarch",
+        )
+
+        # active_core unchanged because core_so=None
+        game_state = svc._save_sync_state["saves"]["42"]
+        assert game_state["active_core"] == "mgba_libretro"
+
 
 # ---------------------------------------------------------------------------
 # TestPruneOrphanedEdgeCase
@@ -1440,3 +1625,235 @@ class TestPruneOrphanedEdgeCase:
 
         assert svc._save_sync_state["saves"] == {}
         assert svc._save_sync_state["playtime"] == {}
+
+
+# ---------------------------------------------------------------------------
+# TestStateBackwardCompat
+# ---------------------------------------------------------------------------
+
+
+class TestStateBackwardCompat:
+    """Backward compat: old state files without new fields load and work."""
+
+    def test_old_state_without_server_device_id_loads_fine(self, tmp_path):
+        """Existing state files without server_device_id should load without errors."""
+        svc, _ = make_service(tmp_path)
+        # Simulate old state without server_device_id
+        svc._save_sync_state["device_id"] = "old-local-uuid"
+        svc._save_sync_state["saves"]["42"] = {
+            "files": {"pokemon.srm": {"last_sync_hash": "abc123"}},
+            "emulator": "retroarch",
+            "system": "gba",
+        }
+        # Remove the new field to simulate an old state file
+        del svc._save_sync_state["server_device_id"]
+        svc.save_state()
+
+        # Reload into fresh service
+        svc2, _ = make_service(tmp_path)
+        svc2.load_state()
+
+        # New field should be None (from init_state default)
+        assert svc2._save_sync_state.get("server_device_id") is None
+        # Old data preserved
+        assert svc2._save_sync_state["device_id"] == "old-local-uuid"
+        assert "42" in svc2._save_sync_state["saves"]
+
+    def test_old_per_game_entry_missing_new_fields_works_via_get(self, tmp_path):
+        """Per-game entries without active_core/active_slot still work via .get()."""
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["device_id"] = "old-local-uuid"
+        svc._save_sync_state["saves"]["42"] = {
+            "files": {"pokemon.srm": {"last_sync_hash": "abc123"}},
+            "emulator": "retroarch",
+            "system": "gba",
+        }
+        svc.save_state()
+
+        svc2, _ = make_service(tmp_path)
+        svc2.load_state()
+
+        game_state = svc2._save_sync_state["saves"]["42"]
+        assert game_state.get("active_core") is None
+        assert game_state.get("active_slot", "default") == "default"
+
+    def test_make_default_state_includes_server_device_id(self):
+        """make_default_state() must include server_device_id field."""
+        state = SaveService.make_default_state()
+        assert "server_device_id" in state
+        assert state["server_device_id"] is None
+
+    def test_load_state_restores_server_device_id(self, tmp_path):
+        """server_device_id saved to disk is restored on load_state."""
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["server_device_id"] = "romm-server-uuid"
+        svc.save_state()
+
+        svc2, _ = make_service(tmp_path)
+        svc2.load_state()
+        assert svc2._save_sync_state["server_device_id"] == "romm-server-uuid"
+
+    def test_state_stores_emulator_tag_and_core(self, tmp_path):
+        """After upload sync, state should contain emulator tag and core info."""
+        svc, _fake = make_service(
+            tmp_path,
+            get_active_core=lambda system_name, rom_filename=None: ("mgba_libretro", "mGBA"),
+        )
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        _install_rom(svc, tmp_path)
+        save_path = _create_save(tmp_path)
+
+        svc._do_upload_save(42, str(save_path), "pokemon.srm", "42", "gba")
+
+        game_state = svc._save_sync_state["saves"]["42"]
+        assert game_state["emulator"] == "retroarch-mgba"
+        assert game_state["active_core"] == "mgba_libretro"
+        assert game_state.get("active_slot") == "default"
+
+        # Per-file should have tracked_save_id
+        file_state = game_state["files"]["pokemon.srm"]
+        assert file_state.get("tracked_save_id") is not None
+
+    def test_download_sets_tracked_save_id_in_file_state(self, tmp_path):
+        """After download sync, per-file state should contain tracked_save_id."""
+        svc, _ = make_service(tmp_path)
+        saves_dir = str(tmp_path / "saves" / "gba")
+        os.makedirs(saves_dir, exist_ok=True)
+        server_save = _server_save(save_id=99)
+
+        svc._do_download_save(server_save, saves_dir, "pokemon.srm", "42", "gba")
+
+        file_state = svc._save_sync_state["saves"]["42"]["files"]["pokemon.srm"]
+        assert file_state.get("tracked_save_id") == 99
+        assert file_state.get("last_sync_server_save_id") == 99
+
+
+# ---------------------------------------------------------------------------
+# TestV47SyncFlow
+# ---------------------------------------------------------------------------
+
+
+class TestV47SyncFlow:
+    def test_list_saves_passes_device_id(self, tmp_path):
+        """v4.7: list_saves receives server_device_id."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "local-id"
+        svc._save_sync_state["server_device_id"] = "server-dev-123"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        svc._sync_rom_saves(42)
+
+        list_calls = [c for c in fake.call_log if c[0] == "list_saves"]
+        assert len(list_calls) >= 1
+        assert list_calls[0][2]["device_id"] == "server-dev-123"
+
+    def test_upload_passes_device_id_and_slot(self, tmp_path):
+        """v4.7: upload_save receives device_id and slot."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "local-id"
+        svc._save_sync_state["server_device_id"] = "server-dev-123"
+        _install_rom(svc, tmp_path)
+        save_path = _create_save(tmp_path)
+
+        svc._do_upload_save(42, str(save_path), "pokemon.srm", "42", "gba")
+
+        upload_calls = [c for c in fake.call_log if c[0] == "upload_save"]
+        assert len(upload_calls) == 1
+        assert upload_calls[0][2]["device_id"] == "server-dev-123"
+        assert upload_calls[0][2]["slot"] == "default"
+
+    def test_v46_does_not_pass_device_id(self, tmp_path):
+        """v4.6: no device_id or slot passed to API calls."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "local-uuid"
+        # No server_device_id set
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        svc._sync_rom_saves(42)
+
+        list_calls = [c for c in fake.call_log if c[0] == "list_saves"]
+        assert list_calls[0][2]["device_id"] is None
+
+        upload_calls = [c for c in fake.call_log if c[0] == "upload_save"]
+        if upload_calls:
+            assert upload_calls[0][2]["device_id"] is None
+            assert upload_calls[0][2]["slot"] is None
+
+    def test_v47_skip_when_is_current(self, tmp_path):
+        """v4.7: server says is_current=True, local unchanged → skip."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["server_device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        content = b"same content"
+        _create_save(tmp_path, content=content)
+        local_hash = hashlib.md5(content).hexdigest()
+
+        # Pre-populate sync state (simulating previous sync)
+        svc._save_sync_state["saves"]["42"] = {
+            "files": {
+                "pokemon.srm": {
+                    "last_sync_hash": local_hash,
+                    "last_sync_server_updated_at": "2026-02-17T06:00:00Z",
+                    "last_sync_server_save_id": 100,
+                    "last_sync_server_size": len(content),
+                }
+            }
+        }
+
+        # Set up server save with device_syncs showing is_current=True
+        fake.saves[100] = {
+            "id": 100,
+            "rom_id": 42,
+            "file_name": "pokemon.srm",
+            "updated_at": "2026-02-17T06:00:00Z",
+            "file_size_bytes": len(content),
+            "device_syncs": [{"device_id": "dev-1", "is_current": True}],
+        }
+
+        synced, errors, conflicts = svc._sync_rom_saves(42)
+        assert synced == 0
+        assert errors == []
+        assert conflicts == []
+
+    def test_v47_download_when_not_current(self, tmp_path):
+        """v4.7: server says is_current=False, local unchanged → download."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["server_device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        content = b"old content"
+        _create_save(tmp_path, content=content)
+        local_hash = hashlib.md5(content).hexdigest()
+
+        svc._save_sync_state["saves"]["42"] = {
+            "files": {
+                "pokemon.srm": {
+                    "last_sync_hash": local_hash,
+                    "last_sync_server_updated_at": "2026-02-17T06:00:00Z",
+                    "last_sync_server_save_id": 100,
+                    "last_sync_server_size": len(content),
+                }
+            }
+        }
+
+        # Server has newer save, device is not current
+        fake.saves[100] = {
+            "id": 100,
+            "rom_id": 42,
+            "file_name": "pokemon.srm",
+            "updated_at": "2026-02-17T08:00:00Z",
+            "file_size_bytes": 2048,
+            "device_syncs": [{"device_id": "dev-1", "is_current": False}],
+        }
+
+        synced, errors, _conflicts = svc._sync_rom_saves(42)
+        assert synced == 1
+        assert errors == []
+        # Verify download happened
+        assert 100 in fake.downloaded_files

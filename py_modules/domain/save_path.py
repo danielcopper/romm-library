@@ -16,6 +16,7 @@ def resolve_save_dir(
     saves_base: str,
     system: str,
     *,
+    roms_base: str | None = None,
     sort_by_content: bool = True,
     sort_by_core: bool = False,
     core_name: str | None = None,
@@ -25,12 +26,17 @@ def resolve_save_dir(
     Parameters
     ----------
     rom_path:
-        Relative ROM file path as stored in RomM (e.g. "gba/Game.gba" or
+        ROM file path — absolute or relative (e.g. "gba/Game.gba",
+        "/home/deck/retrodeck/roms/gba/Game.gba", or
         "psx/Game (USA)/Game.m3u").
     saves_base:
         Absolute path to the RetroArch saves root directory.
     system:
         Platform/system slug (e.g. "gba", "psx"). Used as fallback subdir.
+    roms_base:
+        If provided, strip this absolute prefix from rom_path before
+        computing the content directory. Allows callers to pass absolute
+        ROM paths directly without pre-stripping.
     sort_by_content:
         If True, save subdir = last folder component of rom_path.
         RetroDECK default: True.
@@ -45,11 +51,21 @@ def resolve_save_dir(
     str
         Absolute path to the directory where save files should be found/placed.
     """
+    # Strip roms_base prefix if provided to get a relative path
+    effective_path = rom_path
+    if roms_base is not None:
+        norm_rom = os.path.normpath(rom_path)
+        norm_base = os.path.normpath(roms_base)
+        if norm_rom.startswith(norm_base + os.sep):
+            effective_path = norm_rom[len(norm_base) + 1 :]
+        elif norm_rom.startswith(norm_base):
+            effective_path = norm_rom[len(norm_base) :]
+
     parts: list[str] = [saves_base]
 
     if sort_by_content:
-        # Last folder component of the rom_path (i.e. the directory containing the ROM file)
-        rom_dir = os.path.dirname(rom_path)
+        # Last folder component of the effective_path (i.e. the directory containing the ROM file)
+        rom_dir = os.path.dirname(effective_path)
         content_dir = os.path.basename(rom_dir) if rom_dir else system
         parts.append(content_dir)
 

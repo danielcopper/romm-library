@@ -127,6 +127,7 @@ class TestWireServices:
             "runtime_dir": str(tmp_path / "runtime"),
             "emit": AsyncMock(),
             "get_saves_path": MagicMock(return_value=str(tmp_path / "saves")),
+            "get_roms_path": MagicMock(return_value=str(tmp_path / "retrodeck" / "roms")),
             "save_state": MagicMock(),
             "save_settings_to_disk": MagicMock(),
             "save_metadata_cache": MagicMock(),
