@@ -712,27 +712,45 @@ class SaveService:
         )
         self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): find_local {time.time() - t0:.3f}s")
         server_by_name: dict[str, dict] = {}
+        server_by_id: dict[int, dict] = {}
         for ss in server_saves:
             fn = ss.get("file_name", "")
             if fn:
                 server_by_name[fn] = ss
+            sid = ss.get("id")
+            if sid is not None:
+                server_by_id[sid] = ss
 
-        all_filenames = set(local_by_name.keys()) | set(server_by_name.keys())
+        save_state = self._save_sync_state["saves"].get(rom_id_str, {})
+        files_state = save_state.get("files", {})
+
         synced = 0
         errors: list[str] = []
         conflicts: list[SaveConflict] = []
+        matched_server_ids: set[int] = set()
 
-        for filename in sorted(all_filenames):
-            if self._process_single_file_sync(
-                rom_id,
-                rom_id_str,
-                filename,
-                local_by_name.get(filename),
-                server_by_name.get(filename),
-                saves_dir,
-                system,
-                errors,
-                conflicts,
+        # Process local files first (may match server saves by tracked_save_id)
+        for lf in sorted(local_files, key=lambda x: x["filename"]):
+            fn = lf["filename"]
+            file_state = files_state.get(fn, {})
+            tracked_id = file_state.get("tracked_save_id")
+            server = server_by_id[tracked_id] if tracked_id and tracked_id in server_by_id else server_by_name.get(fn)
+
+            if server and server.get("id") is not None:
+                matched_server_ids.add(server["id"])
+
+            if self._process_single_file_sync(rom_id, rom_id_str, fn, lf, server, saves_dir, system, errors, conflicts):
+                synced += 1
+
+        # Process server-only saves (not matched by any local file)
+        for fn, ss in sorted(server_by_name.items()):
+            sid = ss.get("id")
+            if (
+                fn not in local_by_name
+                and sid not in matched_server_ids
+                and self._process_single_file_sync(
+                    rom_id, rom_id_str, fn, None, ss, saves_dir, system, errors, conflicts
+                )
             ):
                 synced += 1
 
@@ -808,20 +826,28 @@ class SaveService:
         local_files = self._find_save_files(rom_id)
 
         server_by_name = {ss.get("file_name", ""): ss for ss in server_saves if ss.get("file_name")}
+        server_by_id: dict[int, dict] = {ss["id"]: ss for ss in server_saves if ss.get("id") is not None}
         save_state = self._save_sync_state["saves"].get(rom_id_str, {})
         files_state = save_state.get("files", {})
 
         file_statuses = []
         seen_filenames: set[str] = set()
+        matched_server_ids: set[int] = set()
 
         # Local files (may also exist on server)
         for lf in local_files:
             fn = lf["filename"]
             seen_filenames.add(fn)
             local_hash = self._file_md5(lf["path"])
-            server = server_by_name.get(fn)
+
+            # Match by tracked_save_id first, then by filename
+            file_state = files_state.get(fn, {})
+            tracked_id = file_state.get("tracked_save_id")
+            server = server_by_id[tracked_id] if tracked_id and tracked_id in server_by_id else server_by_name.get(fn)
 
             if server:
+                if server.get("id") is not None:
+                    matched_server_ids.add(server["id"])
                 action = self._detect_conflict(rom_id, fn, local_hash, server)
             elif local_hash:
                 action = "upload"
@@ -842,9 +868,10 @@ class SaveService:
                 )
             )
 
-        # Server-only saves (not present locally)
+        # Server-only saves (not present locally and not matched by tracked_save_id)
         for fn, ss in server_by_name.items():
-            if fn not in seen_filenames:
+            sid = ss.get("id")
+            if fn not in seen_filenames and sid not in matched_server_ids:
                 file_statuses.append(
                     self._build_file_status(
                         fn,

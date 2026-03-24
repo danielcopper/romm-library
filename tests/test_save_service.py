@@ -2321,3 +2321,147 @@ class TestConfirmSlotChoice:
         result = svc.is_save_tracking_configured(42)
         assert result["configured"] is True
         assert result["active_slot"] == "default"
+
+
+# ---------------------------------------------------------------------------
+# TestTrackedSaveIdMatching
+# ---------------------------------------------------------------------------
+
+
+class TestTrackedSaveIdMatching:
+    """Tests that sync uses tracked_save_id to match server saves instead of filename."""
+
+    def test_upload_uses_tracked_save_id_for_put(self, tmp_path):
+        """When tracked_save_id exists, upload does PUT (update) not POST (new)."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"updated save data")
+
+        # Server has save with timestamp filename (different from local)
+        fake.saves[42] = {
+            "id": 42,
+            "rom_id": 42,
+            "file_name": "pokemon [2026-03-24_15-18-50].srm",
+            "updated_at": "2026-03-20T10:00:00",
+            "file_size_bytes": 100,
+            "emulator": "retroarch",
+            "download_path": "/saves/pokemon [2026-03-24_15-18-50].srm",
+        }
+
+        # State tracks this save by ID
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "last_synced_core": "mgba_libretro",
+            "last_sync_check_at": "2026-03-20T10:00:00",
+            "files": {
+                "pokemon.srm": {
+                    "last_sync_hash": "old_hash",
+                    "last_sync_at": "2026-03-20T10:00:00",
+                    "last_sync_server_updated_at": "2026-03-20T10:00:00",
+                    "last_sync_server_save_id": 42,
+                    "last_sync_server_size": 100,
+                    "local_mtime_at_last_sync": "2026-03-20T10:00:00",
+                    "tracked_save_id": 42,
+                },
+            },
+        }
+
+        _synced, errors, _conflicts = svc._sync_rom_saves(42)
+        assert len(errors) == 0
+
+        # Should have done PUT (update save_id=42) not POST (new save)
+        upload_calls = [c for c in fake.call_log if c[0] == "upload_save"]
+        assert len(upload_calls) >= 1
+        # upload_save logs (name, (rom_id, file_path, emulator), {save_id: ..., ...})
+        call_kwargs = upload_calls[0][2]
+        assert call_kwargs.get("save_id") == 42
+
+    def test_timestamp_server_save_not_treated_as_separate_download(self, tmp_path):
+        """Server save matched by tracked_save_id should not appear as server-only download."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        save_path = _create_save(tmp_path)
+        local_hash = _file_md5(str(save_path))
+
+        fake.saves[42] = {
+            "id": 42,
+            "rom_id": 42,
+            "file_name": "pokemon [2026-03-24_15-18-50].srm",
+            "updated_at": "2026-03-20T10:00:00",
+            "file_size_bytes": 1024,
+            "emulator": "retroarch",
+            "download_path": "/saves/pokemon [2026-03-24_15-18-50].srm",
+        }
+
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {
+                "pokemon.srm": {
+                    "tracked_save_id": 42,
+                    "last_sync_hash": local_hash,
+                    "last_sync_at": "2026-03-20T10:00:00",
+                    "last_sync_server_updated_at": "2026-03-20T10:00:00",
+                    "last_sync_server_save_id": 42,
+                    "last_sync_server_size": 1024,
+                    "local_mtime_at_last_sync": "2026-03-20T10:00:00",
+                },
+            },
+        }
+
+        # Sync should NOT download the timestamp-named file as a new server-only save
+        _synced, errors, _conflicts = svc._sync_rom_saves(42)
+        assert len(errors) == 0
+        # No downloads should have occurred (files are in sync)
+        download_calls = [c for c in fake.call_log if c[0] == "download_save"]
+        assert len(download_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_save_status_uses_tracked_save_id(self, tmp_path):
+        """get_save_status should not show timestamp-named server save as separate file."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        fake.saves[42] = {
+            "id": 42,
+            "rom_id": 42,
+            "file_name": "pokemon [2026-03-24_15-18-50].srm",
+            "updated_at": "2026-03-20T10:00:00",
+            "file_size_bytes": 1024,
+            "emulator": "retroarch",
+            "download_path": "/saves/pokemon [2026-03-24_15-18-50].srm",
+        }
+
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {
+                "pokemon.srm": {
+                    "tracked_save_id": 42,
+                    "last_sync_hash": hashlib.md5(b"\x00" * 1024).hexdigest(),
+                    "last_sync_at": "2026-03-20T10:00:00",
+                    "last_sync_server_updated_at": "2026-03-20T10:00:00",
+                    "last_sync_server_save_id": 42,
+                    "last_sync_server_size": 1024,
+                    "local_mtime_at_last_sync": "2026-03-20T10:00:00",
+                },
+            },
+        }
+
+        result = await svc.get_save_status(42)
+        filenames = [f["filename"] for f in result["files"]]
+        # The timestamp-named server save should NOT appear as a separate file
+        assert "pokemon [2026-03-24_15-18-50].srm" not in filenames
+        # The local filename should appear
+        assert "pokemon.srm" in filenames
