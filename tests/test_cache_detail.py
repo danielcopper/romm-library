@@ -80,6 +80,7 @@ def plugin(tmp_path):
     p._save_sync_service = SaveService(
         romm_api=fake_api,
         retry=_make_retry(),
+        settings={"log_level": "debug"},
         state=p._state,
         save_sync_state=p._save_sync_state,
         loop=asyncio.get_event_loop(),

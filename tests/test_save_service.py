@@ -37,6 +37,7 @@ def make_service(tmp_path, fake_api=None, **overrides) -> tuple["SaveService", "
     defaults: dict[str, Any] = dict(
         romm_api=fake,
         retry=_make_retry(),
+        settings={"log_level": "debug"},
         state={"shortcut_registry": {}, "installed_roms": {}},
         save_sync_state=SaveService.make_default_state(),
         loop=asyncio.get_event_loop(),

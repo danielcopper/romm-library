@@ -17,7 +17,7 @@ import time
 import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from models.saves import SaveConflict
 
@@ -75,11 +75,14 @@ class SaveService:
         Returns ``(core_so, label)`` tuple; either may be None if unresolved.
     """
 
+    _LOG_LEVELS: ClassVar[dict[str, int]] = {"debug": 0, "info": 1, "warn": 2, "error": 3}
+
     def __init__(
         self,
         *,
         romm_api: RommApiProtocol,
         retry: RetryStrategy,
+        settings: dict,
         state: dict,
         save_sync_state: dict,
         loop: asyncio.AbstractEventLoop,
@@ -92,6 +95,7 @@ class SaveService:
     ) -> None:
         self._romm_api = romm_api
         self._retry = retry
+        self._settings = settings
         self._state = state
         self._save_sync_state = save_sync_state
         self._loop = loop
@@ -107,7 +111,9 @@ class SaveService:
     # ------------------------------------------------------------------
 
     def _log_debug(self, msg: str) -> None:
-        self._logger.debug(msg)
+        configured = self._settings.get("log_level", "warn")
+        if self._LOG_LEVELS.get("debug", 0) >= self._LOG_LEVELS.get(configured, 2):
+            self._logger.info(msg)
 
     def _get_server_device_id(self) -> str | None:
         """Return the server device ID if registered, else None."""

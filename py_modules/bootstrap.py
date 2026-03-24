@@ -156,6 +156,7 @@ def wire_services(cfg: WiringConfig) -> dict:
     save_sync_service = SaveService(
         romm_api=cfg.romm_api,
         retry=cfg.http_adapter,
+        settings=cfg.settings,
         state=cfg.state,
         save_sync_state=cfg.save_sync_state,
         loop=cfg.loop,
