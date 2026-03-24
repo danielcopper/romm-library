@@ -86,6 +86,8 @@ def plugin(tmp_path):
         logger=logging.getLogger("test"),
         runtime_dir=str(tmp_path),
         get_saves_path=lambda: saves_path,
+        get_roms_path=lambda: str(tmp_path / "retrodeck" / "roms"),
+        get_active_core=lambda system_name, rom_filename=None: (None, None),
     )
     p._save_sync_service.init_state()
 

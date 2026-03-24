@@ -25,6 +25,9 @@ class FakeSaveApi:
         self._next_note_id = 2000
         self._fail_on_next: Exception | None = None
         self.heartbeat_raises: Exception | None = None
+        self._supports_device_sync = False
+        self._registered_devices: list[dict] = []
+        self._next_device_id = 1
 
     def fail_on_next(self, exc: Exception) -> None:
         """Make the next call raise the given exception."""
@@ -103,10 +106,16 @@ class FakeSaveApi:
         raise NotImplementedError
 
     def supports_device_sync(self) -> bool:
-        return False
+        return self._supports_device_sync
 
     def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
-        raise NotImplementedError
+        self.call_log.append(("register_device", (name, platform, client, version), {}))
+        self._check_fail()
+        device_id = f"device-{self._next_device_id}"
+        self._next_device_id += 1
+        device = {"id": device_id, "name": name, "created_at": datetime.now(UTC).isoformat()}
+        self._registered_devices.append(device)
+        return device
 
     def download_save_content(
         self,
@@ -137,7 +146,13 @@ class FakeSaveApi:
     ) -> list[dict]:
         self.call_log.append(("list_saves", (rom_id,), {"device_id": device_id, "slot": slot}))
         self._check_fail()
-        return [s for s in self.saves.values() if s.get("rom_id") == rom_id]
+        saves = [s for s in self.saves.values() if s.get("rom_id") == rom_id]
+        if device_id:
+            # Simulate server adding device_syncs when device_id is provided
+            for s in saves:
+                if "device_syncs" not in s:
+                    s["device_syncs"] = [{"device_id": device_id, "is_current": True}]
+        return saves
 
     def upload_save(
         self,

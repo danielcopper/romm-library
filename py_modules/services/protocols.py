@@ -318,6 +318,18 @@ class SavesPathProvider(Protocol):
     def __call__(self) -> str: ...
 
 
+class RomsPathProvider(Protocol):
+    """Return the current RetroDECK roms directory path."""
+
+    def __call__(self) -> str: ...
+
+
+class CoreResolverFn(Protocol):
+    """Resolve the active RetroArch core for a system/game."""
+
+    def __call__(self, system_name: str, rom_filename: str | None = None) -> tuple[str | None, str | None]: ...
+
+
 class SyncStateRef(Protocol):
     """Return the current sync state value (used by ArtworkService)."""
 

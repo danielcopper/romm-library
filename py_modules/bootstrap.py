@@ -34,6 +34,7 @@ from services.protocols import (
     DebugLogger,
     EventEmitter,
     RommApiProtocol,
+    RomsPathProvider,
     SavesPathProvider,
     SettingsPersister,
     StatePersister,
@@ -71,6 +72,7 @@ class WiringConfig:
 
     # Callbacks
     get_saves_path: SavesPathProvider
+    get_roms_path: RomsPathProvider
     save_state: StatePersister
     save_settings_to_disk: SettingsPersister
     save_metadata_cache: StatePersister
@@ -127,6 +129,18 @@ def bootstrap(
     }
 
 
+def _read_plugin_version(plugin_dir: str) -> str:
+    """Read plugin version from package.json."""
+    import json
+    import os
+
+    try:
+        with open(os.path.join(plugin_dir, "package.json")) as f:
+            return json.load(f).get("version", "0.0.0")
+    except (OSError, json.JSONDecodeError):
+        return "0.0.0"
+
+
 def wire_services(cfg: WiringConfig) -> dict:
     """Create service instances after plugin state is initialised.
 
@@ -148,6 +162,9 @@ def wire_services(cfg: WiringConfig) -> dict:
         logger=cfg.logger,
         runtime_dir=cfg.runtime_dir,
         get_saves_path=cfg.get_saves_path,
+        get_roms_path=cfg.get_roms_path,
+        get_active_core=_es_de_config.get_active_core,
+        plugin_version=_read_plugin_version(cfg.plugin_dir),
     )
 
     playtime_service = PlaytimeService(
