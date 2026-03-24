@@ -536,6 +536,19 @@ class Plugin:
     # ── Save Sync / Playtime delegation to services ──────────
 
     async def ensure_device_registered(self):
+        # Ensure RomM version is detected before device registration so that
+        # supports_device_sync() returns True on v4.7+ servers.  Without this,
+        # a plugin-start call to ensure_device_registered that runs before the
+        # first test_connection would fall back to local-only UUID generation.
+        if not getattr(self, "_romm_version", None):
+            try:
+                heartbeat = await self.loop.run_in_executor(None, self._romm_api.heartbeat)
+                with contextlib.suppress(AttributeError, TypeError):
+                    self._romm_version = heartbeat.get("SYSTEM", {}).get("VERSION")
+                if self._romm_version:
+                    self._romm_api.set_version(self._romm_version)
+            except Exception:
+                pass
         return self._save_sync_service.ensure_device_registered()
 
     async def get_save_status(self, rom_id):
