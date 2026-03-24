@@ -100,11 +100,12 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
     return () => { cancelled = true; };
   }, [romId]);
 
-  const handleConfirm = async (slot: string, migrateFrom?: string | null) => {
+  const handleConfirm = async (slot: string) => {
     setConfirming(true);
     setError(null);
     try {
-      const result = await confirmSlotChoice(romId, slot, migrateFrom ?? null);
+      // No migration — just set the slot. User must explicitly choose migration later.
+      const result = await confirmSlotChoice(romId, slot, null);
       if (!result.success) {
         setError(result.message || "Slot confirmation failed");
         setConfirming(false);
@@ -226,7 +227,7 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
           <DialogButton
             style={btnStyle}
             disabled={confirming}
-            onClick={() => handleConfirm(s.slot ?? defaultSlot, s.slot === null ? null : undefined)}
+            onClick={() => handleConfirm(s.slot ?? defaultSlot)}
           >
             Track
           </DialogButton>
