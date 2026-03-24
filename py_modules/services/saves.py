@@ -145,6 +145,10 @@ class SaveService:
         self._save_sync_state.setdefault("settings", {})
         for key, value in defaults["settings"].items():
             self._save_sync_state["settings"].setdefault(key, value)
+        # Migrate: rename "active_core" → "last_synced_core" in per-game entries
+        for _rid, entry in self._save_sync_state.get("saves", {}).items():
+            if "active_core" in entry:
+                entry["last_synced_core"] = entry.pop("active_core")
 
     def load_state(self) -> None:
         """Load save sync state from disk, merging with defaults."""
@@ -427,7 +431,7 @@ class SaveService:
                 "files": {},
                 "emulator": emulator_tag or "retroarch",
                 "system": system,
-                "active_core": core_so,
+                "last_synced_core": core_so,
                 "active_slot": "default",
             }
         save_entry = self._save_sync_state["saves"][rom_id_str]
@@ -435,7 +439,7 @@ class SaveService:
         if emulator_tag is not None:
             save_entry["emulator"] = emulator_tag
         if core_so is not None:
-            save_entry["active_core"] = core_so
+            save_entry["last_synced_core"] = core_so
 
         now = datetime.now(UTC).isoformat()
         local_hash = self._file_md5(local_path) if os.path.isfile(local_path) else ""

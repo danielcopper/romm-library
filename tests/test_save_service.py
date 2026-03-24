@@ -1598,7 +1598,7 @@ class TestUpdateFileSyncState:
 
         game_state = svc._save_sync_state["saves"]["42"]
         assert game_state["emulator"] == "retroarch-mgba"
-        assert game_state["active_core"] == "mgba_libretro"
+        assert game_state["last_synced_core"] == "mgba_libretro"
         assert game_state["active_slot"] == "default"
 
         file_state = game_state["files"]["pokemon.srm"]
@@ -1613,7 +1613,7 @@ class TestUpdateFileSyncState:
             "files": {},
             "emulator": "retroarch",
             "system": "gba",
-            "active_core": None,
+            "last_synced_core": None,
             "active_slot": "default",
         }
         server_resp = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
@@ -1630,17 +1630,17 @@ class TestUpdateFileSyncState:
 
         game_state = svc._save_sync_state["saves"]["42"]
         assert game_state["emulator"] == "retroarch-mgba"
-        assert game_state["active_core"] == "mgba_libretro"
+        assert game_state["last_synced_core"] == "mgba_libretro"
 
     def test_core_so_none_does_not_overwrite(self, tmp_path):
-        """core_so=None should not reset an already-set active_core."""
+        """core_so=None should not reset an already-set last_synced_core."""
         svc, _ = make_service(tmp_path)
         save_file = _create_save(tmp_path)
         svc._save_sync_state["saves"]["42"] = {
             "files": {},
             "emulator": "retroarch-mgba",
             "system": "gba",
-            "active_core": "mgba_libretro",
+            "last_synced_core": "mgba_libretro",
             "active_slot": "default",
         }
         server_resp = {"id": 200, "updated_at": "2026-02-17T15:00:00Z"}
@@ -1654,9 +1654,9 @@ class TestUpdateFileSyncState:
             emulator_tag="retroarch",
         )
 
-        # active_core unchanged because core_so=None
+        # last_synced_core unchanged because core_so=None
         game_state = svc._save_sync_state["saves"]["42"]
-        assert game_state["active_core"] == "mgba_libretro"
+        assert game_state["last_synced_core"] == "mgba_libretro"
 
 
 # ---------------------------------------------------------------------------
@@ -1712,7 +1712,7 @@ class TestStateBackwardCompat:
         assert "42" in svc2._save_sync_state["saves"]
 
     def test_old_per_game_entry_missing_new_fields_works_via_get(self, tmp_path):
-        """Per-game entries without active_core/active_slot still work via .get()."""
+        """Per-game entries without last_synced_core/active_slot still work via .get()."""
         svc, _ = make_service(tmp_path)
         svc._save_sync_state["device_id"] = "old-local-uuid"
         svc._save_sync_state["saves"]["42"] = {
@@ -1726,7 +1726,7 @@ class TestStateBackwardCompat:
         svc2.load_state()
 
         game_state = svc2._save_sync_state["saves"]["42"]
-        assert game_state.get("active_core") is None
+        assert game_state.get("last_synced_core") is None
         assert game_state.get("active_slot", "default") == "default"
 
     def test_make_default_state_includes_server_device_id(self):
@@ -1759,7 +1759,7 @@ class TestStateBackwardCompat:
 
         game_state = svc._save_sync_state["saves"]["42"]
         assert game_state["emulator"] == "retroarch-mgba"
-        assert game_state["active_core"] == "mgba_libretro"
+        assert game_state["last_synced_core"] == "mgba_libretro"
         assert game_state.get("active_slot") == "default"
 
         # Per-file should have tracked_save_id
