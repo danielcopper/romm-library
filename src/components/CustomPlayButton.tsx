@@ -30,6 +30,9 @@ import {
   debugLog,
   preLaunchSync,
   logError,
+  isSaveTrackingConfigured,
+  getSaveSetupInfo,
+  confirmSlotChoice,
 } from "../api/backend";
 import { getRommConnectionState } from "../utils/connectionState";
 import { scrollToTop } from "../utils/scrollHelpers";
@@ -257,6 +260,34 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           return;
         }
       } else {
+        // Check save slot tracking is configured
+        const trackingResult = await isSaveTrackingConfigured(romId).catch(() => ({ configured: true }));
+        if (!trackingResult.configured) {
+          // Check if server has saves — if not, auto-configure
+          try {
+            const setupInfo = await getSaveSetupInfo(romId);
+            if (!setupInfo.has_local_saves && setupInfo.server_slots.length === 0) {
+              // No saves anywhere — auto-configure with default, proceed
+              await confirmSlotChoice(romId, setupInfo.default_slot, null);
+            } else if (setupInfo.has_local_saves && setupInfo.server_slots.length === 0) {
+              // Scenario B: local saves, no server — auto-configure
+              await confirmSlotChoice(romId, setupInfo.default_slot, null);
+            } else {
+              // Server has saves — user must configure in saves tab
+              toaster.toast({
+                title: "RomM Save Sync",
+                body: "Configure save sync in the Saves tab first",
+              });
+              // Switch to saves tab
+              window.dispatchEvent(new CustomEvent("romm_tab_switch", { detail: { tab: "saves" } }));
+              setState("play");
+              return;
+            }
+          } catch {
+            // If check fails, proceed with launch anyway
+          }
+        }
+
         setState("syncing");
         try {
           const result = await Promise.race([

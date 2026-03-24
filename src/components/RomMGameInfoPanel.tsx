@@ -30,8 +30,10 @@ import {
   getAchievementProgress,
   getSaveSlots,
   setGameSlot,
+  isSaveTrackingConfigured,
   debugLog,
 } from "../api/backend";
+import { SlotSetupWizard } from "./SlotSetupWizard";
 import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict, Achievement, AchievementProgress, EarnedAchievement } from "../types";
 import { getMigrationState, onMigrationChange } from "../utils/migrationStore";
 import { scrollFocusedToCenter } from "../utils/scrollHelpers";
@@ -60,6 +62,7 @@ interface PanelState {
   achievementProgress: AchievementProgress | null;
   achievementsLoading: boolean;
   raId: number | null;
+  slotConfirmed: boolean;
   activeSlot: string;
   availableSlots: Array<{ slot: string; count: number; latest_updated_at: string | null }>;
   slotsLoading: boolean;
@@ -109,6 +112,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     achievementProgress: null,
     achievementsLoading: false,
     raId: null,
+    slotConfirmed: false,
     activeSlot: "default",
     availableSlots: [],
     slotsLoading: false,
@@ -200,10 +204,20 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           achievementProgress: null,
           achievementsLoading: false,
           raId,
+          slotConfirmed: false,
           activeSlot: "default",
           availableSlots: [],
           slotsLoading: false,
         });
+
+        // Check if save slot tracking is configured for this game
+        if (cached.save_sync_enabled) {
+          isSaveTrackingConfigured(romId).then((result) => {
+            if (!cancelled) {
+              setState((prev) => ({ ...prev, slotConfirmed: result.configured }));
+            }
+          }).catch(() => {});
+        }
 
         // Phase 2: Background fetch for data not available in cache
         // (installed ROM details, cover art, full save/BIOS detail, metadata if missing)
@@ -289,6 +303,10 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           saveStatus: updatedStatus,
           conflicts,
         }));
+        // Also re-check slot configuration
+        isSaveTrackingConfigured(romIdRef.current).then((result) => {
+          setState((prev) => ({ ...prev, slotConfirmed: result.configured }));
+        }).catch(() => {});
       } else if (detail?.type === "bios" && detail.platform_slug) {
         const updated = await checkPlatformBios(detail.platform_slug).catch((): BiosStatus => ({ needs_bios: false }));
         setState((prev) => ({ ...prev, biosStatus: updated.needs_bios ? updated : null }));
@@ -1157,7 +1175,20 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     // Individual rows are now DialogButtons, enabling focus-driven scrolling.
     activeTabContent = achievementsContent;
   } else if (state.activeTab === "saves") {
-    activeTabContent = saveSyncSection;
+    if (state.saveSyncEnabled && !state.slotConfirmed) {
+      activeTabContent = createElement(SlotSetupWizard, {
+        romId: state.romId,
+        onComplete: () => {
+          // Refresh: mark as configured and reload save status
+          setState((prev) => ({ ...prev, slotConfirmed: true }));
+          window.dispatchEvent(new CustomEvent("romm_data_changed", {
+            detail: { type: "save_sync", rom_id: state.romId },
+          }));
+        },
+      } as any);
+    } else {
+      activeTabContent = saveSyncSection;
+    }
   } else if (state.activeTab === "bios") {
     activeTabContent = biosSection;
   }
