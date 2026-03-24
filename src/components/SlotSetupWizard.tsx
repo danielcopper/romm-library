@@ -20,25 +20,41 @@ function formatSize(bytes: number): string {
 }
 
 function formatTimestamp(iso: string | null): string {
-  if (!iso) return "unknown";
+  if (!iso) return "";
   try {
     const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return iso;
   }
 }
+
+// Compact button styling — white text, subtle border, small
+const btnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid rgba(255, 255, 255, 0.3)",
+  borderRadius: "4px",
+  padding: "4px 12px",
+  minWidth: "auto",
+  width: "auto",
+  fontSize: "12px",
+  color: "#fff",
+  cursor: "pointer",
+};
+
+const btnPrimaryStyle: React.CSSProperties = {
+  ...btnStyle,
+  background: "rgba(26, 159, 255, 0.15)",
+  border: "1px solid rgba(26, 159, 255, 0.4)",
+  color: "#1a9fff",
+};
 
 export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete }) => {
   const [info, setInfo] = useState<SaveSetupInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState(false);
   const [customSlot, setCustomSlot] = useState("");
+  const [showCustomInput, setShowCustomInput] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,7 +67,7 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
         const result = await getSaveSetupInfo(romId);
         if (cancelled) return;
 
-        // Scenario B: local saves, no server saves — auto-confirm with default slot
+        // Scenario B: local saves, no server saves — auto-confirm
         if (result.has_local_saves && result.server_slots.length === 0) {
           setConfirming(true);
           try {
@@ -102,10 +118,10 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
     }
   };
 
-  // Loading state
+  // Loading / confirming
   if (loading || (confirming && !error)) {
     return (
-      <div className="romm-panel-section">
+      <div style={{ padding: "12px 0" }}>
         <div className="romm-panel-section-title">Save Slot Setup</div>
         <div className="romm-panel-muted">
           {confirming ? "Setting up..." : "Loading save information..."}
@@ -114,19 +130,20 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
     );
   }
 
-  // Error state with retry
+  // Error without data — show retry
   if (error && !info) {
     return (
-      <div className="romm-panel-section">
+      <div style={{ padding: "12px 0" }}>
         <div className="romm-panel-section-title">Save Slot Setup</div>
         <div style={{ color: "#d4513f", fontSize: "12px", marginBottom: "8px" }}>{error}</div>
         <DialogButton
+          style={btnStyle}
           onClick={() => {
             setError(null);
             setLoading(true);
             getSaveSetupInfo(romId).then(
               (result) => { setInfo(result); setLoading(false); },
-              (e) => { setError(`Failed to load: ${e}`); setLoading(false); },
+              (e) => { setError(`Failed: ${e}`); setLoading(false); },
             );
           }}
         >
@@ -138,205 +155,171 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
 
   if (!info) return null;
 
-  const hasLocalSaves = info.has_local_saves;
-  const hasServerSlots = info.server_slots.length > 0;
   const defaultSlot = info.default_slot;
 
-  // Check if server has saves in the default slot
-  const serverHasDefaultSlot = info.server_slots.some((s) => s.slot === defaultSlot);
+  // ── Two-column layout ──────────────────────────────────────
 
-  // Determine scenario
-  const renderScenario = () => {
-    // Scenario A: No local saves, server has saves
-    if (!hasLocalSaves && hasServerSlots) {
-      return renderScenarioA();
-    }
-
-    // Scenario C: Local saves, server has saves in non-default slot(s)
-    if (hasLocalSaves && hasServerSlots && !serverHasDefaultSlot) {
-      return renderScenarioC();
-    }
-
-    // Scenario E: Local saves, server has saves in the default slot
-    if (hasLocalSaves && hasServerSlots && serverHasDefaultSlot) {
-      return renderScenarioE();
-    }
-
-    // Fallback: no local, no server — just start fresh
-    return renderFallback();
-  };
-
-  const renderSlotList = (slots: SaveSetupInfo["server_slots"]) => (
-    <div style={{ marginBottom: "8px" }}>
-      {slots.map((s) => (
-        <div
-          key={s.slot ?? "__null__"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "6px 0",
-            borderBottom: "1px solid rgba(255,255,255,0.1)",
-          }}
-        >
-          <div>
-            <div style={{ fontSize: "13px", color: "#fff" }}>
-              <span className="romm-status-dot" style={{ backgroundColor: "#1a9fff" }} />
-              {displaySlot(s.slot)}
-            </div>
-            <div className="romm-panel-muted" style={{ fontSize: "11px" }}>
-              {s.count} file{s.count !== 1 ? "s" : ""}
-              {s.latest_updated_at && ` \u2014 updated ${formatTimestamp(s.latest_updated_at)}`}
-            </div>
-          </div>
-          <DialogButton
-            style={{ minWidth: "auto", padding: "4px 12px", fontSize: "12px" }}
-            disabled={confirming}
-            onClick={() => handleConfirm(s.slot ?? defaultSlot, s.slot === null ? null : undefined)}
-          >
-            Track This Slot
-          </DialogButton>
-        </div>
-      ))}
-    </div>
+  // Left column: local saves info
+  const leftChildren: React.ReactNode[] = [];
+  leftChildren.push(
+    <div key="local-title" className="romm-panel-section-title" style={{ marginBottom: "8px" }}>
+      Local Saves
+    </div>,
   );
 
-  const renderCustomSlotInput = () => (
-    <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "8px" }}>
-      <input
-        type="text"
-        placeholder="Custom slot name"
-        value={customSlot}
-        onChange={(e) => setCustomSlot(e.target.value)}
-        style={{
-          flex: 1,
-          padding: "6px 8px",
-          fontSize: "12px",
-          background: "rgba(255,255,255,0.1)",
-          border: "1px solid rgba(255,255,255,0.2)",
-          borderRadius: "4px",
-          color: "#fff",
-          outline: "none",
-        }}
-      />
-      <DialogButton
-        style={{ minWidth: "auto", padding: "4px 12px", fontSize: "12px" }}
-        disabled={confirming || !customSlot.trim()}
-        onClick={() => handleConfirm(customSlot.trim())}
-      >
-        Use Custom
-      </DialogButton>
-    </div>
-  );
-
-  const renderLocalFiles = () => {
-    if (!info.local_files.length) return null;
-    return (
-      <div style={{ marginBottom: "8px" }}>
-        <div className="romm-panel-muted" style={{ fontSize: "11px", marginBottom: "4px" }}>
-          Local saves:
-        </div>
+  if (info.local_files.length > 0) {
+    leftChildren.push(
+      <div key="local-files">
         {info.local_files.map((f) => (
-          <div key={f.filename} className="romm-panel-info-row" style={{ fontSize: "12px" }}>
-            <span>{f.filename}</span>
+          <div
+            key={f.filename}
+            style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 0", fontSize: "12px" }}
+          >
+            <span className="romm-status-dot" style={{ backgroundColor: "#5ba32b" }} />
+            <span style={{ color: "#fff" }}>{f.filename}</span>
             <span className="romm-panel-muted">{formatSize(f.size)}</span>
           </div>
         ))}
-      </div>
+      </div>,
     );
-  };
+  } else {
+    leftChildren.push(
+      <div key="no-local" className="romm-panel-muted" style={{ fontSize: "12px" }}>
+        No local saves found
+      </div>,
+    );
+  }
 
-  // Scenario A: No local saves, server has saves
-  const renderScenarioA = () => (
-    <div>
-      <div className="romm-panel-muted" style={{ marginBottom: "8px" }}>
-        Server has saves in these slots:
-      </div>
-      {renderSlotList(info.server_slots)}
-      <div style={{ marginTop: "8px" }}>
-        <DialogButton
-          style={{ fontSize: "12px" }}
-          disabled={confirming}
-          onClick={() => handleConfirm(defaultSlot)}
-        >
-          Start fresh with slot '{defaultSlot}'
-        </DialogButton>
-      </div>
-      {renderCustomSlotInput()}
-    </div>
+  // Right column: server slots + actions
+  const rightChildren: React.ReactNode[] = [];
+  rightChildren.push(
+    <div key="server-title" className="romm-panel-section-title" style={{ marginBottom: "8px" }}>
+      Server Slots
+    </div>,
   );
 
-  // Scenario C: Local saves, server has saves in non-default slot(s)
-  const renderScenarioC = () => (
-    <div>
-      <div className="romm-panel-muted" style={{ marginBottom: "8px" }}>
-        You have local saves and the server has saves too.
-      </div>
-      {renderLocalFiles()}
-      <div className="romm-panel-muted" style={{ fontSize: "11px", marginBottom: "4px" }}>
-        Server slots:
-      </div>
-      {renderSlotList(info.server_slots)}
-      <div style={{ marginTop: "8px" }}>
-        <DialogButton
-          style={{ fontSize: "12px" }}
-          disabled={confirming}
-          onClick={() => handleConfirm(defaultSlot)}
+  if (info.server_slots.length > 0) {
+    info.server_slots.forEach((s) => {
+      const slotKey = s.slot ?? "__null__";
+      rightChildren.push(
+        <div
+          key={`slot-${slotKey}`}
+          style={{
+            padding: "6px 0",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
+          }}
         >
-          Upload to slot '{defaultSlot}'
-        </DialogButton>
-      </div>
-      {renderCustomSlotInput()}
-    </div>
-  );
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "#fff" }}>
+              <span className="romm-status-dot" style={{ backgroundColor: "#1a9fff" }} />
+              {displaySlot(s.slot)}
+            </div>
+            <div className="romm-panel-muted" style={{ fontSize: "11px", marginLeft: "18px" }}>
+              {s.count} file{s.count !== 1 ? "s" : ""}
+              {s.latest_updated_at ? ` \u2014 ${formatTimestamp(s.latest_updated_at)}` : ""}
+            </div>
+          </div>
+          <DialogButton
+            style={btnStyle}
+            disabled={confirming}
+            onClick={() => handleConfirm(s.slot ?? defaultSlot, s.slot === null ? null : undefined)}
+          >
+            Track
+          </DialogButton>
+        </div>,
+      );
+    });
+  } else {
+    rightChildren.push(
+      <div key="no-server" className="romm-panel-muted" style={{ fontSize: "12px" }}>
+        No saves on server
+      </div>,
+    );
+  }
 
-  // Scenario E: Local saves, server has saves in the default slot
-  const renderScenarioE = () => (
-    <div>
-      <div className="romm-panel-muted" style={{ marginBottom: "8px" }}>
-        Server already has saves in your default slot '{defaultSlot}'.
-      </div>
-      {renderLocalFiles()}
-      <div style={{ marginTop: "8px" }}>
-        <DialogButton
-          style={{ fontSize: "12px", marginBottom: "8px" }}
-          disabled={confirming}
-          onClick={() => handleConfirm(defaultSlot)}
-        >
-          Track this slot
-        </DialogButton>
-      </div>
-      <div className="romm-panel-muted" style={{ fontSize: "11px", marginBottom: "4px" }}>
-        Or use a different slot:
-      </div>
-      {renderCustomSlotInput()}
-    </div>
+  // Divider + "Start fresh" section
+  rightChildren.push(
+    <div key="divider" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.1)", margin: "10px 0 8px" }} />,
   );
-
-  // Fallback: no saves anywhere
-  const renderFallback = () => (
-    <div>
-      <div className="romm-panel-muted" style={{ marginBottom: "8px" }}>
-        No existing saves found. Start tracking with the default slot.
-      </div>
+  rightChildren.push(
+    <div key="fresh-label" className="romm-panel-muted" style={{ fontSize: "11px", marginBottom: "6px" }}>
+      Or start fresh:
+    </div>,
+  );
+  rightChildren.push(
+    <div key="default-btn" style={{ marginBottom: "6px" }}>
       <DialogButton
-        style={{ fontSize: "12px" }}
+        style={btnPrimaryStyle}
         disabled={confirming}
         onClick={() => handleConfirm(defaultSlot)}
       >
-        Use slot '{defaultSlot}'
+        Use slot &lsquo;{defaultSlot}&rsquo;
       </DialogButton>
-      {renderCustomSlotInput()}
-    </div>
+    </div>,
   );
 
+  if (!showCustomInput) {
+    rightChildren.push(
+      <div key="custom-toggle">
+        <DialogButton
+          style={btnStyle}
+          onClick={() => setShowCustomInput(true)}
+        >
+          Custom slot...
+        </DialogButton>
+      </div>,
+    );
+  } else {
+    rightChildren.push(
+      <div key="custom-input" style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="Slot name"
+          value={customSlot}
+          onChange={(e) => setCustomSlot(e.target.value)}
+          style={{
+            flex: 1,
+            padding: "4px 8px",
+            fontSize: "12px",
+            background: "rgba(255, 255, 255, 0.08)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            borderRadius: "4px",
+            color: "#fff",
+            outline: "none",
+          }}
+        />
+        <DialogButton
+          style={btnStyle}
+          disabled={confirming || !customSlot.trim()}
+          onClick={() => handleConfirm(customSlot.trim())}
+        >
+          Use
+        </DialogButton>
+      </div>,
+    );
+  }
+
   return (
-    <div className="romm-panel-section">
-      <div className="romm-panel-section-title">Save Slot Setup</div>
+    <div style={{ padding: "12px 0" }}>
+      <div className="romm-panel-section-title" style={{ marginBottom: "4px" }}>Save Slot Setup</div>
       {error && (
         <div style={{ color: "#d4513f", fontSize: "12px", marginBottom: "8px" }}>{error}</div>
       )}
-      {renderScenario()}
+      <div className="romm-panel-muted" style={{ fontSize: "12px", marginBottom: "12px" }}>
+        {!info.has_local_saves && info.server_slots.length > 0
+          ? "Server has saves — choose which slot to track."
+          : info.has_local_saves && info.server_slots.length > 0
+            ? "You have local saves and the server has saves too."
+            : "Choose a save slot to get started."}
+      </div>
+      <div style={{ display: "flex", gap: "24px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>{leftChildren}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>{rightChildren}</div>
+      </div>
     </div>
   );
 };
