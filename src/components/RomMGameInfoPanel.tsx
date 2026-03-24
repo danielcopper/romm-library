@@ -968,16 +968,16 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       );
     } else {
       rightColumnChildren.push(
-        createElement("div", { key: "new-slot-input", style: { marginTop: "8px", display: "flex", gap: "4px" } },
+        createElement("div", { key: "new-slot-input", style: { marginTop: "8px", display: "flex", gap: "4px", alignItems: "center" } },
           createElement("input", {
             type: "text",
             value: state.newSlotInput,
             onChange: (e: any) => setState((prev) => ({ ...prev, newSlotInput: e.target.value })),
             placeholder: "Slot name",
-            style: { flex: 1, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "4px", padding: "4px 8px", color: "#fff", fontSize: "12px" },
+            style: { flex: 3, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "4px", padding: "4px 8px", color: "#fff", fontSize: "12px" },
           }),
           createElement(DialogButton as any, {
-            style: { padding: "4px 8px", minWidth: "auto", fontSize: "12px" },
+            style: { flex: 1, padding: "4px 8px", minWidth: "auto", fontSize: "12px" },
             onClick: async () => {
               const name = state.newSlotInput.trim();
               if (!name) return;
