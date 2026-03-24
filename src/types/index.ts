@@ -255,6 +255,8 @@ export interface SaveSyncSettings {
   sync_before_launch: boolean;
   sync_after_exit: boolean;
   clock_skew_tolerance_sec: number;
+  default_slot: string;
+  autocleanup_limit: number;
 }
 
 export interface PendingConflict {
@@ -270,6 +272,13 @@ export interface PendingConflict {
   created_at: string;
 }
 
+export interface DeviceSyncInfo {
+  device_id: string;
+  device_name: string;
+  is_current: boolean;
+  last_synced_at: string | null;
+}
+
 export interface SaveFileStatus {
   filename: string;
   local_path: string | null;
@@ -281,6 +290,8 @@ export interface SaveFileStatus {
   server_size: number | null;
   last_sync_at: string | null;
   status: "skip" | "download" | "upload" | "conflict" | "synced" | "unknown";
+  device_syncs?: DeviceSyncInfo[];
+  is_current?: boolean;
 }
 
 export interface PlaytimeEntry {
@@ -297,6 +308,13 @@ export interface SaveStatus {
   device_id: string;
   last_sync_check_at: string | null;
   conflicts?: PendingConflict[];
+  active_slot?: string;
+}
+
+export interface SaveSlotSummary {
+  slot: string;
+  count: number;
+  latest_updated_at: string | null;
 }
 
 export interface RomLookupResult {
