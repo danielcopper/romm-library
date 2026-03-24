@@ -1857,3 +1857,40 @@ class TestV47SyncFlow:
         assert errors == []
         # Verify download happened
         assert 100 in fake.downloaded_files
+
+
+class TestSaveSyncSettingsSlotAndCleanup:
+    """Tests for default_slot and autocleanup_limit settings."""
+
+    def test_update_default_slot(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        result = svc.update_save_sync_settings({"default_slot": "desktop"})
+        assert result["success"] is True
+        assert result["settings"]["default_slot"] == "desktop"
+
+    def test_update_default_slot_empty_string_rejected(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["settings"]["default_slot"] = "default"
+        result = svc.update_save_sync_settings({"default_slot": ""})
+        assert result["settings"]["default_slot"] == "default"
+
+    def test_update_autocleanup_limit(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        result = svc.update_save_sync_settings({"autocleanup_limit": 5})
+        assert result["success"] is True
+        assert result["settings"]["autocleanup_limit"] == 5
+
+    def test_update_autocleanup_limit_clamped(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        result = svc.update_save_sync_settings({"autocleanup_limit": 0})
+        assert result["settings"]["autocleanup_limit"] == 1
+
+    def test_get_settings_includes_new_defaults(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        result = svc.get_save_sync_settings()
+        assert result["default_slot"] == "default"
+        assert result["autocleanup_limit"] == 10

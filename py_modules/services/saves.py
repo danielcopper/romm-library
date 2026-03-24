@@ -132,6 +132,8 @@ class SaveService:
                 "sync_before_launch": True,
                 "sync_after_exit": True,
                 "clock_skew_tolerance_sec": 60,
+                "default_slot": "default",
+                "autocleanup_limit": 10,
             },
         }
 
@@ -1229,16 +1231,17 @@ class SaveService:
 
     def get_save_sync_settings(self) -> dict:
         """Return current save sync settings."""
-        return self._save_sync_state.get(
-            "settings",
-            {
-                "save_sync_enabled": False,
-                "conflict_mode": "ask_me",
-                "sync_before_launch": True,
-                "sync_after_exit": True,
-                "clock_skew_tolerance_sec": 60,
-            },
-        )
+        settings = self._save_sync_state.get("settings", {})
+        # Defensive defaults for keys added after initial release
+        settings.setdefault("default_slot", "default")
+        settings.setdefault("autocleanup_limit", 10)
+        if not self._save_sync_state.get("settings"):
+            settings.setdefault("save_sync_enabled", False)
+            settings.setdefault("conflict_mode", "ask_me")
+            settings.setdefault("sync_before_launch", True)
+            settings.setdefault("sync_after_exit", True)
+            settings.setdefault("clock_skew_tolerance_sec", 60)
+        return settings
 
     def update_save_sync_settings(self, settings: dict) -> dict:
         """Update save sync settings (conflict_mode, sync toggles, etc.)."""
@@ -1248,6 +1251,8 @@ class SaveService:
             "sync_before_launch",
             "sync_after_exit",
             "clock_skew_tolerance_sec",
+            "default_slot",
+            "autocleanup_limit",
         }
         valid_modes = {"newest_wins", "always_upload", "always_download", "ask_me"}
 
@@ -1260,6 +1265,12 @@ class SaveService:
                 continue
             if key == "clock_skew_tolerance_sec":
                 value = max(0, int(value))
+            if key == "default_slot":
+                value = str(value).strip()
+                if not value:
+                    continue  # reject empty slot names
+            if key == "autocleanup_limit":
+                value = max(1, int(value))
             if key in ("save_sync_enabled", "sync_before_launch", "sync_after_exit"):
                 value = bool(value)
             current[key] = value
