@@ -32,7 +32,7 @@ from domain.save_conflicts import (
 )
 from domain.save_extensions import get_save_extensions
 from domain.save_path import resolve_save_dir
-from domain.save_sync import determine_sync_action
+from domain.save_sync import determine_sync_action, match_local_to_server_saves
 from lib.errors import RommApiError, RommConflictError, classify_error
 from services.protocols import CoreResolverFn, RetryStrategy, RommApiProtocol, RomsPathProvider, SavesPathProvider
 
@@ -476,7 +476,20 @@ class SaveService:
         os.makedirs(saves_dir, exist_ok=True)
         tmp_path = local_path + ".tmp"
 
-        self._retry.with_retry(lambda: self._romm_api.download_save(server_save["id"], tmp_path))
+        # Use v4.7 download_save_content with device_id (marks device as synced on server)
+        # Falls back to v4.6 download_save if download_save_content is not available
+        device_id = self._get_server_device_id()
+        if device_id and self._romm_api.supports_device_sync():
+            self._retry.with_retry(
+                lambda: self._romm_api.download_save_content(
+                    server_save["id"],
+                    tmp_path,
+                    device_id=device_id,
+                    optimistic=True,
+                ),
+            )
+        else:
+            self._retry.with_retry(lambda: self._romm_api.download_save(server_save["id"], tmp_path))
 
         # Backup existing local save before overwriting
         if os.path.isfile(local_path):
@@ -710,112 +723,44 @@ class SaveService:
 
         t0 = time.time()
         local_files = self._find_save_files(rom_id)
-        local_by_name = {lf["filename"]: lf for lf in local_files}
         self._log_debug(
             f"_sync_rom_saves({rom_id}): system={system}, rom_name={rom_name}, "
             f"local_files={len(local_files)}, server_saves={len(server_saves)}, "
             f"saves_dir={saves_dir}"
         )
         self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): find_local {time.time() - t0:.3f}s")
-        server_by_name: dict[str, dict] = {}
-        server_by_id: dict[int, dict] = {}
-        for ss in server_saves:
-            fn = ss.get("file_name", "")
-            if fn:
-                server_by_name[fn] = ss
-            sid = ss.get("id")
-            if sid is not None:
-                server_by_id[sid] = ss
 
         save_state = self._save_sync_state["saves"].get(rom_id_str, {})
         files_state = save_state.get("files", {})
 
+        # Match local files to server saves (domain logic)
+        match_result = match_local_to_server_saves(
+            local_files,
+            server_saves,
+            files_state,
+            save_state.get("active_slot"),
+            rom_name,
+        )
+
+        # Persist any new tracked_save_ids discovered by fallback matching
+        for fn, save_id in match_result.new_tracked_ids.items():
+            files_state.setdefault(fn, {})["tracked_save_id"] = save_id
+            self._log_debug(f"Fallback match: {fn} -> server save id={save_id}")
+
         synced = 0
         errors: list[str] = []
         conflicts: list[SaveConflict] = []
-        matched_server_ids: set[int] = set()
 
-        # Process local files first (may match server saves by tracked_save_id)
-        for lf in sorted(local_files, key=lambda x: x["filename"]):
-            fn = lf["filename"]
-            file_state = files_state.get(fn, {})
-            tracked_id = file_state.get("tracked_save_id")
-            server = server_by_id[tracked_id] if tracked_id and tracked_id in server_by_id else server_by_name.get(fn)
-
-            # Fallback: match newest server save in active slot (recovery after state reset)
-            if not server and server_saves:
-                active_slot = save_state.get("active_slot")
-                slot_candidates = [
-                    ss
-                    for ss in server_saves
-                    if ss.get("id") not in matched_server_ids
-                    and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
-                ]
-                if slot_candidates:
-                    newest = max(slot_candidates, key=lambda s: s.get("updated_at", "") if isinstance(s, dict) else "")
-                    server = newest
-                    files_state.setdefault(fn, {})["tracked_save_id"] = newest["id"]
-                    # Mark all slot candidates as matched to suppress phantom downloads
-                    for sc in slot_candidates:
-                        sc_id = sc.get("id")
-                        if sc_id is not None:
-                            matched_server_ids.add(sc_id)
-                    self._log_debug(
-                        f"Fallback match: {fn} -> server save id={newest['id']} ({newest.get('file_name')})"
-                    )
-
-            if server and server.get("id") is not None:
-                matched_server_ids.add(server["id"])
-
-            if self._process_single_file_sync(rom_id, rom_id_str, fn, lf, server, saves_dir, system, errors, conflicts):
-                synced += 1
-
-        # Process server-only saves (not matched by any local file).
-        # Skip saves that are older versions of an already-matched save:
-        # if a matched save in the same slot has a newer updated_at, the
-        # unmatched one is a stacked version we already superseded.
-        matched_latest_by_slot: dict[str | None, str] = {}
-        for sid in matched_server_ids:
-            ms = server_by_id.get(sid)
-            if ms:
-                slot = ms.get("slot")
-                ts = ms.get("updated_at", "")
-                if ts > matched_latest_by_slot.get(slot, ""):
-                    matched_latest_by_slot[slot] = ts
-
-        unmatched_server = [
-            ss
-            for ss in server_saves
-            if ss.get("id") not in matched_server_ids
-            and ss.get("file_name", "") not in local_by_name
-            and not (
-                ss.get("slot") in matched_latest_by_slot
-                and ss.get("updated_at", "") <= matched_latest_by_slot[ss.get("slot")]
+        for m in match_result.matched:
+            method_label = f" [{m.match_method}]" if m.match_method not in ("filename", "local_only") else ""
+            self._log_debug(
+                f"_sync_rom_saves({rom_id}): {m.filename}{method_label} "
+                f"local={'yes' if m.local_file else 'no'} server={m.server_save.get('id') if m.server_save else 'none'}"
             )
-        ]
-        if unmatched_server:
-            # Derive the expected local filename from ROM info
-            local_basename = rom_name + ".srm" if rom_name else None
-
-            # Group by file_name_no_tags (base name without timestamp) or use the first
-            groups: dict[str, list[dict]] = {}
-            for ss in unmatched_server:
-                base = ss.get("file_name_no_tags") or ss.get("file_name", "unknown")
-                groups.setdefault(base, []).append(ss)
-
-            for _base, group in groups.items():
-                # Pick the newest save in this group
-                newest = max(group, key=lambda s: s.get("updated_at", ""))
-                # Use local filename if available, otherwise strip timestamp from server name
-                dl_filename = local_basename or _base + "." + newest.get("file_extension", "srm")
-                self._log_debug(
-                    f"Server-only download: {newest.get('file_name')} -> local {dl_filename} "
-                    f"(picked from {len(group)} versions)"
-                )
-                if self._process_single_file_sync(
-                    rom_id, rom_id_str, dl_filename, None, newest, saves_dir, system, errors, conflicts
-                ):
-                    synced += 1
+            if self._process_single_file_sync(
+                rom_id, rom_id_str, m.filename, m.local_file, m.server_save, saves_dir, system, errors, conflicts
+            ):
+                synced += 1
 
         # Record when this sync check ran (regardless of whether files transferred)
         save_entry = self._save_sync_state["saves"].setdefault(rom_id_str, {})
@@ -887,109 +832,55 @@ class SaveService:
         """
         rom_id_str = str(rom_id)
         local_files = self._find_save_files(rom_id)
+        info = self._get_rom_save_info(rom_id)
+        rom_name = info["rom_name"] if info else None
 
-        server_by_name = {ss.get("file_name", ""): ss for ss in server_saves if ss.get("file_name")}
-        server_by_id: dict[int, dict] = {ss["id"]: ss for ss in server_saves if ss.get("id") is not None}
         save_state = self._save_sync_state["saves"].get(rom_id_str, {})
         files_state = save_state.get("files", {})
 
+        # Match local files to server saves (same domain logic as _sync_rom_saves)
+        match_result = match_local_to_server_saves(
+            local_files,
+            server_saves,
+            files_state,
+            save_state.get("active_slot"),
+            rom_name,
+        )
+
         file_statuses = []
-        seen_filenames: set[str] = set()
-        matched_server_ids: set[int] = set()
-
-        # Local files (may also exist on server)
-        for lf in local_files:
-            fn = lf["filename"]
-            seen_filenames.add(fn)
-            local_hash = self._file_md5(lf["path"])
-
-            # Match by tracked_save_id first, then by filename
-            file_state = files_state.get(fn, {})
-            tracked_id = file_state.get("tracked_save_id")
-            server = server_by_id[tracked_id] if tracked_id and tracked_id in server_by_id else server_by_name.get(fn)
-
-            # Fallback: match newest server save in active slot (recovery after state reset)
-            if not server and server_saves:
-                active_slot = save_state.get("active_slot")
-                slot_candidates = [
-                    ss
-                    for ss in server_saves
-                    if ss.get("id") not in matched_server_ids
-                    and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
-                ]
-                if slot_candidates:
-                    newest = max(slot_candidates, key=lambda s: s.get("updated_at", "") if isinstance(s, dict) else "")
-                    server = newest
-                    files_state.setdefault(fn, {})["tracked_save_id"] = newest["id"]
-                    # Mark all slot candidates as matched to suppress phantom downloads
-                    for sc in slot_candidates:
-                        sc_id = sc.get("id")
-                        if sc_id is not None:
-                            matched_server_ids.add(sc_id)
-
-            if server:
-                if server.get("id") is not None:
-                    matched_server_ids.add(server["id"])
-                action = self._detect_conflict(rom_id, fn, local_hash, server)
-            elif local_hash:
-                action = "upload"
-            else:
-                action = "skip"
-
-            file_statuses.append(
-                self._build_file_status(
-                    fn,
-                    local_path=lf["path"],
-                    local_hash=local_hash,
-                    local_mtime=datetime.fromtimestamp(os.path.getmtime(lf["path"]), tz=UTC).isoformat(),
-                    local_size=os.path.getsize(lf["path"]),
-                    server=server,
-                    last_sync_at=files_state.get(fn, {}).get("last_sync_at"),
-                    status=action,
-                    server_device_id=self._get_server_device_id(),
-                )
-            )
-
-        # Server-only saves: group by base name, show only the newest per group
-        # with the correct local filename (not the timestamped server name).
-        # Skip saves older than our matched save in the same slot.
-        status_matched_latest: dict[str | None, str] = {}
-        for sid in matched_server_ids:
-            ms = server_by_id.get(sid)
-            if ms:
-                slot = ms.get("slot")
-                ts = ms.get("updated_at", "")
-                if ts > status_matched_latest.get(slot, ""):
-                    status_matched_latest[slot] = ts
-
-        info = self._get_rom_save_info(rom_id)
-        local_basename = info["rom_name"] + ".srm" if info else None
-        unmatched = [
-            ss
-            for ss in server_saves
-            if ss.get("id") not in matched_server_ids
-            and ss.get("file_name", "") not in seen_filenames
-            and not (
-                ss.get("slot") in status_matched_latest
-                and ss.get("updated_at", "") <= status_matched_latest[ss.get("slot")]
-            )
-        ]
-        if unmatched:
-            groups: dict[str, list[dict]] = {}
-            for ss in unmatched:
-                base = ss.get("file_name_no_tags") or ss.get("file_name", "unknown")
-                groups.setdefault(base, []).append(ss)
-            for _base, group in groups.items():
-                newest = max(group, key=lambda s: s.get("updated_at", ""))
-                display_fn = local_basename or _base + "." + newest.get("file_extension", "srm")
+        for m in match_result.matched:
+            if m.local_file:
+                local_hash = self._file_md5(m.local_file["path"])
+                server = m.server_save
+                if server:
+                    action = self._detect_conflict(rom_id, m.filename, local_hash, server)
+                elif local_hash:
+                    action = "upload"
+                else:
+                    action = "skip"
                 file_statuses.append(
                     self._build_file_status(
-                        display_fn,
+                        m.filename,
+                        local_path=m.local_file["path"],
+                        local_hash=local_hash,
+                        local_mtime=datetime.fromtimestamp(os.path.getmtime(m.local_file["path"]), tz=UTC).isoformat(),
+                        local_size=os.path.getsize(m.local_file["path"]),
+                        server=server,
+                        last_sync_at=files_state.get(m.filename, {}).get("last_sync_at"),
+                        status=action,
+                        server_device_id=self._get_server_device_id(),
+                    )
+                )
+            elif m.server_save:
+                # Server-only
+                file_statuses.append(
+                    self._build_file_status(
+                        m.filename,
                         local_path=None,
                         local_hash=None,
                         local_mtime=None,
                         local_size=None,
-                        server=newest,
+                        server=m.server_save,
                         last_sync_at=None,
                         status="download",
                         server_device_id=self._get_server_device_id(),
@@ -1360,6 +1251,10 @@ class SaveService:
         game_state = self._save_sync_state["saves"].get(rom_id_str, {})
         configured = game_state.get("slot_confirmed", False)
         active_slot = game_state.get("active_slot") if configured else None
+        self._logger.info(
+            f"is_save_tracking_configured({rom_id}): configured={configured} "
+            f"active_slot={active_slot} game_state_keys={list(game_state.keys())}"
+        )
         return {"configured": configured, "active_slot": active_slot}
 
     async def get_save_setup_info(self, rom_id: int) -> dict:
