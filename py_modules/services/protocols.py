@@ -260,6 +260,13 @@ class RommApiProtocol(Protocol):
         """
         ...
 
+    def delete_server_saves(self, save_ids: list[int]) -> dict:
+        """Delete saves from the RomM server by ID.
+
+        Endpoint: POST /api/saves/delete with body {"saves": [id1, id2, ...]}.
+        """
+        ...
+
     def supports_device_sync(self) -> bool:
         """Check if the connected RomM server supports device sync (v4.7+).
 

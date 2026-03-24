@@ -105,6 +105,13 @@ class FakeSaveApi:
     def list_roms_by_virtual_collection(self, virtual_id: str, limit: int = 50, offset: int = 0) -> dict:
         raise NotImplementedError
 
+    def delete_server_saves(self, save_ids: list[int]) -> dict:
+        self.call_log.append(("delete_server_saves", (save_ids,), {}))
+        self._check_fail()
+        for sid in save_ids:
+            self.saves.pop(sid, None)
+        return {"deleted": len(save_ids)}
+
     def supports_device_sync(self) -> bool:
         return self._supports_device_sync
 

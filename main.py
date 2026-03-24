@@ -572,6 +572,18 @@ class Plugin:
     async def set_game_slot(self, rom_id, slot):
         return self._save_sync_service.set_game_slot(rom_id, slot)
 
+    async def is_save_tracking_configured(self, rom_id):
+        return self._save_sync_service.is_save_tracking_configured(rom_id)
+
+    async def get_save_setup_info(self, rom_id):
+        return await self._save_sync_service.get_save_setup_info(rom_id)
+
+    async def confirm_slot_choice(self, rom_id, chosen_slot, migrate_from_slot="__no_migration__"):
+        from services.saves import _NO_MIGRATION
+
+        actual = _NO_MIGRATION if migrate_from_slot == "__no_migration__" else migrate_from_slot
+        return await self._save_sync_service.confirm_slot_choice(rom_id, chosen_slot, actual)
+
     async def sync_all_saves(self):
         return await self._save_sync_service.sync_all_saves()
 
