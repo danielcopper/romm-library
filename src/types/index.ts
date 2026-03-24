@@ -317,6 +317,28 @@ export interface SaveSlotSummary {
   latest_updated_at: string | null;
 }
 
+export interface SaveSetupSlotInfo {
+  slot: string | null;
+  saves: Array<{
+    id: number;
+    file_name: string;
+    emulator: string;
+    updated_at: string;
+    file_size_bytes: number;
+  }>;
+  count: number;
+  latest_updated_at: string | null;
+}
+
+export interface SaveSetupInfo {
+  has_local_saves: boolean;
+  local_files: Array<{ filename: string; size: number }>;
+  server_slots: SaveSetupSlotInfo[];
+  default_slot: string;
+  slot_confirmed: boolean;
+  active_slot: string | null;
+}
+
 export interface RomLookupResult {
   rom_id: number;
   name: string;
