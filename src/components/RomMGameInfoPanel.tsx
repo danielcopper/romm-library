@@ -971,7 +971,16 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
               if (!name) return;
               const result = await setGameSlot(state.romId!, name);
               if (result.success) {
-                setState((prev) => ({ ...prev, activeSlot: name, showNewSlotInput: false, newSlotInput: "" }));
+                // Add new slot to local list (it won't exist on RomM until first upload)
+                setState((prev) => ({
+                  ...prev,
+                  activeSlot: name,
+                  showNewSlotInput: false,
+                  newSlotInput: "",
+                  availableSlots: prev.availableSlots.some((s) => s.slot === name)
+                    ? prev.availableSlots
+                    : [...prev.availableSlots, { slot: name, count: 0, latest_updated_at: null }],
+                }));
                 window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: state.romId } }));
               }
             },
@@ -987,7 +996,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         style: { display: "flex", gap: "24px" },
       },
         createElement("div", { key: "files-col", style: { flex: 1, minWidth: 0 } }, ...leftColumnChildren.filter(Boolean)),
-        createElement("div", { key: "slots-col", style: { flexShrink: 0, minWidth: "140px" } }, ...rightColumnChildren.filter(Boolean)),
+        createElement("div", { key: "slots-col", style: { flex: 1, minWidth: 0 } }, ...rightColumnChildren.filter(Boolean)),
       ),
     );
   }
