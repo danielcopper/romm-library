@@ -242,26 +242,29 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
     );
   }
 
-  // Divider + "Start fresh" section
+  // Divider + "Start fresh" section — only show "Use default" when it's not already in the server list
+  const defaultExistsOnServer = info.server_slots.some((s) => s.slot === defaultSlot);
   rightChildren.push(
     <div key="divider" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.1)", margin: "10px 0 8px" }} />,
   );
-  rightChildren.push(
-    <div key="fresh-label" className="romm-panel-muted" style={{ fontSize: "11px", marginBottom: "6px" }}>
-      Or start fresh:
-    </div>,
-  );
-  rightChildren.push(
-    <div key="default-btn" style={{ marginBottom: "6px" }}>
-      <DialogButton
-        style={btnPrimaryStyle}
-        disabled={confirming}
-        onClick={() => handleConfirm(defaultSlot)}
-      >
-        Use slot &lsquo;{defaultSlot}&rsquo;
-      </DialogButton>
-    </div>,
-  );
+  if (!defaultExistsOnServer) {
+    rightChildren.push(
+      <div key="fresh-label" className="romm-panel-muted" style={{ fontSize: "11px", marginBottom: "6px" }}>
+        Or start fresh:
+      </div>,
+    );
+    rightChildren.push(
+      <div key="default-btn" style={{ marginBottom: "6px" }}>
+        <DialogButton
+          style={btnPrimaryStyle}
+          disabled={confirming}
+          onClick={() => handleConfirm(defaultSlot)}
+        >
+          Use slot &lsquo;{defaultSlot}&rsquo;
+        </DialogButton>
+      </div>,
+    );
+  }
 
   if (!showCustomInput) {
     rightChildren.push(
@@ -318,7 +321,7 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
             : "Choose a save slot to get started."}
       </div>
       <div style={{ display: "flex", gap: "24px" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>{leftChildren}</div>
+        <div style={{ flex: 2, minWidth: 0 }}>{leftChildren}</div>
         <div style={{ flex: 1, minWidth: 0 }}>{rightChildren}</div>
       </div>
     </div>

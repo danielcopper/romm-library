@@ -321,11 +321,17 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         }).catch(() => {});
         // Also refresh slot data so the saves tab reflects changes
         getSaveSlots(romIdRef.current).then((slotResult) => {
-          setState((prev) => ({
-            ...prev,
-            availableSlots: slotResult.slots || [],
-            activeSlot: slotResult.active_slot || prev.activeSlot,
-          }));
+          setState((prev) => {
+            const serverSlots = slotResult.slots || [];
+            // Preserve locally-created slots (count=0) that don't exist on server yet
+            const serverSlotNames = new Set(serverSlots.map((s: { slot: string }) => s.slot));
+            const localOnly = prev.availableSlots.filter((s) => !serverSlotNames.has(s.slot) && s.count === 0);
+            return {
+              ...prev,
+              availableSlots: [...serverSlots, ...localOnly],
+              activeSlot: slotResult.active_slot || prev.activeSlot,
+            };
+          });
         }).catch(() => {});
       } else if (detail?.type === "bios" && detail.platform_slug) {
         const updated = await checkPlatformBios(detail.platform_slug).catch((): BiosStatus => ({ needs_bios: false }));
@@ -995,7 +1001,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         key: "saves-columns",
         style: { display: "flex", gap: "24px" },
       },
-        createElement("div", { key: "files-col", style: { flex: 1, minWidth: 0 } }, ...leftColumnChildren.filter(Boolean)),
+        createElement("div", { key: "files-col", style: { flex: 2, minWidth: 0 } }, ...leftColumnChildren.filter(Boolean)),
         createElement("div", { key: "slots-col", style: { flex: 1, minWidth: 0 } }, ...rightColumnChildren.filter(Boolean)),
       ),
     );
