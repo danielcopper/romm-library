@@ -925,18 +925,20 @@ class SaveService:
         if not self._is_save_sync_enabled():
             return {"success": False, "device_id": "", "device_name": "", "disabled": True}
 
-        # Already registered (either local or server)
-        if self._save_sync_state.get("device_id"):
+        # Already fully registered (local + server, or local-only on v4.6)
+        has_device_id = self._save_sync_state.get("device_id")
+        has_server_id = self._save_sync_state.get("server_device_id")
+        if has_device_id and (has_server_id or not self._romm_api.supports_device_sync()):
             return {
                 "success": True,
                 "device_id": self._save_sync_state["device_id"],
                 "device_name": self._save_sync_state.get("device_name", ""),
-                "server_device_id": self._save_sync_state.get("server_device_id"),
+                "server_device_id": has_server_id,
             }
 
         hostname = socket.gethostname()
 
-        # Try v4.7 server registration
+        # Try v4.7 server registration (also upgrades local-only UUID to server-registered)
         if self._romm_api.supports_device_sync():
             try:
                 result = self._romm_api.register_device(

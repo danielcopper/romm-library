@@ -256,6 +256,25 @@ class TestDeviceRegistrationV47:
         assert result["device_id"] == "existing-id"
         assert result.get("server_device_id") == "server-id-123"
 
+    def test_upgrades_local_uuid_to_server_on_v47(self, tmp_path):
+        """Local-only UUID gets upgraded to server registration when v4.7 becomes available."""
+        fake = FakeSaveApi()
+        fake._supports_device_sync = True
+        svc, _ = make_service(tmp_path, fake_api=fake)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        # Simulate existing local-only UUID (from v4.6 or failed v4.7 registration)
+        svc._save_sync_state["device_id"] = "local-only-uuid"
+        svc._save_sync_state["device_name"] = "deck"
+        svc._save_sync_state["server_device_id"] = None
+
+        result = svc.ensure_device_registered()
+        assert result["success"] is True
+        assert result.get("server_device_id") is not None
+        assert svc._save_sync_state["server_device_id"] is not None
+        # register_device was called
+        reg_calls = [c for c in fake.call_log if c[0] == "register_device"]
+        assert len(reg_calls) == 1
+
 
 # ---------------------------------------------------------------------------
 # TestConflictDetection
