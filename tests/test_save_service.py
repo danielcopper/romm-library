@@ -2465,3 +2465,151 @@ class TestTrackedSaveIdMatching:
         assert "pokemon [2026-03-24_15-18-50].srm" not in filenames
         # The local filename should appear
         assert "pokemon.srm" in filenames
+
+    def test_fallback_matches_newest_server_save_when_no_tracked_id(self, tmp_path):
+        """When tracked_save_id is missing, match the newest server save in active slot."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["settings"]["conflict_mode"] = "always_upload"
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"local save data")
+
+        # Server has multiple saves with timestamp names (from previous stacking)
+        fake.saves[10] = {
+            "id": 10,
+            "rom_id": 42,
+            "file_name": "pokemon [2026-03-24_10-00-00].srm",
+            "updated_at": "2026-03-24T10:00:00",
+            "file_size_bytes": 100,
+            "emulator": "retroarch",
+            "slot": "default",
+            "download_path": "/saves/pokemon [2026-03-24_10-00-00].srm",
+        }
+        fake.saves[20] = {
+            "id": 20,
+            "rom_id": 42,
+            "file_name": "pokemon [2026-03-24_15-00-00].srm",
+            "updated_at": "2026-03-24T15:00:00",
+            "file_size_bytes": 200,
+            "emulator": "retroarch",
+            "slot": "default",
+            "download_path": "/saves/pokemon [2026-03-24_15-00-00].srm",
+        }
+
+        # State has active_slot but NO tracked_save_id (state was reset)
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {},
+        }
+
+        _synced, errors, _conflicts = svc._sync_rom_saves(42)
+        assert len(errors) == 0
+
+        # Should have done PUT (update save_id=20, the newest) not POST (new save)
+        upload_calls = [c for c in fake.call_log if c[0] == "upload_save"]
+        assert len(upload_calls) >= 1
+        call_kwargs = upload_calls[0][2]
+        assert call_kwargs.get("save_id") == 20
+
+        # tracked_save_id should now be persisted in state
+        files_state = svc._save_sync_state["saves"]["42"]["files"]
+        assert "pokemon.srm" in files_state
+        assert files_state["pokemon.srm"].get("tracked_save_id") == 20
+
+    @pytest.mark.asyncio
+    async def test_status_fallback_matches_newest_no_phantom_downloads(self, tmp_path):
+        """Status with no tracked_save_id matches newest server save, no phantom downloads."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        fake.saves[10] = {
+            "id": 10,
+            "rom_id": 42,
+            "file_name": "pokemon [old].srm",
+            "updated_at": "2026-03-24T10:00:00",
+            "file_size_bytes": 100,
+            "emulator": "retroarch",
+            "download_path": "/saves/pokemon [old].srm",
+            "slot": "default",
+        }
+        fake.saves[20] = {
+            "id": 20,
+            "rom_id": 42,
+            "file_name": "pokemon [new].srm",
+            "updated_at": "2026-03-24T15:00:00",
+            "file_size_bytes": 200,
+            "emulator": "retroarch",
+            "download_path": "/saves/pokemon [new].srm",
+            "slot": "default",
+        }
+
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {},
+        }
+
+        result = await svc.get_save_status(42)
+        filenames = [f["filename"] for f in result["files"]]
+
+        # The local file should appear (matched to newest server save)
+        assert "pokemon.srm" in filenames
+        # Timestamp server files should NOT appear as separate entries
+        assert "pokemon [old].srm" not in filenames
+        assert "pokemon [new].srm" not in filenames
+
+    def test_fallback_skips_already_matched_server_saves(self, tmp_path):
+        """Fallback should not match a server save already matched by another local file."""
+        svc, fake = make_service(tmp_path)
+        svc._save_sync_state["settings"]["save_sync_enabled"] = True
+        svc._save_sync_state["settings"]["conflict_mode"] = "always_upload"
+        svc._save_sync_state["device_id"] = "dev-1"
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path, content=b"local srm", ext=".srm")
+        _create_save(tmp_path, content=b"local rtc", ext=".rtc")
+
+        # One server save matched by filename, one with timestamp name
+        fake.saves[10] = {
+            "id": 10,
+            "rom_id": 42,
+            "file_name": "pokemon.rtc",
+            "updated_at": "2026-03-24T10:00:00",
+            "file_size_bytes": 100,
+            "emulator": "retroarch",
+            "slot": "default",
+            "download_path": "/saves/pokemon.rtc",
+        }
+        fake.saves[20] = {
+            "id": 20,
+            "rom_id": 42,
+            "file_name": "pokemon [ts].srm",
+            "updated_at": "2026-03-24T15:00:00",
+            "file_size_bytes": 200,
+            "emulator": "retroarch",
+            "slot": "default",
+            "download_path": "/saves/pokemon [ts].srm",
+        }
+
+        svc._save_sync_state["saves"]["42"] = {
+            "system": "gba",
+            "active_slot": "default",
+            "slot_confirmed": True,
+            "files": {},
+        }
+
+        _synced, errors, _conflicts = svc._sync_rom_saves(42)
+        assert len(errors) == 0
+
+        # pokemon.rtc should match by filename (id=10)
+        # pokemon.srm should fallback to newest unmatched (id=20)
+        upload_calls = [c for c in fake.call_log if c[0] == "upload_save"]
+        save_ids = {c[2].get("save_id") for c in upload_calls}
+        assert 10 in save_ids  # rtc matched by filename
+        assert 20 in save_ids  # srm matched by fallback

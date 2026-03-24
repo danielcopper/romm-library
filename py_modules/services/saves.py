@@ -736,6 +736,28 @@ class SaveService:
             tracked_id = file_state.get("tracked_save_id")
             server = server_by_id[tracked_id] if tracked_id and tracked_id in server_by_id else server_by_name.get(fn)
 
+            # Fallback: match newest server save in active slot (recovery after state reset)
+            if not server and server_saves:
+                active_slot = save_state.get("active_slot")
+                slot_candidates = [
+                    ss
+                    for ss in server_saves
+                    if ss.get("id") not in matched_server_ids
+                    and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
+                ]
+                if slot_candidates:
+                    newest = max(slot_candidates, key=lambda s: s.get("updated_at", "") if isinstance(s, dict) else "")
+                    server = newest
+                    files_state.setdefault(fn, {})["tracked_save_id"] = newest["id"]
+                    # Mark all slot candidates as matched to suppress phantom downloads
+                    for sc in slot_candidates:
+                        sc_id = sc.get("id")
+                        if sc_id is not None:
+                            matched_server_ids.add(sc_id)
+                    self._log_debug(
+                        f"Fallback match: {fn} -> server save id={newest['id']} ({newest.get('file_name')})"
+                    )
+
             if server and server.get("id") is not None:
                 matched_server_ids.add(server["id"])
 
@@ -844,6 +866,25 @@ class SaveService:
             file_state = files_state.get(fn, {})
             tracked_id = file_state.get("tracked_save_id")
             server = server_by_id[tracked_id] if tracked_id and tracked_id in server_by_id else server_by_name.get(fn)
+
+            # Fallback: match newest server save in active slot (recovery after state reset)
+            if not server and server_saves:
+                active_slot = save_state.get("active_slot")
+                slot_candidates = [
+                    ss
+                    for ss in server_saves
+                    if ss.get("id") not in matched_server_ids
+                    and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
+                ]
+                if slot_candidates:
+                    newest = max(slot_candidates, key=lambda s: s.get("updated_at", "") if isinstance(s, dict) else "")
+                    server = newest
+                    files_state.setdefault(fn, {})["tracked_save_id"] = newest["id"]
+                    # Mark all slot candidates as matched to suppress phantom downloads
+                    for sc in slot_candidates:
+                        sc_id = sc.get("id")
+                        if sc_id is not None:
+                            matched_server_ids.add(sc_id)
 
             if server:
                 if server.get("id") is not None:
