@@ -28,6 +28,8 @@ import {
   getArtworkBase64,
   getAchievements,
   getAchievementProgress,
+  getSaveSlots,
+  setGameSlot,
   debugLog,
 } from "../api/backend";
 import type { RomMetadata, InstalledRom, BiosStatus, SaveStatus, PendingConflict, Achievement, AchievementProgress, EarnedAchievement } from "../types";
@@ -58,6 +60,9 @@ interface PanelState {
   achievementProgress: AchievementProgress | null;
   achievementsLoading: boolean;
   raId: number | null;
+  activeSlot: string;
+  availableSlots: Array<{ slot: string; count: number; latest_updated_at: string | null }>;
+  slotsLoading: boolean;
 }
 
 /** Format a Unix timestamp (seconds) as a release date string (e.g. "15 Mar 2003") */
@@ -104,6 +109,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     achievementProgress: null,
     achievementsLoading: false,
     raId: null,
+    activeSlot: "default",
+    availableSlots: [],
+    slotsLoading: false,
   });
   const romIdRef = useRef<number | null>(null);
   const [migrationPending, setMigrationPending] = useState(getMigrationState().pending);
@@ -192,6 +200,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           achievementProgress: null,
           achievementsLoading: false,
           raId,
+          activeSlot: "default",
+          availableSlots: [],
+          slotsLoading: false,
         });
 
         // Phase 2: Background fetch for data not available in cache
@@ -354,6 +365,38 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     loadAchievements();
     return () => { cancelled = true; };
   }, [state.activeTab, state.raId, state.romId]);
+
+  const slotsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (state.activeTab !== "saves" || !state.saveSyncEnabled || !state.romId) return;
+    if (slotsLoadedRef.current) return;
+    slotsLoadedRef.current = true;
+
+    let cancelled = false;
+    setState((prev) => ({ ...prev, slotsLoading: true }));
+
+    async function loadSlots() {
+      try {
+        const result = await getSaveSlots(state.romId!);
+        if (cancelled) return;
+        setState((prev) => ({
+          ...prev,
+          activeSlot: result.active_slot || "default",
+          availableSlots: result.slots || [],
+          slotsLoading: false,
+        }));
+      } catch (e) {
+        debugLog(`Failed to load save slots: ${e}`);
+        if (!cancelled) {
+          slotsLoadedRef.current = false;
+          setState((prev) => ({ ...prev, slotsLoading: false }));
+        }
+      }
+    }
+
+    loadSlots();
+    return () => { cancelled = true; };
+  }, [state.activeTab, state.saveSyncEnabled, state.romId]);
 
   // --- Render helpers ---
 
@@ -671,6 +714,58 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     const saveSyncChildren: (ReturnType<typeof createElement> | null)[] = [];
 
+    // Slot info row
+    saveSyncChildren.push(
+      createElement("div", {
+        key: "savesync-slot-row",
+        className: "romm-panel-info-row",
+      },
+        createElement("span", { className: "romm-panel-label" }, "Save Slot"),
+        createElement("span", { className: "romm-panel-value" }, state.activeSlot),
+      ),
+    );
+
+    // Slot switcher (only when multiple slots available from server)
+    if (state.availableSlots.length > 1) {
+      saveSyncChildren.push(
+        createElement("div", {
+          key: "savesync-slot-options",
+          style: { display: "flex", gap: "8px", flexWrap: "wrap" as const, marginTop: "4px", marginBottom: "8px" },
+        },
+          ...state.availableSlots.map((s) =>
+            createElement(DialogButton as any, {
+              key: `slot-${s.slot}`,
+              style: {
+                background: state.activeSlot === s.slot ? "rgba(26, 159, 255, 0.15)" : "transparent",
+                border: state.activeSlot === s.slot ? "1px solid rgba(26, 159, 255, 0.4)" : "1px solid rgba(255, 255, 255, 0.1)",
+                padding: "4px 12px",
+                minWidth: "auto",
+                width: "auto",
+                fontSize: "12px",
+              },
+              onClick: async () => {
+                if (s.slot === state.activeSlot) return;
+                try {
+                  const result = await setGameSlot(state.romId!, s.slot);
+                  if (result.success) {
+                    setState((prev) => ({ ...prev, activeSlot: s.slot }));
+                    window.dispatchEvent(new CustomEvent("romm_data_changed", {
+                      detail: { type: "save_sync", rom_id: state.romId },
+                    }));
+                  }
+                } catch (e) {
+                  debugLog(`Failed to set game slot: ${e}`);
+                }
+              },
+              noFocusRing: false,
+            },
+              `${s.slot} (${s.count})`,
+            ),
+          ),
+        ),
+      );
+    }
+
     // Status row
     saveSyncChildren.push(
       createElement("div", {
@@ -750,6 +845,36 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
               fileRowChildren.push(
                 createElement("span", { key: "conflict-label", className: "romm-panel-file-conflict" }, "Conflict"),
               );
+            }
+
+            // Device sync info (v4.7+)
+            if (f.device_syncs && f.device_syncs.length > 0) {
+              const lastSyncer = f.device_syncs.reduce((latest, ds) => {
+                if (!latest) return ds;
+                if (!ds.last_synced_at) return latest;
+                if (!latest.last_synced_at) return ds;
+                return ds.last_synced_at > latest.last_synced_at ? ds : latest;
+              }, f.device_syncs[0]);
+
+              if (lastSyncer && lastSyncer.device_name) {
+                fileRowChildren.push(
+                  createElement("span", {
+                    key: "device-info",
+                    className: "romm-panel-file-detail",
+                    style: { color: "rgba(255, 255, 255, 0.5)" },
+                  }, `Last sync: ${lastSyncer.device_name}`),
+                );
+              }
+
+              if (f.is_current === false) {
+                fileRowChildren.push(
+                  createElement("span", {
+                    key: "not-current",
+                    className: "romm-panel-file-detail",
+                    style: { color: "#d4a72c" },
+                  }, "Newer version available on server"),
+                );
+              }
             }
 
             // Local path on its own line (full width via flex-wrap)
