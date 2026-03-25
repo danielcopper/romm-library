@@ -119,6 +119,10 @@ class RommApiV47(RommApiV46):
             query += f"&device_id={device_id}"
         return self._client.request(query)
 
+    def delete_server_saves(self, save_ids: list[int]) -> dict:
+        """Delete saves from the RomM server by ID."""
+        return self._client.post_json("/api/saves/delete", {"saves": save_ids})
+
     def register_device(self, name: str, platform: str, client: str, version: str) -> dict:
         """Register this client as a device via POST /api/devices."""
         return self._client.post_json(

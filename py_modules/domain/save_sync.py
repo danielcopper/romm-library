@@ -3,12 +3,252 @@
 Extends the existing conflict detection (save_conflicts.py) with
 RomM v4.7 device sync awareness (is_current flag from device_syncs).
 
+Includes server-save matching: maps local files to their server counterparts
+using tracked_save_id → filename → slot-fallback priority chain.
+
 No I/O, no service/adapter/lib imports. Pure functions only.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from domain.save_conflicts import check_server_changes_fast, determine_action
+
+# ---------------------------------------------------------------------------
+# Server-save matching
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MatchedSave:
+    """A local file matched to a server save."""
+
+    local_file: dict | None  # {"filename": str, "path": str} or None for server-only
+    server_save: dict | None  # server save dict or None for local-only
+    filename: str  # the LOCAL filename to use (not the server's timestamp name)
+    match_method: str  # "tracked_id" | "filename" | "slot_fallback" | "local_only" | "server_only"
+
+
+@dataclass
+class MatchResult:
+    """Result of matching local files to server saves."""
+
+    matched: list[MatchedSave] = field(default_factory=list)
+    matched_server_ids: set[int] = field(default_factory=set)
+    new_tracked_ids: dict[str, int] = field(default_factory=dict)  # filename -> save_id to persist
+
+
+def _mark_older_versions_in_slot(
+    server: dict,
+    server_saves: list[dict],
+    matched_server_ids: set[int],
+) -> None:
+    """Mark all server saves in the same slot up to the matched timestamp as matched."""
+    matched_ts = server.get("updated_at", "")
+    matched_slot = server.get("slot")
+    for ss in server_saves:
+        ss_id = ss.get("id")
+        if ss_id is not None and ss.get("slot") == matched_slot and ss.get("updated_at", "") <= matched_ts:
+            matched_server_ids.add(ss_id)
+
+
+def _find_slot_fallback(
+    server_saves: list[dict],
+    active_slot: str | None,
+    matched_server_ids: set[int],
+) -> dict | None:
+    """Find the newest server save in the active slot that hasn't been matched yet."""
+    candidates = [
+        ss
+        for ss in server_saves
+        if ss.get("id") not in matched_server_ids
+        and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda s: s.get("updated_at", ""))
+
+
+def _apply_slot_fallback(
+    fn: str,
+    candidates: list[dict],
+    newest: dict,
+    result: MatchResult,
+) -> None:
+    """Record fallback match and mark all slot candidates as matched."""
+    result.new_tracked_ids[fn] = newest["id"]
+    for sc in candidates:
+        sc_id = sc.get("id")
+        if sc_id is not None:
+            result.matched_server_ids.add(sc_id)
+
+
+def _match_single_local_file(
+    lf: dict,
+    server_by_id: dict[int, dict],
+    server_by_name: dict[str, dict],
+    server_saves: list[dict],
+    active_slot: str | None,
+    file_state: dict,
+    result: MatchResult,
+) -> MatchedSave:
+    """Match one local file to a server save using the priority chain.
+
+    Mutates result.matched_server_ids and result.new_tracked_ids as side effects.
+    """
+    fn = lf["filename"]
+    server: dict | None = None
+    method = "local_only"
+
+    # Priority 1: tracked_save_id
+    tracked_id = file_state.get("tracked_save_id")
+    if tracked_id and tracked_id in server_by_id:
+        server = server_by_id[tracked_id]
+        method = "tracked_id"
+
+    # Priority 2: filename match
+    if not server:
+        server = server_by_name.get(fn)
+        if server:
+            method = "filename"
+
+    # Priority 3: fallback to newest in active slot
+    if not server and server_saves:
+        newest = _find_slot_fallback(server_saves, active_slot, result.matched_server_ids)
+        if newest:
+            server = newest
+            method = "slot_fallback"
+            slot_candidates = [
+                ss
+                for ss in server_saves
+                if ss.get("id") not in result.matched_server_ids
+                and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
+            ]
+            _apply_slot_fallback(fn, slot_candidates, newest, result)
+
+    if server and server.get("id") is not None:
+        result.matched_server_ids.add(server["id"])
+        _mark_older_versions_in_slot(server, server_saves, result.matched_server_ids)
+
+    return MatchedSave(
+        local_file=lf,
+        server_save=server,
+        filename=fn,
+        match_method=method,
+    )
+
+
+def _collect_server_only_saves(
+    server_saves: list[dict],
+    matched_server_ids: set[int],
+    local_by_name: dict[str, dict],
+    rom_name: str | None,
+) -> list[MatchedSave]:
+    """Collect server saves that have no local counterpart.
+
+    Groups by base name, picks newest per group, and computes the local
+    filename to use when downloading.
+    """
+    unmatched = [
+        ss
+        for ss in server_saves
+        if ss.get("id") not in matched_server_ids and ss.get("file_name", "") not in local_by_name
+    ]
+    if not unmatched:
+        return []
+
+    groups: dict[str, list[dict]] = {}
+    for ss in unmatched:
+        base = ss.get("file_name_no_tags") or ss.get("file_name", "unknown")
+        groups.setdefault(base, []).append(ss)
+
+    server_only: list[MatchedSave] = []
+    for _base, group in groups.items():
+        newest = max(group, key=lambda s: s.get("updated_at", ""))
+        dl_filename = (
+            (rom_name + "." + newest.get("file_extension", "srm"))
+            if rom_name
+            else (_base + "." + newest.get("file_extension", "srm"))
+        )
+        server_only.append(
+            MatchedSave(
+                local_file=None,
+                server_save=newest,
+                filename=dl_filename,
+                match_method="server_only",
+            )
+        )
+        for ss in group:
+            ss_id = ss.get("id")
+            if ss_id is not None:
+                matched_server_ids.add(ss_id)
+
+    return server_only
+
+
+def match_local_to_server_saves(
+    local_files: list[dict],
+    server_saves: list[dict],
+    files_state: dict,
+    active_slot: str | None,
+    rom_name: str | None = None,
+) -> MatchResult:
+    """Match local save files to server saves.
+
+    Priority per local file:
+    1. tracked_save_id from state → exact server ID match
+    2. Filename match → server has same filename
+    3. Fallback: newest server save in active slot (recovery after state reset)
+
+    Server-only saves (no local match) are included if they are the newest
+    in their group AND not an older version of an already-matched save.
+
+    Parameters
+    ----------
+    local_files:
+        List of {"filename": str, "path": str} dicts from _find_save_files.
+    server_saves:
+        List of server save dicts from list_saves API.
+    files_state:
+        Per-file state dict from save_sync_state["saves"][rom_id]["files"].
+    active_slot:
+        The currently active slot for this game, or None.
+    rom_name:
+        The ROM base name (e.g. "Mario Golf - Advance Tour (USA)") for
+        computing the expected local filename when downloading server-only saves.
+
+    Returns
+    -------
+    MatchResult with matched pairs and bookkeeping sets.
+    """
+    result = MatchResult()
+
+    # Build indexes
+    server_by_id: dict[int, dict] = {}
+    server_by_name: dict[str, dict] = {}
+    for ss in server_saves:
+        sid = ss.get("id")
+        if sid is not None:
+            server_by_id[sid] = ss
+        fn = ss.get("file_name", "")
+        if fn:
+            server_by_name[fn] = ss
+
+    local_by_name = {lf["filename"]: lf for lf in local_files}
+
+    # --- Pass 1: Match each local file to a server save ---
+    for lf in sorted(local_files, key=lambda x: x["filename"]):
+        file_state = files_state.get(lf["filename"], {})
+        matched = _match_single_local_file(
+            lf, server_by_id, server_by_name, server_saves, active_slot, file_state, result
+        )
+        result.matched.append(matched)
+
+    # --- Pass 2: Server-only saves (not matched by any local file) ---
+    result.matched.extend(_collect_server_only_saves(server_saves, result.matched_server_ids, local_by_name, rom_name))
+
+    return result
 
 
 def check_server_changed_v47(device_sync_info: dict | None) -> bool | None:

@@ -536,6 +536,19 @@ class Plugin:
     # ── Save Sync / Playtime delegation to services ──────────
 
     async def ensure_device_registered(self):
+        # Ensure RomM version is detected before device registration so that
+        # supports_device_sync() returns True on v4.7+ servers.  Without this,
+        # a plugin-start call to ensure_device_registered that runs before the
+        # first test_connection would fall back to local-only UUID generation.
+        if not getattr(self, "_romm_version", None):
+            try:
+                heartbeat = await self.loop.run_in_executor(None, self._romm_api.heartbeat)
+                with contextlib.suppress(AttributeError, TypeError):
+                    self._romm_version = heartbeat.get("SYSTEM", {}).get("VERSION")
+                if self._romm_version:
+                    self._romm_api.set_version(self._romm_version)
+            except Exception:
+                pass
         return self._save_sync_service.ensure_device_registered()
 
     async def get_save_status(self, rom_id):
@@ -552,6 +565,25 @@ class Plugin:
 
     async def sync_rom_saves(self, rom_id):
         return await self._save_sync_service.sync_rom_saves(rom_id)
+
+    async def get_save_slots(self, rom_id):
+        return await self._save_sync_service.get_save_slots(rom_id)
+
+    async def set_game_slot(self, rom_id, slot):
+        return self._save_sync_service.set_game_slot(rom_id, slot)
+
+    async def is_save_tracking_configured(self, rom_id):
+        return self._save_sync_service.is_save_tracking_configured(rom_id)
+
+    async def get_save_setup_info(self, rom_id):
+        return await self._save_sync_service.get_save_setup_info(rom_id)
+
+    async def confirm_slot_choice(self, rom_id, chosen_slot, migrate_from_slot="__no_migration__"):
+        from services.saves import _NO_MIGRATION
+
+        # null from frontend = None in Python — treat same as no migration
+        actual = _NO_MIGRATION if migrate_from_slot in ("__no_migration__", None) else migrate_from_slot
+        return await self._save_sync_service.confirm_slot_choice(rom_id, chosen_slot, actual)
 
     async def sync_all_saves(self):
         return await self._save_sync_service.sync_all_saves()

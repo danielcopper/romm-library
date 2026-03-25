@@ -27,6 +27,7 @@ import {
   syncAllSaves,
   saveLogLevel,
   fixRetroarchInputDriver,
+  ensureDeviceRegistered,
   logError,
 } from "../api/backend";
 import type { MigrationStatus } from "../api/backend";
@@ -126,6 +127,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
   // Save Sync state
   const [saveSyncSettings, setSaveSyncSettings] = useState<SaveSyncSettingsType | null>(null);
   const [saveSyncToggleKey, setSaveSyncToggleKey] = useState(0);
+  const [deviceInfo, setDeviceInfo] = useState<{ device_id: string; device_name: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState("");
 
@@ -171,7 +173,18 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
 
     // Load save sync settings and conflicts
     getSaveSyncSettings()
-      .then(setSaveSyncSettings)
+      .then((settings) => {
+        setSaveSyncSettings(settings);
+        if (settings.save_sync_enabled) {
+          ensureDeviceRegistered()
+            .then((result) => {
+              if (result.success) {
+                setDeviceInfo({ device_id: result.device_id, device_name: result.device_name });
+              }
+            })
+            .catch(() => {});
+        }
+      })
       .catch((e) => logError(`Failed to load save sync settings: ${e}`));
 
     const unsubMigration = onMigrationChange(() => setMigration(getMigrationState()));
@@ -510,6 +523,14 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
             )}
             {saveSyncEnabled && (
               <>
+                {deviceInfo && (
+                  <PanelSectionRow>
+                    <Field
+                      label="Device"
+                      description={`Registered as "${deviceInfo.device_name}"`}
+                    />
+                  </PanelSectionRow>
+                )}
                 <PanelSectionRow>
                   <ToggleField
                     label="Sync before launch"
@@ -533,6 +554,40 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
                     rgOptions={conflictModeOptions}
                     selectedOption={saveSyncSettings.conflict_mode}
                     onChange={(option) => handleSaveSyncSettingChange({ conflict_mode: option.data as ConflictMode })}
+                  />
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <TextField
+                    label="Default Save Slot"
+                    description="Slot name for new games (power users can override per game)"
+                    value={saveSyncSettings.default_slot ?? "default"}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      const val = e.target.value;
+                      setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: val } : prev);
+                    }}
+                    onBlur={() => {
+                      const val = (saveSyncSettings.default_slot ?? "default").trim();
+                      if (val) {
+                        handleSaveSyncSettingChange({ default_slot: val });
+                      } else {
+                        setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: "default" } : prev);
+                        handleSaveSyncSettingChange({ default_slot: "default" });
+                      }
+                    }}
+                  />
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <DropdownItem
+                    label="Save History Limit"
+                    description="Max save versions kept per slot on the server"
+                    rgOptions={[
+                      { data: 5, label: "5" },
+                      { data: 10, label: "10 (Default)" },
+                      { data: 20, label: "20" },
+                      { data: 50, label: "50" },
+                    ]}
+                    selectedOption={saveSyncSettings.autocleanup_limit ?? 10}
+                    onChange={(option) => handleSaveSyncSettingChange({ autocleanup_limit: option.data as number })}
                   />
                 </PanelSectionRow>
                 <PanelSectionRow>

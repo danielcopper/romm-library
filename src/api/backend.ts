@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, CollectionSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, BiosFileStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, CollectionSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, BiosFileStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress, SaveSlotSummary, SaveSetupInfo } from "../types";
 
 export interface BackendResult {
   success: boolean;
@@ -128,6 +128,11 @@ export const recordSessionStart = callable<[number], { success: boolean }>("reco
 export const recordSessionEnd = callable<[number], { success: boolean; duration_sec?: number; total_seconds?: number; session_count?: number; message?: string }>("record_session_end");
 export const getSaveSyncSettings = callable<[], SaveSyncSettings>("get_save_sync_settings");
 export const updateSaveSyncSettings = callable<[SaveSyncSettings], { success: boolean }>("update_save_sync_settings");
+export const getSaveSlots = callable<[number], { success: boolean; slots: SaveSlotSummary[]; active_slot: string }>("get_save_slots");
+export const setGameSlot = callable<[number, string], { success: boolean; active_slot?: string; message?: string }>("set_game_slot");
+export const isSaveTrackingConfigured = callable<[number], { configured: boolean; active_slot: string | null }>("is_save_tracking_configured");
+export const getSaveSetupInfo = callable<[number], SaveSetupInfo>("get_save_setup_info");
+export const confirmSlotChoice = callable<[number, string, string | null], { success: boolean; needs_conflict_resolution?: boolean; message: string }>("confirm_slot_choice");
 
 // Bulk playtime for plugin-load UI update
 export const getAllPlaytime = callable<[], { playtime: Record<string, { total_seconds: number; session_count: number }> }>("get_all_playtime");

@@ -255,6 +255,8 @@ export interface SaveSyncSettings {
   sync_before_launch: boolean;
   sync_after_exit: boolean;
   clock_skew_tolerance_sec: number;
+  default_slot: string;
+  autocleanup_limit: number;
 }
 
 export interface PendingConflict {
@@ -270,6 +272,13 @@ export interface PendingConflict {
   created_at: string;
 }
 
+export interface DeviceSyncInfo {
+  device_id: string;
+  device_name: string;
+  is_current: boolean;
+  last_synced_at: string | null;
+}
+
 export interface SaveFileStatus {
   filename: string;
   local_path: string | null;
@@ -281,6 +290,8 @@ export interface SaveFileStatus {
   server_size: number | null;
   last_sync_at: string | null;
   status: "skip" | "download" | "upload" | "conflict" | "synced" | "unknown";
+  device_syncs?: DeviceSyncInfo[];
+  is_current?: boolean;
 }
 
 export interface PlaytimeEntry {
@@ -297,6 +308,36 @@ export interface SaveStatus {
   device_id: string;
   last_sync_check_at: string | null;
   conflicts?: PendingConflict[];
+  active_slot?: string;
+}
+
+export interface SaveSlotSummary {
+  slot: string;
+  source: "server" | "local";
+  count: number;
+  latest_updated_at: string | null;
+}
+
+export interface SaveSetupSlotInfo {
+  slot: string | null;
+  saves: Array<{
+    id: number;
+    file_name: string;
+    emulator: string;
+    updated_at: string;
+    file_size_bytes: number;
+  }>;
+  count: number;
+  latest_updated_at: string | null;
+}
+
+export interface SaveSetupInfo {
+  has_local_saves: boolean;
+  local_files: Array<{ filename: string; size: number }>;
+  server_slots: SaveSetupSlotInfo[];
+  default_slot: string;
+  slot_confirmed: boolean;
+  active_slot: string | null;
 }
 
 export interface RomLookupResult {

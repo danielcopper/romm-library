@@ -102,3 +102,7 @@ This plugin stands on the shoulders of some great projects:
 ## License
 
 GPL-3.0
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=danielcopper/decky-romm-sync&type=Date)](https://star-history.com/#danielcopper/decky-romm-sync&Date)

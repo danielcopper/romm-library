@@ -105,6 +105,13 @@ class FakeSaveApi:
     def list_roms_by_virtual_collection(self, virtual_id: str, limit: int = 50, offset: int = 0) -> dict:
         raise NotImplementedError
 
+    def delete_server_saves(self, save_ids: list[int]) -> dict:
+        self.call_log.append(("delete_server_saves", (save_ids,), {}))
+        self._check_fail()
+        for sid in save_ids:
+            self.saves.pop(sid, None)
+        return {"deleted": len(save_ids)}
+
     def supports_device_sync(self) -> bool:
         return self._supports_device_sync
 
@@ -131,7 +138,23 @@ class FakeSaveApi:
         raise NotImplementedError
 
     def get_save_summary(self, rom_id: int, device_id: str | None = None) -> dict:
-        raise NotImplementedError
+        self.call_log.append(("get_save_summary", (rom_id,), {"device_id": device_id}))
+        self._check_fail()
+        slots: dict[str | None, list[dict]] = {}
+        for s in self.saves.values():
+            if s.get("rom_id") == rom_id:
+                slot = s.get("slot")
+                slots.setdefault(slot, []).append(s)
+        return {
+            "slots": [
+                {
+                    "slot": slot_name or "default",
+                    "count": len(saves),
+                    "latest_updated_at": max((s.get("updated_at", "") for s in saves), default=None),
+                }
+                for slot_name, saves in slots.items()
+            ],
+        }
 
     # ------------------------------------------------------------------
     # Implemented save/note methods
