@@ -70,6 +70,23 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
   useEffect(() => {
     let cancelled = false;
 
+    const autoConfirmIfNeeded = async (result: SaveSetupInfo): Promise<boolean> => {
+      if (!result.has_local_saves || result.server_slots.length > 0) return false;
+      setConfirming(true);
+      try {
+        await confirmSlotChoice(romId, result.default_slot, null);
+        if (!cancelled) onComplete();
+      } catch (e) {
+        if (!cancelled) {
+          setError(`Auto-setup failed: ${e}`);
+          logError(`SlotSetupWizard auto-confirm failed: ${e}`);
+          setConfirming(false);
+          setInfo(result);
+        }
+      }
+      return true;
+    };
+
     const fetchInfo = async () => {
       setLoading(true);
       setError(null);
@@ -77,20 +94,8 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
         const result = await getSaveSetupInfo(romId);
         if (cancelled) return;
 
-        // Scenario B: local saves, no server saves — auto-confirm
-        if (result.has_local_saves && result.server_slots.length === 0) {
-          setConfirming(true);
-          try {
-            await confirmSlotChoice(romId, result.default_slot, null);
-            if (!cancelled) onComplete();
-          } catch (e) {
-            if (!cancelled) {
-              setError(`Auto-setup failed: ${e}`);
-              logError(`SlotSetupWizard auto-confirm failed: ${e}`);
-              setConfirming(false);
-              setInfo(result);
-            }
-          }
+        const autoConfirmed = await autoConfirmIfNeeded(result);
+        if (autoConfirmed) {
           if (!cancelled) setLoading(false);
           return;
         }
@@ -230,7 +235,7 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
               {displaySlot(s.slot)}
             </div>
             <div className="romm-panel-muted" style={{ fontSize: "11px", marginLeft: "18px" }}>
-              {s.count} file{s.count !== 1 ? "s" : ""}
+              {s.count} file{s.count === 1 ? "" : "s"}
               {s.latest_updated_at ? ` \u2014 ${formatTimestamp(s.latest_updated_at)}` : ""}
             </div>
           </div>
@@ -262,8 +267,6 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
       <div key="fresh-label" className="romm-panel-muted" style={{ fontSize: "11px", marginBottom: "6px" }}>
         Or start fresh:
       </div>,
-    );
-    rightChildren.push(
       <div key="default-btn" style={{ marginBottom: "6px" }}>
         <DialogButton
           style={btnPrimaryStyle}

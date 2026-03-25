@@ -53,6 +53,37 @@ def _mark_older_versions_in_slot(
             matched_server_ids.add(ss_id)
 
 
+def _find_slot_fallback(
+    server_saves: list[dict],
+    active_slot: str | None,
+    matched_server_ids: set[int],
+) -> dict | None:
+    """Find the newest server save in the active slot that hasn't been matched yet."""
+    candidates = [
+        ss
+        for ss in server_saves
+        if ss.get("id") not in matched_server_ids
+        and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda s: s.get("updated_at", ""))
+
+
+def _apply_slot_fallback(
+    fn: str,
+    candidates: list[dict],
+    newest: dict,
+    result: MatchResult,
+) -> None:
+    """Record fallback match and mark all slot candidates as matched."""
+    result.new_tracked_ids[fn] = newest["id"]
+    for sc in candidates:
+        sc_id = sc.get("id")
+        if sc_id is not None:
+            result.matched_server_ids.add(sc_id)
+
+
 def _match_single_local_file(
     lf: dict,
     server_by_id: dict[int, dict],
@@ -84,22 +115,17 @@ def _match_single_local_file(
 
     # Priority 3: fallback to newest in active slot
     if not server and server_saves:
-        slot_candidates = [
-            ss
-            for ss in server_saves
-            if ss.get("id") not in result.matched_server_ids
-            and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
-        ]
-        if slot_candidates:
-            newest = max(slot_candidates, key=lambda s: s.get("updated_at", ""))
+        newest = _find_slot_fallback(server_saves, active_slot, result.matched_server_ids)
+        if newest:
             server = newest
             method = "slot_fallback"
-            result.new_tracked_ids[fn] = newest["id"]
-            # Mark ALL candidates as matched (they are older versions)
-            for sc in slot_candidates:
-                sc_id = sc.get("id")
-                if sc_id is not None:
-                    result.matched_server_ids.add(sc_id)
+            slot_candidates = [
+                ss
+                for ss in server_saves
+                if ss.get("id") not in result.matched_server_ids
+                and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
+            ]
+            _apply_slot_fallback(fn, slot_candidates, newest, result)
 
     if server and server.get("id") is not None:
         result.matched_server_ids.add(server["id"])

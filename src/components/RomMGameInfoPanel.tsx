@@ -99,6 +99,23 @@ function displaySlot(slot: string | null): string {
   return slot;
 }
 
+/** Refresh slot configuration and available slots — extracted to reduce nesting depth. */
+function refreshSlotState(
+  romId: number,
+  setter: React.Dispatch<React.SetStateAction<PanelState>>,
+): void {
+  isSaveTrackingConfigured(romId)
+    .then((result) => setter((prev) => ({ ...prev, slotConfirmed: result.configured })))
+    .catch(() => {});
+  getSaveSlots(romId)
+    .then((slotResult) => setter((prev) => ({
+      ...prev,
+      availableSlots: slotResult.slots || [],
+      activeSlot: slotResult.active_slot || prev.activeSlot,
+    })))
+    .catch(() => {});
+}
+
 export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
   const [state, setState] = useState<PanelState>({
     loading: true,
@@ -224,11 +241,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
         // Check if save slot tracking is configured for this game
         if (cached.save_sync_enabled) {
-          isSaveTrackingConfigured(romId).then((result) => {
-            if (!cancelled) {
-              setState((prev) => ({ ...prev, slotConfirmed: result.configured }));
-            }
-          }).catch(() => {});
+          refreshSlotState(romId, setState);
         }
 
         // Phase 2: Background fetch for data not available in cache
@@ -315,18 +328,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           saveStatus: updatedStatus,
           conflicts,
         }));
-        // Also re-check slot configuration
-        isSaveTrackingConfigured(romIdRef.current).then((result) => {
-          setState((prev) => ({ ...prev, slotConfirmed: result.configured }));
-        }).catch(() => {});
-        // Also refresh slot data so the saves tab reflects changes
-        getSaveSlots(romIdRef.current).then((slotResult) => {
-          setState((prev) => ({
-            ...prev,
-            availableSlots: slotResult.slots || [],
-            activeSlot: slotResult.active_slot || prev.activeSlot,
-          }));
-        }).catch(() => {});
+        // Also re-check slot configuration + refresh slot data
+        refreshSlotState(romIdRef.current, setState);
       } else if (detail?.type === "bios" && detail.platform_slug) {
         const updated = await checkPlatformBios(detail.platform_slug).catch((): BiosStatus => ({ needs_bios: false }));
         setState((prev) => ({ ...prev, biosStatus: updated.needs_bios ? updated : null }));
@@ -756,10 +759,6 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     leftColumnChildren.push(
       createElement("div", { key: "files-title", className: "romm-panel-section-title", style: { marginBottom: "8px" } }, "Save Files"),
-    );
-
-    // Status row
-    leftColumnChildren.push(
       createElement("div", {
         key: "savesync-status-row",
         className: "romm-panel-status-inline",
@@ -903,7 +902,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       for (const s of state.availableSlots) {
         const isActive = state.activeSlot === s.slot;
         const isLocal = s.source === "local";
-        const dotColor = isActive ? "#5ba32b" : isLocal ? "#d4a72c" : "#8f98a0";
+        let dotColor = "#8f98a0";
+        if (isActive) dotColor = "#5ba32b";
+        else if (isLocal) dotColor = "#d4a72c";
         const textColor = isLocal ? "rgba(255,255,255,0.6)" : "#fff";
         const slotLabel = `${displaySlot(s.slot)} (${s.count})${isLocal ? " \u2022 local" : ""}`;
         rightColumnChildren.push(
