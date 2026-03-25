@@ -535,6 +535,14 @@ class SaveService:
         self._update_file_sync_state(
             rom_id_str, filename, result, file_path, system, emulator_tag=emulator, core_so=core_so
         )
+
+        # Promote local slot to server after successful upload
+        if slot:
+            slots_dict = self._save_sync_state.get("saves", {}).get(rom_id_str, {}).get("slots", {})
+            if slot in slots_dict and slots_dict[slot].get("source") == "local":
+                slots_dict[slot]["source"] = "server"
+                slots_dict[slot]["count"] = 1
+
         self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str} (emulator={emulator})")
         return result
 
@@ -1194,18 +1202,28 @@ class SaveService:
         }
 
     async def get_save_slots(self, rom_id: int) -> dict:
-        """List available save slots for a ROM from the server."""
+        """List available save slots for a ROM.
+
+        Merges server slots with locally-created slots. Persists the merged
+        result so local slots survive restarts. Promotes local slots to server
+        when they appear on the server. Removes server slots that no longer
+        exist on the server (unless they are the active_slot).
+        """
         rom_id = int(rom_id)
         if not self._is_save_sync_enabled():
             return {"success": False, "slots": [], "active_slot": "default"}
 
+        rom_id_str = str(rom_id)
         device_id = self._get_server_device_id()
-        rom_state = self._save_sync_state.get("saves", {}).get(str(rom_id), {})
+        rom_state = self._save_sync_state.get("saves", {}).get(rom_id_str, {})
         active_slot = rom_state.get(
             "active_slot",
             self._save_sync_state.get("settings", {}).get("default_slot", "default"),
         )
+        persisted_slots: dict[str, dict] = rom_state.get("slots", {})
 
+        # Fetch server slots
+        server_slots_list: list[dict] = []
         try:
             summary = await self._loop.run_in_executor(
                 None,
@@ -1213,15 +1231,56 @@ class SaveService:
                     lambda: self._romm_api.get_save_summary(rom_id, device_id=device_id),
                 ),
             )
-            slots = summary.get("slots", [])
+            server_slots_list = summary.get("slots", [])
         except Exception as e:
             self._log_debug(f"Failed to fetch save slots for rom {rom_id}: {e}")
-            slots = []
 
-        return {"success": True, "slots": slots, "active_slot": active_slot}
+        # Merge: update persisted slots with server data, promote local→server
+        merged: dict[str, dict] = {}
+        for s in server_slots_list:
+            name = s.get("slot") or s.get("slot_name") or "default"
+            merged[name] = {
+                "source": "server",
+                "count": s.get("count", 0),
+                "latest_updated_at": s.get("latest_updated_at"),
+            }
+
+        # Keep local slots that are NOT on server
+        for name, info in persisted_slots.items():
+            if name not in merged:
+                if info.get("source") == "local":
+                    # Still local — keep it
+                    merged[name] = {"source": "local", "count": 0, "latest_updated_at": None}
+                # If it was "server" but is gone from server now — drop it
+                # (unless it's the active_slot)
+                elif info.get("source") == "server" and name == active_slot:
+                    merged[name] = {"source": "server", "count": 0, "latest_updated_at": None}
+
+        # Persist merged slots in state
+        game_entry = self._save_sync_state.setdefault("saves", {}).setdefault(rom_id_str, {})
+        game_entry["slots"] = merged
+        self.save_state()
+
+        # Build response list
+        result_slots = [
+            {
+                "slot": name,
+                "source": info.get("source", "server"),
+                "count": info.get("count", 0),
+                "latest_updated_at": info.get("latest_updated_at"),
+            }
+            for name, info in sorted(merged.items())
+        ]
+
+        return {"success": True, "slots": result_slots, "active_slot": active_slot}
 
     def set_game_slot(self, rom_id: int, slot: str) -> dict:
-        """Set the active save slot for a specific game."""
+        """Set the active save slot for a specific game.
+
+        If the slot doesn't exist yet (not on server), it is persisted
+        as a local slot. It will be promoted to server once a save is
+        uploaded to it.
+        """
         rom_id = int(rom_id)
         slot = str(slot).strip()
         if not slot:
@@ -1233,6 +1292,11 @@ class SaveService:
             saves[rom_id_str] = {"files": {}, "active_slot": slot}
         else:
             saves[rom_id_str]["active_slot"] = slot
+
+        # Ensure slot is in the persisted slots dict
+        slots_dict: dict[str, dict] = saves[rom_id_str].setdefault("slots", {})
+        if slot not in slots_dict:
+            slots_dict[slot] = {"source": "local", "count": 0, "latest_updated_at": None}
 
         self.save_state()
         return {"success": True, "active_slot": slot}
@@ -1251,10 +1315,6 @@ class SaveService:
         game_state = self._save_sync_state["saves"].get(rom_id_str, {})
         configured = game_state.get("slot_confirmed", False)
         active_slot = game_state.get("active_slot") if configured else None
-        self._logger.info(
-            f"is_save_tracking_configured({rom_id}): configured={configured} "
-            f"active_slot={active_slot} game_state_keys={list(game_state.keys())}"
-        )
         return {"configured": configured, "active_slot": active_slot}
 
     async def get_save_setup_info(self, rom_id: int) -> dict:

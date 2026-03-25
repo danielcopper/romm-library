@@ -313,6 +313,7 @@ export interface SaveStatus {
 
 export interface SaveSlotSummary {
   slot: string;
+  source: "server" | "local";
   count: number;
   latest_updated_at: string | null;
 }

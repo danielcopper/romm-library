@@ -64,7 +64,7 @@ interface PanelState {
   raId: number | null;
   slotConfirmed: boolean;
   activeSlot: string;
-  availableSlots: Array<{ slot: string; count: number; latest_updated_at: string | null }>;
+  availableSlots: Array<{ slot: string; source?: "server" | "local"; count: number; latest_updated_at: string | null }>;
   slotsLoading: boolean;
   newSlotInput: string;
   showNewSlotInput: boolean;
@@ -99,14 +99,7 @@ function displaySlot(slot: string | null): string {
   return slot;
 }
 
-type SlotEntry = { slot: string; count: number; latest_updated_at: string | null };
-
-/** Merge server slots with locally-created slots (count=0) that don't exist on the server yet. */
-function mergeSlots(serverSlots: SlotEntry[], localSlots: SlotEntry[]): SlotEntry[] {
-  const serverNames = new Set(serverSlots.map((s) => s.slot));
-  const localOnly = localSlots.filter((s) => !serverNames.has(s.slot) && s.count === 0);
-  return [...serverSlots, ...localOnly];
-}
+type SlotEntry = { slot: string; source?: "server" | "local"; count: number; latest_updated_at: string | null };
 
 export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
   const [state, setState] = useState<PanelState>({
@@ -332,7 +325,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         getSaveSlots(romIdRef.current).then((slotResult) => {
           setState((prev) => ({
             ...prev,
-            availableSlots: mergeSlots(slotResult.slots || [], prev.availableSlots),
+            availableSlots: slotResult.slots || [],
             activeSlot: slotResult.active_slot || prev.activeSlot,
           }));
         }).catch(() => {});
@@ -426,17 +419,12 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       try {
         const result = await getSaveSlots(state.romId!);
         if (cancelled) return;
-        setState((prev) => {
-          const serverSlots = result.slots || [];
-          const serverSlotNames = new Set(serverSlots.map((s: { slot: string }) => s.slot));
-          const localOnly = prev.availableSlots.filter((s) => !serverSlotNames.has(s.slot) && s.count === 0);
-          return {
-            ...prev,
-            activeSlot: result.active_slot || "default",
-            availableSlots: [...serverSlots, ...localOnly],
-            slotsLoading: false,
-          };
-        });
+        setState((prev) => ({
+          ...prev,
+          activeSlot: result.active_slot || "default",
+          availableSlots: result.slots || [],
+          slotsLoading: false,
+        }));
       } catch (e) {
         debugLog(`Failed to load save slots: ${e}`);
         if (!cancelled) {
@@ -922,10 +910,10 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           },
             createElement("span", {
               className: "romm-status-dot",
-              style: { backgroundColor: isActive ? "#5ba32b" : "#8f98a0" },
+              style: { backgroundColor: isActive ? "#5ba32b" : s.source === "local" ? "#d4a72c" : "#8f98a0" },
             }),
-            createElement("span", { style: { fontSize: "13px", color: "#fff", flex: 1 } },
-              `${displaySlot(s.slot)} (${s.count})`,
+            createElement("span", { style: { fontSize: "13px", color: s.source === "local" ? "rgba(255,255,255,0.6)" : "#fff", flex: 1 } },
+              `${displaySlot(s.slot)} (${s.count})${s.source === "local" ? " \u2022 local" : ""}`,
             ),
             isActive
               ? createElement("span", { key: "active-label", style: { fontSize: "11px", color: "#5ba32b" } }, "active")
@@ -991,7 +979,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
                   newSlotInput: "",
                   availableSlots: prev.availableSlots.some((s) => s.slot === name)
                     ? prev.availableSlots
-                    : [...prev.availableSlots, { slot: name, count: 0, latest_updated_at: null }],
+                    : [...prev.availableSlots, { slot: name, source: "local" as const, count: 0, latest_updated_at: null }],
                 }));
                 window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: state.romId } }));
               }
