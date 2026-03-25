@@ -99,8 +99,6 @@ function displaySlot(slot: string | null): string {
   return slot;
 }
 
-type SlotEntry = { slot: string; source?: "server" | "local"; count: number; latest_updated_at: string | null };
-
 export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
   const [state, setState] = useState<PanelState>({
     loading: true,
