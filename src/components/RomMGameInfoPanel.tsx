@@ -415,7 +415,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
 
     async function loadSlots() {
       try {
-        const result = await getSaveSlots(state.romId!);
+        if (!state.romId) return;
+        const result = await getSaveSlots(state.romId);
         if (cancelled) return;
         setState((prev) => ({
           ...prev,
@@ -847,7 +848,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
                 return ds.last_synced_at > latest.last_synced_at ? ds : latest;
               }, f.device_syncs[0]);
 
-              if (lastSyncer && lastSyncer.device_name) {
+              if (lastSyncer?.device_name) {
                 fileRowChildren.push(
                   createElement("span", {
                     key: "device-info",
@@ -901,6 +902,10 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     } else if (state.availableSlots.length > 0) {
       for (const s of state.availableSlots) {
         const isActive = state.activeSlot === s.slot;
+        const isLocal = s.source === "local";
+        const dotColor = isActive ? "#5ba32b" : isLocal ? "#d4a72c" : "#8f98a0";
+        const textColor = isLocal ? "rgba(255,255,255,0.6)" : "#fff";
+        const slotLabel = `${displaySlot(s.slot)} (${s.count})${isLocal ? " \u2022 local" : ""}`;
         rightColumnChildren.push(
           createElement("div", {
             key: `slot-${s.slot}`,
@@ -908,11 +913,9 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           },
             createElement("span", {
               className: "romm-status-dot",
-              style: { backgroundColor: isActive ? "#5ba32b" : s.source === "local" ? "#d4a72c" : "#8f98a0" },
+              style: { backgroundColor: dotColor },
             }),
-            createElement("span", { style: { fontSize: "13px", color: s.source === "local" ? "rgba(255,255,255,0.6)" : "#fff", flex: 1 } },
-              `${displaySlot(s.slot)} (${s.count})${s.source === "local" ? " \u2022 local" : ""}`,
-            ),
+            createElement("span", { style: { fontSize: "13px", color: textColor, flex: 1 } }, slotLabel),
             isActive
               ? createElement("span", { key: "active-label", style: { fontSize: "11px", color: "#5ba32b" } }, "active")
               : createElement(DialogButton as any, {
@@ -920,10 +923,11 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
                   style: { padding: "2px 8px", minWidth: "auto", fontSize: "11px", width: "auto" },
                   onClick: async () => {
                     try {
-                      const result = await setGameSlot(state.romId!, s.slot);
+                      if (!state.romId) return;
+                      const result = await setGameSlot(state.romId, s.slot);
                       if (result.success) {
                         setState((prev) => ({ ...prev, activeSlot: s.slot }));
-                        window.dispatchEvent(new CustomEvent("romm_data_changed", {
+                        globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
                           detail: { type: "save_sync", rom_id: state.romId },
                         }));
                       }
@@ -943,16 +947,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     }
 
     // New Slot button / input
-    if (!state.showNewSlotInput) {
-      rightColumnChildren.push(
-        createElement(DialogButton as any, {
-          key: "new-slot-btn",
-          style: { padding: "4px 8px", minWidth: "auto", fontSize: "12px", marginTop: "8px" },
-          onClick: () => setState((prev) => ({ ...prev, showNewSlotInput: true })),
-          noFocusRing: false,
-        }, "+ New Slot"),
-      );
-    } else {
+    if (state.showNewSlotInput) {
       rightColumnChildren.push(
         createElement("div", { key: "new-slot-input", style: { marginTop: "8px", display: "flex", gap: "4px", alignItems: "center" } },
           createElement("input", {
@@ -967,7 +962,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
             onClick: async () => {
               const name = state.newSlotInput.trim();
               if (!name) return;
-              const result = await setGameSlot(state.romId!, name);
+              if (!state.romId) return;
+              const result = await setGameSlot(state.romId, name);
               if (result.success) {
                 // Add new slot to local list (it won't exist on RomM until first upload)
                 setState((prev) => ({
@@ -979,12 +975,21 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
                     ? prev.availableSlots
                     : [...prev.availableSlots, { slot: name, source: "local" as const, count: 0, latest_updated_at: null }],
                 }));
-                window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: state.romId } }));
+                globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: state.romId } }));
               }
             },
             noFocusRing: false,
           }, "Create"),
         ),
+      );
+    } else {
+      rightColumnChildren.push(
+        createElement(DialogButton as any, {
+          key: "new-slot-btn",
+          style: { padding: "4px 8px", minWidth: "auto", fontSize: "12px", marginTop: "8px" },
+          onClick: () => setState((prev) => ({ ...prev, showNewSlotInput: true })),
+          noFocusRing: false,
+        }, "+ New Slot"),
       );
     }
 
@@ -1263,7 +1268,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
         onComplete: () => {
           // Refresh: mark as configured and reload save status
           setState((prev) => ({ ...prev, slotConfirmed: true }));
-          window.dispatchEvent(new CustomEvent("romm_data_changed", {
+          globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
             detail: { type: "save_sync", rom_id: state.romId },
           }));
         },

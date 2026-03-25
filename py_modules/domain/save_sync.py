@@ -39,6 +39,128 @@ class MatchResult:
     new_tracked_ids: dict[str, int] = field(default_factory=dict)  # filename -> save_id to persist
 
 
+def _mark_older_versions_in_slot(
+    server: dict,
+    server_saves: list[dict],
+    matched_server_ids: set[int],
+) -> None:
+    """Mark all server saves in the same slot up to the matched timestamp as matched."""
+    matched_ts = server.get("updated_at", "")
+    matched_slot = server.get("slot")
+    for ss in server_saves:
+        ss_id = ss.get("id")
+        if ss_id is not None and ss.get("slot") == matched_slot and ss.get("updated_at", "") <= matched_ts:
+            matched_server_ids.add(ss_id)
+
+
+def _match_single_local_file(
+    lf: dict,
+    server_by_id: dict[int, dict],
+    server_by_name: dict[str, dict],
+    server_saves: list[dict],
+    active_slot: str | None,
+    file_state: dict,
+    result: MatchResult,
+) -> MatchedSave:
+    """Match one local file to a server save using the priority chain.
+
+    Mutates result.matched_server_ids and result.new_tracked_ids as side effects.
+    """
+    fn = lf["filename"]
+    server: dict | None = None
+    method = "local_only"
+
+    # Priority 1: tracked_save_id
+    tracked_id = file_state.get("tracked_save_id")
+    if tracked_id and tracked_id in server_by_id:
+        server = server_by_id[tracked_id]
+        method = "tracked_id"
+
+    # Priority 2: filename match
+    if not server:
+        server = server_by_name.get(fn)
+        if server:
+            method = "filename"
+
+    # Priority 3: fallback to newest in active slot
+    if not server and server_saves:
+        slot_candidates = [
+            ss
+            for ss in server_saves
+            if ss.get("id") not in result.matched_server_ids
+            and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
+        ]
+        if slot_candidates:
+            newest = max(slot_candidates, key=lambda s: s.get("updated_at", ""))
+            server = newest
+            method = "slot_fallback"
+            result.new_tracked_ids[fn] = newest["id"]
+            # Mark ALL candidates as matched (they are older versions)
+            for sc in slot_candidates:
+                sc_id = sc.get("id")
+                if sc_id is not None:
+                    result.matched_server_ids.add(sc_id)
+
+    if server and server.get("id") is not None:
+        result.matched_server_ids.add(server["id"])
+        _mark_older_versions_in_slot(server, server_saves, result.matched_server_ids)
+
+    return MatchedSave(
+        local_file=lf,
+        server_save=server,
+        filename=fn,
+        match_method=method,
+    )
+
+
+def _collect_server_only_saves(
+    server_saves: list[dict],
+    matched_server_ids: set[int],
+    local_by_name: dict[str, dict],
+    rom_name: str | None,
+) -> list[MatchedSave]:
+    """Collect server saves that have no local counterpart.
+
+    Groups by base name, picks newest per group, and computes the local
+    filename to use when downloading.
+    """
+    unmatched = [
+        ss
+        for ss in server_saves
+        if ss.get("id") not in matched_server_ids and ss.get("file_name", "") not in local_by_name
+    ]
+    if not unmatched:
+        return []
+
+    groups: dict[str, list[dict]] = {}
+    for ss in unmatched:
+        base = ss.get("file_name_no_tags") or ss.get("file_name", "unknown")
+        groups.setdefault(base, []).append(ss)
+
+    server_only: list[MatchedSave] = []
+    for _base, group in groups.items():
+        newest = max(group, key=lambda s: s.get("updated_at", ""))
+        dl_filename = (
+            (rom_name + "." + newest.get("file_extension", "srm"))
+            if rom_name
+            else (_base + "." + newest.get("file_extension", "srm"))
+        )
+        server_only.append(
+            MatchedSave(
+                local_file=None,
+                server_save=newest,
+                filename=dl_filename,
+                match_method="server_only",
+            )
+        )
+        for ss in group:
+            ss_id = ss.get("id")
+            if ss_id is not None:
+                matched_server_ids.add(ss_id)
+
+    return server_only
+
+
 def match_local_to_server_saves(
     local_files: list[dict],
     server_saves: list[dict],
@@ -91,95 +213,14 @@ def match_local_to_server_saves(
 
     # --- Pass 1: Match each local file to a server save ---
     for lf in sorted(local_files, key=lambda x: x["filename"]):
-        fn = lf["filename"]
-        file_state = files_state.get(fn, {})
-        server: dict | None = None
-        method = "local_only"
-
-        # Priority 1: tracked_save_id
-        tracked_id = file_state.get("tracked_save_id")
-        if tracked_id and tracked_id in server_by_id:
-            server = server_by_id[tracked_id]
-            method = "tracked_id"
-
-        # Priority 2: filename match
-        if not server:
-            server = server_by_name.get(fn)
-            if server:
-                method = "filename"
-
-        # Priority 3: fallback to newest in active slot
-        if not server and server_saves:
-            slot_candidates = [
-                ss
-                for ss in server_saves
-                if ss.get("id") not in result.matched_server_ids
-                and (ss.get("slot") == active_slot or (active_slot and ss.get("slot") is None))
-            ]
-            if slot_candidates:
-                newest = max(slot_candidates, key=lambda s: s.get("updated_at", ""))
-                server = newest
-                method = "slot_fallback"
-                result.new_tracked_ids[fn] = newest["id"]
-                # Mark ALL candidates as matched (they are older versions)
-                for sc in slot_candidates:
-                    sc_id = sc.get("id")
-                    if sc_id is not None:
-                        result.matched_server_ids.add(sc_id)
-
-        if server and server.get("id") is not None:
-            result.matched_server_ids.add(server["id"])
-            # Also mark older versions with same base name in same slot
-            matched_ts = server.get("updated_at", "")
-            matched_slot = server.get("slot")
-            for ss in server_saves:
-                ss_id = ss.get("id")
-                if ss_id is not None and ss.get("slot") == matched_slot and ss.get("updated_at", "") <= matched_ts:
-                    result.matched_server_ids.add(ss_id)
-
-        result.matched.append(
-            MatchedSave(
-                local_file=lf,
-                server_save=server,
-                filename=fn,
-                match_method=method,
-            )
+        file_state = files_state.get(lf["filename"], {})
+        matched = _match_single_local_file(
+            lf, server_by_id, server_by_name, server_saves, active_slot, file_state, result
         )
+        result.matched.append(matched)
 
     # --- Pass 2: Server-only saves (not matched by any local file) ---
-    # Group by base name, pick newest per group, use local filename
-    unmatched = [
-        ss
-        for ss in server_saves
-        if ss.get("id") not in result.matched_server_ids and ss.get("file_name", "") not in local_by_name
-    ]
-    if unmatched:
-        groups: dict[str, list[dict]] = {}
-        for ss in unmatched:
-            base = ss.get("file_name_no_tags") or ss.get("file_name", "unknown")
-            groups.setdefault(base, []).append(ss)
-
-        for _base, group in groups.items():
-            newest = max(group, key=lambda s: s.get("updated_at", ""))
-            # Compute local filename
-            dl_filename = (
-                (rom_name + "." + newest.get("file_extension", "srm"))
-                if rom_name
-                else (_base + "." + newest.get("file_extension", "srm"))
-            )
-            result.matched.append(
-                MatchedSave(
-                    local_file=None,
-                    server_save=newest,
-                    filename=dl_filename,
-                    match_method="server_only",
-                )
-            )
-            # Mark all in group
-            for ss in group:
-                ss_id = ss.get("id")
-                if ss_id is not None:
-                    result.matched_server_ids.add(ss_id)
+    result.matched.extend(_collect_server_only_saves(server_saves, result.matched_server_ids, local_by_name, rom_name))
 
     return result
 

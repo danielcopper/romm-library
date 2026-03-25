@@ -279,7 +279,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
                 body: "Configure save sync in the Saves tab first",
               });
               // Switch to saves tab
-              window.dispatchEvent(new CustomEvent("romm_tab_switch", { detail: { tab: "saves" } }));
+              globalThis.dispatchEvent(new CustomEvent("romm_tab_switch", { detail: { tab: "saves" } }));
               setState("play");
               return;
             }
@@ -304,7 +304,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
               return;
             }
             // Conflict resolved — notify sibling components to refresh
-            window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+            globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
           }
 
           if (!result.success && result.errors && result.errors.length > 0) {
@@ -355,7 +355,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
         }
       }
       // Resolved or no conflicts left — notify siblings and go back to play
-      window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+      globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
       setState("play");
     } catch (e) {
       debugLog(`CustomPlayButton: resolve conflict failed: ${e}`);
@@ -385,7 +385,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     try {
       const result = await removeRom(romId);
       if (result.success) {
-        window.dispatchEvent(new CustomEvent("romm_rom_uninstalled", { detail: { rom_id: romId } }));
+        globalThis.dispatchEvent(new CustomEvent("romm_rom_uninstalled", { detail: { rom_id: romId } }));
         toaster.toast({ title: "RomM Sync", body: `${romName || "ROM"} uninstalled` });
         // Dark pulse transition before showing Download button
         setState("uninstalling");

@@ -49,6 +49,16 @@ const btnPrimaryStyle: React.CSSProperties = {
   color: "#1a9fff",
 };
 
+function getWizardDescription(info: SaveSetupInfo): string {
+  if (!info.has_local_saves && info.server_slots.length > 0) {
+    return "Server has saves \u2014 choose which slot to track.";
+  }
+  if (info.has_local_saves && info.server_slots.length > 0) {
+    return "You have local saves and the server has saves too.";
+  }
+  return "Choose a save slot to get started.";
+}
+
 export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete }) => {
   const [info, setInfo] = useState<SaveSetupInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -266,18 +276,7 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
     );
   }
 
-  if (!showCustomInput) {
-    rightChildren.push(
-      <div key="custom-toggle">
-        <DialogButton
-          style={btnStyle}
-          onClick={() => setShowCustomInput(true)}
-        >
-          Custom slot...
-        </DialogButton>
-      </div>,
-    );
-  } else {
+  if (showCustomInput) {
     rightChildren.push(
       <div key="custom-input" style={{ display: "flex", gap: "6px", alignItems: "center" }}>
         <input
@@ -305,6 +304,17 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
         </DialogButton>
       </div>,
     );
+  } else {
+    rightChildren.push(
+      <div key="custom-toggle">
+        <DialogButton
+          style={btnStyle}
+          onClick={() => setShowCustomInput(true)}
+        >
+          Custom slot...
+        </DialogButton>
+      </div>,
+    );
   }
 
   return (
@@ -314,11 +324,7 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
         <div style={{ color: "#d4513f", fontSize: "12px", marginBottom: "8px" }}>{error}</div>
       )}
       <div className="romm-panel-muted" style={{ fontSize: "12px", marginBottom: "12px" }}>
-        {!info.has_local_saves && info.server_slots.length > 0
-          ? "Server has saves — choose which slot to track."
-          : info.has_local_saves && info.server_slots.length > 0
-            ? "You have local saves and the server has saves too."
-            : "Choose a save slot to get started."}
+        {getWizardDescription(info)}
       </div>
       <div style={{ display: "flex", gap: "24px" }}>
         <div style={{ flex: 2, minWidth: 0 }}>{leftChildren}</div>

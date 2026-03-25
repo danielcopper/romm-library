@@ -1616,6 +1616,26 @@ class SaveService:
             settings.setdefault("clock_skew_tolerance_sec", 60)
         return settings
 
+    @staticmethod
+    def _sanitize_setting(key: str, value: object, valid_modes: set[str]) -> tuple[object, bool]:
+        """Validate and coerce a single settings key/value pair.
+
+        Returns (coerced_value, skip) where skip=True means the value should
+        be discarded (e.g. invalid conflict_mode or empty slot name).
+        """
+        if key == "conflict_mode":
+            return value, value not in valid_modes
+        if key == "clock_skew_tolerance_sec":
+            return max(0, int(value)), False  # type: ignore[arg-type]
+        if key == "default_slot":
+            coerced = str(value).strip()
+            return coerced, not coerced  # skip if empty
+        if key == "autocleanup_limit":
+            return max(1, int(value)), False  # type: ignore[arg-type]
+        if key in ("save_sync_enabled", "sync_before_launch", "sync_after_exit"):
+            return bool(value), False
+        return value, False
+
     def update_save_sync_settings(self, settings: dict) -> dict:
         """Update save sync settings (conflict_mode, sync toggles, etc.)."""
         allowed_keys = {
@@ -1634,18 +1654,9 @@ class SaveService:
         for key, value in settings.items():
             if key not in allowed_keys:
                 continue
-            if key == "conflict_mode" and value not in valid_modes:
+            value, skip = self._sanitize_setting(key, value, valid_modes)
+            if skip:
                 continue
-            if key == "clock_skew_tolerance_sec":
-                value = max(0, int(value))
-            if key == "default_slot":
-                value = str(value).strip()
-                if not value:
-                    continue  # reject empty slot names
-            if key == "autocleanup_limit":
-                value = max(1, int(value))
-            if key in ("save_sync_enabled", "sync_before_launch", "sync_after_exit"):
-                value = bool(value)
             current[key] = value
 
         self.save_state()
