@@ -951,7 +951,8 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
                       if (!state.romId) return;
                       const result = await setGameSlot(state.romId, s.slot);
                       if (result.success) {
-                        setState((prev) => ({ ...prev, activeSlot: s.slot }));
+                        // Clear conflicts immediately — they belong to the previous slot
+                        setState((prev) => ({ ...prev, activeSlot: s.slot, conflicts: [] }));
                         globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
                           detail: { type: "save_sync", rom_id: state.romId },
                         }));

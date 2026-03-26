@@ -532,7 +532,9 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       const result = await syncRomSaves(info.romId);
       if (result.success) {
         const n = result.synced ?? 0;
-        const label = n === 0 ? "no files updated" : n === 1 ? "1 file updated" : `${n} files updated`;
+        const c = (result as any).conflicts?.length ?? 0;
+        let label = n === 0 ? "no files updated" : n === 1 ? "1 file updated" : `${n} files updated`;
+        if (c > 0) label += `, ${c} conflict(s) need resolution`;
         toaster.toast({ title: "RomM Sync", body: `Saves synced (${label})` });
         window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: info.romId } }));
         // Refresh save sync status — last_sync_check_at was just set by the backend
