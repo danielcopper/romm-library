@@ -439,7 +439,7 @@ class SaveService:
                 "emulator": emulator_tag or "retroarch",
                 "system": system,
                 "last_synced_core": core_so,
-                "active_slot": "default",
+                "active_slot": self._save_sync_state.get("settings", {}).get("default_slot", "default"),
             }
         save_entry = self._save_sync_state["saves"][rom_id_str]
         save_entry.setdefault("files", {})
