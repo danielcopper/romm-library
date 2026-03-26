@@ -559,7 +559,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
                 <PanelSectionRow>
                   <Field
                     label="Default Save Slot"
-                    description={saveSyncSettings.default_slot || "(no slot)"}
+                    description={`${saveSyncSettings.default_slot || "(no slot)"} — applies to new games and games without a per-game slot override`}
                   >
                     <DialogButton onClick={() => showModal(
                       <TextInputModal
