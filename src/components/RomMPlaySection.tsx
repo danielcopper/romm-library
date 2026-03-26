@@ -299,6 +299,15 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           achievementTotal: cached.achievement_summary?.total ?? 0,
         }));
 
+        // Background: fetch active_slot from save status (not in cached data)
+        if (cached.save_sync_enabled) {
+          getSaveStatus(romId).then((saveStatus) => {
+            if (!cancelled && saveStatus && "active_slot" in saveStatus) {
+              setInfo((prev) => ({ ...prev, activeSlot: saveStatus.active_slot ?? null }));
+            }
+          }).catch(() => {});
+        }
+
         // Auto-apply SGDB artwork on first visit (fire-and-forget)
         // Only mark as applied after success so transient failures allow retry on next visit
         if (!artworkApplied.has(appId)) {
