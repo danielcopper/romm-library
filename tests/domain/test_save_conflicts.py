@@ -196,6 +196,17 @@ class TestDetectConflictLightweight:
         result = detect_conflict_lightweight(1000.0, 1024, None, file_state)
         assert result == "skip"
 
+    def test_old_state_hash_only_no_mtime_no_size_returns_valid(self):
+        """Backward-compat: old state has last_sync_hash but no mtime or size keys.
+
+        stored_local_mtime is None -> falls back to size comparison.
+        stored_local_size is also None -> local_changed is False.
+        No server save -> result is skip (neither side changed).
+        """
+        file_state = {"last_sync_hash": "abc123"}
+        result = detect_conflict_lightweight(1000.0, 1024, None, file_state)
+        assert result == "skip"
+
     def test_server_size_change_triggers_server_changed(self):
         """Same timestamp but different size -> server changed."""
         file_state = {
