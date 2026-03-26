@@ -308,7 +308,7 @@ export interface SaveStatus {
   device_id: string;
   last_sync_check_at: string | null;
   conflicts?: PendingConflict[];
-  active_slot?: string;
+  active_slot?: string | null;
 }
 
 export interface SaveSlotSummary {

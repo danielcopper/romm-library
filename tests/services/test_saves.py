@@ -3158,3 +3158,4 @@ class TestUpdateFileSyncStateClearsNewerDismissed:
 
         entry = svc._save_sync_state["saves"]["42"]["files"]["pokemon.srm"]
         assert "dismissed_newer_save_id" not in entry
+        assert entry.get("tracked_save_id") == 300

@@ -1643,8 +1643,6 @@ class SaveService:
         """
         rom_id = int(rom_id)
         rom_id_str = str(rom_id)
-        save_state = self._save_sync_state.get("saves", {}).get(rom_id_str, {})
-        file_state = save_state.get("files", {}).get(filename, {})
 
         if resolution == "use_newer":
             info = self._get_rom_save_info(rom_id)
@@ -1667,13 +1665,16 @@ class SaveService:
                 rom_id_str,
                 info["system"],
             )
-            # Clear dismissed
-            file_state.pop("dismissed_newer_save_id", None)
+            # Re-fetch live reference — _do_download_save replaced the dict
+            live_state = self._save_sync_state["saves"].get(rom_id_str, {}).get("files", {}).get(filename, {})
+            live_state.pop("dismissed_newer_save_id", None)
             self.save_state()
             return {"success": True, "message": "Downloaded newer save"}
 
         if resolution == "dismiss":
-            file_state["dismissed_newer_save_id"] = newer_save_id
+            files = self._save_sync_state.get("saves", {}).get(rom_id_str, {}).setdefault("files", {})
+            live_state = files.setdefault(filename, {})
+            live_state["dismissed_newer_save_id"] = newer_save_id
             self.save_state()
             return {"success": True, "message": "Dismissed"}
 

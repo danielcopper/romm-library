@@ -411,7 +411,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       if (detail.rom_id && romIdRef.current && detail.rom_id !== romIdRef.current) return;
       const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
       const { status: saveSyncStatus, label: saveSyncLabel } = computeSaveSyncDisplay(saveStatus);
-      setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel, activeSlot: saveStatus?.active_slot ?? prev.activeSlot }));
+      setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel, activeSlot: saveStatus && "active_slot" in saveStatus ? saveStatus.active_slot ?? null : prev.activeSlot }));
       } catch (err) {
         debugLog(`RomMPlaySection: onDataChanged error: ${err}`);
       }
@@ -440,7 +440,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           detail: { type: "save_sync", rom_id: romId, has_conflict: hasConflict },
         }));
         const { status: ss, label: sl } = computeSaveSyncDisplay(saveStatus);
-        setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl, activeSlot: saveStatus?.active_slot ?? prev.activeSlot }));
+        setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl, activeSlot: saveStatus && "active_slot" in saveStatus ? saveStatus.active_slot ?? null : prev.activeSlot }));
       } catch (e) {
         debugLog(`RomMPlaySection: lightweight save check error: ${e}`);
       }
