@@ -130,7 +130,9 @@ function refreshSlotState(
     .then((slotResult) => setter((prev) => ({
       ...prev,
       availableSlots: slotResult.slots || [],
-      activeSlot: slotResult.active_slot || prev.activeSlot,
+      // Use ?? to preserve prev only when active_slot is undefined (not returned),
+      // but accept null (legacy mode) as a valid value
+      activeSlot: slotResult.active_slot !== undefined ? slotResult.active_slot : prev.activeSlot,
     })))
     .catch(() => {});
 }

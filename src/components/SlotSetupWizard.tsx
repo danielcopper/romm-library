@@ -1,5 +1,5 @@
-import { useState, useEffect, FC } from "react";
-import { DialogButton } from "@decky/ui";
+import { useState, useEffect, FC, createElement, ChangeEvent } from "react";
+import { DialogButton, ConfirmModal, TextField, showModal } from "@decky/ui";
 import { getSaveSetupInfo, confirmSlotChoice, logError } from "../api/backend";
 import type { SaveSetupInfo } from "../types";
 
@@ -64,7 +64,6 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState(false);
   const [customSlot, setCustomSlot] = useState("");
-  const [showCustomInput, setShowCustomInput] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -279,46 +278,46 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
     );
   }
 
-  if (showCustomInput) {
-    rightChildren.push(
-      <div key="custom-input" style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-        <input
-          type="text"
-          placeholder="Slot name"
-          value={customSlot}
-          onChange={(e) => setCustomSlot(e.target.value)}
-          style={{
-            flex: 1,
-            padding: "4px 8px",
-            fontSize: "12px",
-            background: "rgba(255, 255, 255, 0.08)",
-            border: "1px solid rgba(255, 255, 255, 0.2)",
-            borderRadius: "4px",
-            color: "#fff",
-            outline: "none",
-          }}
-        />
-        <DialogButton
-          style={btnStyle}
-          disabled={confirming || !customSlot.trim()}
-          onClick={() => handleConfirm(customSlot.trim())}
-        >
-          Use
-        </DialogButton>
-      </div>,
-    );
-  } else {
-    rightChildren.push(
-      <div key="custom-toggle">
-        <DialogButton
-          style={btnStyle}
-          onClick={() => setShowCustomInput(true)}
-        >
-          Custom slot...
-        </DialogButton>
-      </div>,
-    );
-  }
+  rightChildren.push(
+    <div key="custom-toggle">
+      <DialogButton
+        style={btnStyle}
+        disabled={confirming}
+        onClick={() => {
+          showModal(
+            createElement(ConfirmModal, {
+              strTitle: "Custom Slot Name",
+              bDisableBackgroundDismiss: true,
+              onOK: () => {
+                const trimmed = customSlot.trim();
+                if (!trimmed) {
+                  // Legacy mode
+                  showModal(
+                    createElement(ConfirmModal, {
+                      strTitle: "Use Legacy Mode?",
+                      strDescription: "Legacy mode (no slot) limits saves to one version per game. Are you sure?",
+                      onOK: () => handleConfirm(""),
+                    }),
+                  );
+                } else {
+                  handleConfirm(trimmed);
+                }
+              },
+            },
+              createElement(TextField, {
+                focusOnMount: true,
+                label: "Slot Name",
+                value: customSlot,
+                onChange: (e: ChangeEvent<HTMLInputElement>) => setCustomSlot(e.target.value),
+              } as any),
+            ),
+          );
+        }}
+      >
+        Custom slot...
+      </DialogButton>
+    </div>,
+  );
 
   return (
     <div style={{ padding: "12px 0" }}>
