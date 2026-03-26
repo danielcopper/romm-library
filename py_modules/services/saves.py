@@ -26,7 +26,6 @@ from domain.save_conflicts import (
     build_conflict_dict,
     check_local_changes,
     check_server_changes_fast,
-    detect_conflict_lightweight,
     determine_action,
     resolve_conflict_by_mode,
 )
@@ -44,6 +43,7 @@ if TYPE_CHECKING:
     import logging
 
     from domain.save_sync import MatchedSave
+    from services.protocols import EventEmitter
 
 
 class SaveService:
@@ -94,6 +94,7 @@ class SaveService:
         get_roms_path: RomsPathProvider,
         get_active_core: CoreResolverFn,
         plugin_version: str = "0.0.0",
+        emit: EventEmitter | None = None,
     ) -> None:
         self._romm_api = romm_api
         self._retry = retry
@@ -107,6 +108,7 @@ class SaveService:
         self._get_roms_path = get_roms_path
         self._get_active_core = get_active_core
         self._plugin_version = plugin_version
+        self._emit = emit
 
     # ------------------------------------------------------------------
     # Debug logging helper
@@ -412,16 +414,6 @@ class SaveService:
         mode = settings.get("conflict_mode", "ask_me")
         tolerance = settings.get("clock_skew_tolerance_sec", 60)
         return resolve_conflict_by_mode(mode, local_mtime, server_save, tolerance)
-
-    def _detect_conflict_lightweight(
-        self,
-        local_mtime: float,
-        local_size: int,
-        server_save: dict | None,
-        file_state: dict,
-    ) -> str:
-        """Wrapper: timestamp-only conflict detection via domain function."""
-        return detect_conflict_lightweight(local_mtime, local_size, server_save, file_state)
 
     def _update_file_sync_state(
         self,
@@ -1091,80 +1083,14 @@ class SaveService:
 
         return await self._loop.run_in_executor(None, self._get_save_status_io, rom_id, server_saves)
 
-    async def check_save_status_lightweight(self, rom_id: int) -> dict:
-        """Lightweight save status: timestamps only, no file hashing or downloads."""
-        rom_id = int(rom_id)
-        rom_id_str = str(rom_id)
-        local_files = self._find_save_files(rom_id)
-
-        server_saves: list[dict] = []
+    async def check_save_status_background(self, rom_id: int) -> None:
+        """Run full save status check in background and emit result to frontend."""
         try:
-            device_id = self._get_server_device_id()
-            server_saves = await self._loop.run_in_executor(
-                None,
-                lambda: self._retry.with_retry(lambda: self._romm_api.list_saves(rom_id, device_id=device_id)),
-            )
+            result = await self.get_save_status(rom_id)
+            if self._emit is not None:
+                await self._emit("save_status_updated", result)
         except Exception as e:
-            self._log_debug(f"Lightweight save check failed for rom {rom_id}: {e}")
-
-        server_by_name = {ss.get("file_name", ""): ss for ss in server_saves if ss.get("file_name")}
-        save_state = self._save_sync_state["saves"].get(rom_id_str, {})
-        files_state = save_state.get("files", {})
-
-        file_statuses = []
-        seen_filenames: set[str] = set()
-
-        for lf in local_files:
-            fn = lf["filename"]
-            seen_filenames.add(fn)
-            server = server_by_name.get(fn)
-            local_mtime = os.path.getmtime(lf["path"])
-            local_size = os.path.getsize(lf["path"])
-
-            status = detect_conflict_lightweight(local_mtime, local_size, server, files_state.get(fn, {}))
-
-            file_statuses.append(
-                {
-                    "filename": fn,
-                    "local_path": lf["path"],
-                    "local_hash": None,
-                    "local_mtime": datetime.fromtimestamp(local_mtime, tz=UTC).isoformat(),
-                    "local_size": local_size,
-                    "server_save_id": server.get("id") if server else None,
-                    "server_updated_at": server.get("updated_at", "") if server else None,
-                    "server_size": server.get("file_size_bytes") if server else None,
-                    "last_sync_at": files_state.get(fn, {}).get("last_sync_at"),
-                    "status": status,
-                }
-            )
-
-        # Server-only saves
-        for fn, ss in server_by_name.items():
-            if fn not in seen_filenames:
-                file_statuses.append(
-                    {
-                        "filename": fn,
-                        "local_path": None,
-                        "local_hash": None,
-                        "local_mtime": None,
-                        "local_size": None,
-                        "server_save_id": ss.get("id"),
-                        "server_updated_at": ss.get("updated_at", ""),
-                        "server_size": ss.get("file_size_bytes"),
-                        "last_sync_at": None,
-                        "status": "download",
-                    }
-                )
-
-        playtime = self._save_sync_state.get("playtime", {}).get(rom_id_str, {})
-        save_entry = self._save_sync_state.get("saves", {}).get(rom_id_str, {})
-        return {
-            "rom_id": rom_id,
-            "files": file_statuses,
-            "playtime": playtime,
-            "device_id": self._save_sync_state.get("device_id", ""),
-            "last_sync_check_at": save_entry.get("last_sync_check_at"),
-        }
+            self._log_debug(f"Background save status check failed for rom {rom_id}: {e}")
 
     async def pre_launch_sync(self, rom_id: int) -> dict:
         """Download newer saves from server before game launch."""
@@ -1363,6 +1289,7 @@ class SaveService:
                 slots_dict[resolved_slot] = {"source": "local", "count": 0, "latest_updated_at": None}
 
         self.save_state()
+        self._loop.create_task(self.check_save_status_background(rom_id))
         return {"success": True, "active_slot": resolved_slot}
 
     # ------------------------------------------------------------------

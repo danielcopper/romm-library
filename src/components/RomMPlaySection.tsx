@@ -427,7 +427,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       if (!romId) return;
       // If event specifies a rom_id, skip if it's not for this game
       if (detail.rom_id && romIdRef.current && detail.rom_id !== romIdRef.current) return;
-      const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
+      const saveStatus: SaveStatus | null = detail.save_status ?? await getSaveStatus(romId).catch((): SaveStatus | null => null);
       const { status: saveSyncStatus, label: saveSyncLabel } = computeSaveSyncDisplay(saveStatus);
       setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel, activeSlot: saveStatus && "active_slot" in saveStatus ? saveStatus.active_slot ?? null : prev.activeSlot }));
       } catch (err) {
