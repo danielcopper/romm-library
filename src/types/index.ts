@@ -272,6 +272,17 @@ export interface PendingConflict {
   created_at: string;
 }
 
+export interface NewerInSlotConflict {
+  type: "newer_in_slot";
+  rom_id: number;
+  filename: string;
+  tracked_save_id: number | null;
+  tracked_updated_at: string | null;
+  newer_save_id: number;
+  newer_updated_at: string;
+  slot: string | null;
+}
+
 export interface DeviceSyncInfo {
   device_id: string;
   device_name: string;

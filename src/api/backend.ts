@@ -1,5 +1,5 @@
 import { callable } from "@decky/api";
-import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, CollectionSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, BiosFileStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress, SaveSlotSummary, SaveSetupInfo } from "../types";
+import type { PluginSettings, SyncStats, DownloadItem, InstalledRom, PlatformSyncSetting, CollectionSyncSetting, RegistryPlatform, FirmwareStatus, FirmwareDownloadResult, BiosStatus, BiosFileStatus, RomMetadata, SaveSyncSettings, SaveStatus, PendingConflict, NewerInSlotConflict, RomLookupResult, AvailableCore, RommErrorCode, SyncPreview, AchievementSummary, AchievementList, AchievementProgress, SaveSlotSummary, SaveSetupInfo } from "../types";
 
 export interface BackendResult {
   success: boolean;
@@ -119,8 +119,8 @@ export const saveShortcutIcon = callable<[number, string], { success: boolean }>
 export const ensureDeviceRegistered = callable<[], { success: boolean; device_id: string; device_name: string }>("ensure_device_registered");
 export const getSaveStatus = callable<[number], SaveStatus>("get_save_status");
 export const checkSaveStatusLightweight = callable<[number], SaveStatus>("check_save_status_lightweight");
-export const preLaunchSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: PendingConflict[] }>("pre_launch_sync");
-export const postExitSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: PendingConflict[]; offline?: boolean }>("post_exit_sync");
+export const preLaunchSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: (PendingConflict | NewerInSlotConflict)[] }>("pre_launch_sync");
+export const postExitSync = callable<[number], { success: boolean; message: string; synced?: number; errors?: string[]; conflicts?: (PendingConflict | NewerInSlotConflict)[]; offline?: boolean }>("post_exit_sync");
 export const syncRomSaves = callable<[number], { success: boolean; message: string; synced: number; errors?: string[] }>("sync_rom_saves");
 export const syncAllSaves = callable<[], { success: boolean; message: string; synced: number; conflicts: number }>("sync_all_saves");
 export const resolveConflict = callable<[number, string, string, number, string], { success: boolean; message: string }>("resolve_conflict");
@@ -133,6 +133,7 @@ export const setGameSlot = callable<[number, string], { success: boolean; active
 export const isSaveTrackingConfigured = callable<[number], { configured: boolean; active_slot: string | null }>("is_save_tracking_configured");
 export const getSaveSetupInfo = callable<[number], SaveSetupInfo>("get_save_setup_info");
 export const confirmSlotChoice = callable<[number, string, string | null], { success: boolean; needs_conflict_resolution?: boolean; message: string }>("confirm_slot_choice");
+export const resolveNewerInSlot = callable<[number, string, "use_newer" | "keep_current" | "dismiss", number], { success: boolean; message?: string }>("resolve_newer_in_slot");
 
 // Bulk playtime for plugin-load UI update
 export const getAllPlaytime = callable<[], { playtime: Record<string, { total_seconds: number; session_count: number }> }>("get_all_playtime");
