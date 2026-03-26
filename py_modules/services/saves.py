@@ -1624,8 +1624,10 @@ class SaveService:
         if key == "clock_skew_tolerance_sec":
             return max(0, int(value)), False  # type: ignore[arg-type]
         if key == "default_slot":
+            if value is None:
+                return None, False  # None = legacy mode
             coerced = str(value).strip()
-            return coerced, not coerced  # skip if empty
+            return (coerced if coerced else None), False  # empty -> None
         if key == "autocleanup_limit":
             return max(1, int(value)), False  # type: ignore[arg-type]
         if key in ("save_sync_enabled", "sync_before_launch", "sync_after_exit"):

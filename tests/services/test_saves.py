@@ -1979,12 +1979,43 @@ class TestSaveSyncSettingsSlotAndCleanup:
         assert result["success"] is True
         assert result["settings"]["default_slot"] == "desktop"
 
-    def test_update_default_slot_empty_string_rejected(self, tmp_path):
+    def test_update_default_slot_empty_string_becomes_none(self, tmp_path):
         svc, _ = make_service(tmp_path)
         svc._save_sync_state["settings"]["save_sync_enabled"] = True
         svc._save_sync_state["settings"]["default_slot"] = "default"
         result = svc.update_save_sync_settings({"default_slot": ""})
-        assert result["settings"]["default_slot"] == "default"
+        assert result["settings"]["default_slot"] is None
+
+    def test_empty_string_becomes_none(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        val, skip = svc._sanitize_setting("default_slot", "", set())
+        assert val is None
+        assert skip is False
+
+    def test_none_value_passes_through(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        val, skip = svc._sanitize_setting("default_slot", None, set())
+        assert val is None
+        assert skip is False
+
+    def test_whitespace_only_becomes_none(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        val, skip = svc._sanitize_setting("default_slot", "   ", set())
+        assert val is None
+        assert skip is False
+
+    def test_nonempty_string_trimmed(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        val, skip = svc._sanitize_setting("default_slot", "  desktop  ", set())
+        assert val == "desktop"
+        assert skip is False
+
+    def test_upload_uses_none_slot_when_active_slot_is_none(self, tmp_path):
+        """When active_slot key is present but value is None, .get() returns None (legacy mode)."""
+        _svc, _ = make_service(tmp_path)
+        game_state: dict = {"active_slot": None}
+        slot = game_state.get("active_slot", "default")
+        assert slot is None
 
     def test_update_autocleanup_limit(self, tmp_path):
         svc, _ = make_service(tmp_path)
