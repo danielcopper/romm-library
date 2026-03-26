@@ -298,8 +298,9 @@ export default definePlugin(() => {
   const saveStatusListener = addEventListener<[SaveStatus]>(
     "save_status_updated",
     (data: SaveStatus) => {
+      const hasConflict = data.files?.some((f) => f.status === "conflict") ?? false;
       globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
-        detail: { type: "save_sync", rom_id: data.rom_id, save_status: data },
+        detail: { type: "save_sync", rom_id: data.rom_id, save_status: data, has_conflict: hasConflict },
       }));
     }
   );
