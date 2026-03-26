@@ -65,7 +65,7 @@ class GameDetailService:
         return rom_file
 
     def _build_save_status(self, rom_id_str: str) -> dict | None:
-        """Build lightweight save-sync status for a ROM, or None if no saves."""
+        """Build cached save-sync status for a ROM, or None if no saves."""
         raw_save = self._save_sync_state.get("saves", {}).get(rom_id_str)
         if not raw_save:
             return None
@@ -84,7 +84,7 @@ class GameDetailService:
         return {
             "files": files_list,
             "last_sync_check_at": raw_save.get("last_sync_check_at"),
-            "conflicts": [],  # lightweight — full conflicts via get_save_status()
+            "conflicts": [],  # cached only — full conflicts via get_save_status()
         }
 
     def _build_achievement_summary(self, rom_id_str: str, ra_id) -> dict | None:
@@ -136,7 +136,7 @@ class GameDetailService:
         return stale
 
     def get_cached_game_detail(self, app_id) -> dict:
-        """Return cached + lightweight data for a game."""
+        """Return cached data for a game."""
         app_id = int(app_id)
 
         # Reverse lookup: find rom_id by app_id in shortcut_registry
