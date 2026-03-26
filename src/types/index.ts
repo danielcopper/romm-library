@@ -255,7 +255,7 @@ export interface SaveSyncSettings {
   sync_before_launch: boolean;
   sync_after_exit: boolean;
   clock_skew_tolerance_sec: number;
-  default_slot: string;
+  default_slot: string | null;
   autocleanup_limit: number;
 }
 

@@ -13,8 +13,8 @@
  * CSS classes prefixed with `romm-panel-` are injected separately by styleInjector.
  */
 
-import { useState, useEffect, useRef, FC, createElement } from "react";
-import { DialogButton, Focusable } from "@decky/ui";
+import { useState, useEffect, useRef, FC, createElement, ChangeEvent } from "react";
+import { ConfirmModal, DialogButton, Focusable, TextField, showModal } from "@decky/ui";
 // DialogButton is natively focusable by Steam's gamepad engine (unlike Focusable
 // wrappers around non-interactive content, which don't register in this injection
 // context). Style as content sections, not buttons.
@@ -66,8 +66,6 @@ interface PanelState {
   activeSlot: string;
   availableSlots: Array<{ slot: string; source?: "server" | "local"; count: number; latest_updated_at: string | null }>;
   slotsLoading: boolean;
-  newSlotInput: string;
-  showNewSlotInput: boolean;
 }
 
 /** Format a Unix timestamp (seconds) as a release date string (e.g. "15 Mar 2003") */
@@ -98,6 +96,27 @@ function displaySlot(slot: string | null): string {
   if (slot === null || slot === "") return "(no slot)";
   return slot;
 }
+
+/** Modal for creating a new save slot — uses internal state for the text field. */
+const NewSlotModal: FC<{
+  closeModal?: () => void;
+  onSubmit: (name: string) => void;
+}> = ({ closeModal, onSubmit }) => {
+  const [value, setValue] = useState("");
+  return createElement(ConfirmModal, {
+    closeModal,
+    onOK: () => { const trimmed = value.trim(); if (trimmed) onSubmit(trimmed); },
+    strTitle: "New Save Slot",
+    bDisableBackgroundDismiss: true,
+  },
+    createElement(TextField, {
+      focusOnMount: true,
+      label: "Slot Name",
+      value,
+      onChange: (e: ChangeEvent<HTMLInputElement>) => setValue(e.target.value),
+    } as any),
+  );
+};
 
 /** Refresh slot configuration and available slots — extracted to reduce nesting depth. */
 function refreshSlotState(
@@ -141,8 +160,6 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     activeSlot: "default",
     availableSlots: [],
     slotsLoading: false,
-    newSlotInput: "",
-    showNewSlotInput: false,
   });
   const romIdRef = useRef<number | null>(null);
   const [migrationPending, setMigrationPending] = useState(getMigrationState().pending);
@@ -235,8 +252,6 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           activeSlot: "default",
           availableSlots: [],
           slotsLoading: false,
-          newSlotInput: "",
-          showNewSlotInput: false,
         });
 
         // Check if save slot tracking is configured for this game
@@ -757,6 +772,15 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
     // --- Left column: Save Files ---
     const leftColumnChildren: (ReturnType<typeof createElement> | null)[] = [];
 
+    if (state.activeSlot == null) {
+      leftColumnChildren.push(
+        createElement("div", {
+          key: "legacy-warning",
+          style: { padding: "8px", background: "rgba(255, 136, 0, 0.15)", borderRadius: "4px", border: "1px solid rgba(255, 136, 0, 0.3)", marginBottom: "8px", fontSize: "12px", color: "#ff8800" },
+        }, "This game uses legacy mode (no slot). Only one save version per game is supported."),
+      );
+    }
+
     leftColumnChildren.push(
       createElement("div", { key: "files-title", className: "romm-panel-section-title", style: { marginBottom: "8px" } }, "Save Files"),
       createElement("div", {
@@ -947,52 +971,35 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       );
     }
 
-    // New Slot button / input
-    if (state.showNewSlotInput) {
-      rightColumnChildren.push(
-        createElement("div", { key: "new-slot-input", style: { marginTop: "8px", display: "flex", gap: "4px", alignItems: "center" } },
-          createElement("input", {
-            type: "text",
-            value: state.newSlotInput,
-            onChange: (e: any) => setState((prev) => ({ ...prev, newSlotInput: e.target.value })),
-            placeholder: "Slot name",
-            style: { flex: 3, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: "4px", padding: "4px 8px", color: "#fff", fontSize: "12px" },
-          }),
-          createElement(DialogButton as any, {
-            style: { flex: 1, padding: "4px 8px", minWidth: "auto", fontSize: "12px" },
-            onClick: async () => {
-              const name = state.newSlotInput.trim();
-              if (!name) return;
-              if (!state.romId) return;
-              const result = await setGameSlot(state.romId, name);
-              if (result.success) {
-                // Add new slot to local list (it won't exist on RomM until first upload)
-                setState((prev) => ({
-                  ...prev,
-                  activeSlot: name,
-                  showNewSlotInput: false,
-                  newSlotInput: "",
-                  availableSlots: prev.availableSlots.some((s) => s.slot === name)
-                    ? prev.availableSlots
-                    : [...prev.availableSlots, { slot: name, source: "local" as const, count: 0, latest_updated_at: null }],
-                }));
-                globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: state.romId } }));
-              }
-            },
-            noFocusRing: false,
-          }, "Create"),
-        ),
-      );
-    } else {
-      rightColumnChildren.push(
-        createElement(DialogButton as any, {
-          key: "new-slot-btn",
-          style: { padding: "4px 8px", minWidth: "auto", fontSize: "12px", marginTop: "8px" },
-          onClick: () => setState((prev) => ({ ...prev, showNewSlotInput: true })),
-          noFocusRing: false,
-        }, "+ New Slot"),
-      );
-    }
+    // New Slot button (opens modal)
+    rightColumnChildren.push(
+      createElement(DialogButton as any, {
+        key: "new-slot-btn",
+        style: { padding: "4px 8px", minWidth: "auto", fontSize: "12px", marginTop: "8px" },
+        onClick: () => {
+          const romId = state.romId;
+          if (!romId) return;
+          showModal(
+            createElement(NewSlotModal, {
+              onSubmit: async (name: string) => {
+                const result = await setGameSlot(romId, name);
+                if (result.success) {
+                  setState((prev) => ({
+                    ...prev,
+                    activeSlot: name,
+                    availableSlots: prev.availableSlots.some((s) => s.slot === name)
+                      ? prev.availableSlots
+                      : [...prev.availableSlots, { slot: name, source: "local" as const, count: 0, latest_updated_at: null }],
+                  }));
+                  globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+                }
+              },
+            }),
+          );
+        },
+        noFocusRing: false,
+      }, "+ New Slot"),
+    );
 
     saveSyncSection = section("save-sync", null,
       createElement("div", {

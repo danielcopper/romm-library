@@ -107,6 +107,7 @@ interface InfoState {
   activeCoreLabel: string | null;
   activeCoreIsDefault: boolean;
   availableCores: Array<{ core_so: string; label: string; is_default: boolean }>;
+  activeSlot: string | null;
   raId: number | null;
   achievementEarned: number;
   achievementTotal: number;
@@ -254,6 +255,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     activeCoreLabel: null,
     activeCoreIsDefault: true,
     availableCores: [],
+    activeSlot: "default",
     raId: null,
     achievementEarned: 0,
     achievementTotal: 0,
@@ -409,7 +411,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       if (detail.rom_id && romIdRef.current && detail.rom_id !== romIdRef.current) return;
       const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
       const { status: saveSyncStatus, label: saveSyncLabel } = computeSaveSyncDisplay(saveStatus);
-      setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel }));
+      setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel, activeSlot: saveStatus?.active_slot ?? prev.activeSlot }));
       } catch (err) {
         debugLog(`RomMPlaySection: onDataChanged error: ${err}`);
       }
@@ -438,7 +440,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
           detail: { type: "save_sync", rom_id: romId, has_conflict: hasConflict },
         }));
         const { status: ss, label: sl } = computeSaveSyncDisplay(saveStatus);
-        setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl }));
+        setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl, activeSlot: saveStatus?.active_slot ?? prev.activeSlot }));
       } catch (e) {
         debugLog(`RomMPlaySection: lightweight save check error: ${e}`);
       }
@@ -767,7 +769,20 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
     );
   }
 
-  // Save Sync moved to dedicated tab — no longer shown here
+  // Save Sync moved to dedicated tab — show legacy slot warning only
+  if (info.activeSlot == null && info.saveSyncEnabled) {
+    infoItems.push(
+      createElement("div", {
+        key: "legacy-slot-warning",
+        className: "romm-info-item",
+      },
+        createElement("div", { className: "romm-info-header" }, "SAVE SYNC"),
+        createElement("div", {
+          style: { fontSize: "11px", color: "#ff8800", marginTop: "4px" },
+        }, "\u26A0 Legacy save slot"),
+      ),
+    );
+  }
 
   // BIOS warning (only when files are missing — OK status moved to tab)
   if (info.biosNeeded && info.biosStatus && info.biosStatus !== "ok") {

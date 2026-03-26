@@ -557,25 +557,61 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
                   />
                 </PanelSectionRow>
                 <PanelSectionRow>
-                  <TextField
+                  <Field
                     label="Default Save Slot"
-                    description="Slot name for new games (power users can override per game)"
-                    value={saveSyncSettings.default_slot ?? "default"}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      const val = e.target.value;
-                      setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: val } : prev);
-                    }}
-                    onBlur={() => {
-                      const val = (saveSyncSettings.default_slot ?? "default").trim();
-                      if (val) {
-                        handleSaveSyncSettingChange({ default_slot: val });
-                      } else {
+                    description={saveSyncSettings.default_slot || "(no slot)"}
+                  >
+                    <DialogButton onClick={() => showModal(
+                      <TextInputModal
+                        label="Default Save Slot"
+                        value={saveSyncSettings.default_slot ?? ""}
+                        onSubmit={(value) => {
+                          const trimmed = value.trim();
+                          if (trimmed) {
+                            setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: trimmed } : prev);
+                            handleSaveSyncSettingChange({ default_slot: trimmed });
+                          } else {
+                            showModal(
+                              <ConfirmModal
+                                strTitle="Clear Default Slot?"
+                                strDescription="Clearing the default slot enables legacy mode. New games will not use a slot, which limits saves to one version per game. Are you sure?"
+                                strOKButtonText="Clear Slot"
+                                strCancelButtonText="Cancel"
+                                onOK={() => {
+                                  setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: null } : prev);
+                                  handleSaveSyncSettingChange({ default_slot: null });
+                                }}
+                              />,
+                            );
+                          }
+                        }}
+                      />
+                    )}>
+                      Edit
+                    </DialogButton>
+                  </Field>
+                </PanelSectionRow>
+                {saveSyncSettings.default_slot !== "default" && (
+                  <PanelSectionRow>
+                    <ButtonItem
+                      layout="below"
+                      onClick={() => {
                         setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: "default" } : prev);
                         handleSaveSyncSettingChange({ default_slot: "default" });
-                      }
-                    }}
-                  />
-                </PanelSectionRow>
+                      }}
+                    >
+                      Reset to default
+                    </ButtonItem>
+                  </PanelSectionRow>
+                )}
+                {(saveSyncSettings.default_slot === null || saveSyncSettings.default_slot === "") && (
+                  <PanelSectionRow>
+                    <Field
+                      label={<span style={{ color: "#ff8800" }}>Legacy mode (no slot)</span>}
+                      description="Saves are limited to one version per game."
+                    />
+                  </PanelSectionRow>
+                )}
                 <PanelSectionRow>
                   <DropdownItem
                     label="Save History Limit"
