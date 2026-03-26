@@ -283,6 +283,10 @@ export interface NewerInSlotConflict {
   slot: string | null;
 }
 
+export function isNewerInSlotConflict(c: PendingConflict | NewerInSlotConflict): c is NewerInSlotConflict {
+  return "type" in c && c.type === "newer_in_slot";
+}
+
 export interface DeviceSyncInfo {
   device_id: string;
   device_name: string;

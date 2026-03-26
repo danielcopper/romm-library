@@ -3,6 +3,7 @@ import { ModalRoot, DialogButton } from "@decky/ui";
 import { showModal } from "@decky/ui";
 import { resolveConflict, logError } from "../api/backend";
 import type { PendingConflict } from "../types";
+import { formatTimestamp } from "../utils/formatters";
 
 export type ConflictResolution = "use_local" | "use_server" | "launch_anyway" | "cancel";
 
@@ -18,21 +19,6 @@ function formatBytes(bytes: number | null): string {
   const sizes = ["B", "KB", "MB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-}
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return "unknown";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function getSystemFromPath(path: string | null): string {

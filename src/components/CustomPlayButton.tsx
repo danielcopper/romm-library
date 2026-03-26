@@ -39,11 +39,25 @@ import { scrollToTop } from "../utils/scrollHelpers";
 import { showConflictResolutionModal } from "./ConflictModal";
 import { showNewerInSlotModal } from "./NewerInSlotModal";
 import type { DownloadProgressEvent, DownloadCompleteEvent, PendingConflict, NewerInSlotConflict } from "../types";
+import { isNewerInSlotConflict } from "../types";
 
 type PlayButtonState = "loading" | "not_romm" | "download" | "conflict" | "syncing" | "play" | "launching" | "dl_complete" | "uninstalling";
 
-function isNewerInSlotConflict(c: PendingConflict | NewerInSlotConflict): c is NewerInSlotConflict {
-  return "type" in c && c.type === "newer_in_slot";
+async function handleConflicts(conflicts: (PendingConflict | NewerInSlotConflict)[]): Promise<"cancel" | "resolved"> {
+  const newerInSlot = conflicts.filter(isNewerInSlotConflict);
+  const regularConflicts = conflicts.filter((c): c is PendingConflict => !isNewerInSlotConflict(c));
+
+  for (const nis of newerInSlot) {
+    const resolution = await showNewerInSlotModal(nis);
+    if (resolution === "cancel") return "cancel";
+  }
+
+  if (regularConflicts.length > 0) {
+    const resolution = await showConflictResolutionModal(regularConflicts);
+    if (resolution === "cancel") return "cancel";
+  }
+
+  return "resolved";
 }
 
 interface DownloadProgress {
@@ -303,25 +317,11 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
           debugLog(`CustomPlayButton: preLaunchSync result: synced=${result.synced} conflicts=${result.conflicts?.length ?? 0} success=${result.success}`);
 
           if (result.conflicts && result.conflicts.length > 0) {
-            const newerInSlot = result.conflicts.filter(isNewerInSlotConflict);
-            const regularConflicts = result.conflicts.filter((c): c is PendingConflict => !isNewerInSlotConflict(c));
-
-            for (const nis of newerInSlot) {
-              const resolution = await showNewerInSlotModal(nis);
-              if (resolution === "cancel") {
-                setState("conflict");
-                return;
-              }
+            const conflictResult = await handleConflicts(result.conflicts);
+            if (conflictResult === "cancel") {
+              setState("conflict");
+              return;
             }
-
-            if (regularConflicts.length > 0) {
-              const resolution = await showConflictResolutionModal(regularConflicts);
-              if (resolution === "cancel") {
-                setState("conflict");
-                return;
-              }
-            }
-
             // Conflicts resolved — notify sibling components to refresh
             globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
           }
@@ -367,23 +367,10 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
       ]);
 
       if (result.conflicts && result.conflicts.length > 0) {
-        const newerInSlot = result.conflicts.filter(isNewerInSlotConflict);
-        const regularConflicts = result.conflicts.filter((c): c is PendingConflict => !isNewerInSlotConflict(c));
-
-        for (const nis of newerInSlot) {
-          const resolution = await showNewerInSlotModal(nis);
-          if (resolution === "cancel") {
-            setState("conflict");
-            return;
-          }
-        }
-
-        if (regularConflicts.length > 0) {
-          const resolution = await showConflictResolutionModal(regularConflicts);
-          if (resolution === "cancel") {
-            setState("conflict");
-            return;
-          }
+        const conflictResult = await handleConflicts(result.conflicts);
+        if (conflictResult === "cancel") {
+          setState("conflict");
+          return;
         }
       }
       // Resolved or no conflicts left — notify siblings and go back to play

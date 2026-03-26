@@ -2,23 +2,9 @@ import { FC } from "react";
 import { ModalRoot, DialogButton, showModal } from "@decky/ui";
 import { resolveNewerInSlot, logError } from "../api/backend";
 import type { NewerInSlotConflict } from "../types";
+import { formatTimestamp } from "../utils/formatters";
 
 export type NewerInSlotResolution = "use_newer" | "keep_current" | "dismiss" | "cancel";
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return "unknown";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 interface NewerInSlotModalProps {
   conflict: NewerInSlotConflict;
