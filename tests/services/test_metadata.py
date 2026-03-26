@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from adapters.persistence import PersistenceAdapter
 from adapters.steam_config import SteamConfigAdapter
 
 # conftest.py patches decky before this import
@@ -262,7 +263,7 @@ class TestGetRomMetadata:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         plugin.settings["log_level"] = "debug"
 
@@ -307,9 +308,9 @@ class TestLoadMetadataCache:
     def test_loads_from_disk(self, plugin, tmp_path):
         import decky
 
-        from adapters.persistence import _METADATA_CACHE_VERSION
+        from adapters.persistence import _METADATA_CACHE_VERSION, PersistenceAdapter
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         rom_entry = {"summary": "test", "cached_at": 100}
         cache_data = {"version": _METADATA_CACHE_VERSION, "42": rom_entry}
@@ -324,7 +325,9 @@ class TestLoadMetadataCache:
     def test_empty_when_file_missing(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        from adapters.persistence import PersistenceAdapter
+
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         plugin._metadata_cache = {"old": "data"}
         plugin._load_metadata_cache()
@@ -335,7 +338,9 @@ class TestLoadMetadataCache:
     def test_empty_when_malformed_json(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        from adapters.persistence import PersistenceAdapter
+
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         cache_path = os.path.join(str(tmp_path), "metadata_cache.json")
         with open(cache_path, "w") as f:
@@ -355,7 +360,9 @@ class TestSyncMetadataCapture:
         """Verify that extract_metadata produces correct cache entries for ROM list items."""
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        from adapters.persistence import PersistenceAdapter
+
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         roms = [
             {
@@ -414,7 +421,9 @@ class TestSyncMetadataCapture:
         """Pre-existing cache entries for other ROMs are preserved after sync adds new ones."""
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        from adapters.persistence import PersistenceAdapter
+
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         # Pre-existing cache entry
         plugin._metadata_cache["99"] = {
@@ -540,7 +549,7 @@ class TestMarkMetadataDirty:
     def test_flushes_at_interval(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         plugin._metadata_service._metadata_dirty_count = 49
         plugin._metadata_service.mark_metadata_dirty()
@@ -559,7 +568,7 @@ class TestFlushMetadataIfDirty:
     def test_flushes_when_dirty(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         plugin._metadata_service._metadata_dirty_count = 5
         plugin._metadata_service.flush_metadata_if_dirty()

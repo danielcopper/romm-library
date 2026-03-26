@@ -9,7 +9,10 @@ import pytest
 
 # Mirror Decky's sys.path setup: add py_modules/ so `from lib.xxx import` works
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_tests_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_project_root, "py_modules"))
+# Add tests/ root so subdirectory tests can still import from fakes/ and conftest
+sys.path.insert(0, _tests_root)
 
 
 class _DeckyMock(MagicMock):
@@ -81,9 +84,13 @@ def _reset_retrodeck_config_user_home():
     """
     from domain import es_de_config, retrodeck_config
 
-    # Reset to defaults at the start of each test
+    # Fresh temp dirs per test — ensures no cross-test pollution
     mock_decky.DECKY_USER_HOME = os.path.expanduser("~")
     mock_decky.DECKY_PLUGIN_DIR = _project_root
+    _fresh_settings = tempfile.mkdtemp()
+    _fresh_runtime = tempfile.mkdtemp()
+    mock_decky.DECKY_PLUGIN_SETTINGS_DIR = _fresh_settings
+    mock_decky.DECKY_PLUGIN_RUNTIME_DIR = _fresh_runtime
     retrodeck_config._cached_config = None
     retrodeck_config._cache_time = 0.0
     retrodeck_config._cache_config_path = None

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from adapters.persistence import PersistenceAdapter
 from adapters.steam_config import SteamConfigAdapter
 
 # conftest.py patches decky before this import
@@ -76,7 +77,7 @@ class TestSettings:
     async def test_save_settings_skips_masked_password(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         plugin.settings["romm_pass"] = "original"
         await plugin.save_settings("http://example.com", "user", "••••")
         assert plugin.settings["romm_pass"] == "original"
@@ -85,7 +86,7 @@ class TestSettings:
     async def test_save_settings_updates_real_password(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         plugin.settings["romm_pass"] = "old"
         await plugin.save_settings("http://example.com", "user", "newpass")
         assert plugin.settings["romm_pass"] == "newpass"
@@ -163,7 +164,7 @@ class TestLogLevel:
     async def test_save_log_level_valid(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         for level in ("debug", "info", "warn", "error"):
             result = await plugin.save_log_level(level)
             assert result["success"] is True
@@ -173,7 +174,7 @@ class TestLogLevel:
     async def test_save_log_level_invalid(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         plugin.settings["log_level"] = "warn"
         result = await plugin.save_log_level("verbose")
         assert result["success"] is False
@@ -342,7 +343,7 @@ class TestInsecureSslSetting:
     async def test_save_settings_with_insecure_ssl(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         await plugin.save_settings("https://romm.local", "user", "pass", True)
         assert plugin.settings["romm_allow_insecure_ssl"] is True
 
@@ -350,7 +351,7 @@ class TestInsecureSslSetting:
     async def test_save_settings_without_param_preserves(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         plugin.settings["romm_allow_insecure_ssl"] = True
         await plugin.save_settings("https://romm.local", "user", "pass")
         assert plugin.settings["romm_allow_insecure_ssl"] is True
@@ -359,7 +360,7 @@ class TestInsecureSslSetting:
     async def test_save_settings_explicit_false(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         plugin.settings["romm_allow_insecure_ssl"] = True
         await plugin.save_settings("https://romm.local", "user", "pass", False)
         assert plugin.settings["romm_allow_insecure_ssl"] is False
@@ -369,7 +370,7 @@ class TestSettingsFilePermissions:
     def test_save_settings_creates_file_with_0600(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
         plugin.settings = {"romm_url": "http://example.com"}
         plugin._save_settings_to_disk()
         settings_path = tmp_path / "settings.json"
@@ -397,7 +398,7 @@ class TestPruneStaleState:
     def test_prunes_missing_files(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["installed_roms"] = {
             "1": {"rom_id": 1, "file_path": "/nonexistent/game.z64", "system": "n64"},
@@ -409,7 +410,7 @@ class TestPruneStaleState:
     def test_keeps_existing_files(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         rom_file = tmp_path / "game.z64"
         rom_file.write_text("data")
@@ -424,7 +425,7 @@ class TestPruneStaleState:
     def test_keeps_existing_rom_dir(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         rom_dir = tmp_path / "FF7"
         rom_dir.mkdir()
@@ -444,7 +445,7 @@ class TestPruneStaleState:
     def test_saves_state_only_when_pruned(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         rom_file = tmp_path / "game.z64"
         rom_file.write_text("data")
@@ -461,7 +462,7 @@ class TestPruneStaleState:
     def test_prunes_mixed(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         rom_file = tmp_path / "game.z64"
         rom_file.write_text("data")
@@ -482,7 +483,7 @@ class TestPruneStaleStateEdgeCases:
     def test_empty_installed_roms_no_crash(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["installed_roms"] = {}
         plugin._prune_stale_installed_roms()
@@ -493,7 +494,7 @@ class TestPruneStaleStateEdgeCases:
     def test_all_entries_stale(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["installed_roms"] = {
             "1": {"rom_id": 1, "file_path": "/gone/a.z64", "system": "n64"},
@@ -512,7 +513,7 @@ class TestAtomicSettingsWrite:
     def test_settings_written_atomically(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
 
         plugin.settings = {"romm_url": "http://example.com", "romm_user": "user"}
         plugin._save_settings_to_disk()
@@ -526,7 +527,7 @@ class TestAtomicSettingsWrite:
     def test_settings_no_tmp_left_after_write(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
 
         plugin.settings = {"romm_url": "http://example.com"}
         plugin._save_settings_to_disk()
@@ -539,7 +540,7 @@ class TestAtomicSettingsWrite:
 
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
 
         # Write initial settings
         plugin.settings = {"romm_url": "http://original.com"}
@@ -571,7 +572,7 @@ class TestWhitelistSettings:
         """Round-trip: update then get returns the stored values."""
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         await plugin.update_whitelist_settings(["chrome"], ["My App"])
         result = await plugin.get_whitelist_settings()
         assert result["disabled_defaults"] == ["chrome"]
@@ -607,7 +608,7 @@ class TestWhitelistSettings:
         """Verifies values are stored in plugin.settings dict after update."""
         import decky
 
-        decky.DECKY_PLUGIN_SETTINGS_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), decky.DECKY_PLUGIN_RUNTIME_DIR, decky.logger)
         result = await plugin.update_whitelist_settings(["moonlight"], ["Custom Game"])
         assert result["success"] is True
         assert plugin.settings["whitelist_disabled_defaults"] == ["moonlight"]
@@ -618,7 +619,7 @@ class TestPruneStaleRegistry:
     def test_prunes_missing_app_id(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["shortcut_registry"] = {
             "1": {"name": "Game A"},
@@ -629,7 +630,7 @@ class TestPruneStaleRegistry:
     def test_prunes_zero_app_id(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["shortcut_registry"] = {
             "1": {"app_id": 0, "name": "Game A"},
@@ -640,7 +641,7 @@ class TestPruneStaleRegistry:
     def test_prunes_non_int_app_id(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["shortcut_registry"] = {
             "1": {"app_id": "abc", "name": "Game A"},
@@ -651,7 +652,7 @@ class TestPruneStaleRegistry:
     def test_keeps_valid_entry(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["shortcut_registry"] = {
             "1": {"app_id": 12345678, "name": "Game A"},
@@ -662,7 +663,7 @@ class TestPruneStaleRegistry:
     def test_saves_only_when_pruned(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["shortcut_registry"] = {
             "1": {"app_id": 12345678, "name": "Game A"},
@@ -675,7 +676,7 @@ class TestPruneStaleRegistry:
     def test_empty_registry_no_crash(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(decky.DECKY_PLUGIN_SETTINGS_DIR, str(tmp_path), decky.logger)
 
         plugin._state["shortcut_registry"] = {}
         plugin._prune_stale_registry()

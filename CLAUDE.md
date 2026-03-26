@@ -96,8 +96,17 @@ src/
   utils/                                  # Shortcut management, sync, downloads, collections, sessions
 bin/romm-launcher                         # Bash launcher for RetroDECK
 defaults/config.json                      # 149 platform slug → RetroDECK system mappings
-tests/test_*.py                           # Per-module backend tests (1150 tests)
-tests/conftest.py                         # Mock decky module for test isolation
+tests/
+  conftest.py                             # Mock decky module, autouse fixture, test isolation
+  test_plugin.py                          # Plugin callable tests (main.py)
+  test_bootstrap.py                       # Bootstrap wiring tests
+  test_plugin_saves.py                    # Plugin-level save sync integration tests
+  fakes/                                  # Shared test doubles (FakeSaveApi)
+  services/                              # Service unit tests (1:1 with py_modules/services/)
+  adapters/                              # Adapter unit tests (1:1 with py_modules/adapters/)
+  domain/                                # Domain unit tests (1:1 with py_modules/domain/)
+  models/                                # Model unit tests (1:1 with py_modules/models/)
+  lib/                                   # Lib unit tests (1:1 with py_modules/lib/)
 ```
 
 ## Current State
@@ -149,7 +158,7 @@ Every backend feature or callable where testing makes sense MUST have unit tests
 - **Bad path**: Invalid input, missing data, API errors, network failures
 - **Edge cases**: Empty strings, None values, masked values ("••••"), boundary conditions
 
-Tests are split per module in `tests/test_*.py` with shared mocks in `tests/conftest.py`.
+Tests mirror the source structure: `tests/services/`, `tests/adapters/`, `tests/domain/`, `tests/models/`, `tests/lib/`. Each test file maps 1:1 to a source module. Shared mocks live in `tests/conftest.py`.
 
 ## Security
 

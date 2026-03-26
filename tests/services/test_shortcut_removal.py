@@ -163,8 +163,6 @@ class TestRemovePlatformShortcuts:
 class TestReportRemovalResults:
     @pytest.mark.asyncio
     async def test_removes_entries_from_registry(self, svc, state, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
         state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Game A", "cover_path": ""},
             "20": {"app_id": 1002, "name": "Game B", "cover_path": ""},
@@ -176,7 +174,6 @@ class TestReportRemovalResults:
 
     @pytest.mark.asyncio
     async def test_cleans_up_artwork_via_callback(self, svc, state, steam_config, remove_artwork_files_mock, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         steam_config.grid_dir = lambda: str(grid_dir)
@@ -190,8 +187,6 @@ class TestReportRemovalResults:
 
     @pytest.mark.asyncio
     async def test_partial_removal(self, svc, state, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
         state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Game A", "cover_path": ""},
             "20": {"app_id": 1002, "name": "Game B", "cover_path": ""},
@@ -204,8 +199,6 @@ class TestReportRemovalResults:
 
     @pytest.mark.asyncio
     async def test_updates_sync_stats(self, svc, state, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
         state["shortcut_registry"] = {
             "10": {"app_id": 1001, "name": "Game A", "platform_name": "N64", "cover_path": ""},
             "20": {"app_id": 1002, "name": "Game B", "platform_name": "SNES", "cover_path": ""},
@@ -224,8 +217,6 @@ class TestRemovalCleansUpArtwork:
 
     @pytest.mark.asyncio
     async def test_removes_app_id_artwork(self, state, steam_config, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         art_file = grid_dir / "100001p.png"
@@ -263,8 +254,6 @@ class TestRemovalCleansUpArtwork:
 
     @pytest.mark.asyncio
     async def test_removes_staging_leftover(self, state, steam_config, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
         grid_dir = tmp_path / "grid"
         grid_dir.mkdir()
         staging = grid_dir / "romm_10_cover.png"
@@ -357,7 +346,6 @@ class TestFindPlatformNameFromApi:
 class TestReportRemovalSteamInputCleanup:
     @pytest.mark.asyncio
     async def test_cleans_up_steam_input_config(self, svc, state, steam_config, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         steam_config.grid_dir = lambda: None
 
         state["shortcut_registry"] = {
@@ -370,7 +358,6 @@ class TestReportRemovalSteamInputCleanup:
 
     @pytest.mark.asyncio
     async def test_handles_steam_input_exception(self, svc, state, steam_config, tmp_path):
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
         steam_config.grid_dir = lambda: None
 
         state["shortcut_registry"] = {

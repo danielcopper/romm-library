@@ -50,8 +50,6 @@ def plugin(tmp_path):
 
     import decky
 
-    decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
-
     steam_config = SteamConfigAdapter(user_home=decky.DECKY_USER_HOME, logger=decky.logger)
     p._steam_config = steam_config
 

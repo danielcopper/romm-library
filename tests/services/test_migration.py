@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from adapters.persistence import PersistenceAdapter
 from adapters.steam_config import SteamConfigAdapter
 
 # conftest.py patches decky before this import
@@ -85,7 +86,7 @@ class TestPathChangeDetection:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         mock_loop = MagicMock()
         plugin._migration_service._loop = mock_loop
@@ -107,7 +108,7 @@ class TestPathChangeDetection:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         fake_home = str(tmp_path / "retrodeck")
         os.makedirs(fake_home, exist_ok=True)
@@ -127,7 +128,7 @@ class TestPathChangeDetection:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old_retrodeck")
         new_home = str(tmp_path / "new_retrodeck")
@@ -176,7 +177,7 @@ class TestMigrateRetroDeckFiles:
         """No previous path — nothing to migrate."""
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         result = await plugin.migrate_retrodeck_files()
         assert result["success"] is False
@@ -188,7 +189,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -222,7 +223,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -255,7 +256,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -290,7 +291,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -321,7 +322,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -354,7 +355,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -375,7 +376,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -406,7 +407,7 @@ class TestMigrateRetroDeckFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -429,7 +430,7 @@ class TestMigrateSaveFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -461,7 +462,7 @@ class TestMigrateSaveFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -493,7 +494,7 @@ class TestMigrateSaveFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -526,7 +527,7 @@ class TestMigrateSaveFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -559,7 +560,7 @@ class TestMigrateSaveFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")
@@ -589,7 +590,7 @@ class TestMigrateSaveFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._persistence = PersistenceAdapter(str(tmp_path), str(tmp_path), decky.logger)
 
         old_home = str(tmp_path / "old")
         new_home = str(tmp_path / "new")

@@ -239,7 +239,7 @@ class TestRemoveRom:
     async def test_deletes_file_and_clears_state(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_file = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
@@ -271,7 +271,7 @@ class TestUninstallAllRoms:
     async def test_removes_all_installed(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
@@ -296,7 +296,7 @@ class TestUninstallAllRoms:
     async def test_clears_state(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         plugin._state["installed_roms"] = {
@@ -310,7 +310,7 @@ class TestUninstallAllRoms:
     async def test_handles_missing_files(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         plugin._state["installed_roms"] = {
@@ -506,9 +506,7 @@ class TestDownloadRequestPolling:
     async def test_processes_download_request(self, plugin, tmp_path):
         from unittest.mock import AsyncMock, patch
 
-        import decky
-
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
 
         requests_path = tmp_path / "download_requests.json"
         requests_path.write_text(json.dumps([{"rom_id": 42}]))
@@ -528,9 +526,7 @@ class TestDownloadRequestPolling:
 
     @pytest.mark.asyncio
     async def test_cleans_up_request_file(self, plugin, tmp_path):
-        import decky
-
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
 
         requests_path = tmp_path / "download_requests.json"
         requests_path.write_text(json.dumps([{"rom_id": 1}, {"rom_id": 2}]))
@@ -554,7 +550,7 @@ class TestMultiFileRomDeletion:
         """Multi-file ROM with rom_dir should delete the entire directory."""
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_dir = tmp_path / "retrodeck" / "roms" / "psx" / "FF7"
@@ -581,7 +577,7 @@ class TestMultiFileRomDeletion:
         """uninstall_all_roms should delete multi-file ROM directories."""
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_dir = tmp_path / "retrodeck" / "roms" / "psx" / "FF7"
@@ -678,7 +674,7 @@ class TestDoDownloadSingleFile:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
 
@@ -733,7 +729,7 @@ class TestDoDownloadMultiFile:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
 
@@ -795,7 +791,7 @@ class TestPathTraversalDeleteRomFiles:
     async def test_rejects_rom_dir_outside_roms_base(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         # Create a file outside roms dir that should NOT be deleted
@@ -822,7 +818,7 @@ class TestPathTraversalDeleteRomFiles:
     async def test_rejects_file_path_outside_roms_base(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         evil_file = tmp_path / "etc" / "passwd"
@@ -925,7 +921,7 @@ class TestDoDownloadCancelled:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
@@ -967,7 +963,7 @@ class TestDoDownloadZipFailure:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
@@ -1090,7 +1086,7 @@ class TestUninstallAllRomsMixedResults:
     async def test_mixed_success_and_failure(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         # Create a real file that can be deleted
@@ -1128,7 +1124,7 @@ class TestRemoveRomFileAlreadyGone:
     async def test_file_already_gone_cleans_state(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         # Entry exists in state but file is gone
@@ -1153,7 +1149,7 @@ class TestUrlEncodedFilenameRename:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
 
@@ -1203,7 +1199,7 @@ class TestUrlEncodedFilenameRename:
 
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
         decky.emit.reset_mock()
 
@@ -1335,7 +1331,7 @@ class TestRemoveRomCleansSaveSyncState:
     async def test_remove_rom_cleans_save_sync_state(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         rom_file = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
@@ -1371,7 +1367,7 @@ class TestRemoveRomCleansSaveSyncState:
     async def test_uninstall_all_cleans_save_sync_state(self, plugin, tmp_path):
         import decky
 
-        decky.DECKY_PLUGIN_RUNTIME_DIR = str(tmp_path)
+        plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
