@@ -28,6 +28,7 @@ class MatchedSave:
     server_save: dict | None  # server save dict or None for local-only
     filename: str  # the LOCAL filename to use (not the server's timestamp name)
     match_method: str  # "tracked_id" | "filename" | "slot_fallback" | "local_only" | "server_only"
+    newer_save_in_slot: dict | None = None  # Newer save in same slot from another device
 
 
 @dataclass
@@ -84,6 +85,13 @@ def _apply_slot_fallback(
             result.matched_server_ids.add(sc_id)
 
 
+def _is_save_from_our_device(save: dict, device_id: str | None) -> bool:
+    """Check if our device is current with this save (meaning we uploaded or already synced it)."""
+    if not device_id:
+        return False
+    return any(str(ds.get("device_id")) == device_id and ds.get("is_current") for ds in save.get("device_syncs", []))
+
+
 def _match_single_local_file(
     lf: dict,
     server_by_id: dict[int, dict],
@@ -92,6 +100,7 @@ def _match_single_local_file(
     active_slot: str | None,
     file_state: dict,
     result: MatchResult,
+    device_id: str | None = None,
 ) -> MatchedSave:
     """Match one local file to a server save using the priority chain.
 
@@ -103,9 +112,29 @@ def _match_single_local_file(
 
     # Priority 1: tracked_save_id
     tracked_id = file_state.get("tracked_save_id")
+    newer_in_slot: dict | None = None
     if tracked_id and tracked_id in server_by_id:
         server = server_by_id[tracked_id]
         method = "tracked_id"
+        # Find all newer saves in the same slot
+        tracked_slot = server.get("slot")
+        tracked_updated = server.get("updated_at", "")
+        all_newer = [
+            ss
+            for ss in server_saves
+            if ss.get("slot") == tracked_slot
+            and ss.get("id") != tracked_id
+            and ss.get("updated_at", "") > tracked_updated
+        ]
+        # Mark all newer candidates to prevent phantom server-only entries
+        for c in all_newer:
+            cid = c.get("id")
+            if cid is not None:
+                result.matched_server_ids.add(cid)
+        # Only flag saves not from our own device as newer_in_slot
+        foreign = [s for s in all_newer if not _is_save_from_our_device(s, device_id)]
+        if foreign:
+            newer_in_slot = max(foreign, key=lambda s: s.get("updated_at", ""))
 
     # Priority 2: filename match
     if not server:
@@ -136,6 +165,7 @@ def _match_single_local_file(
         server_save=server,
         filename=fn,
         match_method=method,
+        newer_save_in_slot=newer_in_slot,
     )
 
 
@@ -193,6 +223,7 @@ def match_local_to_server_saves(
     files_state: dict,
     active_slot: str | None,
     rom_name: str | None = None,
+    device_id: str | None = None,
 ) -> MatchResult:
     """Match local save files to server saves.
 
@@ -217,6 +248,9 @@ def match_local_to_server_saves(
     rom_name:
         The ROM base name (e.g. "Mario Golf - Advance Tour (USA)") for
         computing the expected local filename when downloading server-only saves.
+    device_id:
+        This device's ID. When provided, newer saves already current on our
+        device are not flagged as newer_save_in_slot.
 
     Returns
     -------
@@ -241,7 +275,7 @@ def match_local_to_server_saves(
     for lf in sorted(local_files, key=lambda x: x["filename"]):
         file_state = files_state.get(lf["filename"], {})
         matched = _match_single_local_file(
-            lf, server_by_id, server_by_name, server_saves, active_slot, file_state, result
+            lf, server_by_id, server_by_name, server_saves, active_slot, file_state, result, device_id
         )
         result.matched.append(matched)
 

@@ -191,3 +191,99 @@ class TestLocalOnly:
     def test_empty_both_sides(self):
         result = match_local_to_server_saves([], [], {}, "default")
         assert len(result.matched) == 0
+
+
+class TestNewerSaveInSlot:
+    def test_detects_newer_save_in_same_slot(self):
+        """Tracked save id=18 in 'default' slot, newer save id=25 in same slot."""
+        local = [_local(fn="pokemon.srm")]
+        server = [
+            _server(18, fn="pokemon [2026-03-24].srm", slot="default", updated="2026-03-24T15:00:00"),
+            _server(25, fn="pokemon [2026-03-25].srm", slot="default", updated="2026-03-25T10:00:00"),
+        ]
+        files_state = {"pokemon.srm": {"tracked_save_id": 18}}
+
+        result = match_local_to_server_saves(local, server, files_state, "default")
+        assert len(result.matched) == 1
+        matched = result.matched[0]
+        assert matched.match_method == "tracked_id"
+        assert matched.server_save is not None
+        assert matched.server_save["id"] == 18
+        assert matched.newer_save_in_slot is not None
+        assert matched.newer_save_in_slot["id"] == 25
+
+    def test_no_flag_when_tracked_is_newest(self):
+        """Only one save, it's the tracked one — newer_save_in_slot is None."""
+        local = [_local(fn="pokemon.srm")]
+        server = [
+            _server(18, fn="pokemon [2026-03-24].srm", slot="default", updated="2026-03-24T15:00:00"),
+        ]
+        files_state = {"pokemon.srm": {"tracked_save_id": 18}}
+
+        result = match_local_to_server_saves(local, server, files_state, "default")
+        assert result.matched[0].newer_save_in_slot is None
+
+    def test_ignores_saves_in_different_slot(self):
+        """Newer save exists but in a different slot — newer_save_in_slot is None."""
+        local = [_local(fn="pokemon.srm")]
+        server = [
+            _server(18, fn="pokemon [2026-03-24].srm", slot="default", updated="2026-03-24T15:00:00"),
+            _server(25, fn="pokemon [2026-03-25].srm", slot="portable", updated="2026-03-25T10:00:00"),
+        ]
+        files_state = {"pokemon.srm": {"tracked_save_id": 18}}
+
+        result = match_local_to_server_saves(local, server, files_state, "default")
+        assert result.matched[0].newer_save_in_slot is None
+
+    def test_no_flag_for_non_tracked_id_match(self):
+        """No tracked_save_id in state, matches by filename — newer_save_in_slot is None."""
+        local = [_local(fn="pokemon.srm")]
+        server = [
+            _server(18, fn="pokemon.srm", slot="default", updated="2026-03-24T15:00:00"),
+            _server(25, fn="pokemon [2026-03-25].srm", slot="default", updated="2026-03-25T10:00:00"),
+        ]
+        # No tracked_save_id in state
+        files_state = {}
+
+        result = match_local_to_server_saves(local, server, files_state, "default")
+        matched = next(m for m in result.matched if m.local_file is not None)
+        assert matched.match_method == "filename"
+        assert matched.newer_save_in_slot is None
+
+    def test_does_not_flag_saves_from_own_device(self):
+        """Newer save has device_syncs entry showing our device is_current=True → not flagged."""
+        local = [_local(fn="pokemon.srm")]
+        server = [
+            _server(18, fn="pokemon [2026-03-24].srm", slot="default", updated="2026-03-24T15:00:00"),
+            _server(
+                25,
+                fn="pokemon [2026-03-25].srm",
+                slot="default",
+                updated="2026-03-25T10:00:00",
+                device_syncs=[{"device_id": "deck-001", "is_current": True}],
+            ),
+        ]
+        files_state = {"pokemon.srm": {"tracked_save_id": 18}}
+
+        result = match_local_to_server_saves(local, server, files_state, "default", device_id="deck-001")
+        assert len(result.matched) == 1
+        matched = result.matched[0]
+        assert matched.match_method == "tracked_id"
+        assert matched.newer_save_in_slot is None
+
+    def test_no_phantom_server_only_with_multiple_newer_in_slot(self):
+        """3 saves (tracked=oldest, two newer) — no server_only entries, newer_save_in_slot = newest."""
+        local = [_local(fn="pokemon.srm")]
+        server = [
+            _server(10, fn="pokemon [2026-03-22].srm", slot="default", updated="2026-03-22T10:00:00"),
+            _server(20, fn="pokemon [2026-03-23].srm", slot="default", updated="2026-03-23T12:00:00"),
+            _server(30, fn="pokemon [2026-03-24].srm", slot="default", updated="2026-03-24T15:00:00"),
+        ]
+        files_state = {"pokemon.srm": {"tracked_save_id": 10}}
+
+        result = match_local_to_server_saves(local, server, files_state, "default")
+        server_only = [m for m in result.matched if m.match_method == "server_only"]
+        assert len(server_only) == 0
+        matched = result.matched[0]
+        assert matched.newer_save_in_slot is not None
+        assert matched.newer_save_in_slot["id"] == 30
