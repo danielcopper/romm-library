@@ -63,7 +63,7 @@ interface PanelState {
   achievementsLoading: boolean;
   raId: number | null;
   slotConfirmed: boolean;
-  activeSlot: string;
+  activeSlot: string | null;
   availableSlots: Array<{ slot: string; source?: "server" | "local"; count: number; latest_updated_at: string | null }>;
   slotsLoading: boolean;
 }
@@ -105,7 +105,7 @@ const NewSlotModal: FC<{
   const [value, setValue] = useState("");
   return createElement(ConfirmModal, {
     closeModal,
-    onOK: () => { const trimmed = value.trim(); if (trimmed) onSubmit(trimmed); },
+    onOK: () => { onSubmit(value.trim()); },
     strTitle: "New Save Slot",
     bDisableBackgroundDismiss: true,
   },
@@ -983,11 +983,27 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
           showModal(
             createElement(NewSlotModal, {
               onSubmit: async (name: string) => {
+                if (!name) {
+                  // Empty = legacy mode — show warning, same as QAM default slot
+                  showModal(createElement(ConfirmModal, {
+                    strTitle: "Use Legacy Mode?",
+                    strDescription: "Legacy mode (no slot) limits saves to one version per game. Are you sure?",
+                    onOK: async () => {
+                      const r = await setGameSlot(romId, "");
+                      if (r.success) {
+                        setState((prev) => ({ ...prev, activeSlot: null, conflicts: [] }));
+                        globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+                      }
+                    },
+                  }));
+                  return;
+                }
                 const result = await setGameSlot(romId, name);
                 if (result.success) {
                   setState((prev) => ({
                     ...prev,
                     activeSlot: name,
+                    conflicts: [],
                     availableSlots: prev.availableSlots.some((s) => s.slot === name)
                       ? prev.availableSlots
                       : [...prev.availableSlots, { slot: name, source: "local" as const, count: 0, latest_updated_at: null }],
