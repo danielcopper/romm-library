@@ -539,6 +539,16 @@ class SaveService:
                 slots_dict[slot]["source"] = "server"
                 slots_dict[slot]["count"] = 1
 
+        # Mark device as synced with the uploaded save version.
+        # RomM's upload endpoint updates updated_at but NOT last_synced_at in
+        # DeviceSaveSync, so is_current would be False on the next list_saves.
+        upload_id = result.get("id")
+        if device_id and upload_id and self._romm_api.supports_device_sync():
+            try:
+                self._romm_api.confirm_download(upload_id, device_id)
+            except Exception:
+                self._log_debug(f"confirm_download after upload failed for save {upload_id} (non-fatal)")
+
         self._log_debug(f"Uploaded save: {filename} for rom {rom_id_str} (emulator={emulator})")
         return result
 

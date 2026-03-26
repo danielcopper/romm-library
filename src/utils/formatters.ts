@@ -7,6 +7,7 @@ export function formatTimestamp(iso: string | null): string {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      second: "2-digit",
     });
   } catch {
     return iso;
