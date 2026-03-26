@@ -1670,6 +1670,52 @@ class TestUpdateFileSyncState:
         game_state = svc._save_sync_state["saves"]["42"]
         assert game_state["last_synced_core"] == "mgba_libretro"
 
+    def test_writes_last_sync_local_mtime_as_float(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        save_file = _create_save(tmp_path, system="gba", rom_name="pokemon", content=b"\x00" * 1024)
+        local_path = str(save_file)
+        server_response = _server_save()
+
+        svc._update_file_sync_state("42", "pokemon.srm", server_response, local_path, "gba")
+
+        file_state = svc._save_sync_state["saves"]["42"]["files"]["pokemon.srm"]
+        assert isinstance(file_state["last_sync_local_mtime"], float)
+        assert file_state["last_sync_local_mtime"] == pytest.approx(os.path.getmtime(local_path))
+
+    def test_writes_last_sync_local_size_as_int(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        save_file = _create_save(tmp_path, system="gba", rom_name="pokemon", content=b"\x00" * 2048)
+        local_path = str(save_file)
+        server_response = _server_save()
+
+        svc._update_file_sync_state("42", "pokemon.srm", server_response, local_path, "gba")
+
+        file_state = svc._save_sync_state["saves"]["42"]["files"]["pokemon.srm"]
+        assert isinstance(file_state["last_sync_local_size"], int)
+        assert file_state["last_sync_local_size"] == 2048
+
+    def test_does_not_write_old_local_mtime_at_last_sync_key(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        save_file = _create_save(tmp_path, system="gba", rom_name="pokemon")
+        local_path = str(save_file)
+        server_response = _server_save()
+
+        svc._update_file_sync_state("42", "pokemon.srm", server_response, local_path, "gba")
+
+        file_state = svc._save_sync_state["saves"]["42"]["files"]["pokemon.srm"]
+        assert "local_mtime_at_last_sync" not in file_state
+
+    def test_writes_none_for_missing_file(self, tmp_path):
+        svc, _ = make_service(tmp_path)
+        local_path = str(tmp_path / "saves" / "gba" / "missing.srm")
+        server_response = _server_save()
+
+        svc._update_file_sync_state("42", "missing.srm", server_response, local_path, "gba")
+
+        file_state = svc._save_sync_state["saves"]["42"]["files"]["missing.srm"]
+        assert file_state["last_sync_local_mtime"] is None
+        assert file_state["last_sync_local_size"] is None
+
 
 # ---------------------------------------------------------------------------
 # TestPruneOrphanedEdgeCase

@@ -450,11 +450,6 @@ class SaveService:
 
         now = datetime.now(UTC).isoformat()
         local_hash = self._file_md5(local_path) if os.path.isfile(local_path) else ""
-        local_mtime = (
-            datetime.fromtimestamp(os.path.getmtime(local_path), tz=UTC).isoformat()
-            if os.path.isfile(local_path)
-            else now
-        )
 
         save_entry["files"][filename] = {
             "last_sync_hash": local_hash,
@@ -462,7 +457,8 @@ class SaveService:
             "last_sync_server_updated_at": server_response.get("updated_at", now),
             "last_sync_server_save_id": server_response.get("id"),
             "last_sync_server_size": server_response.get("file_size_bytes"),
-            "local_mtime_at_last_sync": local_mtime,
+            "last_sync_local_mtime": os.path.getmtime(local_path) if os.path.isfile(local_path) else None,
+            "last_sync_local_size": os.path.getsize(local_path) if os.path.isfile(local_path) else None,
             "tracked_save_id": server_response.get("id"),
         }
 
