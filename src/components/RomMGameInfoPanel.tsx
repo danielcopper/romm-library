@@ -922,9 +922,13 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       rightColumnChildren.push(
         createElement("div", { key: "slots-loading", className: "romm-panel-muted" }, "Loading slots..."),
       );
-    } else if (state.availableSlots.length > 0) {
-      for (const s of state.availableSlots) {
-        const isActive = state.activeSlot === s.slot;
+    } else if (state.availableSlots.length > 0 || state.activeSlot == null) {
+      // If active slot is null (legacy mode), ensure it appears in the list
+      const slotsToShow = state.activeSlot == null && !state.availableSlots.some((s) => s.slot == null)
+        ? [{ slot: null as any, source: "local" as const, count: 0, latest_updated_at: null }, ...state.availableSlots]
+        : state.availableSlots;
+      for (const s of slotsToShow) {
+        const isActive = state.activeSlot === s.slot || (state.activeSlot == null && s.slot == null);
         const isLocal = s.source === "local";
         let dotColor = "#8f98a0";
         if (isActive) dotColor = "#5ba32b";

@@ -1326,24 +1326,25 @@ class SaveService:
         uploaded to it.
         """
         rom_id = int(rom_id)
-        slot = str(slot).strip()
-        if not slot:
-            return {"success": False, "message": "Slot name cannot be empty"}
+        slot_str = str(slot).strip() if slot else ""
+        # Empty string = legacy mode (None slot)
+        resolved_slot: str | None = slot_str if slot_str else None
 
         rom_id_str = str(rom_id)
         saves = self._save_sync_state.setdefault("saves", {})
         if rom_id_str not in saves:
-            saves[rom_id_str] = {"files": {}, "active_slot": slot}
+            saves[rom_id_str] = {"files": {}, "active_slot": resolved_slot}
         else:
-            saves[rom_id_str]["active_slot"] = slot
+            saves[rom_id_str]["active_slot"] = resolved_slot
 
-        # Ensure slot is in the persisted slots dict
-        slots_dict: dict[str, dict] = saves[rom_id_str].setdefault("slots", {})
-        if slot not in slots_dict:
-            slots_dict[slot] = {"source": "local", "count": 0, "latest_updated_at": None}
+        # Ensure slot is in the persisted slots dict (skip for None/legacy)
+        if resolved_slot is not None:
+            slots_dict: dict[str, dict] = saves[rom_id_str].setdefault("slots", {})
+            if resolved_slot not in slots_dict:
+                slots_dict[resolved_slot] = {"source": "local", "count": 0, "latest_updated_at": None}
 
         self.save_state()
-        return {"success": True, "active_slot": slot}
+        return {"success": True, "active_slot": resolved_slot}
 
     # ------------------------------------------------------------------
     # Save Setup Wizard

@@ -2090,10 +2090,13 @@ class TestSaveSlots:
         assert result["success"] is True
         assert svc._save_sync_state["saves"]["456"]["active_slot"] == "my-slot"
 
-    def test_set_game_slot_empty_rejected(self, tmp_path):
+    def test_set_game_slot_empty_sets_none(self, tmp_path):
+        """Empty string sets active_slot to None (legacy mode)."""
         svc, _ = make_service(tmp_path)
         result = svc.set_game_slot(123, "")
-        assert result["success"] is False
+        assert result["success"] is True
+        assert result["active_slot"] is None
+        assert svc._save_sync_state["saves"]["123"]["active_slot"] is None
 
 
 # ---------------------------------------------------------------------------
