@@ -43,6 +43,8 @@ if TYPE_CHECKING:
     import asyncio
     import logging
 
+    from domain.save_sync import MatchedSave
+
 
 class SaveService:
     """Bidirectional save file sync between local RetroDECK and RomM server.
@@ -707,6 +709,36 @@ class SaveService:
         self._log_debug(f"[TIMING] _sync_rom_saves({rom_id}): {action} {filename} {time.time() - t_action:.3f}s")
         return result
 
+    def _check_newer_in_slot(
+        self,
+        m: MatchedSave,
+        files_state: dict,
+        rom_id: int,
+        save_state: dict,
+        conflicts: list[SaveConflict | dict],
+    ) -> bool:
+        """Check if a matched save has a newer version in its slot from another device.
+
+        Returns True if the normal sync step should be skipped (conflict appended).
+        """
+        if not m.newer_save_in_slot:
+            return False
+        file_state = files_state.get(m.filename, {})
+        dismissed_id = file_state.get("dismissed_newer_save_id")
+        newer_id = m.newer_save_in_slot.get("id")
+        if dismissed_id is None or (newer_id is not None and newer_id > dismissed_id):
+            conflicts.append(
+                self._build_newer_in_slot_conflict(
+                    rom_id,
+                    m.filename,
+                    m.server_save,
+                    m.newer_save_in_slot,
+                    save_state.get("active_slot"),
+                )
+            )
+            return True
+        return False
+
     @staticmethod
     def _build_newer_in_slot_conflict(
         rom_id: int,
@@ -788,21 +820,8 @@ class SaveService:
 
         for m in match_result.matched:
             # Check for newer-in-slot before normal sync
-            if m.newer_save_in_slot:
-                file_state = files_state.get(m.filename, {})
-                dismissed_id = file_state.get("dismissed_newer_save_id")
-                newer_id = m.newer_save_in_slot.get("id")
-                if dismissed_id is None or (newer_id is not None and newer_id > dismissed_id):
-                    conflicts.append(
-                        self._build_newer_in_slot_conflict(
-                            rom_id,
-                            m.filename,
-                            m.server_save,
-                            m.newer_save_in_slot,
-                            save_state.get("active_slot"),
-                        )
-                    )
-                    continue  # Skip normal sync
+            if self._check_newer_in_slot(m, files_state, rom_id, save_state, conflicts):
+                continue  # Skip normal sync
 
             method_label = f" [{m.match_method}]" if m.match_method not in ("filename", "local_only") else ""
             self._log_debug(

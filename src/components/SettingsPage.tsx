@@ -288,6 +288,22 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
 
   const saveSyncEnabled = saveSyncSettings?.save_sync_enabled ?? false;
 
+  /** Show confirmation modal and clear the default slot on OK. */
+  function confirmClearDefaultSlot(): void {
+    showModal(
+      <ConfirmModal
+        strTitle="Clear Default Slot?"
+        strDescription="Clearing the default slot enables legacy mode. New games will not use a slot, which limits saves to one version per game. Are you sure?"
+        strOKButtonText="Clear Slot"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: null } : prev);
+          handleSaveSyncSettingChange({ default_slot: null });
+        }}
+      />,
+    );
+  }
+
   return (
     <>
       <PanelSection>
@@ -571,18 +587,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ onBack }) => {
                             setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: trimmed } : prev);
                             handleSaveSyncSettingChange({ default_slot: trimmed });
                           } else {
-                            showModal(
-                              <ConfirmModal
-                                strTitle="Clear Default Slot?"
-                                strDescription="Clearing the default slot enables legacy mode. New games will not use a slot, which limits saves to one version per game. Are you sure?"
-                                strOKButtonText="Clear Slot"
-                                strCancelButtonText="Cancel"
-                                onOK={() => {
-                                  setSaveSyncSettings((prev) => prev ? { ...prev, default_slot: null } : prev);
-                                  handleSaveSyncSettingChange({ default_slot: null });
-                                }}
-                              />,
-                            );
+                            confirmClearDefaultSlot();
                           }
                         }}
                       />

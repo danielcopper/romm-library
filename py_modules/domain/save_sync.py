@@ -92,6 +92,39 @@ def _is_save_from_our_device(save: dict, device_id: str | None) -> bool:
     return any(str(ds.get("device_id")) == device_id and ds.get("is_current") for ds in save.get("device_syncs", []))
 
 
+def _find_newer_in_slot(
+    server: dict,
+    tracked_id: int,
+    server_saves: list[dict],
+    result: MatchResult,
+    device_id: str | None,
+) -> dict | None:
+    """Find the newest foreign save in the same slot as *server*, if any.
+
+    Mutates ``result.matched_server_ids`` to mark newer candidates so they are
+    not later emitted as phantom server-only entries.
+
+    Returns the newest foreign (not from our device) save, or ``None``.
+    """
+    tracked_slot = server.get("slot")
+    tracked_updated = server.get("updated_at", "")
+    all_newer = [
+        ss
+        for ss in server_saves
+        if ss.get("slot") == tracked_slot and ss.get("id") != tracked_id and ss.get("updated_at", "") > tracked_updated
+    ]
+    # Mark all newer candidates to prevent phantom server-only entries
+    for c in all_newer:
+        cid = c.get("id")
+        if cid is not None:
+            result.matched_server_ids.add(cid)
+    # Only flag saves not from our own device as newer_in_slot
+    foreign = [s for s in all_newer if not _is_save_from_our_device(s, device_id)]
+    if foreign:
+        return max(foreign, key=lambda s: s.get("updated_at", ""))
+    return None
+
+
 def _match_single_local_file(
     lf: dict,
     server_by_id: dict[int, dict],
@@ -116,25 +149,7 @@ def _match_single_local_file(
     if tracked_id and tracked_id in server_by_id:
         server = server_by_id[tracked_id]
         method = "tracked_id"
-        # Find all newer saves in the same slot
-        tracked_slot = server.get("slot")
-        tracked_updated = server.get("updated_at", "")
-        all_newer = [
-            ss
-            for ss in server_saves
-            if ss.get("slot") == tracked_slot
-            and ss.get("id") != tracked_id
-            and ss.get("updated_at", "") > tracked_updated
-        ]
-        # Mark all newer candidates to prevent phantom server-only entries
-        for c in all_newer:
-            cid = c.get("id")
-            if cid is not None:
-                result.matched_server_ids.add(cid)
-        # Only flag saves not from our own device as newer_in_slot
-        foreign = [s for s in all_newer if not _is_save_from_our_device(s, device_id)]
-        if foreign:
-            newer_in_slot = max(foreign, key=lambda s: s.get("updated_at", ""))
+        newer_in_slot = _find_newer_in_slot(server, tracked_id, server_saves, result, device_id)
 
     # Priority 2: filename match
     if not server:

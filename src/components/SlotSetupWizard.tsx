@@ -290,7 +290,9 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
               bDisableBackgroundDismiss: true,
               onOK: () => {
                 const trimmed = customSlot.trim();
-                if (!trimmed) {
+                if (trimmed) {
+                  handleConfirm(trimmed);
+                } else {
                   // Legacy mode
                   showModal(
                     createElement(ConfirmModal, {
@@ -299,8 +301,6 @@ export const SlotSetupWizard: FC<SlotSetupWizardProps> = ({ romId, onComplete })
                       onOK: () => handleConfirm(""),
                     }),
                   );
-                } else {
-                  handleConfirm(trimmed);
                 }
               },
             },

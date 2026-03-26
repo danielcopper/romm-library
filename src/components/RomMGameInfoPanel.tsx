@@ -97,6 +97,41 @@ function displaySlot(slot: string | null): string {
   return slot;
 }
 
+/** Handle legacy-mode confirmation when empty slot name is submitted — extracted to reduce nesting depth. */
+function handleLegacyModeConfirm(
+  romId: number,
+  setState: React.Dispatch<React.SetStateAction<PanelState>>,
+): void {
+  showModal(createElement(ConfirmModal, {
+    strTitle: "Use Legacy Mode?",
+    strDescription: "Legacy mode (no slot) limits saves to one version per game. Are you sure?",
+    onOK: async () => {
+      const r = await setGameSlot(romId, "");
+      if (r.success) {
+        setState((prev) => ({ ...prev, activeSlot: null, conflicts: [] }));
+        globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+      }
+    },
+  }));
+}
+
+/** Apply new slot to panel state after successful setGameSlot — extracted to reduce nesting depth. */
+function applyNewSlotState(
+  name: string,
+  setState: React.Dispatch<React.SetStateAction<PanelState>>,
+  romId: number,
+): void {
+  setState((prev) => ({
+    ...prev,
+    activeSlot: name,
+    conflicts: [],
+    availableSlots: prev.availableSlots.some((s) => s.slot === name)
+      ? prev.availableSlots
+      : [...prev.availableSlots, { slot: name, source: "local" as const, count: 0, latest_updated_at: null }],
+  }));
+  globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+}
+
 /** Modal for creating a new save slot — uses internal state for the text field. */
 const NewSlotModal: FC<{
   closeModal?: () => void;
@@ -132,7 +167,7 @@ function refreshSlotState(
       availableSlots: slotResult.slots || [],
       // Use ?? to preserve prev only when active_slot is undefined (not returned),
       // but accept null (legacy mode) as a valid value
-      activeSlot: slotResult.active_slot !== undefined ? slotResult.active_slot : prev.activeSlot,
+      activeSlot: slotResult.active_slot === undefined ? prev.activeSlot : slotResult.active_slot,
     })))
     .catch(() => {});
 }
@@ -991,30 +1026,12 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
               onSubmit: async (name: string) => {
                 if (!name) {
                   // Empty = legacy mode — show warning, same as QAM default slot
-                  showModal(createElement(ConfirmModal, {
-                    strTitle: "Use Legacy Mode?",
-                    strDescription: "Legacy mode (no slot) limits saves to one version per game. Are you sure?",
-                    onOK: async () => {
-                      const r = await setGameSlot(romId, "");
-                      if (r.success) {
-                        setState((prev) => ({ ...prev, activeSlot: null, conflicts: [] }));
-                        globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
-                      }
-                    },
-                  }));
+                  handleLegacyModeConfirm(romId, setState);
                   return;
                 }
                 const result = await setGameSlot(romId, name);
                 if (result.success) {
-                  setState((prev) => ({
-                    ...prev,
-                    activeSlot: name,
-                    conflicts: [],
-                    availableSlots: prev.availableSlots.some((s) => s.slot === name)
-                      ? prev.availableSlots
-                      : [...prev.availableSlots, { slot: name, source: "local" as const, count: 0, latest_updated_at: null }],
-                  }));
-                  globalThis.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: romId } }));
+                  applyNewSlotState(name, setState, romId);
                 }
               },
             }),

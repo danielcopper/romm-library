@@ -287,6 +287,10 @@ export function isNewerInSlotConflict(c: PendingConflict | NewerInSlotConflict):
   return "type" in c && c.type === "newer_in_slot";
 }
 
+export function isPendingConflict(c: PendingConflict | NewerInSlotConflict): c is PendingConflict {
+  return !isNewerInSlotConflict(c);
+}
+
 export interface DeviceSyncInfo {
   device_id: string;
   device_name: string;

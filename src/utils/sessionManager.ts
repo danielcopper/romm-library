@@ -16,7 +16,7 @@ import {
   logInfo,
   logError,
 } from "../api/backend";
-import { isNewerInSlotConflict } from "../types";
+import { isNewerInSlotConflict, isPendingConflict } from "../types";
 import type { PendingConflict, NewerInSlotConflict } from "../types";
 import { updatePlaytimeDisplay } from "../patches/metadataPatches";
 
@@ -136,23 +136,23 @@ async function handleGameStop(): Promise<void> {
 }
 
 function notifyConflicts(conflicts: (PendingConflict | NewerInSlotConflict)[]): void {
-  const regularCount = conflicts.filter((c) => !isNewerInSlotConflict(c)).length;
+  const regularCount = conflicts.filter(isPendingConflict).length;
   const newerCount = conflicts.filter(isNewerInSlotConflict).length;
 
   if (regularCount > 0 && newerCount > 0) {
     toaster.toast({
       title: "RomM Save Sync",
-      body: `${regularCount} save conflict${regularCount !== 1 ? "s" : ""} + ${newerCount} newer save${newerCount !== 1 ? "s" : ""} detected`,
+      body: `${regularCount} save conflict${regularCount === 1 ? "" : "s"} + ${newerCount} newer save${newerCount === 1 ? "" : "s"} detected`,
     });
   } else if (regularCount > 0) {
     toaster.toast({
       title: "RomM Save Sync",
-      body: `${regularCount} save conflict${regularCount !== 1 ? "s" : ""} need resolution`,
+      body: `${regularCount} save conflict${regularCount === 1 ? "" : "s"} need resolution`,
     });
   } else if (newerCount > 0) {
     toaster.toast({
       title: "RomM Save Sync",
-      body: `${newerCount} newer save${newerCount !== 1 ? "s" : ""} detected from another device`,
+      body: `${newerCount} newer save${newerCount === 1 ? "" : "s"} detected from another device`,
     });
   }
 }

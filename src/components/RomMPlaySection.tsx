@@ -220,6 +220,19 @@ function timeoutMs(ms: number): Promise<never> {
   return new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms));
 }
 
+/** Fire-and-forget active-slot fetch — kept at module scope to avoid nesting. */
+function refreshActiveSlotInBackground(
+  romId: number,
+  cancelled: () => boolean,
+  setter: React.Dispatch<React.SetStateAction<InfoState>>,
+) {
+  getSaveStatus(romId).then((saveStatus) => {
+    if (!cancelled() && saveStatus && "active_slot" in saveStatus) {
+      setter((prev) => ({ ...prev, activeSlot: saveStatus.active_slot ?? null }));
+    }
+  }).catch(() => {});
+}
+
 /** Fire-and-forget BIOS refresh — kept at module scope to avoid nesting. */
 function refreshBiosInBackground(
   romId: number,
@@ -301,11 +314,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
 
         // Background: fetch active_slot from save status (not in cached data)
         if (cached.save_sync_enabled) {
-          getSaveStatus(romId).then((saveStatus) => {
-            if (!cancelled && saveStatus && "active_slot" in saveStatus) {
-              setInfo((prev) => ({ ...prev, activeSlot: saveStatus.active_slot ?? null }));
-            }
-          }).catch(() => {});
+          refreshActiveSlotInBackground(romId, () => cancelled, setInfo);
         }
 
         // Auto-apply SGDB artwork on first visit (fire-and-forget)
@@ -542,7 +551,14 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       if (result.success) {
         const n = result.synced ?? 0;
         const c = (result as any).conflicts?.length ?? 0;
-        let label = n === 0 ? "no files updated" : n === 1 ? "1 file updated" : `${n} files updated`;
+        let label: string;
+        if (n === 0) {
+          label = "no files updated";
+        } else if (n === 1) {
+          label = "1 file updated";
+        } else {
+          label = `${n} files updated`;
+        }
         if (c > 0) label += `, ${c} conflict(s) need resolution`;
         toaster.toast({ title: "RomM Sync", body: `Saves synced (${label})` });
         window.dispatchEvent(new CustomEvent("romm_data_changed", { detail: { type: "save_sync", rom_id: info.romId } }));
