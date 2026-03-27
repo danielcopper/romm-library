@@ -4,21 +4,21 @@ Provides the list of save file extensions to look for when syncing saves.
 The default covers RetroArch's standard .srm and .rtc extensions.
 Platform-specific overrides can expand or replace this list.
 
-Extension expansion (adding .sav, .mcr, .mcd, etc.) is tracked in #186.
+Extension mapping based on RetroDECK core audit — see wiki/Save-File-Extensions.
 
 No I/O, no service/adapter/lib imports. Pure functions only.
 """
 
 from __future__ import annotations
 
-_DEFAULT_EXTENSIONS: tuple[str, ...] = (".srm", ".rtc")
+_DEFAULT_EXTENSIONS: tuple[str, ...] = (".srm", ".rtc", ".sav")
 
 # Platform-specific overrides. Keys are RomM platform slugs.
 # Values completely replace the default list for that platform.
-# Populated incrementally as gameplay tests confirm actual extensions.
+# See wiki/Save-File-Extensions for the research behind these mappings.
 _PLATFORM_OVERRIDES: dict[str, tuple[str, ...]] = {
-    # Example (to be filled in #186):
-    # "n64": (".srm", ".rtc", ".eep", ".sra", ".fla", ".mpk"),
+    "nds": (".srm", ".rtc", ".sav", ".dsv"),  # DeSmuME native format
+    "segacd": (".srm", ".rtc", ".sav", ".brm"),  # Genesis Plus GX Sega CD BRAM
 }
 
 
