@@ -7,7 +7,7 @@ def _local(fn="pokemon.srm", path="/saves/gba/pokemon.srm"):
     return {"filename": fn, "path": path}
 
 
-def _server(sid, fn="pokemon.srm", slot="default", updated="2026-03-24T15:00:00", **kw):
+def _server(sid, fn="pokemon.srm", slot: str | None = "default", updated="2026-03-24T15:00:00", **kw):
     return {"id": sid, "file_name": fn, "slot": slot, "updated_at": updated, "file_size_bytes": 1024, **kw}
 
 
@@ -157,8 +157,8 @@ class TestOlderVersionSkipping:
         server_only = [m for m in result.matched if m.match_method == "server_only"]
         assert len(server_only) == 0
 
-    def test_different_slot_not_skipped(self):
-        """Save in different slot should NOT be skipped."""
+    def test_different_slot_filtered_out(self):
+        """Save in different slot should be filtered out entirely."""
         local = [_local(fn="pokemon.srm")]
         server = [
             _server(10, fn="pokemon.srm", slot="default", updated="2026-03-24T15:00:00"),
@@ -175,9 +175,7 @@ class TestOlderVersionSkipping:
 
         result = match_local_to_server_saves(local, server, files_state, "default")
         server_only = [m for m in result.matched if m.match_method == "server_only"]
-        assert len(server_only) == 1
-        assert server_only[0].server_save is not None
-        assert server_only[0].server_save["id"] == 20
+        assert len(server_only) == 0
 
 
 class TestLocalOnly:
@@ -287,3 +285,77 @@ class TestNewerSaveInSlot:
         matched = result.matched[0]
         assert matched.newer_save_in_slot is not None
         assert matched.newer_save_in_slot["id"] == 30
+
+
+class TestSlotFiltering:
+    """Tests for active_slot filtering in match_local_to_server_saves."""
+
+    def test_filename_match_filtered_by_active_slot(self):
+        """Save with matching filename but in wrong slot should not match."""
+        local = [_local()]
+        server = [_server(10, fn="pokemon.srm", slot="default")]
+        result = match_local_to_server_saves(local, server, {}, "other")
+        assert result.matched[0].match_method == "local_only"
+        assert result.matched[0].server_save is None
+
+    def test_tracked_id_filtered_by_active_slot(self):
+        """Tracked save in wrong slot should not match."""
+        local = [_local()]
+        server = [_server(42, fn="pokemon [ts].srm", slot="default")]
+        files_state = {"pokemon.srm": {"tracked_save_id": 42}}
+        result = match_local_to_server_saves(local, server, files_state, "other")
+        assert result.matched[0].match_method == "local_only"
+        assert result.matched[0].server_save is None
+
+    def test_server_only_filtered_by_active_slot(self):
+        """Server-only saves from other slots should not appear."""
+        server = [
+            _server(10, fn="pokemon.srm", slot="default", file_name_no_tags="pokemon", file_extension="srm"),
+            _server(20, fn="zelda.srm", slot="portable", file_name_no_tags="zelda", file_extension="srm"),
+        ]
+        result = match_local_to_server_saves([], server, {}, "default")
+        server_only = [m for m in result.matched if m.match_method == "server_only"]
+        assert len(server_only) == 1
+        assert server_only[0].server_save is not None
+        assert server_only[0].server_save["id"] == 10
+
+    def test_null_slot_server_save_visible_from_any_active_slot(self):
+        """Server save with slot=None should match from any active slot (v4.6 compat)."""
+        local = [_local()]
+        server = [_server(10, fn="pokemon.srm", slot=None)]
+        result = match_local_to_server_saves(local, server, {}, "desktop")
+        assert result.matched[0].match_method == "filename"
+        assert result.matched[0].server_save is not None
+        assert result.matched[0].server_save["id"] == 10
+
+    def test_active_slot_none_shows_all_saves(self):
+        """When active_slot is None (legacy), all saves are visible regardless of slot."""
+        local = [_local()]
+        server = [_server(10, fn="pokemon.srm", slot="default")]
+        result = match_local_to_server_saves(local, server, {}, None)
+        assert result.matched[0].match_method == "filename"
+        assert result.matched[0].server_save is not None
+        assert result.matched[0].server_save["id"] == 10
+
+    def test_active_slot_empty_string_shows_all_saves(self):
+        """Empty string active_slot (UI sends '' for no-slot) treated same as None."""
+        local = [_local()]
+        server = [_server(10, fn="pokemon.srm", slot="default")]
+        result = match_local_to_server_saves(local, server, {}, "")
+        assert result.matched[0].match_method == "filename"
+        assert result.matched[0].server_save is not None
+        assert result.matched[0].server_save["id"] == 10
+
+    def test_newer_in_slot_only_from_active_slot(self):
+        """Newer-in-slot detection should not flag saves from other slots."""
+        local = [_local()]
+        server = [
+            _server(18, fn="pokemon [old].srm", slot="default", updated="2026-03-24T15:00:00"),
+            _server(25, fn="pokemon [new].srm", slot="default", updated="2026-03-25T10:00:00"),
+            _server(30, fn="pokemon [portable].srm", slot="portable", updated="2026-03-26T10:00:00"),
+        ]
+        files_state = {"pokemon.srm": {"tracked_save_id": 18}}
+        result = match_local_to_server_saves(local, server, files_state, "default")
+        matched = result.matched[0]
+        assert matched.newer_save_in_slot is not None
+        assert matched.newer_save_in_slot["id"] == 25  # from default, not 30 from portable
