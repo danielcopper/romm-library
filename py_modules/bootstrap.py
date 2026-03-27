@@ -166,6 +166,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         get_roms_path=cfg.get_roms_path,
         get_active_core=_es_de_config.get_active_core,
         plugin_version=_read_plugin_version(cfg.plugin_dir),
+        emit=cfg.emit,
     )
 
     playtime_service = PlaytimeService(

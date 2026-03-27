@@ -10,7 +10,6 @@ from domain.save_conflicts import (
     build_conflict_dict,
     check_local_changes,
     check_server_changes_fast,
-    detect_conflict_lightweight,
     determine_action,
     resolve_conflict_by_mode,
 )
@@ -117,106 +116,6 @@ class TestDetermineAction:
 
     def test_both_changed_conflicts(self):
         assert determine_action(True, True) == "conflict"
-
-
-# ---------------------------------------------------------------------------
-# TestDetectConflictLightweight
-# ---------------------------------------------------------------------------
-
-
-class TestDetectConflictLightweight:
-    def _server_save(self, updated_at="2026-02-17T06:00:00Z", size=1024):
-        return {"updated_at": updated_at, "file_size_bytes": size}
-
-    def test_never_synced_no_server_uploads(self):
-        result = detect_conflict_lightweight(1000.0, 1024, None, {})
-        assert result == "upload"
-
-    def test_never_synced_with_server_conflicts(self):
-        result = detect_conflict_lightweight(1000.0, 1024, self._server_save(), {})
-        assert result == "conflict"
-
-    def test_skip_when_unchanged(self):
-        file_state = {
-            "last_sync_hash": "abc",
-            "last_sync_local_mtime": 1000.0,
-            "last_sync_server_updated_at": "2026-02-17T06:00:00Z",
-            "last_sync_server_size": 1024,
-        }
-        result = detect_conflict_lightweight(1000.0, 1024, self._server_save(), file_state)
-        assert result == "skip"
-
-    def test_local_only_changed_uploads(self):
-        file_state = {"last_sync_hash": "abc", "last_sync_local_mtime": 1000.0}
-        result = detect_conflict_lightweight(2000.0, 1024, None, file_state)
-        assert result == "upload"
-
-    def test_server_only_changed_downloads(self):
-        file_state = {
-            "last_sync_hash": "abc",
-            "last_sync_local_mtime": 1000.0,
-            "last_sync_server_updated_at": "2026-02-17T04:00:00Z",
-            "last_sync_server_size": 1024,
-        }
-        server = self._server_save(updated_at="2026-02-17T08:00:00Z")
-        result = detect_conflict_lightweight(1000.0, 1024, server, file_state)
-        assert result == "download"
-
-    def test_both_changed_conflicts(self):
-        file_state = {
-            "last_sync_hash": "abc",
-            "last_sync_local_mtime": 1000.0,
-            "last_sync_server_updated_at": "2026-02-17T04:00:00Z",
-            "last_sync_server_size": 1024,
-        }
-        server = self._server_save(updated_at="2026-02-17T08:00:00Z")
-        result = detect_conflict_lightweight(2000.0, 1024, server, file_state)
-        assert result == "conflict"
-
-    def test_no_server_save_only_local_changed_uploads(self):
-        file_state = {"last_sync_hash": "abc", "last_sync_local_mtime": 1000.0}
-        result = detect_conflict_lightweight(2000.0, 1024, None, file_state)
-        assert result == "upload"
-
-    def test_mtime_within_tolerance_unchanged(self):
-        """Mtime difference <= 1.0 second is treated as unchanged."""
-        file_state = {"last_sync_hash": "abc", "last_sync_local_mtime": 1000.0}
-        result = detect_conflict_lightweight(1000.5, 1024, None, file_state)
-        assert result == "skip"
-
-    def test_fallback_to_size_when_no_mtime(self):
-        """No stored mtime: size change counts as local changed."""
-        file_state = {"last_sync_hash": "abc", "last_sync_local_size": 1024}
-        result = detect_conflict_lightweight(1000.0, 2048, None, file_state)
-        assert result == "upload"
-
-    def test_fallback_size_unchanged_skips(self):
-        """No stored mtime, same size: local unchanged."""
-        file_state = {"last_sync_hash": "abc", "last_sync_local_size": 1024}
-        result = detect_conflict_lightweight(1000.0, 1024, None, file_state)
-        assert result == "skip"
-
-    def test_old_state_hash_only_no_mtime_no_size_returns_valid(self):
-        """Backward-compat: old state has last_sync_hash but no mtime or size keys.
-
-        stored_local_mtime is None -> falls back to size comparison.
-        stored_local_size is also None -> local_changed is False.
-        No server save -> result is skip (neither side changed).
-        """
-        file_state = {"last_sync_hash": "abc123"}
-        result = detect_conflict_lightweight(1000.0, 1024, None, file_state)
-        assert result == "skip"
-
-    def test_server_size_change_triggers_server_changed(self):
-        """Same timestamp but different size -> server changed."""
-        file_state = {
-            "last_sync_hash": "abc",
-            "last_sync_local_mtime": 1000.0,
-            "last_sync_server_updated_at": "2026-02-17T06:00:00Z",
-            "last_sync_server_size": 1024,
-        }
-        result = detect_conflict_lightweight(1000.0, 1024, self._server_save(size=2048), file_state)
-        assert result == "download"
 
 
 # ---------------------------------------------------------------------------

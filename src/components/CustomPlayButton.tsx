@@ -214,7 +214,7 @@ export const CustomPlayButton: FC<CustomPlayButtonProps> = ({ appId }) => {
     };
     window.addEventListener("romm_rom_uninstalled", onUninstall);
 
-    // Listen for save sync updates (e.g. lightweight background check found a conflict)
+    // Listen for save sync updates (e.g. background check found a conflict)
     const onDataChanged = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.type !== "save_sync") return;

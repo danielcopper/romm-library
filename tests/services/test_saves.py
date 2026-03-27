@@ -31,7 +31,7 @@ def _make_retry():
     return retry
 
 
-def make_service(tmp_path, fake_api=None, **overrides) -> tuple["SaveService", "FakeSaveApi"]:
+def make_service(tmp_path, fake_api=None, *, emit=None, **overrides) -> tuple["SaveService", "FakeSaveApi"]:
     """Create a SaveService with sensible defaults for testing."""
     fake: FakeSaveApi = fake_api or FakeSaveApi()
     defaults: dict[str, Any] = dict(
@@ -47,6 +47,7 @@ def make_service(tmp_path, fake_api=None, **overrides) -> tuple["SaveService", "
         get_roms_path=lambda: str(tmp_path / "retrodeck" / "roms"),
         get_active_core=lambda system_name, rom_filename=None: (None, None),
         plugin_version="0.14.0",
+        emit=emit,
     )
     defaults.update(overrides)
     svc = SaveService(**defaults)
@@ -607,66 +608,6 @@ class TestConflictDetectionFalseAlarm:
 
 
 # ---------------------------------------------------------------------------
-# TestConflictDetectionLightweight
-# ---------------------------------------------------------------------------
-
-
-class TestConflictDetectionLightweight:
-    def test_skip_when_unchanged(self, tmp_path):
-        svc, _ = make_service(tmp_path)
-        file_state = {
-            "last_sync_hash": "abc",
-            "last_sync_local_mtime": 1000.0,
-            "last_sync_server_updated_at": "2026-02-17T06:00:00Z",
-            "last_sync_server_size": 1024,
-        }
-        server = _server_save()
-        result = svc._detect_conflict_lightweight(1000.0, 1024, server, file_state)
-        assert result == "skip"
-
-    def test_upload_local_only(self, tmp_path):
-        svc, _ = make_service(tmp_path)
-        file_state = {"last_sync_hash": "abc", "last_sync_local_mtime": 1000.0}
-        result = svc._detect_conflict_lightweight(2000.0, 1024, None, file_state)
-        assert result == "upload"
-
-    def test_download_server_changed(self, tmp_path):
-        svc, _ = make_service(tmp_path)
-        file_state = {
-            "last_sync_hash": "abc",
-            "last_sync_local_mtime": 1000.0,
-            "last_sync_server_updated_at": "2026-02-17T04:00:00Z",
-            "last_sync_server_size": 1024,
-        }
-        server = _server_save(updated_at="2026-02-17T08:00:00Z")
-        result = svc._detect_conflict_lightweight(1000.0, 1024, server, file_state)
-        assert result == "download"
-
-    def test_conflict_both_changed(self, tmp_path):
-        svc, _ = make_service(tmp_path)
-        file_state = {
-            "last_sync_hash": "abc",
-            "last_sync_local_mtime": 1000.0,
-            "last_sync_server_updated_at": "2026-02-17T04:00:00Z",
-            "last_sync_server_size": 1024,
-        }
-        server = _server_save(updated_at="2026-02-17T08:00:00Z")
-        result = svc._detect_conflict_lightweight(2000.0, 1024, server, file_state)
-        assert result == "conflict"
-
-    def test_never_synced_no_server(self, tmp_path):
-        svc, _ = make_service(tmp_path)
-        result = svc._detect_conflict_lightweight(1000.0, 1024, None, {})
-        assert result == "upload"
-
-    def test_never_synced_with_server(self, tmp_path):
-        svc, _ = make_service(tmp_path)
-        server = _server_save()
-        result = svc._detect_conflict_lightweight(1000.0, 1024, server, {})
-        assert result == "conflict"
-
-
-# ---------------------------------------------------------------------------
 # TestSyncRomSaves
 # ---------------------------------------------------------------------------
 
@@ -1026,22 +967,6 @@ class TestSaveStatus:
         assert result["files"] == []
 
     @pytest.mark.asyncio
-    async def test_check_save_status_lightweight(self, tmp_path):
-        svc, fake = make_service(tmp_path)
-        _install_rom(svc, tmp_path)
-        _create_save(tmp_path)
-
-        ss = _server_save()
-        fake.saves[100] = ss
-
-        result = await svc.check_save_status_lightweight(42)
-        assert result["rom_id"] == 42
-        assert len(result["files"]) >= 1
-        # Lightweight should not hash
-        for f in result["files"]:
-            assert f["local_hash"] is None
-
-    @pytest.mark.asyncio
     async def test_get_save_status_includes_empty_conflicts_when_no_conflict(self, tmp_path):
         """get_save_status response includes conflicts key (empty when no conflicts)."""
         svc, _ = make_service(tmp_path)
@@ -1120,6 +1045,53 @@ class TestSaveStatus:
         assert len(file_status["device_syncs"]) == 2
         assert file_status["device_syncs"][0]["device_name"] == "my-deck"
         assert file_status["is_current"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestCheckSaveStatusBackground
+# ---------------------------------------------------------------------------
+
+
+class TestCheckSaveStatusBackground:
+    """Tests for the background save status check with event emit."""
+
+    @pytest.mark.asyncio
+    async def test_emits_save_status_updated(self, tmp_path):
+        """Background check runs full status and emits result."""
+        emitted = []
+
+        async def fake_emit(event, *args):
+            emitted.append((event, args))
+
+        svc, _fake = make_service(tmp_path, emit=fake_emit)
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        await svc.check_save_status_background(42)
+
+        assert len(emitted) == 1
+        assert emitted[0][0] == "save_status_updated"
+        result = emitted[0][1][0]
+        assert result["rom_id"] == 42
+        assert len(result["files"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_emit_when_emit_is_none(self, tmp_path):
+        """Background check works without emit (no crash)."""
+        svc, _ = make_service(tmp_path)
+        _install_rom(svc, tmp_path)
+
+        # Should not raise even without emit
+        await svc.check_save_status_background(42)
+
+    @pytest.mark.asyncio
+    async def test_swallows_errors(self, tmp_path):
+        """Background check logs but does not raise on errors."""
+        svc, fake = make_service(tmp_path)
+        fake.fail_on_next(Exception("Server down"))
+
+        # Should not raise
+        await svc.check_save_status_background(42)
 
 
 # ---------------------------------------------------------------------------
@@ -2097,6 +2069,24 @@ class TestSaveSlots:
         assert result["success"] is True
         assert result["active_slot"] is None
         assert svc._save_sync_state["saves"]["123"]["active_slot"] is None
+
+    @pytest.mark.asyncio
+    async def test_set_game_slot_triggers_background_check(self, tmp_path):
+        """set_game_slot fires a background save status check task."""
+        emitted = []
+
+        async def fake_emit(event, *args):
+            emitted.append((event, args))
+
+        svc, _ = make_service(tmp_path, emit=fake_emit)
+        _install_rom(svc, tmp_path)
+
+        svc.set_game_slot(42, "slot1")
+
+        # Give the background task a chance to run
+        await asyncio.sleep(0.1)
+
+        assert any(e[0] == "save_status_updated" for e in emitted)
 
 
 # ---------------------------------------------------------------------------

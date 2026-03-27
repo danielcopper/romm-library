@@ -71,60 +71,6 @@ def determine_action(local_changed: bool, server_changed: bool) -> str:
     return "conflict"
 
 
-def detect_conflict_lightweight(
-    local_mtime: float,
-    local_size: int,
-    server_save: dict | None,
-    file_state: dict,
-) -> str:
-    """Timestamp-only conflict detection — no file hashing, no server downloads.
-
-    Parameters
-    ----------
-    local_mtime:
-        Modification time of the local save file (seconds since epoch).
-    local_size:
-        Size of the local save file in bytes.
-    server_save:
-        Server save metadata dict, or ``None`` if no server save exists.
-    file_state:
-        Per-file sync state from ``save_sync_state["saves"][rom_id]["files"][filename]``.
-
-    Returns
-    -------
-    str
-        One of ``"skip"``, ``"upload"``, ``"download"``, or ``"conflict"``.
-    """
-    last_sync_hash = file_state.get("last_sync_hash")
-
-    # Never synced — can't determine state without hashing
-    if not last_sync_hash:
-        return "conflict" if server_save else "upload"
-
-    # Local change: compare mtime against stored sync mtime
-    stored_local_mtime = file_state.get("last_sync_local_mtime")
-    if stored_local_mtime is not None:
-        local_changed = abs(local_mtime - stored_local_mtime) > 1.0
-    else:
-        # No stored mtime — fall back to size comparison
-        stored_local_size = file_state.get("last_sync_local_size")
-        local_changed = stored_local_size is not None and local_size != stored_local_size
-
-    # Server change detection
-    server_changed = False
-    if server_save:
-        stored_updated_at = file_state.get("last_sync_server_updated_at")
-        stored_size = file_state.get("last_sync_server_size")
-        server_updated_at = server_save.get("updated_at", "")
-        server_size = server_save.get("file_size_bytes")
-
-        server_changed = (stored_updated_at and server_updated_at != stored_updated_at) or (
-            stored_size is not None and server_size is not None and server_size != stored_size
-        )
-
-    return determine_action(local_changed, server_changed)
-
-
 def resolve_conflict_by_mode(
     mode: str,
     local_mtime: float,

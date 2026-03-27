@@ -21,7 +21,7 @@ import { getAllMetadataCache, getAppIdRomIdMap, ensureDeviceRegistered, getSaveS
 import { createOrUpdateCollections, createOrUpdateRomMCollections, clearPlatformCollection, getHostname } from "./utils/collections";
 import { setMigrationStatus } from "./utils/migrationStore";
 import { initSessionManager, destroySessionManager } from "./utils/sessionManager";
-import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent } from "./types";
+import type { SyncProgress, DownloadProgressEvent, DownloadCompleteEvent, SaveStatus } from "./types";
 
 type Page = "main" | "settings" | "library" | "data" | "downloads";
 
@@ -295,6 +295,16 @@ export default definePlugin(() => {
     });
   });
 
+  const saveStatusListener = addEventListener<[SaveStatus]>(
+    "save_status_updated",
+    (data: SaveStatus) => {
+      const hasConflict = data.files?.some((f) => f.status === "conflict") ?? false;
+      globalThis.dispatchEvent(new CustomEvent("romm_data_changed", {
+        detail: { type: "save_sync", rom_id: data.rom_id, save_status: data, has_conflict: hasConflict },
+      }));
+    }
+  );
+
   return {
     name: "RomM Sync",
     icon: <FaGamepad />,
@@ -311,6 +321,7 @@ export default definePlugin(() => {
       removeEventListener("download_progress", downloadProgressListener);
       removeEventListener("download_complete", downloadCompleteListener);
       removeEventListener("retrodeck_path_changed", pathChangedListener);
+      removeEventListener("save_status_updated", saveStatusListener);
     },
   };
 });

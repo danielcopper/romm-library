@@ -554,9 +554,6 @@ class Plugin:
     async def get_save_status(self, rom_id):
         return await self._save_sync_service.get_save_status(rom_id)
 
-    async def check_save_status_lightweight(self, rom_id):
-        return await self._save_sync_service.check_save_status_lightweight(rom_id)
-
     async def pre_launch_sync(self, rom_id):
         return await self._save_sync_service.pre_launch_sync(rom_id)
 

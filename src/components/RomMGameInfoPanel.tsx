@@ -373,7 +373,7 @@ export const RomMGameInfoPanel: FC<RomMGameInfoPanelProps> = ({ appId }) => {
       }
 
       if (detail?.type === "save_sync" && (!detail.rom_id || detail.rom_id === romIdRef.current)) {
-        const updatedStatus = await getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null);
+        const updatedStatus: SaveStatus | null = detail.save_status ?? await getSaveStatus(romIdRef.current).catch((): SaveStatus | null => null);
         const conflicts: PendingConflict[] = updatedStatus?.conflicts ?? [];
         setState((prev) => ({
           ...prev,

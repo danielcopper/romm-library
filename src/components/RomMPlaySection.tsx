@@ -427,7 +427,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
       if (!romId) return;
       // If event specifies a rom_id, skip if it's not for this game
       if (detail.rom_id && romIdRef.current && detail.rom_id !== romIdRef.current) return;
-      const saveStatus = await getSaveStatus(romId).catch((): SaveStatus | null => null);
+      const saveStatus: SaveStatus | null = detail.save_status ?? await getSaveStatus(romId).catch((): SaveStatus | null => null);
       const { status: saveSyncStatus, label: saveSyncLabel } = computeSaveSyncDisplay(saveStatus);
       setInfo((prev) => ({ ...prev, saveSyncStatus, saveSyncLabel, activeSlot: saveStatus && "active_slot" in saveStatus ? saveStatus.active_slot ?? null : prev.activeSlot }));
       } catch (err) {
@@ -443,7 +443,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
   }, [appId]);
 
   // Background connection check — runs after initial cached render
-  // If connected + installed + save sync enabled, also runs lightweight save status check
+  // If connected + installed + save sync enabled, also runs background save status check
   useEffect(() => {
     let cancelled = false;
 
@@ -460,7 +460,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         const { status: ss, label: sl } = computeSaveSyncDisplay(saveStatus);
         setInfo((prev) => ({ ...prev, saveSyncStatus: ss, saveSyncLabel: sl, activeSlot: saveStatus && "active_slot" in saveStatus ? saveStatus.active_slot ?? null : prev.activeSlot }));
       } catch (e) {
-        debugLog(`RomMPlaySection: lightweight save check error: ${e}`);
+        debugLog(`RomMPlaySection: background save check error: ${e}`);
       }
     }
 
@@ -479,7 +479,7 @@ export const RomMPlaySection: FC<RomMPlaySectionProps> = ({ appId }) => {
         setConnectionState(connState);
         globalThis.dispatchEvent(new CustomEvent("romm_connection_changed", { detail: { state: connState } }));
 
-        // If connected, do lightweight save status check to detect new conflicts
+        // If connected, do background save status check to detect new conflicts
         if (connected) await doSaveCheck(cancelled);
       } catch {
         if (!cancelled) {
