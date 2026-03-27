@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.15.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.14.0...decky-romm-sync-v0.15.0) (2026-03-27)
+
+
+### Features
+
+* **adapters:** SaveApiV47 device sync methods ([#182](https://github.com/danielcopper/decky-romm-sync/issues/182)) ([#187](https://github.com/danielcopper/decky-romm-sync/issues/187)) ([ef1340e](https://github.com/danielcopper/decky-romm-sync/commit/ef1340eb987d34301152cee207f382632e0b0634))
+* **domain:** save sync v2 domain logic ([#183](https://github.com/danielcopper/decky-romm-sync/issues/183)) ([#189](https://github.com/danielcopper/decky-romm-sync/issues/189)) ([b3bab71](https://github.com/danielcopper/decky-romm-sync/commit/b3bab71a60df28bb6492d9b3858b8e01cb411bab))
+* Save Sync v2 Frontend — device info, slots, device sync status ([#185](https://github.com/danielcopper/decky-romm-sync/issues/185)) ([#191](https://github.com/danielcopper/decky-romm-sync/issues/191)) ([2ce96be](https://github.com/danielcopper/decky-romm-sync/commit/2ce96bed44ca379a1a11da4580cfed487970a8d1))
+* **saves:** expand save file extensions for DS and Sega CD ([#196](https://github.com/danielcopper/decky-romm-sync/issues/196)) ([#204](https://github.com/danielcopper/decky-romm-sync/issues/204)) ([e57b51b](https://github.com/danielcopper/decky-romm-sync/commit/e57b51bb1783ffecff42a680f744d9e1694ff27a))
+* **saves:** save sync v2 service refactoring ([#184](https://github.com/danielcopper/decky-romm-sync/issues/184)) ([#190](https://github.com/danielcopper/decky-romm-sync/issues/190)) ([7eebe41](https://github.com/danielcopper/decky-romm-sync/commit/7eebe41b8bdcf502b39ae3fb83cf39e60368e8bf))
+* **saves:** unify save status check — single non-blocking background check ([#201](https://github.com/danielcopper/decky-romm-sync/issues/201)) ([#202](https://github.com/danielcopper/decky-romm-sync/issues/202)) ([3b63893](https://github.com/danielcopper/decky-romm-sync/commit/3b63893eb907fd3552eb9ea01a77b765927a0573))
+
+
+### Bug Fixes
+
+* **saves:** filter server saves by active_slot in matching logic ([#200](https://github.com/danielcopper/decky-romm-sync/issues/200)) ([#203](https://github.com/danielcopper/decky-romm-sync/issues/203)) ([30b74fb](https://github.com/danielcopper/decky-romm-sync/commit/30b74fbb55f73da1ff07b5d4592c5fd70ab89df8))
+
 ## [0.14.0](https://github.com/danielcopper/decky-romm-sync/compare/decky-romm-sync-v0.13.1...decky-romm-sync-v0.14.0) (2026-03-20)
 
 
