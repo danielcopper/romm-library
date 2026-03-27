@@ -273,10 +273,18 @@ def match_local_to_server_saves(
     """
     result = MatchResult()
 
+    # Filter server saves to active slot (when slot is configured).
+    # Saves with slot=None (v4.6 / pre-slot) are included in any active slot.
+    # Treat empty string same as None (legacy/no-slot mode).
+    if active_slot:
+        filtered_saves = [ss for ss in server_saves if ss.get("slot") == active_slot or ss.get("slot") is None]
+    else:
+        filtered_saves = server_saves
+
     # Build indexes
     server_by_id: dict[int, dict] = {}
     server_by_name: dict[str, dict] = {}
-    for ss in server_saves:
+    for ss in filtered_saves:
         sid = ss.get("id")
         if sid is not None:
             server_by_id[sid] = ss
@@ -290,12 +298,13 @@ def match_local_to_server_saves(
     for lf in sorted(local_files, key=lambda x: x["filename"]):
         file_state = files_state.get(lf["filename"], {})
         matched = _match_single_local_file(
-            lf, server_by_id, server_by_name, server_saves, active_slot, file_state, result, device_id
+            lf, server_by_id, server_by_name, filtered_saves, active_slot, file_state, result, device_id
         )
         result.matched.append(matched)
 
     # --- Pass 2: Server-only saves (not matched by any local file) ---
-    result.matched.extend(_collect_server_only_saves(server_saves, result.matched_server_ids, local_by_name, rom_name))
+    server_only = _collect_server_only_saves(filtered_saves, result.matched_server_ids, local_by_name, rom_name)
+    result.matched.extend(server_only)
 
     return result
 

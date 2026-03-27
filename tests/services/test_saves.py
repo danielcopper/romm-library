@@ -1046,6 +1046,24 @@ class TestSaveStatus:
         assert file_status["device_syncs"][0]["device_name"] == "my-deck"
         assert file_status["is_current"] is True
 
+    @pytest.mark.asyncio
+    async def test_save_status_filters_by_active_slot(self, tmp_path):
+        """Saves from a different slot should not appear in status."""
+        svc, fake = make_service(tmp_path)
+        _install_rom(svc, tmp_path)
+        _create_save(tmp_path)
+
+        # Server save in slot "default", but active_slot is "other"
+        ss = _server_save(slot="default")
+        fake.saves[100] = ss
+        svc._save_sync_state["saves"]["42"] = {"active_slot": "other", "files": {}}
+
+        result = await svc.get_save_status(42)
+        # Local file exists → should show as upload (local-only), not synced against wrong slot
+        assert len(result["files"]) == 1
+        assert result["files"][0]["status"] == "upload"
+        assert result["files"][0]["server_save_id"] is None
+
 
 # ---------------------------------------------------------------------------
 # TestCheckSaveStatusBackground
@@ -2861,8 +2879,8 @@ class TestOlderVersionSkipping:
         assert len(newer_conflicts) == 1
         assert newer_conflicts[0]["newer_save_id"] == 20
 
-    def test_different_slot_not_skipped(self, tmp_path):
-        """Saves in a different slot should never be skipped."""
+    def test_different_slot_filtered_out(self, tmp_path):
+        """Saves in a different slot should be filtered out entirely."""
         svc, fake = make_service(tmp_path)
         svc._save_sync_state["settings"]["save_sync_enabled"] = True
         svc._save_sync_state["device_id"] = "dev-1"
@@ -2876,7 +2894,7 @@ class TestOlderVersionSkipping:
             updated_at="2026-03-24T15:00:00",
             slot="default",
         )
-        # Unmatched in slot=portable — older timestamp but different slot
+        # Unmatched in slot=portable — filtered out by active_slot
         fake.saves[20] = _server_save(
             save_id=20,
             filename="pokemon [old].srm",
@@ -2903,10 +2921,9 @@ class TestOlderVersionSkipping:
         }
 
         _synced, _errors, _conflicts = svc._sync_rom_saves(42)
-        # pokemon [old].srm in slot=portable should NOT be skipped
+        # pokemon [old].srm in slot=portable is filtered out — no download
         download_calls = [c for c in fake.call_log if c[0] == "download_save"]
-        assert len(download_calls) == 1
-        assert download_calls[0][1][0] == 20
+        assert len(download_calls) == 0
 
 
 # ---------------------------------------------------------------------------
