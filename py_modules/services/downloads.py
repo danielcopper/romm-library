@@ -17,14 +17,20 @@ import zipfile
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from domain import retrodeck_config
 from domain.rom_files import build_m3u_content, detect_launch_file, needs_m3u
 from lib.errors import error_response
 
 if TYPE_CHECKING:
     import logging
 
-    from services.protocols import EventEmitter, RommApiProtocol, StatePersister, SystemResolver
+    from services.protocols import (
+        BiosPathProvider,
+        EventEmitter,
+        RommApiProtocol,
+        RomsPathProvider,
+        StatePersister,
+        SystemResolver,
+    )
 
 _DOWNLOAD_QUEUE_MAX_TERMINAL = 50
 _ZIP_TMP_EXT = ".zip.tmp"
@@ -45,6 +51,8 @@ class DownloadService:
         runtime_dir: str,
         emit: EventEmitter,
         save_state: StatePersister,
+        get_roms_path: RomsPathProvider | None = None,
+        get_bios_path: BiosPathProvider | None = None,
     ):
         self._romm_api = romm_api
         self._resolve_system = resolve_system
@@ -54,6 +62,8 @@ class DownloadService:
         self._runtime_dir = runtime_dir
         self._emit = emit
         self._save_state = save_state
+        self._get_roms_path = get_roms_path
+        self._get_bios_path = get_bios_path
 
         # Owned state
         self._download_in_progress: set = set()
@@ -116,7 +126,7 @@ class DownloadService:
     def _clean_rom_tmp_files(self):
         """Remove leftover .tmp and .zip.tmp files from ROM directories."""
         cleaned = 0
-        roms_base = retrodeck_config.get_roms_path()
+        roms_base = self._get_roms_path() if self._get_roms_path else ""
         if not os.path.isdir(roms_base):
             return cleaned
         for system_dir in os.listdir(roms_base):
@@ -132,7 +142,7 @@ class DownloadService:
     def _clean_bios_tmp_files(self):
         """Remove leftover .tmp files from BIOS directory."""
         cleaned = 0
-        bios_base = retrodeck_config.get_bios_path()
+        bios_base = self._get_bios_path() if self._get_bios_path else ""
         if not os.path.isdir(bios_base):
             return cleaned
         for root, _dirs, files in os.walk(bios_base):
@@ -200,7 +210,7 @@ class DownloadService:
         platform_fs_slug = rom_detail.get("platform_fs_slug")
         system = self._resolve_system(platform_slug, platform_fs_slug)
 
-        roms_dir = os.path.join(retrodeck_config.get_roms_path(), system)
+        roms_dir = os.path.join(self._get_roms_path() if self._get_roms_path else "", system)
         file_name = rom_detail.get("fs_name", f"rom_{rom_id}")
         # Fix 1: Sanitize fs_name to prevent path traversal
         safe_name = os.path.basename(file_name)
@@ -251,7 +261,7 @@ class DownloadService:
         extract_dir = os.path.join(os.path.dirname(target_path), rom_dir_name)
         os.makedirs(extract_dir, exist_ok=True)
         # Fix 4: Validate extract_dir is within roms_dir
-        roms_base = retrodeck_config.get_roms_path()
+        roms_base = self._get_roms_path() if self._get_roms_path else ""
         if not os.path.realpath(extract_dir).startswith(os.path.realpath(roms_base) + os.sep):
             raise ValueError(f"Extract directory would be outside roms directory: {extract_dir}")
         tmp_zip = target_path + _ZIP_TMP_EXT

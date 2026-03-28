@@ -7,12 +7,10 @@ import os
 import shutil
 from typing import TYPE_CHECKING
 
-from domain import retrodeck_config
-
 if TYPE_CHECKING:
     import logging
 
-    from services.protocols import StatePersister
+    from services.protocols import RomsPathProvider, StatePersister
 
 
 class RomRemovalService:
@@ -27,6 +25,7 @@ class RomRemovalService:
         loop: asyncio.AbstractEventLoop,
         save_state: StatePersister,
         save_save_sync_state: StatePersister,
+        get_roms_path: RomsPathProvider | None = None,
     ):
         self._state = state
         self._save_sync_state = save_sync_state
@@ -34,10 +33,11 @@ class RomRemovalService:
         self._loop = loop
         self._save_state = save_state
         self._save_save_sync_state = save_save_sync_state
+        self._get_roms_path = get_roms_path
 
     def _is_safe_rom_path(self, path: str) -> bool:
         """Check that a path is safely contained within the roms base directory."""
-        roms_base = retrodeck_config.get_roms_path()
+        roms_base = self._get_roms_path() if self._get_roms_path else ""
         resolved = os.path.realpath(path)
         real_base = os.path.realpath(roms_base)
         if not resolved.startswith(real_base + os.sep):

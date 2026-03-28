@@ -26,17 +26,7 @@ class _DeckyMock(MagicMock):
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
-        if name == "DECKY_USER_HOME":
-            try:
-                from domain import retrodeck_config
-
-                retrodeck_config.configure(user_home=value)
-                retrodeck_config._cached_config = None
-                retrodeck_config._cache_time = 0.0
-                retrodeck_config._cache_config_path = None
-            except Exception:
-                pass
-        elif name == "DECKY_PLUGIN_DIR":
+        if name == "DECKY_PLUGIN_DIR":
             try:
                 from domain import es_de_config
 
@@ -82,7 +72,7 @@ def _reset_retrodeck_config_user_home():
     Tests that need a specific user_home can set decky.DECKY_USER_HOME = str(tmp_path),
     which will automatically call retrodeck_config.configure() via _DeckyMock.
     """
-    from domain import es_de_config, retrodeck_config
+    from domain import es_de_config
 
     # Fresh temp dirs per test — ensures no cross-test pollution
     mock_decky.DECKY_USER_HOME = os.path.expanduser("~")
@@ -91,12 +81,5 @@ def _reset_retrodeck_config_user_home():
     _fresh_runtime = tempfile.mkdtemp()
     mock_decky.DECKY_PLUGIN_SETTINGS_DIR = _fresh_settings
     mock_decky.DECKY_PLUGIN_RUNTIME_DIR = _fresh_runtime
-    retrodeck_config._cached_config = None
-    retrodeck_config._cache_time = 0.0
-    retrodeck_config._cache_config_path = None
     es_de_config.configure(plugin_dir=_project_root, logger=logging.getLogger("test_romm"))
     yield
-    retrodeck_config._user_home = None
-    retrodeck_config._cached_config = None
-    retrodeck_config._cache_time = 0.0
-    retrodeck_config._cache_config_path = None

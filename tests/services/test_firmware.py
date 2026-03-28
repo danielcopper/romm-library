@@ -1,7 +1,7 @@
 import asyncio
 import os
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from models.bios import BiosFileEntry
@@ -44,6 +44,7 @@ def plugin():
         save_state=MagicMock(),
         save_firmware_cache=MagicMock(),
         load_firmware_cache=MagicMock(return_value={}),
+        get_bios_path=MagicMock(return_value=""),
     )
 
     p._sync_service = LibraryService(
@@ -82,18 +83,14 @@ class TestFirmwareDestPath:
 
     def test_flat_default_no_registry(self, fw, tmp_path):
         """File not in registry goes flat in bios root."""
-        from unittest.mock import patch
-
         bios = os.path.join(str(tmp_path), "retrodeck", "bios")
-        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
-            firmware = {"file_name": "bios.bin", "file_path": "bios/n64/bios.bin"}
-            dest = fw._firmware_dest_path(firmware)
-            assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "bios.bin")
+        fw._get_bios_path = MagicMock(return_value=bios)
+        firmware = {"file_name": "bios.bin", "file_path": "bios/n64/bios.bin"}
+        dest = fw._firmware_dest_path(firmware)
+        assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "bios.bin")
 
     def test_dreamcast_subfolder_from_registry(self, fw, tmp_path):
         """Registry firmware_path with subdirectory places file correctly."""
-        from unittest.mock import patch
-
         fw._bios_files_index["dc_boot.bin"] = {
             "description": "Dreamcast BIOS",
             "required": True,
@@ -102,14 +99,13 @@ class TestFirmwareDestPath:
         }
 
         bios = os.path.join(str(tmp_path), "retrodeck", "bios")
-        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
-            firmware = {"file_name": "dc_boot.bin", "file_path": "bios/dc/dc_boot.bin"}
-            dest = fw._firmware_dest_path(firmware)
-            assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "dc", "dc_boot.bin")
+        fw._get_bios_path = MagicMock(return_value=bios)
+        firmware = {"file_name": "dc_boot.bin", "file_path": "bios/dc/dc_boot.bin"}
+        dest = fw._firmware_dest_path(firmware)
+        assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "dc", "dc_boot.bin")
 
     def test_psx_flat_from_registry(self, fw, tmp_path):
         """Registry firmware_path without subdirectory goes flat."""
-        from unittest.mock import patch
 
         fw._bios_files_index["scph5501.bin"] = {
             "description": "PS1 US BIOS",
@@ -119,27 +115,25 @@ class TestFirmwareDestPath:
         }
 
         bios = os.path.join(str(tmp_path), "retrodeck", "bios")
-        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
+        with patch.object(fw, "_get_bios_path", return_value=bios):
             firmware = {"file_name": "scph5501.bin", "file_path": "bios/ps/scph5501.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "scph5501.bin")
 
     def test_uses_dynamic_bios_path(self, fw, tmp_path):
         """Uses retrodeck_config.get_bios_path() for the base directory."""
-        from unittest.mock import patch
 
         sd_bios = "/run/media/deck/Emulation/retrodeck/bios"
-        with patch("domain.retrodeck_config.get_bios_path", return_value=sd_bios):
+        with patch.object(fw, "_get_bios_path", return_value=sd_bios):
             firmware = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(sd_bios, "fw.bin")
 
     def test_unknown_file_flat_fallback(self, fw, tmp_path):
         """File not in registry falls back to flat in bios root."""
-        from unittest.mock import patch
 
         bios = os.path.join(str(tmp_path), "retrodeck", "bios")
-        with patch("domain.retrodeck_config.get_bios_path", return_value=bios):
+        with patch.object(fw, "_get_bios_path", return_value=bios):
             firmware = {"file_name": "fw.bin", "file_path": "bios/saturn/fw.bin"}
             dest = fw._firmware_dest_path(firmware)
             assert dest == os.path.join(str(tmp_path), "retrodeck", "bios", "fw.bin")
@@ -187,7 +181,7 @@ class TestGetFirmwareStatus:
 
     @pytest.mark.asyncio
     async def test_detects_downloaded_files(self, fw, tmp_path):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         # File goes flat in bios root (not in registry, no firmware_path)
         bios_dir = tmp_path / "retrodeck" / "bios"
@@ -207,7 +201,7 @@ class TestGetFirmwareStatus:
         fw._loop = MagicMock()
         fw._loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
-        with patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+        with patch.object(fw, "_get_bios_path", return_value=str(bios_dir)):
             result = await fw.get_firmware_status()
         assert result["success"] is True
         assert result["platforms"][0]["files"][0]["downloaded"] is True
@@ -229,7 +223,6 @@ class TestDownloadFirmware:
     @pytest.mark.asyncio
     async def test_downloads_and_verifies_md5(self, plugin, fw, tmp_path):
         import hashlib
-        from unittest.mock import patch
 
         content = b"firmware data here"
         expected_md5 = hashlib.md5(content).hexdigest()
@@ -242,10 +235,14 @@ class TestDownloadFirmware:
             "md5_hash": expected_md5,
         }
 
+        bios_dir = tmp_path / "bios"
+        bios_dir.mkdir()
+
         def fake_download(firmware_id, filename, dest):
             with open(dest, "wb") as f:
                 f.write(content)
 
+        fw._get_bios_path = MagicMock(return_value=str(bios_dir))
         fw._loop = asyncio.get_event_loop()
 
         with (
@@ -263,7 +260,6 @@ class TestDownloadFirmware:
 
     @pytest.mark.asyncio
     async def test_handles_download_error(self, plugin, fw, tmp_path):
-        from unittest.mock import patch
 
         fw_detail = {
             "id": 10,
@@ -288,7 +284,6 @@ class TestDownloadFirmware:
 class TestDownloadAllFirmware:
     @pytest.mark.asyncio
     async def test_downloads_missing_only(self, plugin, fw, tmp_path):
-        from unittest.mock import patch
 
         # Pre-create one file so it's skipped (flat in bios root, not in registry)
         bios_dir = tmp_path / "retrodeck" / "bios"
@@ -323,7 +318,7 @@ class TestDownloadAllFirmware:
         with (
             patch.object(plugin._romm_api, "list_firmware", return_value=firmware_list),
             patch.object(fw, "download_firmware", side_effect=fake_download_firmware),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch.object(fw, "_get_bios_path", return_value=str(bios_dir)),
         ):
             result = await fw.download_all_firmware("dc")
 
@@ -685,7 +680,7 @@ class TestCheckPlatformBiosRequired:
     @pytest.mark.asyncio
     async def test_all_required_downloaded(self, fw, tmp_path):
         """When all required files are downloaded, counts reflect this."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         # Create downloaded required files (flat in bios root, no firmware_path in registry)
         bios_dir = tmp_path / "retrodeck" / "bios"
@@ -736,7 +731,7 @@ class TestCheckPlatformBiosRequired:
         fw._loop = MagicMock()
         fw._loop.run_in_executor = AsyncMock(return_value=firmware_list)
 
-        with patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+        with patch.object(fw, "_get_bios_path", return_value=str(bios_dir)):
             result = await fw.check_platform_bios("dc")
         assert result["needs_bios"] is True
         assert result["required_count"] == 2
@@ -830,7 +825,6 @@ class TestDownloadRequiredFirmware:
     @pytest.mark.asyncio
     async def test_downloads_required_only(self, plugin, fw, tmp_path):
         """Only downloads files marked required, skips optional."""
-        from unittest.mock import patch
 
         firmware_list = [
             {
@@ -884,7 +878,6 @@ class TestDownloadRequiredFirmware:
     @pytest.mark.asyncio
     async def test_skips_already_downloaded_required(self, plugin, fw, tmp_path):
         """Skips required files that are already downloaded."""
-        from unittest.mock import patch
 
         # Pre-create one required file so it's skipped (flat in bios root)
         bios_dir = tmp_path / "retrodeck" / "bios"
@@ -932,7 +925,7 @@ class TestDownloadRequiredFirmware:
         with (
             patch.object(plugin._romm_api, "list_firmware", return_value=firmware_list),
             patch.object(fw, "download_firmware", side_effect=fake_download_firmware),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch.object(fw, "_get_bios_path", return_value=str(bios_dir)),
         ):
             result = await fw.download_required_firmware("dc")
 
@@ -948,7 +941,6 @@ class TestCheckPlatformBiosOffline:
     @pytest.mark.asyncio
     async def test_offline_fallback_with_registry(self, plugin, fw, tmp_path):
         """API fails but registry has entries — returns registry-based status."""
-        from unittest.mock import patch
 
         bios_dir = tmp_path / "bios"
         bios_dir.mkdir(parents=True)
@@ -983,7 +975,7 @@ class TestCheckPlatformBiosOffline:
 
         with (
             patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch.object(fw, "_get_bios_path", return_value=str(bios_dir)),
         ):
             result = await fw.check_platform_bios("psx")
 
@@ -997,14 +989,13 @@ class TestCheckPlatformBiosOffline:
     @pytest.mark.asyncio
     async def test_offline_no_registry_entries(self, plugin, fw, tmp_path):
         """API fails and no registry entries — returns needs_bios False."""
-        from unittest.mock import patch
 
         fw._bios_registry = {"platforms": {}}
         fw._bios_files_index = {}
 
         with (
             patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(tmp_path / "bios")),
+            patch.object(fw, "_get_bios_path", return_value=str(tmp_path / "bios")),
         ):
             result = await fw.check_platform_bios("n64")
 
@@ -1013,7 +1004,6 @@ class TestCheckPlatformBiosOffline:
     @pytest.mark.asyncio
     async def test_offline_all_required_downloaded(self, plugin, fw, tmp_path):
         """API fails, all required files present — all_downloaded True."""
-        from unittest.mock import patch
 
         bios_dir = tmp_path / "bios"
         dc_dir = bios_dir / "dc"
@@ -1043,7 +1033,7 @@ class TestCheckPlatformBiosOffline:
 
         with (
             patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch.object(fw, "_get_bios_path", return_value=str(bios_dir)),
         ):
             result = await fw.check_platform_bios("dc")
 
@@ -1136,7 +1126,7 @@ class TestPerCoreFiltering:
     @pytest.mark.asyncio
     async def test_check_platform_bios_filters_by_core(self, fw, tmp_path):
         """check_platform_bios returns all files but marks used_by_active correctly."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         firmware_list = [
             {
@@ -1202,7 +1192,7 @@ class TestPerCoreFiltering:
         with (
             patch("services.firmware.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")),
             patch("services.firmware.es_de_config.get_available_cores", return_value=[]),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(tmp_path / "bios")),
+            patch.object(fw, "_get_bios_path", return_value=str(tmp_path / "bios")),
         ):
             result = await fw.check_platform_bios("gba")
 
@@ -1230,7 +1220,7 @@ class TestPerCoreFiltering:
     @pytest.mark.asyncio
     async def test_check_platform_bios_mgba_all_optional(self, fw, tmp_path):
         """mGBA shows files it uses but all as optional."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         firmware_list = [
             {
@@ -1309,7 +1299,7 @@ class TestPerCoreFiltering:
     @pytest.mark.asyncio
     async def test_check_platform_bios_no_core_shows_all(self, fw, tmp_path):
         """When core resolution fails, shows all files with OR-logic."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         firmware_list = [
             {
@@ -1357,7 +1347,6 @@ class TestPerCoreFiltering:
     @pytest.mark.asyncio
     async def test_offline_fallback_includes_all_with_used_by_active(self, plugin, fw, tmp_path):
         """Offline registry fallback returns all files with used_by_active flag."""
-        from unittest.mock import patch
 
         bios_dir = tmp_path / "bios"
         bios_dir.mkdir()
@@ -1391,7 +1380,7 @@ class TestPerCoreFiltering:
             patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
             patch("services.firmware.es_de_config.get_active_core", return_value=("gpsp_libretro", "gpSP")),
             patch("services.firmware.es_de_config.get_available_cores", return_value=[]),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch.object(fw, "_get_bios_path", return_value=str(bios_dir)),
         ):
             result = await fw.check_platform_bios("gba")
 
@@ -1442,7 +1431,6 @@ class TestDownloadFirmwarePostIORegistryHash:
 
     def test_verifies_registry_hash_when_no_server_md5(self, fw, tmp_path):
         """Registry hash should be checked even when server md5 is missing."""
-        from unittest.mock import patch
 
         bios_dir = tmp_path / "bios"
         bios_dir.mkdir()
@@ -1462,7 +1450,7 @@ class TestDownloadFirmwarePostIORegistryHash:
         fw._state["downloaded_bios"] = {}
 
         fw_data = {"file_name": "test.bin", "file_path": "bios/test/test.bin", "md5_hash": ""}
-        with patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+        with patch.object(fw, "_get_bios_path", return_value=str(bios_dir)):
             md5_match, reg_hash_valid = fw._download_firmware_post_io(fw_data, 1, dest, tmp_path_file)
 
         assert md5_match is None
@@ -1470,7 +1458,6 @@ class TestDownloadFirmwarePostIORegistryHash:
 
     def test_registry_hash_mismatch(self, fw, tmp_path):
         """Registry hash mismatch returns False."""
-        from unittest.mock import patch
 
         bios_dir = tmp_path / "bios"
         bios_dir.mkdir()
@@ -1487,7 +1474,7 @@ class TestDownloadFirmwarePostIORegistryHash:
         fw._state["downloaded_bios"] = {}
 
         fw_data = {"file_name": "bad.bin", "file_path": "bios/test/bad.bin", "md5_hash": ""}
-        with patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)):
+        with patch.object(fw, "_get_bios_path", return_value=str(bios_dir)):
             _md5_match, reg_hash_valid = fw._download_firmware_post_io(fw_data, 2, dest, tmp_path_file)
 
         assert reg_hash_valid is False
@@ -1513,7 +1500,6 @@ class TestGetFirmwareStatusOfflineFallback:
 
     @pytest.mark.asyncio
     async def test_offline_uses_registry(self, fw, plugin, tmp_path):
-        from unittest.mock import patch
 
         fw._bios_registry = {
             "platforms": {
@@ -1545,7 +1531,7 @@ class TestGetFirmwareStatusOfflineFallback:
 
         with (
             patch.object(plugin._romm_api, "list_firmware", side_effect=Exception("offline")),
-            patch("services.firmware.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch.object(fw, "_get_bios_path", return_value=str(bios_dir)),
             patch("services.firmware.es_de_config.get_active_core", return_value=(None, None)),
             patch("services.firmware.es_de_config.get_available_cores", return_value=[]),
         ):
@@ -1692,7 +1678,6 @@ class TestCheckPlatformBiosCached:
             ],
             firmware_cache_at=1000.0,
         )
-        from unittest.mock import patch
 
         with patch("domain.es_de_config.get_active_core", return_value=(None, None)):
             result = fw.check_platform_bios_cached("gba")
@@ -1715,7 +1700,6 @@ class TestCheckPlatformBiosCached:
             ],
             firmware_cache_at=42.0,
         )
-        from unittest.mock import patch
 
         with (
             patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
@@ -1723,7 +1707,7 @@ class TestCheckPlatformBiosCached:
                 "domain.es_de_config.get_available_cores",
                 return_value=[{"label": "mGBA", "so": "mgba_libretro.so"}],
             ),
-            patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
+            patch.object(fw, "_get_bios_path", return_value=str(tmp_path)),
         ):
             result = fw.check_platform_bios_cached("gba")
 
@@ -1753,8 +1737,6 @@ class TestCheckPlatformBiosCached:
         fw._firmware_cache = []
         fw._firmware_cache_at = 1.0
         fw._firmware_cache_epoch = 1.0
-
-        from unittest.mock import patch
 
         with patch("domain.es_de_config.get_active_core", return_value=(None, None)):
             fw.check_platform_bios_cached("gba")

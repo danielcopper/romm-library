@@ -331,6 +331,24 @@ class RomsPathProvider(Protocol):
     def __call__(self) -> str: ...
 
 
+class BiosPathProvider(Protocol):
+    """Return the current RetroDECK BIOS directory path."""
+
+    def __call__(self) -> str: ...
+
+
+class RetroDeckHomeProvider(Protocol):
+    """Return the current RetroDECK home directory path."""
+
+    def __call__(self) -> str: ...
+
+
+class RetroArchSaveSortingProvider(Protocol):
+    """Return RetroArch save sorting settings as (sort_by_content, sort_by_core)."""
+
+    def __call__(self) -> tuple[bool, bool]: ...
+
+
 class CoreResolverFn(Protocol):
     """Resolve the active RetroArch core for a system/game."""
 

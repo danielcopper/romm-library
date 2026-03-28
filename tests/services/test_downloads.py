@@ -53,6 +53,8 @@ def plugin():
         runtime_dir=decky.DECKY_PLUGIN_RUNTIME_DIR,
         emit=decky.emit,
         save_state=MagicMock(),
+        get_roms_path=lambda: os.path.join(os.path.expanduser("~"), "retrodeck", "roms"),
+        get_bios_path=lambda: os.path.join(os.path.expanduser("~"), "retrodeck", "bios"),
     )
     p._rom_removal_service = RomRemovalService(
         state=p._state,
@@ -61,6 +63,7 @@ def plugin():
         loop=asyncio.get_event_loop(),
         save_state=MagicMock(),
         save_save_sync_state=MagicMock(),
+        get_roms_path=lambda: os.path.join(os.path.expanduser("~"), "retrodeck", "roms"),
     )
     return p
 
@@ -81,6 +84,9 @@ class TestStartDownload:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_detail = {
             "id": 42,
@@ -135,6 +141,9 @@ class TestStartDownload:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_detail = {
             "id": 42,
@@ -241,6 +250,9 @@ class TestRemoveRom:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_file = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
         rom_file.parent.mkdir(parents=True)
@@ -273,6 +285,9 @@ class TestUninstallAllRoms:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
         roms_dir.mkdir(parents=True)
@@ -298,6 +313,9 @@ class TestUninstallAllRoms:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         plugin._state["installed_roms"] = {
             "1": {"rom_id": 1, "file_path": "/nonexistent", "system": "n64"},
@@ -312,6 +330,9 @@ class TestUninstallAllRoms:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         plugin._state["installed_roms"] = {
             "1": {"rom_id": 1, "file_path": "/does/not/exist.z64", "system": "n64"},
@@ -417,6 +438,9 @@ class TestDiskSpaceMultiFile:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         file_size = 500 * 1024 * 1024  # 500MB
         rom_detail = {
@@ -446,6 +470,9 @@ class TestDiskSpaceMultiFile:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         file_size = 500 * 1024 * 1024  # 500MB
         rom_detail = {
@@ -552,6 +579,9 @@ class TestMultiFileRomDeletion:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_dir = tmp_path / "retrodeck" / "roms" / "psx" / "FF7"
         rom_dir.mkdir(parents=True)
@@ -579,6 +609,9 @@ class TestMultiFileRomDeletion:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_dir = tmp_path / "retrodeck" / "roms" / "psx" / "FF7"
         rom_dir.mkdir(parents=True)
@@ -676,6 +709,9 @@ class TestDoDownloadSingleFile:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         decky.emit.reset_mock()
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
@@ -731,6 +767,9 @@ class TestDoDownloadMultiFile:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         decky.emit.reset_mock()
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
@@ -793,6 +832,9 @@ class TestPathTraversalDeleteRomFiles:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         # Create a file outside roms dir that should NOT be deleted
         evil_dir = tmp_path / "evil"
@@ -820,6 +862,9 @@ class TestPathTraversalDeleteRomFiles:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         evil_file = tmp_path / "etc" / "passwd"
         evil_file.parent.mkdir(parents=True)
@@ -846,6 +891,9 @@ class TestPathTraversalFsName:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_detail = {
             "id": 77,
@@ -923,6 +971,9 @@ class TestDoDownloadCancelled:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
         roms_dir.mkdir(parents=True)
@@ -965,6 +1016,9 @@ class TestDoDownloadZipFailure:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
         roms_dir.mkdir(parents=True)
@@ -1005,6 +1059,9 @@ class TestStartDownloadReDownload:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_detail = {
             "id": 42,
@@ -1088,6 +1145,9 @@ class TestUninstallAllRomsMixedResults:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         # Create a real file that can be deleted
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
@@ -1126,6 +1186,9 @@ class TestRemoveRomFileAlreadyGone:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         # Entry exists in state but file is gone
         plugin._state["installed_roms"]["42"] = {
@@ -1151,6 +1214,9 @@ class TestUrlEncodedFilenameRename:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         decky.emit.reset_mock()
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
@@ -1201,6 +1267,9 @@ class TestUrlEncodedFilenameRename:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         decky.emit.reset_mock()
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "psx"
@@ -1248,6 +1317,9 @@ class TestCleanupLeftoverTmpFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         system_dir = tmp_path / "retrodeck" / "roms" / "n64"
         system_dir.mkdir(parents=True)
@@ -1261,6 +1333,9 @@ class TestCleanupLeftoverTmpFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         system_dir = tmp_path / "retrodeck" / "roms" / "psx"
         system_dir.mkdir(parents=True)
@@ -1274,6 +1349,9 @@ class TestCleanupLeftoverTmpFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         system_dir = tmp_path / "retrodeck" / "roms" / "n64"
         system_dir.mkdir(parents=True)
@@ -1293,6 +1371,9 @@ class TestCleanupLeftoverTmpFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         bios_dir = tmp_path / "retrodeck" / "bios" / "dc"
         bios_dir.mkdir(parents=True)
@@ -1306,6 +1387,9 @@ class TestCleanupLeftoverTmpFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         # No retrodeck/roms directory exists — should not crash
         plugin._download_service.cleanup_leftover_tmp_files()
 
@@ -1313,6 +1397,9 @@ class TestCleanupLeftoverTmpFiles:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         system_dir = tmp_path / "retrodeck" / "roms" / "n64"
         system_dir.mkdir(parents=True)
@@ -1333,6 +1420,9 @@ class TestRemoveRomCleansSaveSyncState:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_file = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
         rom_file.parent.mkdir(parents=True)
@@ -1369,6 +1459,9 @@ class TestRemoveRomCleansSaveSyncState:
 
         plugin._download_service._runtime_dir = str(tmp_path)
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
         roms_dir.mkdir(parents=True)
@@ -1480,6 +1573,9 @@ class TestStartDownloadCreateTaskFailure:
         import decky
 
         decky.DECKY_USER_HOME = str(tmp_path)
+        plugin._download_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
+        plugin._download_service._get_bios_path = lambda: str(tmp_path / "retrodeck" / "bios")
+        plugin._rom_removal_service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
 
         rom_detail = {
             "id": 42,
