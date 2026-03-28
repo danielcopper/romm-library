@@ -33,7 +33,14 @@ from domain.save_extensions import get_save_extensions
 from domain.save_path import resolve_save_dir
 from domain.save_sync import determine_sync_action, match_local_to_server_saves
 from lib.errors import RommApiError, RommConflictError, classify_error
-from services.protocols import CoreResolverFn, RetryStrategy, RommApiProtocol, RomsPathProvider, SavesPathProvider
+from services.protocols import (
+    CoreResolverFn,
+    RetroArchSaveSortingProvider,
+    RetryStrategy,
+    RommApiProtocol,
+    RomsPathProvider,
+    SavesPathProvider,
+)
 
 _DEVICE_NOT_REGISTERED = "Device not registered"
 _NO_MIGRATION = object()  # sentinel: no slot migration requested
@@ -75,6 +82,8 @@ class SaveService:
     get_active_core:
         Callable resolving the active RetroArch core for a system/game.
         Returns ``(core_so, label)`` tuple; either may be None if unresolved.
+    get_retroarch_save_sorting:
+        Callable returning ``(sort_by_content, sort_by_core)`` booleans from retroarch.cfg.
     """
 
     _LOG_LEVELS: ClassVar[dict[str, int]] = {"debug": 0, "info": 1, "warn": 2, "error": 3}
@@ -93,6 +102,7 @@ class SaveService:
         get_saves_path: SavesPathProvider,
         get_roms_path: RomsPathProvider,
         get_active_core: CoreResolverFn,
+        get_retroarch_save_sorting: RetroArchSaveSortingProvider | None = None,
         plugin_version: str = "0.0.0",
         emit: EventEmitter | None = None,
     ) -> None:
@@ -107,6 +117,7 @@ class SaveService:
         self._get_saves_path = get_saves_path
         self._get_roms_path = get_roms_path
         self._get_active_core = get_active_core
+        self._get_retroarch_save_sorting = get_retroarch_save_sorting
         self._plugin_version = plugin_version
         self._emit = emit
 
@@ -232,17 +243,20 @@ class SaveService:
         rom_name = os.path.splitext(os.path.basename(file_path))[0]
 
         # Use domain save path resolution.
-        # RetroDECK defaults: sort_by_content=True, sort_by_core=False
-        # TODO(#186): Read sort_savefiles_by_content_enable / sort_savefiles_enable from retroarch.cfg
+        # Read sort settings from retroarch.cfg if callback is available.
         saves_base = self._get_saves_path()
         roms_base = self._get_roms_path()
+        if self._get_retroarch_save_sorting is not None:
+            sort_by_content, sort_by_core = self._get_retroarch_save_sorting()
+        else:
+            sort_by_content, sort_by_core = True, False  # RetroDECK defaults
         saves_dir = resolve_save_dir(
             file_path,
             saves_base,
             system,
             roms_base=roms_base,
-            sort_by_content=True,
-            sort_by_core=False,
+            sort_by_content=sort_by_content,
+            sort_by_core=sort_by_core,
         )
 
         return {

@@ -448,7 +448,7 @@ class TestGetCachedGameDetailBiosFromCache:
         with (
             patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
             patch("domain.es_de_config.get_available_cores", return_value=[]),
-            patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path)),
+            patch.object(plugin._firmware_service, "_get_bios_path", return_value=str(tmp_path)),
         ):
             result = game_detail_service.get_cached_game_detail(50000)
 
@@ -667,7 +667,7 @@ class TestComputedFields:
         with (
             patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
             patch("domain.es_de_config.get_available_cores", return_value=[]),
-            patch("domain.retrodeck_config.get_bios_path", return_value=str(tmp_path / "nonexistent")),
+            patch.object(plugin._firmware_service, "_get_bios_path", return_value=str(tmp_path / "nonexistent")),
         ):
             result = game_detail_service.get_cached_game_detail(99999)
 
@@ -721,7 +721,7 @@ class TestComputedFields:
         with (
             patch("domain.es_de_config.get_active_core", return_value=("mgba_libretro.so", "mGBA")),
             patch("domain.es_de_config.get_available_cores", return_value=[]),
-            patch("domain.retrodeck_config.get_bios_path", return_value=str(bios_dir)),
+            patch.object(plugin._firmware_service, "_get_bios_path", return_value=str(bios_dir)),
         ):
             result = game_detail_service.get_cached_game_detail(99999)
 

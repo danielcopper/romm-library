@@ -13,7 +13,7 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from domain import es_de_config, retrodeck_config
+from domain import es_de_config
 from domain.bios import collect_firmware_status
 from lib.errors import error_response
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
 
-    from services.protocols import RommApiProtocol, StatePersister
+    from services.protocols import BiosPathProvider, RommApiProtocol, StatePersister
 
 _FIRMWARE_CACHE_TTL = 3600  # 1 hour
 
@@ -41,6 +41,7 @@ class FirmwareService:
         save_state: StatePersister,
         save_firmware_cache: Callable[[dict], None] | None = None,
         load_firmware_cache: Callable[[], dict] | None = None,
+        get_bios_path: BiosPathProvider | None = None,
     ) -> None:
         self._romm_api = romm_api
         self._state = state
@@ -50,6 +51,7 @@ class FirmwareService:
         self._save_state = save_state
         self._save_firmware_cache = save_firmware_cache
         self._load_firmware_cache = load_firmware_cache
+        self._get_bios_path = get_bios_path
         self._bios_registry: dict = {}
         self._bios_files_index: dict = {}
         self._firmware_cache: list | None = None
@@ -138,7 +140,7 @@ class FirmwareService:
         placement (e.g. dc/dc_boot.bin). Falls back to flat in bios root
         for files not in the registry.
         """
-        bios_base = retrodeck_config.get_bios_path()
+        bios_base = self._get_bios_path() if self._get_bios_path else ""
         file_name = firmware.get("file_name", "")
         reg_entry = self._bios_files_index.get(file_name)
         if reg_entry and reg_entry.get("firmware_path"):
@@ -276,7 +278,7 @@ class FirmwareService:
 
     def _group_registry_firmware(self):
         """Build platform map from bios registry (offline fallback)."""
-        bios_base = retrodeck_config.get_bios_path()
+        bios_base = self._get_bios_path() if self._get_bios_path else ""
         platforms_map = {}
         for reg_slug, reg_files in self._bios_registry.get("platforms", {}).items():
             if reg_slug not in platforms_map:
@@ -515,7 +517,7 @@ class FirmwareService:
         except Exception:
             if not registry_platform:
                 return {"needs_bios": False}
-            bios_base = retrodeck_config.get_bios_path()
+            bios_base = self._get_bios_path() if self._get_bios_path else ""
             registry_items = [
                 {
                     "file_name": file_name,

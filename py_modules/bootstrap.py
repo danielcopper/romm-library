@@ -15,12 +15,12 @@ from dataclasses import dataclass
 from typing import cast
 
 from adapters.persistence import PersistenceAdapter
+from adapters.retrodeck_config import RetroDeckConfigAdapter
 from adapters.romm.api_router import ApiRouter
 from adapters.romm.http import RommHttpAdapter
 from adapters.steam_config import SteamConfigAdapter
 from adapters.steamgriddb import SteamGridDbAdapter
 from domain import es_de_config as _es_de_config
-from domain import retrodeck_config as _retrodeck_config
 from services.achievements import AchievementsService
 from services.artwork import ArtworkService
 from services.downloads import DownloadService
@@ -31,8 +31,11 @@ from services.metadata import MetadataService
 from services.migration import MigrationService
 from services.playtime import PlaytimeService
 from services.protocols import (
+    BiosPathProvider,
     DebugLogger,
     EventEmitter,
+    RetroArchSaveSortingProvider,
+    RetroDeckHomeProvider,
     RommApiProtocol,
     RomsPathProvider,
     SavesPathProvider,
@@ -73,6 +76,9 @@ class WiringConfig:
     # Callbacks
     get_saves_path: SavesPathProvider
     get_roms_path: RomsPathProvider
+    get_bios_path: BiosPathProvider
+    get_retrodeck_home: RetroDeckHomeProvider
+    get_retroarch_save_sorting: RetroArchSaveSortingProvider
     save_state: StatePersister
     save_settings_to_disk: SettingsPersister
     save_metadata_cache: StatePersister
@@ -111,8 +117,12 @@ def bootstrap(
     (a factory callable for deferred service creation).
     """
     # Configure domain modules with runtime paths/logger (removes decky coupling from domain).
-    _retrodeck_config.configure(user_home=user_home)
-    _es_de_config.configure(plugin_dir=plugin_dir, logger=logger)
+    retrodeck_adapter = RetroDeckConfigAdapter(user_home=user_home, logger=logger)
+    _es_de_config.configure(
+        plugin_dir=plugin_dir,
+        logger=logger,
+        get_retrodeck_home=retrodeck_adapter.get_retrodeck_home,
+    )
 
     persistence = PersistenceAdapter(settings_dir, runtime_dir, logger)
     http_adapter = RommHttpAdapter(settings, plugin_dir, logger)
@@ -126,6 +136,7 @@ def bootstrap(
         "romm_api": romm_api,
         "steam_config": steam_config,
         "sgdb_adapter": sgdb_adapter,
+        "retrodeck_config": retrodeck_adapter,
     }
 
 
@@ -165,6 +176,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         get_saves_path=cfg.get_saves_path,
         get_roms_path=cfg.get_roms_path,
         get_active_core=_es_de_config.get_active_core,
+        get_retroarch_save_sorting=cfg.get_retroarch_save_sorting,
         plugin_version=_read_plugin_version(cfg.plugin_dir),
         emit=cfg.emit,
     )
@@ -245,6 +257,8 @@ def wire_services(cfg: WiringConfig) -> dict:
         runtime_dir=cfg.runtime_dir,
         emit=cfg.emit,
         save_state=cfg.save_state,
+        get_roms_path=cfg.get_roms_path,
+        get_bios_path=cfg.get_bios_path,
     )
 
     rom_removal_service = RomRemovalService(
@@ -254,6 +268,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         loop=cfg.loop,
         save_state=cfg.save_state,
         save_save_sync_state=save_sync_service.save_state,
+        get_roms_path=cfg.get_roms_path,
     )
 
     firmware_service = FirmwareService(
@@ -265,6 +280,7 @@ def wire_services(cfg: WiringConfig) -> dict:
         save_state=cfg.save_state,
         save_firmware_cache=cfg.save_firmware_cache,
         load_firmware_cache=cfg.load_firmware_cache,
+        get_bios_path=cfg.get_bios_path,
     )
 
     sgdb_service = SteamGridService(
@@ -296,6 +312,9 @@ def wire_services(cfg: WiringConfig) -> dict:
         save_state=cfg.save_state,
         emit=cfg.emit,
         get_bios_files_index=lambda: firmware_service.bios_files_index,
+        get_retrodeck_home=cfg.get_retrodeck_home,
+        get_saves_path=cfg.get_saves_path,
+        get_bios_path=cfg.get_bios_path,
     )
 
     game_detail_service = GameDetailService(

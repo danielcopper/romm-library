@@ -10,14 +10,18 @@ import os
 import shutil
 from typing import TYPE_CHECKING
 
-from domain import retrodeck_config
-
 if TYPE_CHECKING:
     import asyncio
     import logging
     from collections.abc import Callable
 
-    from services.protocols import EventEmitter, StatePersister
+    from services.protocols import (
+        BiosPathProvider,
+        EventEmitter,
+        RetroDeckHomeProvider,
+        SavesPathProvider,
+        StatePersister,
+    )
 
 
 class MigrationService:
@@ -32,6 +36,9 @@ class MigrationService:
         save_state: StatePersister,
         emit: EventEmitter,
         get_bios_files_index: Callable[[], dict],
+        get_retrodeck_home: RetroDeckHomeProvider | None = None,
+        get_saves_path: SavesPathProvider | None = None,
+        get_bios_path: BiosPathProvider | None = None,
     ) -> None:
         self._state = state
         self._loop = loop
@@ -39,10 +46,13 @@ class MigrationService:
         self._save_state = save_state
         self._emit = emit
         self._get_bios_files_index = get_bios_files_index
+        self._get_retrodeck_home = get_retrodeck_home
+        self._get_saves_path = get_saves_path
+        self._get_bios_path = get_bios_path
 
     def detect_retrodeck_path_change(self) -> None:
         """Check if RetroDECK home path changed since last run."""
-        current_home = retrodeck_config.get_retrodeck_home()
+        current_home = self._get_retrodeck_home() if self._get_retrodeck_home else ""
         stored_home = self._state.get("retrodeck_home_path", "")
 
         if not current_home:
@@ -135,7 +145,7 @@ class MigrationService:
         """Collect untracked BIOS migration items (downloaded before state tracking)."""
         items = []
         old_bios = os.path.join(old_home, "bios")
-        new_bios = retrodeck_config.get_bios_path()
+        new_bios = self._get_bios_path() if self._get_bios_path else ""
         if not os.path.isdir(old_bios):
             return items
         downloaded_bios = self._state.get("downloaded_bios", {})
@@ -150,12 +160,11 @@ class MigrationService:
             items.append((file_name, old_file, new_file, lambda: None, "bios"))
         return items
 
-    @staticmethod
-    def _collect_save_items(old_home):
+    def _collect_save_items(self, old_home):
         """Collect save file migration items by scanning old saves directory."""
         items = []
         old_saves = os.path.join(old_home, "saves")
-        new_saves = retrodeck_config.get_saves_path()
+        new_saves = self._get_saves_path() if self._get_saves_path else ""
         if not os.path.isdir(old_saves):
             return items
         for dirpath, _dirs, filenames in os.walk(old_saves):

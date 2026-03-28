@@ -10,17 +10,19 @@ _CORE_SO_RE = re.compile(r"%CORE_RETROARCH%/([\w-]+_libretro)\.so")
 # Falls back to importing decky lazily if not configured (dev/test fallback).
 _logger = None
 _plugin_dir = None
+_get_retrodeck_home = None
 
 
-def configure(plugin_dir: str, logger) -> None:
-    """Configure module-level logger and plugin_dir.
+def configure(plugin_dir: str, logger, get_retrodeck_home=None) -> None:
+    """Configure module-level logger, plugin_dir, and optional retrodeck home provider.
 
     Must be called once during bootstrap before the first use of CoreResolver
     methods that load files from the plugin directory.
     """
-    global _logger, _plugin_dir
+    global _logger, _plugin_dir, _get_retrodeck_home
     _logger = logger
     _plugin_dir = plugin_dir
+    _get_retrodeck_home = get_retrodeck_home
 
 
 def _get_logger():
@@ -101,9 +103,10 @@ class CoreResolver:
         Returns (core_so, label) or None.
         """
         try:
-            from domain import retrodeck_config
-
-            retrodeck_home = retrodeck_config.get_retrodeck_home()
+            if _get_retrodeck_home is not None:
+                retrodeck_home = _get_retrodeck_home()
+            else:
+                return None
         except Exception:
             return None
 

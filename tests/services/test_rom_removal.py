@@ -39,6 +39,7 @@ def service(state, save_sync_state, logger):
         loop=asyncio.new_event_loop(),
         save_state=MagicMock(),
         save_save_sync_state=MagicMock(),
+        get_roms_path=lambda: os.path.join(os.path.expanduser("~"), "retrodeck", "roms"),
     )
 
 
@@ -50,39 +51,31 @@ async def _sync_loop(service):
 
 class TestIsSafeRomPath:
     def test_path_inside_roms_dir_is_safe(self, service, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         safe = str(tmp_path / "retrodeck" / "roms" / "n64" / "game.z64")
         assert service._is_safe_rom_path(safe) is True
 
     def test_path_outside_roms_dir_is_not_safe(self, service, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         outside = str(tmp_path / "evil" / "game.z64")
         assert service._is_safe_rom_path(outside) is False
 
     def test_roms_base_itself_is_not_safe(self, service, tmp_path):
-        import decky
-
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         # Only 1 level deep — must be at least 2
         base = str(tmp_path / "retrodeck" / "roms" / "n64")
         assert service._is_safe_rom_path(base) is False
 
     def test_etc_passwd_is_not_safe(self, service, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         assert service._is_safe_rom_path("/etc/passwd") is False
 
 
 class TestDeleteRomFiles:
     def test_deletes_single_file(self, service, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom = tmp_path / "retrodeck" / "roms" / "n64" / "game.z64"
         rom.parent.mkdir(parents=True)
         rom.write_bytes(b"\x00" * 100)
@@ -91,9 +84,8 @@ class TestDeleteRomFiles:
         assert not rom.exists()
 
     def test_deletes_rom_dir(self, service, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom_dir = tmp_path / "retrodeck" / "roms" / "psx" / "FF7"
         rom_dir.mkdir(parents=True)
         (rom_dir / "disc1.cue").write_text("cue")
@@ -103,9 +95,8 @@ class TestDeleteRomFiles:
         assert not rom_dir.exists()
 
     def test_refuses_file_outside_roms_dir(self, service, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         evil = tmp_path / "evil" / "important.txt"
         evil.parent.mkdir(parents=True)
         evil.write_text("do not delete")
@@ -114,9 +105,8 @@ class TestDeleteRomFiles:
         assert evil.exists()
 
     def test_refuses_rom_dir_outside_roms_dir(self, service, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         evil_dir = tmp_path / "evil"
         evil_dir.mkdir(parents=True)
         (evil_dir / "file.txt").write_text("important")
@@ -125,9 +115,8 @@ class TestDeleteRomFiles:
         assert evil_dir.exists()
 
     def test_missing_file_no_crash(self, service, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         # File doesn't exist — should not raise
         service._delete_rom_files({"file_path": str(tmp_path / "retrodeck" / "roms" / "n64" / "gone.z64")})
 
@@ -139,9 +128,8 @@ class TestDeleteRomFiles:
 class TestRemoveRom:
     @pytest.mark.asyncio
     async def test_removes_file_and_clears_state(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
         rom.parent.mkdir(parents=True)
         rom.write_bytes(b"\x00" * 100)
@@ -161,9 +149,8 @@ class TestRemoveRom:
 
     @pytest.mark.asyncio
     async def test_accepts_string_rom_id(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom = tmp_path / "retrodeck" / "roms" / "n64" / "game.z64"
         rom.parent.mkdir(parents=True)
         rom.write_bytes(b"\x00" * 100)
@@ -176,9 +163,8 @@ class TestRemoveRom:
 
     @pytest.mark.asyncio
     async def test_file_already_gone_cleans_state(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         state["installed_roms"]["42"] = {
             "rom_id": 42,
             "file_path": str(tmp_path / "retrodeck" / "roms" / "n64" / "gone.z64"),
@@ -191,9 +177,8 @@ class TestRemoveRom:
 
     @pytest.mark.asyncio
     async def test_cleans_save_sync_state(self, service, state, save_sync_state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
         rom.parent.mkdir(parents=True)
         rom.write_bytes(b"\x00" * 100)
@@ -219,9 +204,8 @@ class TestRemoveRom:
     @pytest.mark.asyncio
     async def test_no_save_sync_call_if_no_matching_state(self, service, state, save_sync_state, tmp_path):
         _ = save_sync_state  # fixture ensures shared dict is initialized
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom = tmp_path / "retrodeck" / "roms" / "n64" / "zelda.z64"
         rom.parent.mkdir(parents=True)
         rom.write_bytes(b"\x00" * 100)
@@ -237,9 +221,8 @@ class TestRemoveRom:
 
     @pytest.mark.asyncio
     async def test_removes_rom_dir(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom_dir = tmp_path / "retrodeck" / "roms" / "psx" / "FF7"
         rom_dir.mkdir(parents=True)
         (rom_dir / "FF7.m3u").write_text("disc1.cue")
@@ -261,9 +244,8 @@ class TestRemoveRom:
 
     @pytest.mark.asyncio
     async def test_path_traversal_rejected(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         evil = tmp_path / "etc" / "passwd"
         evil.parent.mkdir(parents=True)
         evil.write_text("root:x:0:0")
@@ -278,9 +260,8 @@ class TestRemoveRom:
 class TestUninstallAllRoms:
     @pytest.mark.asyncio
     async def test_removes_all_installed(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
         roms_dir.mkdir(parents=True)
         file_a = roms_dir / "game_a.z64"
@@ -302,9 +283,8 @@ class TestUninstallAllRoms:
 
     @pytest.mark.asyncio
     async def test_clears_state_even_if_files_missing(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         state["installed_roms"] = {
             "1": {"rom_id": 1, "file_path": "/nonexistent.z64", "system": "n64"},
         }
@@ -316,18 +296,16 @@ class TestUninstallAllRoms:
     @pytest.mark.asyncio
     async def test_handles_empty_state(self, service, state, tmp_path):
         _ = state  # fixture ensures shared dict is initialized
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         result = await service.uninstall_all_roms()
         assert result["success"] is True
         assert result["removed_count"] == 0
 
     @pytest.mark.asyncio
     async def test_cleans_save_sync_state(self, service, state, save_sync_state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
         roms_dir.mkdir(parents=True)
         file_a = roms_dir / "game_a.z64"
@@ -353,9 +331,8 @@ class TestUninstallAllRoms:
 
     @pytest.mark.asyncio
     async def test_deletes_rom_directories(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         rom_dir = tmp_path / "retrodeck" / "roms" / "psx" / "FF7"
         rom_dir.mkdir(parents=True)
         (rom_dir / "disc1.bin").write_bytes(b"\x00" * 100)
@@ -377,9 +354,8 @@ class TestUninstallAllRoms:
     @pytest.mark.asyncio
     async def test_outside_roms_dir_skipped_state_still_cleared(self, service, state, save_sync_state, tmp_path):
         _ = save_sync_state  # fixture ensures shared dict is initialized
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
         roms_dir.mkdir(parents=True)
         good_file = roms_dir / "game_a.z64"
@@ -403,9 +379,8 @@ class TestUninstallAllRoms:
 
     @pytest.mark.asyncio
     async def test_message_includes_error_count(self, service, state, tmp_path):
-        import decky
 
-        decky.DECKY_USER_HOME = str(tmp_path)
+        service._get_roms_path = lambda: str(tmp_path / "retrodeck" / "roms")
         roms_dir = tmp_path / "retrodeck" / "roms" / "n64"
         roms_dir.mkdir(parents=True)
         rom = roms_dir / "game.z64"
